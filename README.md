@@ -43,6 +43,30 @@ Preparing once and fitting many times is the point rather than an optimisation:
 the decomposition is what the cost lives in, and a bootstrap changes only the
 response.
 
+## Speed
+
+`uv run --no-project python checks/speed.py`, one heritability analysis from
+pedigree to result, six fixed effects, on this machine:
+
+| n | SOLAR | Asterism | ratio | a second trait, same pedigree |
+| --- | --- | --- | --- | --- |
+| 350 | 2.03 s | 0.003 s | 808× | 0.0013 s |
+| 1,400 | 2.90 s | 0.018 s | 161× | 0.0049 s |
+| 5,600 | 11.04 s | 0.455 s | 24× | 0.0199 s |
+
+Both columns cover the same work: build the relationship matrix, take the
+phenotype, fit. The ratio narrows as the pedigree grows, because SOLAR's cost is
+mostly fixed overhead while Asterism's is real arithmetic.
+
+The last column is the one that matters for a batch. A prepared model
+decomposes once, and another trait on the same pedigree only refits. SOLAR has
+no equivalent and repeats everything each time. The 1,246 recorded SOLAR runs
+would take something over an hour; against one prepared model at SAFS size they
+are a couple of seconds.
+
+That margin is also what makes the parametric bootstrap of decision 12
+affordable — 2,000 fits against one prepared model, not 2,000 analyses.
+
 ## What it is not
 
 It grows when a planned analysis needs it to and not before, and every
@@ -184,7 +208,10 @@ stable.
 
 - **No real pedigree has ever gone through this.** The builder handles
   inbreeding, identical twins and a pedigree given in any order, and it refuses
-  a half-known parent rather than guessing. None of that has met real SAFS data. Every roster here is
+  a half-known parent rather than guessing. None of that has met real SAFS data.
+- **The builder returns a dense matrix**, so it costs n² of memory: about 250 MB
+  at 5,600 people and 800 MB at 10,000. `prepare` then exploits the family
+  blocks, but the matrix between them does not. Nothing here has needed more. Every roster here is
   synthetic and block-diagonal, with fourteen-person families and no inbreeding
   loops. A real SAFS pedigree is larger, more tangled, and may make the
   relationship matrix singular, which is the case the upper-bound snap in
