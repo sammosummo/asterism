@@ -287,6 +287,10 @@ struct Cell {
     /// The largest average error across the fixed effects. A design that the
     /// restricted likelihood mishandles shows here before it shows in coverage.
     worst_beta_bias: f64,
+    /// How far the worst fixed effect's Wald interval is from covering at 95
+    /// per cent. This is what checks the standard errors rather than merely
+    /// checking that they exist.
+    worst_beta_coverage_error: f64,
     /// What the coverage would have been at a boundary truth if the endpoint
     /// sitting on the bound had been taken to mean the bound is in the interval
     /// — the obvious rule, and the one `docs/adr/0004` rejects. Only meaningful
@@ -325,6 +329,7 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
     let mut nonconverged = 0usize;
     let mut naive_covered = 0usize;
     let mut beta_error = vec![0.0f64; model.fixed_effects()];
+    let mut beta_covered = vec![0usize; model.fixed_effects()];
     let mut widths = Vec::with_capacity(replicates());
 
     for _ in 0..replicates() {
@@ -332,7 +337,18 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
         let fit = model.fit_one_trait(&y, true);
         if fit.converged {
             for (index, estimate) in fit.beta.iter().enumerate() {
-                beta_error[index] += estimate - if covariates { BETA[index] } else { BETA[0] };
+                let truth = if covariates { BETA[index] } else { BETA[0] };
+                beta_error[index] += estimate - truth;
+                // The Wald interval for a fixed effect, scored the same way as
+                // the interval for h2: every replicate counts. A standard error
+                // that is merely present proves nothing; one whose interval
+                // covers at 95 per cent is the right size.
+                let effect = &fit.fixed_effects[index];
+                if let (Some(lower), Some(upper)) = (effect.lower, effect.upper) {
+                    if lower <= truth && truth <= upper {
+                        beta_covered[index] += 1;
+                    }
+                }
             }
         }
         if covers(&fit, truth) {
@@ -373,6 +389,10 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
 
     Cell {
         truth,
+        worst_beta_coverage_error: beta_covered
+            .iter()
+            .map(|count| (*count as f64 / replicates() as f64 - 0.95).abs())
+            .fold(0.0f64, f64::max),
         worst_beta_bias: beta_error
             .iter()
             .map(|total| (total / replicates() as f64).abs())
@@ -420,12 +440,12 @@ fn main() {
     });
 
     println!(
-        "{:>6} {:>9} {:>18} {:>7} {:>9} {:>9} {:>7} {:>9} {:>9}",
-        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias"
+        "{:>6} {:>9} {:>18} {:>7} {:>9} {:>9} {:>7} {:>9} {:>9} {:>9}",
+        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias", "beta cov"
     );
     for cell in &cells {
         println!(
-            "{:>6.2} {:>9.4} [{:>7.4}, {:>7.4}] {:>7} {:>9.4} {:>9.4} {:>7} {:>9.4} {:>9}",
+            "{:>6.2} {:>9.4} [{:>7.4}, {:>7.4}] {:>7} {:>9.4} {:>9.4} {:>7} {:>9.4} {:>9} {:>9}",
             cell.truth,
             cell.coverage,
             cell.cp.0,
@@ -436,6 +456,7 @@ fn main() {
             cell.nonconverged,
             cell.median_width,
             format!("{:.5}", cell.worst_beta_bias),
+            format!("{:.4}", 0.95 - cell.worst_beta_coverage_error),
         );
     }
 
@@ -457,7 +478,8 @@ fn main() {
              \"estimator\": \"reml\", \"coverage\": {}, \"cp_lower\": {}, \"cp_upper\": {}, \
              \"band\": [{}, {}], \"passes\": {}, \"fraction_at_zero\": {}, \
              \"fraction_at_one\": {}, \"nonconverged\": {}, \"median_width\": {}, \
-             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"seconds\": {:.3}}}{}",
+             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"worst_beta_coverage_error\": {}, \
+             \"seconds\": {:.3}}}{}",
             cell.truth,
             n,
             replicates(),
@@ -474,6 +496,7 @@ fn main() {
             cell.median_width,
             cell.naive.map_or_else(|| "null".to_owned(), |v| v.to_string()),
             cell.worst_beta_bias,
+            cell.worst_beta_coverage_error,
             cell.seconds,
             if index + 1 == cells.len() { "" } else { "," }
         );

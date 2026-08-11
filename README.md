@@ -24,8 +24,10 @@ record = model.fit(y)            # as many times as you like
 if one is wanted. `k` is the relationship matrix in the same order — twice the
 kinship is usual, but a genomic relationship matrix is equally acceptable,
 because the matrix is checked as mathematics rather than for where it came from.
-`record` is a dictionary held in memory, carrying the estimate, the interval,
-the test, the boundary state and the warnings. Asterism reads no files and
+`record` is a dictionary held in memory. It carries h² with a 95 per cent
+profile interval and a likelihood ratio p-value against no additive variance,
+and every fixed effect with a standard error, a z, a two-sided Wald p-value and
+a 95 per cent interval, in design-column order. Asterism reads no files and
 writes none.
 
 Preparing once and fitting many times is the point rather than an optimisation:
@@ -130,6 +132,29 @@ the interval, because coverage is already exactly right at interior truths.
 `docs/adr/0004` sets out what a proper fix would take.
 
 Results and seeds are in `evidence/`.
+
+## Reading a covariate p-value
+
+Two things about them, both found by comparing against SOLAR and both changing
+how the number should be read.
+
+**A covariate p-value depends on how you parameterise the design; h² does not.**
+SOLAR centres age and codes sex as a female indicator. That does not change the
+design's column span, so h², the variances and the likelihood come out
+identical — measured, not argued. But the coefficient on an uncentred age in a
+model that also carries age squared is the slope at age zero, while the
+coefficient on a centred age is the slope at the mean age. Different quantities,
+so different tests. On one dataset the uncentred age gave p = 0.035 and the
+centred age 2e-11. Reparameterised to match SOLAR exactly, every covariate
+agreed with it. **So a covariate p-value from Asterism and one from SOLAR are
+comparable only if the design is parameterised the same way.**
+
+**The covariate intervals under-cover slightly, which is the unsafe direction.**
+The worst of six coefficients covers at 0.943 to 0.948 against a nominal 0.95,
+because the standard error conditions on the estimated variance components and
+ignores their uncertainty. About half a percentage point at n = 350. Treat a
+covariate p-value near 0.05 as near 0.05, not as below it. `docs/adr/0001`,
+decision 8 has the detail.
 
 ## The comparisons against SOLAR and R
 

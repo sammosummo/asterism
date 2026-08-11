@@ -77,6 +77,14 @@ fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
     erfc((statistic / 2.0).sqrt())
 }
 
+/// The two-sided tail of a standard normal, for the Wald test on a fixed
+/// effect. Written through the complementary error function rather than one
+/// minus a distribution function, which loses its digits in the tail — exactly
+/// where a covariate p-value is read.
+fn two_sided_normal_tail(z: f64) -> f64 {
+    erfc(z.abs() / std::f64::consts::SQRT_2)
+}
+
 /// The diagonal of the covariance over the residual variance in the rotated
 /// basis, exact at both bounds.
 fn variance_kernel(lam: &DVector<f64>, h2: f64) -> DVector<f64> {
@@ -93,6 +101,10 @@ struct Profiled {
     loglik: f64,
     beta: DVector<f64>,
     sigma2: f64,
+    /// The inverse of the weighted cross-product, kept only so that the
+    /// fixed-effect standard errors can be read off at the fitted point. It is
+    /// p by p, so this costs nothing next to the fit itself.
+    xtwx_inverse: DMatrix<f64>,
 }
 
 /// Golden-section minimisation on a closed bracket, deterministic.
@@ -188,6 +200,7 @@ impl PreparedModel {
         }
         let chol = xtwx.cholesky()?;
         let beta = chol.solve(&xtwy);
+        let xtwx_inverse = chol.inverse();
         let mut quad = 0.0;
         let mut response_scale = 0.0;
         for i in 0..n {
@@ -215,12 +228,12 @@ impl PreparedModel {
                 * (self.dfr * log_two_pi() + logdet_v + logdet_xwx - self.logdet_xtx
                     + self.dfr * sigma2.ln()
                     + self.dfr);
-            Some(Profiled { loglik, beta, sigma2 })
+            Some(Profiled { loglik, beta, sigma2, xtwx_inverse })
         } else {
             let nf = n as f64;
             let sigma2 = quad / nf;
             let loglik = -0.5 * (nf * log_two_pi() + logdet_v + nf * sigma2.ln() + nf);
-            Some(Profiled { loglik, beta, sigma2 })
+            Some(Profiled { loglik, beta, sigma2, xtwx_inverse })
         }
     }
 
@@ -401,9 +414,60 @@ impl PreparedModel {
         let final_fit = self.profile(&yt, best_h2, reml);
         let converged =
             converged_grid && final_fit.as_ref().is_some_and(|p| p.loglik.is_finite());
-        let (loglik, beta, sigma2) = match final_fit {
-            Some(profiled) => (profiled.loglik, profiled.beta, profiled.sigma2),
-            None => (f64::NAN, DVector::from_element(self.p, f64::NAN), f64::NAN),
+
+        // The fixed effects and their Wald tests (`docs/adr/0001`, decision 8:
+        // covariate significance is reported and never acted on). The variance
+        // of the fixed effects is sigma2 times the inverse weighted
+        // cross-product, so the standard errors come straight off the
+        // decomposition the fit already did.
+        //
+        // These are available at a boundary fit as well as an interior one,
+        // unlike the standard error on h2. Nothing degenerate happens to a fixed
+        // effect when a variance component sits on its bound; the covariance is
+        // still positive definite and the estimate is still asymptotically
+        // normal. Withholding these too would be over-cautious.
+        //
+        // The reference distribution is the normal rather than a t. The
+        // variance components are estimated, so a t on n - p is not justified
+        // either, and the two are indistinguishable at the sizes this is used
+        // at. `Wald` is what decision 8 asks for and what the record says.
+        let (loglik, beta, sigma2, fixed_effects) = match final_fit {
+            Some(profiled) => {
+                let effects = (0..self.p)
+                    .map(|j| {
+                        let variance = profiled.sigma2 * profiled.xtwx_inverse[(j, j)];
+                        let estimate = profiled.beta[j];
+                        if variance.is_finite() && variance > 0.0 {
+                            let standard_error = variance.sqrt();
+                            let z = estimate / standard_error;
+                            FixedEffect {
+                                estimate,
+                                standard_error: Some(standard_error),
+                                z: Some(z),
+                                p_value: Some(two_sided_normal_tail(z)),
+                                lower: Some(estimate - 1.959_963_984_540_054 * standard_error),
+                                upper: Some(estimate + 1.959_963_984_540_054 * standard_error),
+                            }
+                        } else {
+                            FixedEffect {
+                                estimate,
+                                standard_error: None,
+                                z: None,
+                                p_value: None,
+                                lower: None,
+                                upper: None,
+                            }
+                        }
+                    })
+                    .collect();
+                (profiled.loglik, profiled.beta, profiled.sigma2, effects)
+            }
+            None => (
+                f64::NAN,
+                DVector::from_element(self.p, f64::NAN),
+                f64::NAN,
+                Vec::new(),
+            ),
         };
 
         let boundary = if best_h2 == 0.0 {
@@ -535,8 +599,23 @@ impl PreparedModel {
             interval,
             standard_error,
             test,
+            fixed_effects,
         }
     }
+}
+
+/// One fixed effect, with the Wald inference decision 8 of `docs/adr/0001`
+/// requires. The interval is symmetric on the coefficient's own scale, which is
+/// legitimate here in a way it is not for a variance ratio: a regression
+/// coefficient is unbounded and asymptotically normal, whereas h² lives on
+/// [0, 1] and piles up on its bounds.
+pub struct FixedEffect {
+    pub estimate: f64,
+    pub standard_error: Option<f64>,
+    pub z: Option<f64>,
+    pub p_value: Option<f64>,
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
 }
 
 /// Which bound, if any, the fit landed on. A state, not advice
@@ -603,6 +682,8 @@ pub struct Fit {
     pub interval: Interval,
     pub standard_error: Option<f64>,
     pub test: Option<LikelihoodRatioTest>,
+    /// One per design column, in column order.
+    pub fixed_effects: Vec<FixedEffect>,
 }
 
 #[cfg(feature = "python")]
@@ -724,14 +805,33 @@ impl PreparedModel {
             None => record.set_item("test", py.None())?,
         }
 
-        match fit.standard_error {
-            Some(se) => {
-                let errors = PyDict::new(py);
-                errors.set_item("h2", se)?;
-                record.set_item("standard_errors", errors)?;
-            }
-            None => record.set_item("standard_errors", py.None())?,
+        let errors = PyDict::new(py);
+        if let Some(se) = fit.standard_error {
+            errors.set_item("h2", se)?;
         }
+        errors.set_item(
+            "beta",
+            fit.fixed_effects
+                .iter()
+                .map(|effect| effect.standard_error)
+                .collect::<Vec<Option<f64>>>(),
+        )?;
+        record.set_item("standard_errors", errors)?;
+
+        let effects = pyo3::types::PyList::empty(py);
+        for effect in &fit.fixed_effects {
+            let entry = PyDict::new(py);
+            entry.set_item("estimate", effect.estimate)?;
+            entry.set_item("standard_error", effect.standard_error)?;
+            entry.set_item("z", effect.z)?;
+            entry.set_item("p_value", effect.p_value)?;
+            entry.set_item("lower", effect.lower)?;
+            entry.set_item("upper", effect.upper)?;
+            entry.set_item("level", 0.95)?;
+            entry.set_item("rule", "wald")?;
+            effects.append(entry)?;
+        }
+        record.set_item("fixed_effects", effects)?;
         Ok(record)
     }
 }

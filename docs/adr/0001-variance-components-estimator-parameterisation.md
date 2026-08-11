@@ -227,6 +227,47 @@ Matching how `-screen -all` is actually used. No automatic selection, ever.
 Because of decision 6, covariate significance comes from a **Wald test on the
 fixed effect**, not from comparing REML likelihoods.
 
+**Built on 11 August 2026.** Every fixed effect carries a standard error, a z, a
+two-sided p-value and a 95 per cent interval, in design-column order. The
+variance of the fixed effects is the residual variance times the inverse
+weighted cross-product, so this comes off the decomposition the fit already did.
+Three things learned in building it, all of which change how the numbers should
+be read.
+
+**The inference is available at a boundary fit, unlike the standard error on
+h².** Nothing degenerate happens to a fixed effect when a variance component
+sits on its bound: the covariance is still positive definite and the estimate is
+still asymptotically normal. Withholding these too would have been
+over-cautious.
+
+**A covariate p-value depends on how the design is parameterised, and h² does
+not.** This was found by comparing against SOLAR and it is the single most
+practically important thing here. SOLAR centres age and codes sex as a female
+indicator. Centring does not change the design's column span, so h², the
+variances and the likelihood are all identical — measured, not argued. But the
+*coefficient* on an uncentred age in a model that also carries age squared is
+the slope at age zero, while the coefficient on a centred age is the slope at
+the mean age. Those are different quantities, so a test of one is not a test of
+the other. On the same data the uncentred age gave p = 0.035 and the centred age
+gave 2e-11. Reparameterised to match SOLAR exactly, every covariate agreed:
+1.98e-11 against SOLAR's 1.01e-10, 0.1101 against 0.1108, 0.00735 against
+0.00788, 0.2439 against 0.2445, 0.97001 against 0.97000.
+
+So: **a covariate p-value from Asterism and one from SOLAR are comparable only
+if the design is parameterised the same way.** The residual difference above is
+Wald against likelihood ratio — SOLAR screens a covariate by refitting without
+it, which it can do because it uses ML. Under REML that comparison is not
+available, which is the reason this decision specifies Wald in the first place.
+
+**The intervals under-cover slightly, and that is the unsafe direction.** The
+coverage check scores them alongside h²'s: the worst of six coefficients covers
+at 0.943 to 0.948 across every cell, against a nominal 0.95. The cause is
+standard — the standard error conditions on the estimated variance components
+and ignores their uncertainty, so it is a little too small. At n = 350 with six
+fixed effects the shortfall is about half a percentage point. A Kenward–Roger or
+Satterthwaite correction is the known repair and is not built. **Treat a
+covariate p-value near 0.05 as near 0.05, not as below it.**
+
 ### 9. All available data, not complete cases
 
 Subjects keep their measured traits when others are missing. This gives up the
