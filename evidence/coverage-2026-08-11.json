@@ -1,0 +1,510 @@
+{
+  "n350": [
+    {
+      "true_h2": 0,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 20260811,
+      "estimator": "reml",
+      "coverage": 0.952875,
+      "cp_lower": 0.9480012724770105,
+      "cp_upper": 0.957415289283679,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.517875,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.16597918697519276,
+      "naive_boundary_coverage": 0.976625,
+      "seconds": 3.192
+    },
+    {
+      "true_h2": 0.05,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 21260814,
+      "estimator": "reml",
+      "coverage": 0.978875,
+      "cp_lower": 0.9754813196959607,
+      "cp_upper": 0.9819132273487485,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": false,
+      "fraction_at_zero": 0.2845,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.2244102220000901,
+      "naive_boundary_coverage": null,
+      "seconds": 3.403
+    },
+    {
+      "true_h2": 0.07,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 22260817,
+      "estimator": "reml",
+      "coverage": 0.974,
+      "cp_lower": 0.9702729110374009,
+      "cp_upper": 0.9773761041745529,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": false,
+      "fraction_at_zero": 0.197875,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.24948097098708613,
+      "naive_boundary_coverage": null,
+      "seconds": 3.374
+    },
+    {
+      "true_h2": 0.1,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 23260820,
+      "estimator": "reml",
+      "coverage": 0.959125,
+      "cp_lower": 0.9545532631407161,
+      "cp_upper": 0.9633582871603926,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.1235,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.28235563542724695,
+      "naive_boundary_coverage": null,
+      "seconds": 3.503
+    },
+    {
+      "true_h2": 0.2,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 24260823,
+      "estimator": "reml",
+      "coverage": 0.95225,
+      "cp_lower": 0.9473473824262647,
+      "cp_upper": 0.9568196753913729,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.013125,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.34694826745636287,
+      "naive_boundary_coverage": null,
+      "seconds": 4.021
+    },
+    {
+      "true_h2": 0.3,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 25260826,
+      "estimator": "reml",
+      "coverage": 0.948875,
+      "cp_lower": 0.9438200784099547,
+      "cp_upper": 0.9535996448069761,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.00125,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.36550389338448336,
+      "naive_boundary_coverage": null,
+      "seconds": 4.034
+    },
+    {
+      "true_h2": 0.4,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 26260829,
+      "estimator": "reml",
+      "coverage": 0.94125,
+      "cp_lower": 0.935871676344651,
+      "cp_upper": 0.9463039998008359,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.3683336399479694,
+      "naive_boundary_coverage": null,
+      "seconds": 4.132
+    },
+    {
+      "true_h2": 0.5,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 27260832,
+      "estimator": "reml",
+      "coverage": 0.94975,
+      "cp_lower": 0.9447339826144663,
+      "cp_upper": 0.9544350516186462,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.36142729441326543,
+      "naive_boundary_coverage": null,
+      "seconds": 4.083
+    },
+    {
+      "true_h2": 0.6,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 28260835,
+      "estimator": "reml",
+      "coverage": 0.95475,
+      "cp_lower": 0.94996430497348,
+      "cp_upper": 0.9592007635065951,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.34249673647258555,
+      "naive_boundary_coverage": null,
+      "seconds": 4.1
+    },
+    {
+      "true_h2": 0.7,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 29260838,
+      "estimator": "reml",
+      "coverage": 0.949625,
+      "cp_lower": 0.9446034005449762,
+      "cp_upper": 0.9543157321982965,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.31328046615874544,
+      "naive_boundary_coverage": null,
+      "seconds": 4.173
+    },
+    {
+      "true_h2": 0.8,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 30260841,
+      "estimator": "reml",
+      "coverage": 0.95375,
+      "cp_lower": 0.9489170961058639,
+      "cp_upper": 0.9582487697697665,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0.000125,
+      "nonconverged": 0,
+      "median_width": 0.2742327272837094,
+      "naive_boundary_coverage": null,
+      "seconds": 4.038
+    },
+    {
+      "true_h2": 1,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 31260844,
+      "estimator": "reml",
+      "coverage": 0.94975,
+      "cp_lower": 0.9447339826144663,
+      "cp_upper": 0.9544350516186462,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0.502,
+      "nonconverged": 0,
+      "median_width": 0.09586998202297203,
+      "naive_boundary_coverage": 0.972875,
+      "seconds": 3.349
+    }
+  ],
+  "n1400": [
+    {
+      "true_h2": 0,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 20260811,
+      "estimator": "reml",
+      "coverage": 0.948375,
+      "cp_lower": 0.9432980237703462,
+      "cp_upper": 0.9531220925486098,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.500875,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.07792581511824118,
+      "naive_boundary_coverage": 0.97375,
+      "seconds": 12.319
+    },
+    {
+      "true_h2": 0.05,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 21260814,
+      "estimator": "reml",
+      "coverage": 0.961375,
+      "cp_lower": 0.9569184214182108,
+      "cp_upper": 0.9654912977961353,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.100875,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.13274918223294474,
+      "naive_boundary_coverage": null,
+      "seconds": 13.347
+    },
+    {
+      "true_h2": 0.07,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 22260817,
+      "estimator": "reml",
+      "coverage": 0.948,
+      "cp_lower": 0.9429065656030683,
+      "cp_upper": 0.9527638452626079,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.038375,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.15213126852266234,
+      "naive_boundary_coverage": null,
+      "seconds": 13.713
+    },
+    {
+      "true_h2": 0.1,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 23260820,
+      "estimator": "reml",
+      "coverage": 0.947375,
+      "cp_lower": 0.942254290924673,
+      "cp_upper": 0.9521666103317282,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.008375,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.16343456161378186,
+      "naive_boundary_coverage": null,
+      "seconds": 14.513
+    },
+    {
+      "true_h2": 0.2,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 24260823,
+      "estimator": "reml",
+      "coverage": 0.95075,
+      "cp_lower": 0.9457789362783472,
+      "cp_upper": 0.9553893088351659,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.179730697808685,
+      "naive_boundary_coverage": null,
+      "seconds": 15.333
+    },
+    {
+      "true_h2": 0.3,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 25260826,
+      "estimator": "reml",
+      "coverage": 0.947125,
+      "cp_lower": 0.9419934349028419,
+      "cp_upper": 0.9519276623312326,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.1871574523294553,
+      "naive_boundary_coverage": null,
+      "seconds": 15.367
+    },
+    {
+      "true_h2": 0.4,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 26260829,
+      "estimator": "reml",
+      "coverage": 0.94825,
+      "cp_lower": 0.9431675298726886,
+      "cp_upper": 0.953002684654894,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.18820545362768393,
+      "naive_boundary_coverage": null,
+      "seconds": 15.423
+    },
+    {
+      "true_h2": 0.5,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 27260832,
+      "estimator": "reml",
+      "coverage": 0.945,
+      "cp_lower": 0.9397773685950911,
+      "cp_upper": 0.9498953905145592,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.1837232806045236,
+      "naive_boundary_coverage": null,
+      "seconds": 15.402
+    },
+    {
+      "true_h2": 0.6,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 28260835,
+      "estimator": "reml",
+      "coverage": 0.946625,
+      "cp_lower": 0.9414718140447048,
+      "cp_upper": 0.9514496748450618,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.17353119553149332,
+      "naive_boundary_coverage": null,
+      "seconds": 15.445
+    },
+    {
+      "true_h2": 0.7,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 29260838,
+      "estimator": "reml",
+      "coverage": 0.950125,
+      "cp_lower": 0.9451257780477788,
+      "cp_upper": 0.9547929604835641,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.1579903055088755,
+      "naive_boundary_coverage": null,
+      "seconds": 15.421
+    },
+    {
+      "true_h2": 0.8,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 30260841,
+      "estimator": "reml",
+      "coverage": 0.950625,
+      "cp_lower": 0.9456482879095579,
+      "cp_upper": 0.9552700559465279,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.13730542223800912,
+      "naive_boundary_coverage": null,
+      "seconds": 15.27
+    },
+    {
+      "true_h2": 1,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 31260844,
+      "estimator": "reml",
+      "coverage": 0.949875,
+      "cp_lower": 0.9448645728687638,
+      "cp_upper": 0.9545543628257588,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0.48625,
+      "nonconverged": 0,
+      "median_width": 0.044484653520129314,
+      "naive_boundary_coverage": 0.9745,
+      "seconds": 12.148
+    }
+  ]
+}

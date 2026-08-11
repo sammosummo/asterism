@@ -56,14 +56,21 @@ uv run --no-project maturin develop --release   # after any change to the Rust
 Then:
 
 ```sh
-cargo test                                 # the estimator, against simulated truth
+cargo test --release                       # the estimator, against simulated truth
 uv run --no-project pytest tests/ -q       # the Python interface
+cargo run --release --bin coverage         # the coverage check, about 20 seconds
 ```
 
-The Rust tests simulate sibling pairs, which is the least informative pedigree
-in common use and so the honest design to set tolerances against. They check
-recovery of a heritability the simulation controls, not agreement with another
-implementation — agreement proves fidelity and never correctness.
+`--release` matters for the Rust tests: one of them is a reduced coverage check
+and it takes forty seconds unoptimised against under one optimised.
+
+Both sets of Rust tests check recovery of a heritability the simulation
+controls, rather than agreement with another implementation — agreement proves
+fidelity and never correctness. They use two pedigrees deliberately. The
+estimator tests use sibling pairs, the least informative design in common use
+and so the honest one to set tolerances against; the coverage check uses
+three-generation families, because an interval has to behave across the range of
+relationships a real study carries.
 
 ## What came before
 
@@ -87,12 +94,25 @@ module holds a profiled ML and REML objective with an analytic gradient, which
 is the shape the general estimator needs. Nothing enters Asterism because it was
 ported there.
 
+## The coverage check
+
+`cargo run --release --bin coverage` simulates datasets whose heritability is
+known, fits every one and counts how often the 95 per cent interval contains the
+truth. It is the only thing that can tell you an interval is too narrow, and no
+amount of reading the code substitutes for it.
+
+**All twelve cells pass at n = 1400. Ten of twelve pass at n = 350**, the
+exceptions being true heritabilities of 0.05 and 0.07, which over-cover at 0.979
+and 0.974. Those intervals are wider than they need to be rather than wrong, and
+the effect goes away as the roster grows. If you report an interval near zero at
+SAFS scale, know that it is conservative.
+
+Results and seeds are in `evidence/`, and what they mean is in `docs/adr/0004`.
+
 ## What is still owed
 
 - The independent check that `docs/adr/0006` requires. There is one
-  implementation of this arithmetic and no second one to disagree with it.
+  implementation of this arithmetic and no second one to disagree with it. The
+  coverage check tests the interval, not the likelihood underneath it.
 - The comparison against native SOLAR and R `regress`, which needs a dataset
   generating first — Astrarium's fixtures deliberately did not come across.
-- The coverage check: many simulated datasets at known heritabilities, counting
-  how often the interval contains the truth. It is what chose the interval
-  recipe in the first place and nothing here has re-earned that yet.
