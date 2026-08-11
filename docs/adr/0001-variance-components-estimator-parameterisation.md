@@ -648,25 +648,48 @@ that Astrarium's bivariate machinery is ML throughout, so bivariate REML is new
 work, and `0004`'s interval recipe was calibrated for a scalar and does not
 transfer to a derived quantity.
 
-**Five decisions are open and are settled before any code is written**, because
-deciding them afresh in each session is exactly how the three predecessors
-failed:
+**Five decisions, settled by Sam on 11 August 2026 before any code was
+written**, because deciding them afresh in each session is how the three
+predecessors failed.
 
-1. Does bivariate ship REML, ML, or both first? Decision 6 makes REML the
-   default; SOLAR's bivariate output is ML, so ML would compare directly against
-   the numbers the paper already has.
-2. What is the interval recipe for a derived quantity, and does it need its own
-   coverage calibration before anything is reported from it?
-3. What are the tests of the genetic correlation against zero and against plus
-   or minus one, and what is the null distribution of each? Plus and minus one
-   are boundary tests on a rank-deficient genetic covariance, which is not the
-   same case decision 5 handles by dropping a component.
-4. Are unbalanced traits in this release? Decision 9 says all available data and
-   says it must be built in from the start because retrofitting is a rewrite.
-   The recorded inputs are unbalanced — 382 subjects but 349, 350 and 361 for
-   three related measures.
-5. Is the phenotypic correlation reported? Twenty-two of the eighty-six recorded
-   bivariate runs test it.
+**Both estimators from the start.** Not ML first and REML later. ML gives an
+external comparator immediately, since SOLAR's bivariate output is ML and the
+paper's existing numbers are ML. REML is the default under decision 6 and R's
+`regress` is its comparator. Shipping one without the other would leave half the
+package with nothing to check it against.
+
+**Intervals by profile likelihood on each derived quantity, calibrated before
+use.** `0004`'s recipe was chosen for a scalar on 2,000 replicates and does not
+transfer. The two heritabilities, the genetic correlation, the environmental
+correlation and the phenotypic correlation each get a profile interval, and the
+coverage check is extended to score them before anything is reported from them.
+
+**Unbalanced traits immediately and by default**, not as a later option. Decision
+9 already says retrofitting this is a rewrite, and the recorded inputs force it:
+382 subjects but 349, 350 and 361 across three related measures. It breaks the
+clean Kronecker structure, so it shapes the code rather than sitting on top of
+it.
+
+**The correlations are derived quantities, and the model is reparameterised so
+that each can be tested directly.** Sam's instruction, and it is what makes the
+tests tractable rather than exotic. Carried as a free parameter, a correlation
+supports an ordinary likelihood ratio test against a constrained refit. The
+phenotypic correlation is included on the same footing — twenty-two of the
+eighty-six recorded runs test it.
+
+**The nulls for the genetic correlation.** Against zero, an ordinary likelihood
+ratio against chi-square on one degree of freedom: zero is interior. Against plus
+or minus one, the **Self–Liang 50:50 mixture**, because with the correlation
+carried as a free parameter and both genetic variances positive, plus or minus
+one is a single parameter on a smooth one-sided boundary — the well-behaved
+case. Decision 5's objection that the mixture weights fail for m ≥ 2 is about a
+whole Cholesky factor collapsing at once, in a cone that is not polyhedral; one
+correlation reaching its bound is not that.
+
+**That mixture is verified by simulation before anything is reported from it**,
+exactly as `0004` chose the scalar recipe by measurement rather than argument. If
+it does not hold at the boundary, the parametric bootstrap of decision 12 is the
+fallback, and we will know instead of assuming.
 
 ## The five decisions adopted from Astrarium
 
