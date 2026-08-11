@@ -200,6 +200,33 @@ centred age 2e-11. Reparameterised to match SOLAR exactly, every covariate
 agreed with it. **So a covariate p-value from Asterism and one from SOLAR are
 comparable only if the design is parameterised the same way.**
 
+## The real pedigree
+
+Run on 11 August 2026 against the reviewed SAFS pedigree, `latest_reviewed_pedigree.csv`:
+5,364 people, 1,920 founders, 283 families, the largest 485 people and the
+median family a single person. Twelve identical-twin labels and six inbred
+individuals, the highest diagonal 1.0625, which is parents who were first
+cousins. Not one record was refused, and nobody in it has one known parent and
+not the other.
+
+| roster | build | prepare | fit | another trait |
+| --- | --- | --- | --- | --- |
+| whole pedigree, n = 5,364 | 0.23 s | 0.30 s | 0.011 s | 0.011 s |
+| GOBS-sized, n = 1,909 | 0.03 s | 0.01 s | 0.004 s | 0.004 s |
+| JASA-sized, n = 352 | — | — | 0.001 s | 0.001 s |
+
+**The relationship matrix is singular**, which matters. The smallest eigenvalue
+is −1.5e-15 over the whole pedigree and −2.0e-16 over a GOBS-sized roster:
+numerically zero, so twice the kinship is positive semi-definite but not
+positive definite. `prepare` accepts it — that is what the −1e-9 eigenvalue
+floor is for — and the fit converges.
+
+The consequence to carry is that **h² = 1 is unreachable on a singular matrix**.
+The covariance there has zero entries and is refused, so a fit that wants the
+upper bound reports itself as not converged rather than returning a number. That
+is the case the upper-bound snap in `prepared.rs` was written for, and this is
+the first time it has met real data.
+
 ## The comparisons against SOLAR and R
 
 `docs/adr/0006` puts correctness in external comparisons with a fixed division
@@ -224,12 +251,12 @@ stable.
 
 ## What is still owed
 
-- **No real pedigree has ever gone through this.** The builder handles
-  inbreeding, identical twins and a pedigree given in any order, and it refuses
-  a half-known parent rather than guessing. None of that has met real SAFS data.
-- **The builder returns a dense matrix**, so it costs n² of memory: about 250 MB
-  at 5,600 people and 800 MB at 10,000. `prepare` then exploits the family
-  blocks, but the matrix between them does not. Nothing here has needed more. Every roster here is
+- **The builder returns a dense matrix**, so it costs n² of memory: about 230 MB
+  at the whole SAFS pedigree and 800 MB at 10,000 people. `prepare` then
+  exploits the family blocks, but the matrix between them does not. Nothing has
+  needed more yet.
+- **No real phenotype has gone through it.** The pedigree has; a measured trait
+  has not. Every roster here is
   synthetic and block-diagonal, with fourteen-person families and no inbreeding
   loops. A real SAFS pedigree is larger, more tangled, and may make the
   relationship matrix singular, which is the case the upper-bound snap in
