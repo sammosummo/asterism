@@ -620,6 +620,54 @@ no REML at all outside `prepared.rs`.
 `staging/studies/existing/safs/projects/asterism`, because SAFS is the immediate
 user. It is lab software, and the location says nothing about its scope.
 
+### 29. Two traits are admitted, for the JASA reanalysis
+
+**Sam, 11 August 2026.** The first capability to enter under decision 20, and
+the amendment naming the analysis that needs it.
+
+**The analysis.** The JASA high-frequency heritability paper, whose analysis is
+being redone on refreshed data once the Acoustic ingest is back. It carries nine
+main bivariate runs, twenty-three ear-to-ear ones, and a standard-versus-extended
+comparison. Its own summary table says exactly what bivariate has to produce:
+
+- a heritability for each trait, with a standard error;
+- the environmental correlation, with a p-value;
+- the genetic correlation, with **three** p-values — against zero, against plus
+  one and against minus one — and a boundary state;
+- the phenotypic correlation.
+
+**The setting is hard, and that is the point.** The recorded run has n = 352 and
+reports a genetic correlation of 0.215 with a standard error of 0.588. The
+estimate is nowhere near its own precision, the boundary is reachable, and one
+row already carries a boundary state. A bivariate estimator that behaves only at
+interior points would be useless here.
+
+**What carries over and what does not.** The eigen-rotation survives more traits,
+so the speed does. Nothing else is a port: decision 6's schedule note still holds
+that Astrarium's bivariate machinery is ML throughout, so bivariate REML is new
+work, and `0004`'s interval recipe was calibrated for a scalar and does not
+transfer to a derived quantity.
+
+**Five decisions are open and are settled before any code is written**, because
+deciding them afresh in each session is exactly how the three predecessors
+failed:
+
+1. Does bivariate ship REML, ML, or both first? Decision 6 makes REML the
+   default; SOLAR's bivariate output is ML, so ML would compare directly against
+   the numbers the paper already has.
+2. What is the interval recipe for a derived quantity, and does it need its own
+   coverage calibration before anything is reported from it?
+3. What are the tests of the genetic correlation against zero and against plus
+   or minus one, and what is the null distribution of each? Plus and minus one
+   are boundary tests on a rank-deficient genetic covariance, which is not the
+   same case decision 5 handles by dropping a component.
+4. Are unbalanced traits in this release? Decision 9 says all available data and
+   says it must be built in from the start because retrofitting is a rewrite.
+   The recorded inputs are unbalanced — 382 subjects but 349, 350 and 361 for
+   three related measures.
+5. Is the phenotypic correlation reported? Twenty-two of the eighty-six recorded
+   bivariate runs test it.
+
 ## The five decisions adopted from Astrarium
 
 Astrarium settled five things on 7 August 2026 that several decisions above
