@@ -67,6 +67,12 @@ are a couple of seconds.
 That margin is also what makes the parametric bootstrap of decision 12
 affordable — 2,000 fits against one prepared model, not 2,000 analyses.
 
+**REML and ML cost the same**: measured at 1.004, 1.001 and 1.001 across those
+three sizes. Both share the whole expensive part, and REML adds only the log
+determinant of the weighted cross-product, which is p logarithms against n·p²
+multiply-adds. Choose the estimator on statistical grounds; the default costs
+nothing.
+
 ## What it is not
 
 It grows when a planned analysis needs it to and not before, and every
