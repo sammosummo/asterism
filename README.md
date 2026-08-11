@@ -13,6 +13,12 @@ One trait, additive and residual variance, REML and ML, a 95 per cent interval
 and a likelihood ratio test against no additive variance. That is the whole of
 it, and it is the whole of the first release.
 
+Many traits can be fitted in a loop against one prepared model, each returning
+its own heritability. That is not a bivariate model and does not substitute for
+one: there is no genetic or environmental correlation and no joint test, and
+because the joint likelihood does not separate into the two marginals, a joint
+fit's heritabilities are not quite the same numbers as separate fits'.
+
 ```python
 import asterism
 
@@ -59,10 +65,16 @@ phenotype, fit. The ratio narrows as the pedigree grows, because SOLAR's cost is
 mostly fixed overhead while Asterism's is real arithmetic.
 
 The last column is the one that matters for a batch. A prepared model
-decomposes once, and another trait on the same pedigree only refits. SOLAR has
-no equivalent and repeats everything each time. The 1,246 recorded SOLAR runs
-would take something over an hour; against one prepared model at SAFS size they
-are a couple of seconds.
+decomposes once, and another trait only refits. SOLAR has no equivalent and
+repeats everything each time.
+
+**A prepared model fixes the roster**, so that reuse holds only across traits
+measured on exactly the same people with the same covariates — a response of a
+different length is refused rather than silently accepted. Traits rarely cover
+the same people, so in practice you prepare once per distinct roster and not
+once per study. At SAFS size this hardly matters, because preparation is under a
+millisecond and a whole analysis is about three; at n = 5,600 preparation is
+0.44 s against a 0.02 s fit, and there it is worth grouping traits by roster.
 
 That margin is also what makes the parametric bootstrap of decision 12
 affordable — 2,000 fits against one prepared model, not 2,000 analyses.
