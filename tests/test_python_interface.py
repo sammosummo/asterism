@@ -250,3 +250,74 @@ def test_a_boundary_fit_still_reports_its_fixed_effects():
     for effect in record["fixed_effects"]:
         assert effect["standard_error"] is not None
         assert effect["p_value"] is not None
+
+
+def test_the_builder_gives_the_textbook_relationships():
+    ids = ["gm", "gf", "a", "b", "a_spouse", "b_spouse", "a_child", "b_child"]
+    father = [None, None, "gf", "gf", None, None, "a_spouse", "b_spouse"]
+    mother = [None, None, "gm", "gm", None, None, "a", "b"]
+    k, order = asterism.relationship_matrix(ids, father, mother)
+    at = lambda one, two: k[order.index(one)][order.index(two)]
+
+    assert at("gm", "gm") == 1.0            # no inbreeding
+    assert at("gm", "gf") == 0.0            # the founding couple are unrelated
+    assert at("gm", "a") == 0.5             # parent and child
+    assert at("a", "b") == 0.5              # full siblings
+    assert at("a", "a_spouse") == 0.0       # married in
+    assert at("gm", "a_child") == 0.25      # grandparent and grandchild
+    assert at("a_child", "b_child") == 0.125  # first cousins
+
+
+def test_the_builder_keeps_the_order_asked_for_and_uses_unkept_ancestors():
+    ids = ["gm", "gf", "a", "b", "a_spouse", "b_spouse", "a_child", "b_child"]
+    father = [None, None, "gf", "gf", None, None, "a_spouse", "b_spouse"]
+    mother = [None, None, "gm", "gm", None, None, "a", "b"]
+    keep = ["b_child", "a_child"]
+    k, order = asterism.relationship_matrix(ids, father, mother, keep=keep)
+    assert order == keep
+    assert k.shape == (2, 2)
+    # The cousins' relationship runs through grandparents with no row here.
+    assert k[0][1] == 0.125
+
+
+def test_the_builder_sorts_parents_before_children_itself():
+    k, order = asterism.relationship_matrix(
+        ["child", "father", "mother"],
+        ["father", None, None],
+        ["mother", None, None],
+    )
+    assert k[order.index("child")][order.index("father")] == 0.5
+
+
+def test_the_builder_refuses_a_pedigree_that_makes_no_sense():
+    with pytest.raises(ValueError, match="PEDIGREE_ONE_KNOWN_PARENT"):
+        asterism.relationship_matrix(["f", "c"], [None, "f"], [None, None])
+    with pytest.raises(ValueError, match="PEDIGREE_DUPLICATE_ID"):
+        asterism.relationship_matrix(["a", "a"], [None, None], [None, None])
+    with pytest.raises(ValueError, match="PEDIGREE_CYCLE"):
+        asterism.relationship_matrix(
+            ["m", "a", "b"], [None, "b", "a"], [None, "m", "m"]
+        )
+
+
+def test_a_pedigree_goes_straight_into_a_fit():
+    # The whole point of the builder: pedigree in, fit out, with the subject
+    # order committed on the way through so a misalignment cannot hide.
+    pairs = 300
+    ids, father, mother = [], [], []
+    for pair in range(pairs):
+        ids += [f"f{pair}_dad", f"f{pair}_mum", f"f{pair}_a", f"f{pair}_b"]
+        father += [None, None, f"f{pair}_dad", f"f{pair}_dad"]
+        mother += [None, None, f"f{pair}_mum", f"f{pair}_mum"]
+
+    # Only the siblings are measured; the parents still carry the relationship.
+    keep = [i for i in ids if i.endswith(("_a", "_b"))]
+    k, order = asterism.relationship_matrix(ids, father, mother, keep=keep)
+    assert order == keep
+    assert k.shape == (2 * pairs, 2 * pairs)
+
+    model = asterism.prepare(np.ones((len(order), 1)), k, subject_ids=order)
+    record = model.fit(simulate(pairs, 0.5, 41))
+    assert record["converged"]
+    assert record["subject_order"] == model.subject_order
+    assert 0.0 <= record["h2"] <= 1.0

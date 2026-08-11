@@ -10,8 +10,10 @@
 
 mod blocks;
 mod prepared;
+mod relationship;
 
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
+pub use relationship::{relationship_matrix, PedigreeError, Person};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -20,6 +22,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PreparedModel>()?;
+    module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

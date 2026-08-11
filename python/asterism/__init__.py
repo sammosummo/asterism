@@ -22,8 +22,9 @@ from typing import Any
 import numpy as np
 
 from ._core import PreparedModel, __version__
+from ._core import relationship as _relationship
 
-__all__ = ["PreparedModel", "prepare", "__version__"]
+__all__ = ["PreparedModel", "prepare", "relationship_matrix", "__version__"]
 
 
 def prepare(
@@ -72,6 +73,55 @@ def prepare(
         k,
         subject_ids=subject_ids,
         subject_order_sha256=subject_order_sha256,
+    )
+
+
+def relationship_matrix(
+    ids: list[str],
+    father: list[str | None],
+    mother: list[str | None],
+    *,
+    mz_twin: list[str | None] | None = None,
+    keep: list[str] | None = None,
+) -> tuple[Any, list[str]]:
+    """Build the additive relationship matrix from a pedigree.
+
+    Returns the matrix and the identifiers its rows are in. Hand those
+    identifiers straight to `prepare` as ``subject_ids`` and align the response
+    and design to the same order — that commitment is what catches a
+    misalignment, which is the way to get a confident wrong answer here.
+
+    Parameters
+    ----------
+    ids, father, mother
+        Parallel lists, one entry per person, in any order — parents are sorted
+        before their children. A person with no parents recorded is a founder;
+        use ``None`` or an empty string for both. One parent known and the other
+        not is refused rather than guessed at.
+    mz_twin
+        An optional group label per person. People sharing a label are treated
+        as genetically identical.
+    keep
+        The people to give rows to, in the order wanted. Their ancestors still
+        contribute to the relationships without getting rows of their own, so a
+        large pedigree costs only what the analysis roster needs. Omit it to
+        keep everybody.
+
+    Raises
+    ------
+    ValueError
+        With a stable code naming the person at fault: a duplicate identifier,
+        one known parent, a parent with no record, somebody who is their own
+        parent, a loop in the pedigree, or an identifier in ``keep`` that the
+        pedigree does not contain.
+    """
+    blank_to_none = lambda value: None if value in (None, "", "0") else str(value)
+    return _relationship(
+        [str(value) for value in ids],
+        [blank_to_none(value) for value in father],
+        [blank_to_none(value) for value in mother],
+        None if mz_twin is None else [blank_to_none(value) for value in mz_twin],
+        keep,
     )
 
 

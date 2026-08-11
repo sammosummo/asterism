@@ -16,14 +16,23 @@ it, and it is the whole of the first release.
 ```python
 import asterism
 
-model = asterism.prepare(x, k)   # validates and decomposes, once
-record = model.fit(y)            # as many times as you like
+k, order = asterism.relationship_matrix(ids, father, mother, keep=measured)
+model = asterism.prepare(x, k, subject_ids=order)   # validates once
+record = model.fit(y)                               # as often as you like
 ```
 
-`x` is the fixed-effect design in fit order, including its own intercept column
-if one is wanted. `k` is the relationship matrix in the same order — twice the
-kinship is usual, but a genomic relationship matrix is equally acceptable,
-because the matrix is checked as mathematics rather than for where it came from.
+`ids`, `father` and `mother` are parallel lists, one entry per person in the
+pedigree, in any order — parents are sorted before their children. `keep` names
+the people to give rows to, in the order you want them; their ancestors still
+carry the relationships without needing rows of their own. The builder returns
+that order, and handing it to `prepare` as `subject_ids` commits it: the fit
+record echoes a hash of it, so a response lined up wrongly cannot pass quietly.
+
+`x` is the fixed-effect design in that same order, including its own intercept
+column if one is wanted. `k` is the relationship matrix. The builder gives you
+twice the kinship, which is the usual choice, but `prepare` will take any valid
+matrix — a genomic relationship matrix is equally acceptable, because the matrix
+is checked as mathematics rather than for where it came from.
 `record` is a dictionary held in memory. It carries h² with a 95 per cent
 profile interval and a likelihood ratio p-value against no additive variance,
 and every fixed effect with a standard error, a z, a two-sided Wald p-value and
@@ -173,7 +182,9 @@ stable.
 
 ## What is still owed
 
-- **No real pedigree has ever gone through this.** Every roster here is
+- **No real pedigree has ever gone through this.** The builder handles
+  inbreeding, identical twins and a pedigree given in any order, and it refuses
+  a half-known parent rather than guessing. None of that has met real SAFS data. Every roster here is
   synthetic and block-diagonal, with fourteen-person families and no inbreeding
   loops. A real SAFS pedigree is larger, more tangled, and may make the
   relationship matrix singular, which is the case the upper-bound snap in
