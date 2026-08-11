@@ -287,10 +287,11 @@ struct Cell {
     /// The largest average error across the fixed effects. A design that the
     /// restricted likelihood mishandles shows here before it shows in coverage.
     worst_beta_bias: f64,
-    /// How far the worst fixed effect's Wald interval is from covering at 95
-    /// per cent. This is what checks the standard errors rather than merely
-    /// checking that they exist.
-    worst_beta_coverage_error: f64,
+    /// Each fixed effect's Wald interval coverage, in column order. Kept one by
+    /// one rather than summarised: the largest absolute departure across many
+    /// noisy estimates sits a couple of standard errors out by chance alone, so
+    /// a summary of that kind invents an effect that is not there.
+    beta_coverage: Vec<f64>,
     /// What the coverage would have been at a boundary truth if the endpoint
     /// sitting on the bound had been taken to mean the bound is in the interval
     /// — the obvious rule, and the one `docs/adr/0004` rejects. Only meaningful
@@ -389,10 +390,10 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
 
     Cell {
         truth,
-        worst_beta_coverage_error: beta_covered
+        beta_coverage: beta_covered
             .iter()
-            .map(|count| (*count as f64 / replicates() as f64 - 0.95).abs())
-            .fold(0.0f64, f64::max),
+            .map(|count| *count as f64 / replicates() as f64)
+            .collect(),
         worst_beta_bias: beta_error
             .iter()
             .map(|total| (total / replicates() as f64).abs())
@@ -441,7 +442,7 @@ fn main() {
 
     println!(
         "{:>6} {:>9} {:>18} {:>7} {:>9} {:>9} {:>7} {:>9} {:>9} {:>9}",
-        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias", "beta cov"
+        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias", "mean b cov"
     );
     for cell in &cells {
         println!(
@@ -456,7 +457,10 @@ fn main() {
             cell.nonconverged,
             cell.median_width,
             format!("{:.5}", cell.worst_beta_bias),
-            format!("{:.4}", 0.95 - cell.worst_beta_coverage_error),
+            format!(
+                "{:.4}",
+                cell.beta_coverage.iter().sum::<f64>() / cell.beta_coverage.len() as f64
+            ),
         );
     }
 
@@ -478,7 +482,7 @@ fn main() {
              \"estimator\": \"reml\", \"coverage\": {}, \"cp_lower\": {}, \"cp_upper\": {}, \
              \"band\": [{}, {}], \"passes\": {}, \"fraction_at_zero\": {}, \
              \"fraction_at_one\": {}, \"nonconverged\": {}, \"median_width\": {}, \
-             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"worst_beta_coverage_error\": {}, \
+             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"beta_coverage\": {}, \
              \"seconds\": {:.3}}}{}",
             cell.truth,
             n,
@@ -496,7 +500,7 @@ fn main() {
             cell.median_width,
             cell.naive.map_or_else(|| "null".to_owned(), |v| v.to_string()),
             cell.worst_beta_bias,
-            cell.worst_beta_coverage_error,
+            format!("{:?}", cell.beta_coverage),
             cell.seconds,
             if index + 1 == cells.len() { "" } else { "," }
         );

@@ -259,14 +259,29 @@ Wald against likelihood ratio — SOLAR screens a covariate by refitting without
 it, which it can do because it uses ML. Under REML that comparison is not
 available, which is the reason this decision specifies Wald in the first place.
 
-**The intervals under-cover slightly, and that is the unsafe direction.** The
-coverage check scores them alongside h²'s: the worst of six coefficients covers
-at 0.943 to 0.948 across every cell, against a nominal 0.95. The cause is
-standard — the standard error conditions on the estimated variance components
-and ignores their uncertainty, so it is a little too small. At n = 350 with six
-fixed effects the shortfall is about half a percentage point. A Kenward–Roger or
-Satterthwaite correction is the known repair and is not built. **Treat a
-covariate p-value near 0.05 as near 0.05, not as below it.**
+**The intervals under-cover, but only just, and only at the smaller size.** The
+coverage check scores them alongside h²'s. At n = 350 they cover at 0.9485
+against a nominal 0.95 — a shortfall of 0.15 percentage points, even across all
+six coefficients, from 0.9480 on age squared to 0.9500 on the age-by-sex
+product, and clear at four standard errors. At n = 1400 the shortfall is 0.01
+points, which is 0.3 standard errors and nothing at all.
+
+The cause is standard: the standard error conditions on the estimated variance
+components and ignores their own uncertainty, so it comes out slightly small.
+That explanation predicts the shortfall shrinks as the sample grows, and it
+does. Kenward–Roger or Satterthwaite is the known repair; at these sizes it
+would not change a conclusion, so it is not built. A nominal 0.05 is really
+about 0.052 at SAFS size.
+
+**A correction, because the first version of this paragraph was wrong.** It said
+the shortfall was about half a percentage point, three times the truth. The
+coverage check had recorded the largest *absolute* departure from 0.95 across
+the six coefficients and the report subtracted that from 0.95 — which turns
+over-coverage into apparent under-coverage, and which picks the extreme of 72
+noisy estimates. Each of those carries a standard error near 0.0024, so their
+largest departure sits about 0.006 out through chance alone: the whole of the
+reported effect. The check now keeps each coefficient's coverage separately, and
+the summary is their mean.
 
 ### 9. All available data, not complete cases
 

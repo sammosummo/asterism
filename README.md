@@ -149,12 +149,15 @@ centred age 2e-11. Reparameterised to match SOLAR exactly, every covariate
 agreed with it. **So a covariate p-value from Asterism and one from SOLAR are
 comparable only if the design is parameterised the same way.**
 
-**The covariate intervals under-cover slightly, which is the unsafe direction.**
-The worst of six coefficients covers at 0.943 to 0.948 against a nominal 0.95,
-because the standard error conditions on the estimated variance components and
-ignores their uncertainty. About half a percentage point at n = 350. Treat a
-covariate p-value near 0.05 as near 0.05, not as below it. `docs/adr/0001`,
-decision 8 has the detail.
+**The covariate intervals under-cover, but only just, and only at the smaller
+size.** At n = 350 they cover at 0.9485 against a nominal 0.95 — a shortfall of
+0.15 percentage points, even across all six coefficients, and clear at four
+standard errors. At n = 1400 there is no shortfall to find: 0.9499. The cause is
+that the standard error conditions on the estimated variance components and
+ignores their own uncertainty, which is exactly the sort of thing that fades as
+the sample grows, and does. A nominal 0.05 is really about 0.052 at SAFS size.
+Kenward–Roger is the known repair and is not built; at this size it would not
+change a conclusion. `docs/adr/0001`, decision 8 has the detail.
 
 ## The comparisons against SOLAR and R
 

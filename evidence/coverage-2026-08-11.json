@@ -20,8 +20,15 @@
       "median_width": 0.1668604889598353,
       "naive_boundary_coverage": 0.976,
       "worst_beta_bias": 0.003049252332022935,
-      "worst_beta_coverage_error": 0.006749999999999923,
-      "seconds": 11.315
+      "beta_coverage": [
+        0.94675,
+        0.94675,
+        0.946625,
+        0.94325,
+        0.951625,
+        0.944125
+      ],
+      "seconds": 10.094
     },
     {
       "true_h2": 0.05,
@@ -43,8 +50,15 @@
       "median_width": 0.22525475867319117,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0024165647516657352,
-      "worst_beta_coverage_error": 0.005499999999999949,
-      "seconds": 11.487
+      "beta_coverage": [
+        0.95,
+        0.946125,
+        0.9445,
+        0.94775,
+        0.95175,
+        0.9475
+      ],
+      "seconds": 10.344
     },
     {
       "true_h2": 0.07,
@@ -66,8 +80,15 @@
       "median_width": 0.25020002880428316,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.002466846860998416,
-      "worst_beta_coverage_error": 0.0021249999999999325,
-      "seconds": 11.982
+      "beta_coverage": [
+        0.949125,
+        0.950375,
+        0.95,
+        0.948125,
+        0.9515,
+        0.947875
+      ],
+      "seconds": 10.568
     },
     {
       "true_h2": 0.1,
@@ -89,8 +110,15 @@
       "median_width": 0.2830496801240461,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0019064627273588774,
-      "worst_beta_coverage_error": 0.004749999999999921,
-      "seconds": 12.215
+      "beta_coverage": [
+        0.946,
+        0.94525,
+        0.948125,
+        0.950625,
+        0.946875,
+        0.954375
+      ],
+      "seconds": 10.816
     },
     {
       "true_h2": 0.2,
@@ -112,8 +140,15 @@
       "median_width": 0.34835704122366584,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0031651253991132285,
-      "worst_beta_coverage_error": 0.0031249999999999334,
-      "seconds": 13.51
+      "beta_coverage": [
+        0.951375,
+        0.950875,
+        0.946875,
+        0.948375,
+        0.94975,
+        0.947625
+      ],
+      "seconds": 11.973
     },
     {
       "true_h2": 0.3,
@@ -135,8 +170,15 @@
       "median_width": 0.3671487241561673,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.003936979050415597,
-      "worst_beta_coverage_error": 0.006749999999999923,
-      "seconds": 14.362
+      "beta_coverage": [
+        0.94325,
+        0.950625,
+        0.94625,
+        0.946625,
+        0.951625,
+        0.947625
+      ],
+      "seconds": 12.966
     },
     {
       "true_h2": 0.4,
@@ -158,8 +200,15 @@
       "median_width": 0.37009977897741003,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0016873804459810121,
-      "worst_beta_coverage_error": 0.0050000000000000044,
-      "seconds": 14.643
+      "beta_coverage": [
+        0.951125,
+        0.94825,
+        0.9495,
+        0.94925,
+        0.948375,
+        0.945
+      ],
+      "seconds": 12.917
     },
     {
       "true_h2": 0.5,
@@ -181,8 +230,15 @@
       "median_width": 0.3633024651811572,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0016063437096039345,
-      "worst_beta_coverage_error": 0.005249999999999977,
-      "seconds": 14.884
+      "beta_coverage": [
+        0.945625,
+        0.94475,
+        0.946,
+        0.951125,
+        0.94825,
+        0.946
+      ],
+      "seconds": 12.921
     },
     {
       "true_h2": 0.6,
@@ -204,8 +260,15 @@
       "median_width": 0.34422885882971577,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.003274449212078834,
-      "worst_beta_coverage_error": 0.004874999999999963,
-      "seconds": 14.65
+      "beta_coverage": [
+        0.94775,
+        0.945125,
+        0.94625,
+        0.949625,
+        0.9515,
+        0.945375
+      ],
+      "seconds": 13.088
     },
     {
       "true_h2": 0.7,
@@ -227,8 +290,15 @@
       "median_width": 0.3151714731923533,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.004026394179830457,
-      "worst_beta_coverage_error": 0.0040000000000000036,
-      "seconds": 14.592
+      "beta_coverage": [
+        0.953,
+        0.954,
+        0.949875,
+        0.949,
+        0.95375,
+        0.948375
+      ],
+      "seconds": 12.961
     },
     {
       "true_h2": 0.8,
@@ -250,8 +320,15 @@
       "median_width": 0.2761672848485972,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0029069394558485884,
-      "worst_beta_coverage_error": 0.003874999999999962,
-      "seconds": 14.332
+      "beta_coverage": [
+        0.9475,
+        0.947875,
+        0.950625,
+        0.9505,
+        0.946125,
+        0.95175
+      ],
+      "seconds": 12.784
     },
     {
       "true_h2": 1,
@@ -273,8 +350,15 @@
       "median_width": 0.09716396647189107,
       "naive_boundary_coverage": 0.972625,
       "worst_beta_bias": 0.002616061426507223,
-      "worst_beta_coverage_error": 0.003874999999999962,
-      "seconds": 11.319
+      "beta_coverage": [
+        0.946125,
+        0.948,
+        0.950875,
+        0.9485,
+        0.949375,
+        0.952
+      ],
+      "seconds": 10.007
     }
   ],
   "n1400": [
@@ -298,8 +382,15 @@
       "median_width": 0.07806261775973233,
       "naive_boundary_coverage": 0.97375,
       "worst_beta_bias": 0.0010702768067206302,
-      "worst_beta_coverage_error": 0.0040000000000000036,
-      "seconds": 44.415
+      "beta_coverage": [
+        0.951625,
+        0.94675,
+        0.947,
+        0.95125,
+        0.954,
+        0.951875
+      ],
+      "seconds": 37.839
     },
     {
       "true_h2": 0.05,
@@ -321,8 +412,15 @@
       "median_width": 0.13274443657844934,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.000335423125263609,
-      "worst_beta_coverage_error": 0.005125000000000046,
-      "seconds": 47.496
+      "beta_coverage": [
+        0.949,
+        0.95275,
+        0.9505,
+        0.947125,
+        0.955125,
+        0.94875
+      ],
+      "seconds": 40.327
     },
     {
       "true_h2": 0.07,
@@ -344,8 +442,15 @@
       "median_width": 0.15219159893835116,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0018705510775988388,
-      "worst_beta_coverage_error": 0.004375000000000018,
-      "seconds": 48.875
+      "beta_coverage": [
+        0.949,
+        0.95025,
+        0.94625,
+        0.95025,
+        0.954375,
+        0.949625
+      ],
+      "seconds": 42.553
     },
     {
       "true_h2": 0.1,
@@ -367,8 +472,15 @@
       "median_width": 0.16358927921517571,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0022252617623302524,
-      "worst_beta_coverage_error": 0.0035000000000000586,
-      "seconds": 52.171
+      "beta_coverage": [
+        0.95025,
+        0.9495,
+        0.952,
+        0.9535,
+        0.950875,
+        0.952625
+      ],
+      "seconds": 45.107
     },
     {
       "true_h2": 0.2,
@@ -390,8 +502,15 @@
       "median_width": 0.1799110621430174,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0010195170225993336,
-      "worst_beta_coverage_error": 0.006124999999999936,
-      "seconds": 56.349
+      "beta_coverage": [
+        0.947375,
+        0.949375,
+        0.943875,
+        0.94875,
+        0.94775,
+        0.950125
+      ],
+      "seconds": 48.501
     },
     {
       "true_h2": 0.3,
@@ -413,8 +532,15 @@
       "median_width": 0.1873795179958686,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.001524367625191732,
-      "worst_beta_coverage_error": 0.0024999999999999467,
-      "seconds": 56.948
+      "beta_coverage": [
+        0.949,
+        0.949375,
+        0.950625,
+        0.952125,
+        0.9475,
+        0.948625
+      ],
+      "seconds": 49.274
     },
     {
       "true_h2": 0.4,
@@ -436,8 +562,15 @@
       "median_width": 0.18845313931943758,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0013005288502826655,
-      "worst_beta_coverage_error": 0.004875000000000074,
-      "seconds": 57.362
+      "beta_coverage": [
+        0.951375,
+        0.949125,
+        0.9485,
+        0.94925,
+        0.9465,
+        0.954875
+      ],
+      "seconds": 50.002
     },
     {
       "true_h2": 0.5,
@@ -459,8 +592,15 @@
       "median_width": 0.18395508934726723,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0011674591253753087,
-      "worst_beta_coverage_error": 0.0036249999999999893,
-      "seconds": 58.0
+      "beta_coverage": [
+        0.9525,
+        0.95,
+        0.951625,
+        0.953625,
+        0.9525,
+        0.948
+      ],
+      "seconds": 50.274
     },
     {
       "true_h2": 0.6,
@@ -482,8 +622,15 @@
       "median_width": 0.17376959544153348,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0008327877253199384,
-      "worst_beta_coverage_error": 0.006000000000000005,
-      "seconds": 56.825
+      "beta_coverage": [
+        0.94825,
+        0.944625,
+        0.9475,
+        0.946,
+        0.945875,
+        0.944
+      ],
+      "seconds": 49.267
     },
     {
       "true_h2": 0.7,
@@ -505,8 +652,15 @@
       "median_width": 0.15823587081497759,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0006463070721932489,
-      "worst_beta_coverage_error": 0.004875000000000074,
-      "seconds": 56.561
+      "beta_coverage": [
+        0.95025,
+        0.953125,
+        0.95325,
+        0.946125,
+        0.954875,
+        0.951
+      ],
+      "seconds": 49.19
     },
     {
       "true_h2": 0.8,
@@ -528,8 +682,15 @@
       "median_width": 0.1375320870263318,
       "naive_boundary_coverage": null,
       "worst_beta_bias": 0.0006595277395844772,
-      "worst_beta_coverage_error": 0.004249999999999976,
-      "seconds": 56.213
+      "beta_coverage": [
+        0.94825,
+        0.94575,
+        0.94825,
+        0.95225,
+        0.94925,
+        0.949125
+      ],
+      "seconds": 48.571
     },
     {
       "true_h2": 1,
@@ -551,8 +712,15 @@
       "median_width": 0.04444198348248063,
       "naive_boundary_coverage": 0.974,
       "worst_beta_bias": 0.0007925852479453799,
-      "worst_beta_coverage_error": 0.005875000000000075,
-      "seconds": 44.821
+      "beta_coverage": [
+        0.9485,
+        0.951875,
+        0.94875,
+        0.94875,
+        0.955875,
+        0.951375
+      ],
+      "seconds": 38.372
     }
   ]
 }

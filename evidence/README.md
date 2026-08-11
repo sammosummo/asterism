@@ -33,6 +33,12 @@ coverage would have been had a lower endpoint of nought been taken to mean the
 interval contains nought. It over-covers at both bounds, which is the
 measurement behind the recipe rather than an argument for it.
 
+Each cell also records `beta_coverage`: the Wald interval coverage of every
+fixed effect, one by one rather than summarised. Summarising them by their
+largest departure from 0.95 was tried first and was wrong — the extreme of many
+noisy estimates sits a couple of standard errors out by chance, which invented a
+shortfall three times the real one.
+
 The seeds are in the file. The whole thing reruns in about twenty seconds.
 
 ## `against-r-2026-08-11.json`
