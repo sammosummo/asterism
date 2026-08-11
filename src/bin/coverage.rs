@@ -49,6 +49,50 @@ fn replicates() -> usize {
 fn families() -> usize {
     std::env::args().nth(2).and_then(|a| a.parse().ok()).unwrap_or(25)
 }
+
+/// Whether to carry covariates. Passing anything as a third argument switches
+/// on a design shaped like the one the lab actually runs — an intercept, age,
+/// age squared, sex, and the two age-by-sex products, which is
+/// `age_years^1,2#sex` in SOLAR's notation and is what 1,194 of the 1,246
+/// recorded runs use. An intercept-only design does not exercise the restricted
+/// likelihood's determinant term at all.
+fn with_covariates() -> bool {
+    std::env::args().nth(3).is_some()
+}
+
+/// True coefficients, so that recovery of the fixed effects can be checked
+/// alongside the variance.
+const BETA: [f64; 6] = [2.0, 0.30, -0.10, 0.50, 0.05, -0.02];
+
+/// A design with an intercept and, optionally, five covariates. Age is taken
+/// from a person's place in the family — grandparents oldest, grandchildren
+/// youngest — and standardised; sex alternates.
+fn design(families: usize, block: usize, covariates: bool) -> DMatrix<f64> {
+    let n = families * block;
+    let columns = if covariates { 6 } else { 1 };
+    let mut x = DMatrix::<f64>::zeros(n, columns);
+    for row in 0..n {
+        x[(row, 0)] = 1.0;
+        if !covariates {
+            continue;
+        }
+        let within = row % block;
+        // Three generations: 0,1 grandparents; 2..7 parents; 8..13 children.
+        let decade = match within {
+            0 | 1 => 7.0,
+            2..=7 => 4.5,
+            _ => 2.0,
+        };
+        let age = (decade - 4.5) / 2.0 + ((row % 7) as f64 - 3.0) / 10.0;
+        let sex = f64::from(u8::from(row % 2 == 0));
+        x[(row, 1)] = age;
+        x[(row, 2)] = age * age;
+        x[(row, 3)] = sex;
+        x[(row, 4)] = age * sex;
+        x[(row, 5)] = age * age * sex;
+    }
+    x
+}
 const BAND: (f64, f64) = (0.940, 0.960);
 /// Fixed, so the whole check returns next year (`docs/adr/0001`, decision 18).
 const BASE_SEED: u64 = 2_026_08_11;
@@ -237,6 +281,9 @@ fn clopper_pearson(successes: usize, trials: usize) -> (f64, f64) {
 
 struct Cell {
     truth: f64,
+    /// The largest average error across the fixed effects. A design that the
+    /// restricted likelihood mishandles shows here before it shows in coverage.
+    worst_beta_bias: f64,
     /// What the coverage would have been at a boundary truth if the endpoint
     /// sitting on the bound had been taken to mean the bound is in the interval
     /// — the obvious rule, and the one `docs/adr/0004` rejects. Only meaningful
@@ -258,8 +305,15 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
     let seed = BASE_SEED.wrapping_add(index as u64 * 1_000_003);
     let mut stream = Stream(seed);
     let n = k.nrows();
-    let x = DMatrix::from_element(n, 1, 1.0);
+    let covariates = with_covariates();
+    let x = design(n / block, block, covariates);
     let model = PreparedModel::build(&x, k, None).expect("the roster is valid");
+    let fixed = if covariates {
+        let beta = DVector::from_row_slice(&BETA);
+        &x * beta
+    } else {
+        DVector::from_element(n, BETA[0])
+    };
     let factors = block_factors(k, block, truth);
 
     let mut covered = 0usize;
@@ -267,11 +321,17 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
     let mut at_upper = 0usize;
     let mut nonconverged = 0usize;
     let mut naive_covered = 0usize;
+    let mut beta_error = vec![0.0f64; model.fixed_effects()];
     let mut widths = Vec::with_capacity(replicates());
 
     for _ in 0..replicates() {
-        let y = simulate(&factors, block, &mut stream);
+        let y = simulate(&factors, block, &mut stream) + &fixed;
         let fit = model.fit_one_trait(&y, true);
+        if fit.converged {
+            for (index, estimate) in fit.beta.iter().enumerate() {
+                beta_error[index] += estimate - if covariates { BETA[index] } else { BETA[0] };
+            }
+        }
         if covers(&fit, truth) {
             covered += 1;
         }
@@ -310,6 +370,10 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
 
     Cell {
         truth,
+        worst_beta_bias: beta_error
+            .iter()
+            .map(|total| (total / replicates() as f64).abs())
+            .fold(0.0f64, f64::max),
         naive: (truth == 0.0 || truth == 1.0)
             .then(|| naive_covered as f64 / replicates() as f64),
         seed,
@@ -333,7 +397,8 @@ fn main() {
 
     println!(
         "Coverage check: {families} extended families of {block}, n = {n}, \
-         {count} replicates per cell, REML, base seed {BASE_SEED}."
+         {count} replicates per cell, REML, {} fixed effects, base seed {BASE_SEED}.",
+        if with_covariates() { "6" } else { "1" }
     );
     println!("A cell passes when its Clopper-Pearson interval overlaps [{:.3}, {:.3}].", BAND.0, BAND.1);
     println!();
@@ -353,7 +418,7 @@ fn main() {
 
     println!(
         "{:>6} {:>9} {:>18} {:>7} {:>9} {:>9} {:>7} {:>9} {:>9}",
-        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "naive"
+        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias"
     );
     for cell in &cells {
         println!(
@@ -367,7 +432,7 @@ fn main() {
             cell.at_upper,
             cell.nonconverged,
             cell.median_width,
-            cell.naive.map_or_else(|| "-".to_owned(), |v| format!("{v:.4}")),
+            format!("{:.5}", cell.worst_beta_bias),
         );
     }
 
@@ -389,7 +454,7 @@ fn main() {
              \"estimator\": \"reml\", \"coverage\": {}, \"cp_lower\": {}, \"cp_upper\": {}, \
              \"band\": [{}, {}], \"passes\": {}, \"fraction_at_zero\": {}, \
              \"fraction_at_one\": {}, \"nonconverged\": {}, \"median_width\": {}, \
-             \"naive_boundary_coverage\": {}, \"seconds\": {:.3}}}{}",
+             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"seconds\": {:.3}}}{}",
             cell.truth,
             n,
             replicates(),
@@ -405,6 +470,7 @@ fn main() {
             cell.nonconverged,
             cell.median_width,
             cell.naive.map_or_else(|| "null".to_owned(), |v| v.to_string()),
+            cell.worst_beta_bias,
             cell.seconds,
             if index + 1 == cells.len() { "" } else { "," }
         );

@@ -109,10 +109,32 @@ SAFS scale, know that it is conservative.
 
 Results and seeds are in `evidence/`, and what they mean is in `docs/adr/0004`.
 
+## The comparison against R
+
+`uv run --no-project python checks/against_r.py` fits the same data in Asterism
+and in R's `regress` — written by other people, from the same published algebra,
+with a different optimiser — and compares them. This is the REML half of
+`docs/adr/0006`'s division of labour.
+
+**They agree.** Heritability to about 5e-9 relative across three datasets, total
+variance to 4e-9, every fixed effect to 1e-9. The log-likelihoods differ by a
+constant of −316.114855422, which is exactly −(n − p)/2 · log(2π), the term
+`regress` omits and Asterism keeps; nothing beyond that constant is unexplained,
+to 5e-12. Results in `evidence/`.
+
+Agreement proves fidelity, never correctness. What it rules out is Asterism
+computing a different function from the one two implementations of this algebra
+both compute.
+
 ## What is still owed
 
-- The independent check that `docs/adr/0006` requires. There is one
-  implementation of this arithmetic and no second one to disagree with it. The
-  coverage check tests the interval, not the likelihood underneath it.
-- The comparison against native SOLAR and R `regress`, which needs a dataset
-  generating first — Astrarium's fixtures deliberately did not come across.
+- **ML has been checked against nothing.** REML is the default and is now
+  compared against R; ML is available and has no external comparison at all.
+  SOLAR is the intended comparator for it and is installed at
+  `/usr/local/bin/solar`.
+- **No real pedigree has ever gone through this.** Every roster here is
+  synthetic and block-diagonal, with fourteen-person families and no inbreeding
+  loops. A real SAFS pedigree is larger, more tangled, and may make the
+  relationship matrix singular, which is the case the upper-bound snap in
+  `prepared.rs` exists for and which nothing here exercises.
+- **No real phenotype has ever gone through it either.**

@@ -34,3 +34,18 @@ interval contains nought. It over-covers at both bounds, which is the
 measurement behind the recipe rather than an argument for it.
 
 The seeds are in the file. The whole thing reruns in about twenty seconds.
+
+## `against-r-2026-08-11.json`
+
+Asterism against R's `regress`, REML, n = 350, six fixed effects, three
+datasets. Produced by `checks/against_r.py`.
+
+Heritability agrees to about 5e-9 relative, total variance to 4e-9, every fixed
+effect to 1e-9. The log-likelihoods differ by −316.114855422 on all three, which
+is −(n − p)/2 · log(2π) to within 5e-12 — the constant `regress` omits and
+Asterism keeps. A stable but unrecognisable offset would have meant something
+else was going on; a recognisable one means the difference is bookkeeping.
+
+This is fidelity rather than correctness. Two implementations agreeing shows
+they compute the same function, and the predecessor's 2e-11 agreement with
+itself was correlated error.
