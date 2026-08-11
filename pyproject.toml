@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.10,<2"]
+build-backend = "maturin"
+
+[project]
+name = "asterism"
+version = "0.1.0"
+description = "Variance components models for quantitative genetics (Mathias Lab)"
+requires-python = ">=3.13"
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Private :: Do Not Upload",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "numpy>=2",
+]
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+features = ["python"]
+module-name = "asterism._core"
+python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
