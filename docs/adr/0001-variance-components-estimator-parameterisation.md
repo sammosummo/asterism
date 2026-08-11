@@ -193,6 +193,20 @@ between them.
 are limits on traits — the ratio parameterisation fails at three or more traits,
 and the boundary enumeration of decision 13 is 3^t. Neither is a limit on kernels.
 
+**Computationally it is the other way round, noted on 11 August 2026 and worth
+carrying.** The first release owes its speed to diagonalising the relationship
+matrix once, per family block, so that every likelihood evaluation is a pass
+over a diagonal rather than a factorisation of a dense covariance. More traits
+keep that: `Σ_A ⊗ A + Σ_E ⊗ I` retains the Kronecker structure and the same
+rotation still applies. **More components destroy it** — the additive and
+household matrices share no eigenbasis, so they cannot be diagonalised together,
+and each evaluation goes back to factorising a dense covariance.
+
+So the parameter count and the running cost pull in opposite directions, and the
+speed measured against SOLAR today — 24 to 808 times, depending on size — is
+partly a property of the one-component case. It should not be promised for the
+household models decision 2 commits to until it has been measured there.
+
 **One caution about many kernels, statistical rather than parametric.** Three
 components require the kernels to be distinguishable *in this pedigree*. Additive
 and household are close to collinear where most households hold a single nuclear
