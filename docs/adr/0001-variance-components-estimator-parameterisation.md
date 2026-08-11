@@ -336,13 +336,34 @@ conservative on the record**. Never present a fabricated mixture as exact.
 Family block-diagonality in the solver is what decides which tier applies at the
 upper end of the scale, so it is built in rather than added later.
 
-### 13. Three traits in the first release; design for an active set
+### 13. Three traits is the design's ceiling; design for an active set
+
+**Corrected on 11 August 2026.** This decision was headed "three traits in the
+first release" and said the first release caps at three. That was written before
+decision 4 was amended the same day, and the amendment cut the first release to
+**one trait**. Three is the ceiling the *design* must not exceed without an
+active set, not what ships. The two statements sat in one document contradicting
+each other, which is how an agent comes to build multivariate machinery believing
+it was asked for.
 
 `correlation_h2_constraints` enumerates nine boundary states for two traits.
 That is 3^t — twenty-seven at three traits, eighty-one at four, before
 rank-deficient genetic matrices are considered. Enumeration is a wall at four
-traits. The first release caps at three, and the design uses an active set rather
-than enumeration so the cap can be lifted without a rewrite.
+traits. The design uses an active set rather than enumeration so the ceiling can
+be lifted without a rewrite.
+
+**Two traits is a deferred capability and enters under decision 20**, by an
+amendment naming the analysis that needs it. Naming one would be easy: 86 of the
+1,246 recorded runs are bivariate. What it takes is not small, and none of it is
+a port — the Cholesky parameterisation of decision 5, analytic REML gradients
+and the bound-constrained search of decision 14, boundary handling by nested
+refit, an interval recipe re-derived for the derived quantities rather than the
+scalar one `0004` calibrated, bootstrap p-values under decision 12, and its own
+independent check under `0006`. Decision 6's schedule note still holds:
+Astrarium's bivariate machinery is ML throughout, so bivariate REML is new work.
+
+One thing that does carry: the eigen-rotation survives more traits, so the speed
+would too.
 
 ### 14. Bound-constrained BFGS with a Newton polish, warm-started from univariate fits
 
