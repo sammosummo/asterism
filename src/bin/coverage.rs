@@ -50,14 +50,17 @@ fn families() -> usize {
     std::env::args().nth(2).and_then(|a| a.parse().ok()).unwrap_or(25)
 }
 
-/// Whether to carry covariates. Passing anything as a third argument switches
-/// on a design shaped like the one the lab actually runs — an intercept, age,
-/// age squared, sex, and the two age-by-sex products, which is
-/// `age_years^1,2#sex` in SOLAR's notation and is what 1,194 of the 1,246
-/// recorded runs use. An intercept-only design does not exercise the restricted
-/// likelihood's determinant term at all.
+/// Covariates are on by default, because a check run on a design nobody uses is
+/// not a check. The design is an intercept, age, age squared, sex and the two
+/// age-by-sex products — `age_years^1,2#sex` in SOLAR's notation, which is what
+/// 1,194 of the lab's 1,246 recorded runs carry. An intercept-only design does
+/// not exercise the restricted likelihood's determinant term at all, which is
+/// the part most likely to be wrong.
+///
+/// Passing `intercept` as a third argument drops back to one column, which is
+/// only useful for seeing whether a difference is caused by the covariates.
 fn with_covariates() -> bool {
-    std::env::args().nth(3).is_some()
+    std::env::args().nth(3).as_deref() != Some("intercept")
 }
 
 /// True coefficients, so that recovery of the fixed effects can be checked

@@ -6,20 +6,21 @@
       "replicates": 8000,
       "seed": 20260811,
       "estimator": "reml",
-      "coverage": 0.952875,
-      "cp_lower": 0.9480012724770105,
-      "cp_upper": 0.957415289283679,
+      "coverage": 0.953,
+      "cp_lower": 0.9481320772515448,
+      "cp_upper": 0.9575343851986851,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0.517875,
+      "fraction_at_zero": 0.517625,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.16597918697519276,
-      "naive_boundary_coverage": 0.976625,
-      "seconds": 3.192
+      "median_width": 0.1668604889598353,
+      "naive_boundary_coverage": 0.976,
+      "worst_beta_bias": 0.003049252332022935,
+      "seconds": 10.361
     },
     {
       "true_h2": 0.05,
@@ -27,20 +28,21 @@
       "replicates": 8000,
       "seed": 21260814,
       "estimator": "reml",
-      "coverage": 0.978875,
-      "cp_lower": 0.9754813196959607,
-      "cp_upper": 0.9819132273487485,
+      "coverage": 0.9785,
+      "cp_lower": 0.9750792931907972,
+      "cp_upper": 0.9815656083857772,
       "band": [
         0.94,
         0.96
       ],
       "passes": false,
-      "fraction_at_zero": 0.2845,
+      "fraction_at_zero": 0.286125,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.2244102220000901,
+      "median_width": 0.22525475867319117,
       "naive_boundary_coverage": null,
-      "seconds": 3.403
+      "worst_beta_bias": 0.0024165647516657352,
+      "seconds": 10.528
     },
     {
       "true_h2": 0.07,
@@ -48,20 +50,21 @@
       "replicates": 8000,
       "seed": 22260817,
       "estimator": "reml",
-      "coverage": 0.974,
-      "cp_lower": 0.9702729110374009,
-      "cp_upper": 0.9773761041745529,
+      "coverage": 0.974625,
+      "cp_lower": 0.9709386518655648,
+      "cp_upper": 0.9779598053726264,
       "band": [
         0.94,
         0.96
       ],
       "passes": false,
-      "fraction_at_zero": 0.197875,
+      "fraction_at_zero": 0.197,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.24948097098708613,
+      "median_width": 0.25020002880428316,
       "naive_boundary_coverage": null,
-      "seconds": 3.374
+      "worst_beta_bias": 0.002466846860998416,
+      "seconds": 10.7
     },
     {
       "true_h2": 0.1,
@@ -69,20 +72,21 @@
       "replicates": 8000,
       "seed": 23260820,
       "estimator": "reml",
-      "coverage": 0.959125,
-      "cp_lower": 0.9545532631407161,
-      "cp_upper": 0.9633582871603926,
+      "coverage": 0.959625,
+      "cp_lower": 0.9550785360258703,
+      "cp_upper": 0.9638326087694404,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0.1235,
+      "fraction_at_zero": 0.122375,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.28235563542724695,
+      "median_width": 0.2830496801240461,
       "naive_boundary_coverage": null,
-      "seconds": 3.503
+      "worst_beta_bias": 0.0019064627273588774,
+      "seconds": 10.775
     },
     {
       "true_h2": 0.2,
@@ -90,20 +94,21 @@
       "replicates": 8000,
       "seed": 24260823,
       "estimator": "reml",
-      "coverage": 0.95225,
-      "cp_lower": 0.9473473824262647,
-      "cp_upper": 0.9568196753913729,
+      "coverage": 0.952625,
+      "cp_lower": 0.9477396897928313,
+      "cp_upper": 0.957177070489052,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0.013125,
+      "fraction_at_zero": 0.013,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.34694826745636287,
+      "median_width": 0.34835704122366584,
       "naive_boundary_coverage": null,
-      "seconds": 4.021
+      "worst_beta_bias": 0.0031651253991132285,
+      "seconds": 12.248
     },
     {
       "true_h2": 0.3,
@@ -111,20 +116,21 @@
       "replicates": 8000,
       "seed": 25260826,
       "estimator": "reml",
-      "coverage": 0.948875,
-      "cp_lower": 0.9438200784099547,
-      "cp_upper": 0.9535996448069761,
+      "coverage": 0.94925,
+      "cp_lower": 0.9442117031585032,
+      "cp_upper": 0.9539577249464342,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0.00125,
+      "fraction_at_zero": 0.001125,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.36550389338448336,
+      "median_width": 0.3671487241561673,
       "naive_boundary_coverage": null,
-      "seconds": 4.034
+      "worst_beta_bias": 0.003936979050415597,
+      "seconds": 12.655
     },
     {
       "true_h2": 0.4,
@@ -132,9 +138,9 @@
       "replicates": 8000,
       "seed": 26260829,
       "estimator": "reml",
-      "coverage": 0.94125,
-      "cp_lower": 0.935871676344651,
-      "cp_upper": 0.9463039998008359,
+      "coverage": 0.94275,
+      "cp_lower": 0.9374332131896258,
+      "cp_upper": 0.9477412983928108,
       "band": [
         0.94,
         0.96
@@ -143,9 +149,10 @@
       "fraction_at_zero": 0,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.3683336399479694,
+      "median_width": 0.37009977897741003,
       "naive_boundary_coverage": null,
-      "seconds": 4.132
+      "worst_beta_bias": 0.0016873804459810121,
+      "seconds": 13.219
     },
     {
       "true_h2": 0.5,
@@ -153,9 +160,9 @@
       "replicates": 8000,
       "seed": 27260832,
       "estimator": "reml",
-      "coverage": 0.94975,
-      "cp_lower": 0.9447339826144663,
-      "cp_upper": 0.9544350516186462,
+      "coverage": 0.948625,
+      "cp_lower": 0.9435590352259445,
+      "cp_upper": 0.9533608845958232,
       "band": [
         0.94,
         0.96
@@ -164,57 +171,16 @@
       "fraction_at_zero": 0,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.36142729441326543,
+      "median_width": 0.3633024651811572,
       "naive_boundary_coverage": null,
-      "seconds": 4.083
+      "worst_beta_bias": 0.0016063437096039345,
+      "seconds": 13.246
     },
     {
       "true_h2": 0.6,
       "n": 350,
       "replicates": 8000,
       "seed": 28260835,
-      "estimator": "reml",
-      "coverage": 0.95475,
-      "cp_lower": 0.94996430497348,
-      "cp_upper": 0.9592007635065951,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.34249673647258555,
-      "naive_boundary_coverage": null,
-      "seconds": 4.1
-    },
-    {
-      "true_h2": 0.7,
-      "n": 350,
-      "replicates": 8000,
-      "seed": 29260838,
-      "estimator": "reml",
-      "coverage": 0.949625,
-      "cp_lower": 0.9446034005449762,
-      "cp_upper": 0.9543157321982965,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.31328046615874544,
-      "naive_boundary_coverage": null,
-      "seconds": 4.173
-    },
-    {
-      "true_h2": 0.8,
-      "n": 350,
-      "replicates": 8000,
-      "seed": 30260841,
       "estimator": "reml",
       "coverage": 0.95375,
       "cp_lower": 0.9489170961058639,
@@ -225,17 +191,18 @@
       ],
       "passes": true,
       "fraction_at_zero": 0,
-      "fraction_at_one": 0.000125,
+      "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.2742327272837094,
+      "median_width": 0.34422885882971577,
       "naive_boundary_coverage": null,
-      "seconds": 4.038
+      "worst_beta_bias": 0.003274449212078834,
+      "seconds": 13.394
     },
     {
-      "true_h2": 1,
+      "true_h2": 0.7,
       "n": 350,
       "replicates": 8000,
-      "seed": 31260844,
+      "seed": 29260838,
       "estimator": "reml",
       "coverage": 0.94975,
       "cp_lower": 0.9447339826144663,
@@ -246,11 +213,56 @@
       ],
       "passes": true,
       "fraction_at_zero": 0,
-      "fraction_at_one": 0.502,
+      "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.09586998202297203,
-      "naive_boundary_coverage": 0.972875,
-      "seconds": 3.349
+      "median_width": 0.3151714731923533,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.004026394179830457,
+      "seconds": 13.035
+    },
+    {
+      "true_h2": 0.8,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 30260841,
+      "estimator": "reml",
+      "coverage": 0.954,
+      "cp_lower": 0.9491788423523481,
+      "cp_upper": 0.9584868243884619,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0.000125,
+      "nonconverged": 0,
+      "median_width": 0.2761672848485972,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0029069394558485884,
+      "seconds": 12.725
+    },
+    {
+      "true_h2": 1,
+      "n": 350,
+      "replicates": 8000,
+      "seed": 31260844,
+      "estimator": "reml",
+      "coverage": 0.950625,
+      "cp_lower": 0.9456482879095579,
+      "cp_upper": 0.9552700559465279,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0.501125,
+      "nonconverged": 0,
+      "median_width": 0.09716396647189107,
+      "naive_boundary_coverage": 0.972625,
+      "worst_beta_bias": 0.002616061426507223,
+      "seconds": 10.051
     }
   ],
   "n1400": [
@@ -260,132 +272,6 @@
       "replicates": 8000,
       "seed": 20260811,
       "estimator": "reml",
-      "coverage": 0.948375,
-      "cp_lower": 0.9432980237703462,
-      "cp_upper": 0.9531220925486098,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0.500875,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.07792581511824118,
-      "naive_boundary_coverage": 0.97375,
-      "seconds": 12.319
-    },
-    {
-      "true_h2": 0.05,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 21260814,
-      "estimator": "reml",
-      "coverage": 0.961375,
-      "cp_lower": 0.9569184214182108,
-      "cp_upper": 0.9654912977961353,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0.100875,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.13274918223294474,
-      "naive_boundary_coverage": null,
-      "seconds": 13.347
-    },
-    {
-      "true_h2": 0.07,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 22260817,
-      "estimator": "reml",
-      "coverage": 0.948,
-      "cp_lower": 0.9429065656030683,
-      "cp_upper": 0.9527638452626079,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0.038375,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.15213126852266234,
-      "naive_boundary_coverage": null,
-      "seconds": 13.713
-    },
-    {
-      "true_h2": 0.1,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 23260820,
-      "estimator": "reml",
-      "coverage": 0.947375,
-      "cp_lower": 0.942254290924673,
-      "cp_upper": 0.9521666103317282,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0.008375,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.16343456161378186,
-      "naive_boundary_coverage": null,
-      "seconds": 14.513
-    },
-    {
-      "true_h2": 0.2,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 24260823,
-      "estimator": "reml",
-      "coverage": 0.95075,
-      "cp_lower": 0.9457789362783472,
-      "cp_upper": 0.9553893088351659,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.179730697808685,
-      "naive_boundary_coverage": null,
-      "seconds": 15.333
-    },
-    {
-      "true_h2": 0.3,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 25260826,
-      "estimator": "reml",
-      "coverage": 0.947125,
-      "cp_lower": 0.9419934349028419,
-      "cp_upper": 0.9519276623312326,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.1871574523294553,
-      "naive_boundary_coverage": null,
-      "seconds": 15.367
-    },
-    {
-      "true_h2": 0.4,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 26260829,
-      "estimator": "reml",
       "coverage": 0.94825,
       "cp_lower": 0.9431675298726886,
       "cp_upper": 0.953002684654894,
@@ -394,39 +280,63 @@
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0,
+      "fraction_at_zero": 0.500625,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.18820545362768393,
-      "naive_boundary_coverage": null,
-      "seconds": 15.423
+      "median_width": 0.07806261775973233,
+      "naive_boundary_coverage": 0.97375,
+      "worst_beta_bias": 0.0010702768067206302,
+      "seconds": 38.333
     },
     {
-      "true_h2": 0.5,
+      "true_h2": 0.05,
       "n": 1400,
       "replicates": 8000,
-      "seed": 27260832,
+      "seed": 21260814,
       "estimator": "reml",
-      "coverage": 0.945,
-      "cp_lower": 0.9397773685950911,
-      "cp_upper": 0.9498953905145592,
+      "coverage": 0.962,
+      "cp_lower": 0.9575760816683395,
+      "cp_upper": 0.9660831258837645,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0,
+      "fraction_at_zero": 0.101125,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.1837232806045236,
+      "median_width": 0.13274443657844934,
       "naive_boundary_coverage": null,
-      "seconds": 15.402
+      "worst_beta_bias": 0.000335423125263609,
+      "seconds": 41.433
     },
     {
-      "true_h2": 0.6,
+      "true_h2": 0.07,
       "n": 1400,
       "replicates": 8000,
-      "seed": 28260835,
+      "seed": 22260817,
+      "estimator": "reml",
+      "coverage": 0.9485,
+      "cp_lower": 0.9434285255457475,
+      "cp_upper": 0.9532414925380112,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0.037875,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.15219159893835116,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0018705510775988388,
+      "seconds": 43.967
+    },
+    {
+      "true_h2": 0.1,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 23260820,
       "estimator": "reml",
       "coverage": 0.946625,
       "cp_lower": 0.9414718140447048,
@@ -436,39 +346,19 @@
         0.96
       ],
       "passes": true,
-      "fraction_at_zero": 0,
+      "fraction_at_zero": 0.00875,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.17353119553149332,
+      "median_width": 0.16358927921517571,
       "naive_boundary_coverage": null,
-      "seconds": 15.445
+      "worst_beta_bias": 0.0022252617623302524,
+      "seconds": 46.008
     },
     {
-      "true_h2": 0.7,
+      "true_h2": 0.2,
       "n": 1400,
       "replicates": 8000,
-      "seed": 29260838,
-      "estimator": "reml",
-      "coverage": 0.950125,
-      "cp_lower": 0.9451257780477788,
-      "cp_upper": 0.9547929604835641,
-      "band": [
-        0.94,
-        0.96
-      ],
-      "passes": true,
-      "fraction_at_zero": 0,
-      "fraction_at_one": 0,
-      "nonconverged": 0,
-      "median_width": 0.1579903055088755,
-      "naive_boundary_coverage": null,
-      "seconds": 15.421
-    },
-    {
-      "true_h2": 0.8,
-      "n": 1400,
-      "replicates": 8000,
-      "seed": 30260841,
+      "seed": 24260823,
       "estimator": "reml",
       "coverage": 0.950625,
       "cp_lower": 0.9456482879095579,
@@ -481,9 +371,142 @@
       "fraction_at_zero": 0,
       "fraction_at_one": 0,
       "nonconverged": 0,
-      "median_width": 0.13730542223800912,
+      "median_width": 0.1799110621430174,
       "naive_boundary_coverage": null,
-      "seconds": 15.27
+      "worst_beta_bias": 0.0010195170225993336,
+      "seconds": 48.945
+    },
+    {
+      "true_h2": 0.3,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 25260826,
+      "estimator": "reml",
+      "coverage": 0.94775,
+      "cp_lower": 0.9426456325234571,
+      "cp_upper": 0.9525249745757955,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.1873795179958686,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.001524367625191732,
+      "seconds": 50.285
+    },
+    {
+      "true_h2": 0.4,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 26260829,
+      "estimator": "reml",
+      "coverage": 0.948625,
+      "cp_lower": 0.9435590352259445,
+      "cp_upper": 0.9533608845958232,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.18845313931943758,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0013005288502826655,
+      "seconds": 50.762
+    },
+    {
+      "true_h2": 0.5,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 27260832,
+      "estimator": "reml",
+      "coverage": 0.94475,
+      "cp_lower": 0.9395167940272087,
+      "cp_upper": 0.9496561601524544,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.18395508934726723,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0011674591253753087,
+      "seconds": 51.212
+    },
+    {
+      "true_h2": 0.6,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 28260835,
+      "estimator": "reml",
+      "coverage": 0.94675,
+      "cp_lower": 0.941602207924209,
+      "cp_upper": 0.951569183088741,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.17376959544153348,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0008327877253199384,
+      "seconds": 50.266
+    },
+    {
+      "true_h2": 0.7,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 29260838,
+      "estimator": "reml",
+      "coverage": 0.94925,
+      "cp_lower": 0.9442117031585032,
+      "cp_upper": 0.9539577249464342,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.15823587081497759,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0006463070721932489,
+      "seconds": 49.269
+    },
+    {
+      "true_h2": 0.8,
+      "n": 1400,
+      "replicates": 8000,
+      "seed": 30260841,
+      "estimator": "reml",
+      "coverage": 0.95125,
+      "cp_lower": 0.9463016142740971,
+      "cp_upper": 0.955866235568523,
+      "band": [
+        0.94,
+        0.96
+      ],
+      "passes": true,
+      "fraction_at_zero": 0,
+      "fraction_at_one": 0,
+      "nonconverged": 0,
+      "median_width": 0.1375320870263318,
+      "naive_boundary_coverage": null,
+      "worst_beta_bias": 0.0006595277395844772,
+      "seconds": 49.19
     },
     {
       "true_h2": 1,
@@ -491,20 +514,21 @@
       "replicates": 8000,
       "seed": 31260844,
       "estimator": "reml",
-      "coverage": 0.949875,
-      "cp_lower": 0.9448645728687638,
-      "cp_upper": 0.9545543628257588,
+      "coverage": 0.949,
+      "cp_lower": 0.9439506119687237,
+      "cp_upper": 0.953719012905,
       "band": [
         0.94,
         0.96
       ],
       "passes": true,
       "fraction_at_zero": 0,
-      "fraction_at_one": 0.48625,
+      "fraction_at_one": 0.488125,
       "nonconverged": 0,
-      "median_width": 0.044484653520129314,
-      "naive_boundary_coverage": 0.9745,
-      "seconds": 12.148
+      "median_width": 0.04444198348248063,
+      "naive_boundary_coverage": 0.974,
+      "worst_beta_bias": 0.0007925852479453799,
+      "seconds": 38.913
     }
   ]
 }

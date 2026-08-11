@@ -47,12 +47,50 @@ grandparental, avuncular and cousin relationships. Results in
 
 **At n = 1400, all twelve cells pass.** At n = 350, ten of twelve do; the two
 that fail are truths of 0.05 and 0.07, at 0.979 and 0.974. Both **over**-cover,
-so the intervals there are too wide rather than too narrow. That is
-conservatism, not invalidity, and it is a small-sample property rather than a
-fault: at a true heritability of 0.05 the estimate lands on the bound 28.5 per
-cent of the time at n = 350 and 10.1 per cent at n = 1400, and the over-coverage
-falls away with it. **Report an interval near zero at SAFS scale knowing it is
-wider than it needs to be.**
+so the intervals there are too wide rather than too narrow.
+
+### Why it over-covers just above zero, and why it is not simply made correct
+
+The interval is every h² whose deviance from the fitted maximum is at most
+3.8415. Coverage at a true h₀ is therefore the chance that
+
+    T = 2 [ ℓ(ĥ²) − ℓ(h₀) ]
+
+falls below 3.8415, where ĥ² is the maximiser **constrained to [0, 1]**.
+
+Write ĥ²ᵤ for the maximiser without that constraint, which may be negative.
+When ĥ²ᵤ ≥ 0 the two agree and T is the ordinary likelihood ratio statistic,
+which is χ²₁ and gives exactly 95 per cent. When ĥ²ᵤ < 0 the constrained fit
+stops at zero, so ℓ(ĥ²) is **smaller** than ℓ(ĥ²ᵤ) and therefore T is smaller
+than it would otherwise have been. T is never larger, and is strictly smaller
+whenever the estimate is pinned. A statistic that is stochastically too small,
+compared against a χ²₁ critical value, falls below it too often — so the
+interval contains the truth too often.
+
+That is the whole mechanism, and the numbers follow it exactly. At a true 0.05
+the estimate pins at zero 28.6 per cent of the time at n = 350 and coverage is
+0.979; at n = 1400 it pins 10.1 per cent of the time and coverage is 0.962. The
+conservatism tracks the pinning rate, and both shrink as the truth moves away
+from the bound in units of its own standard error.
+
+**Making it exactly correct is a calibration problem, not a bug fix.** The right
+critical value is not 3.8415 but some c(h₀) with P(T ≤ c) = 0.95 under h₀, and
+that distribution is neither χ²₁ — right far from the bound — nor the 50:50
+mixture — right exactly at it — but a continuum between the two, indexed by how
+many standard errors h₀ sits above zero. There is no closed form, so c(h₀) has
+to be found by simulation.
+
+**It cannot be fixed by tightening the interval everywhere.** Coverage is
+already exactly right at interior truths, so any uniform narrowing would push
+those below 95 per cent — trading a safe error for an unsafe one. The correction
+has to vary along the profile, which is decision 12's third tier: calibrate once
+per design, as SOLAR does with `lodadj`. The machinery is anticipated; it is
+simply not built.
+
+**Until it is, the cost is power rather than validity.** An interval near zero
+is wider than it needs to be, so a real but small heritability will be called
+not significant more often than it should be. **Report an interval near zero at
+SAFS scale knowing it is conservative, and say so in the methods.**
 
 **The mixture rule earns its place, measured rather than argued.** Taking a
 lower endpoint of nought to mean the interval contains nought — the obvious

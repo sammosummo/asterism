@@ -59,6 +59,8 @@ Then:
 cargo test --release                       # the estimator, against simulated truth
 uv run --no-project pytest tests/ -q       # the Python interface
 cargo run --release --bin coverage         # the coverage check, about 20 seconds
+uv run --no-project python checks/against_r.py      # REML against R `regress`
+uv run --no-project python checks/against_solar.py  # ML against native SOLAR
 ```
 
 `--release` matters for the Rust tests: one of them is a reduced coverage check
@@ -101,40 +103,63 @@ known, fits every one and counts how often the 95 per cent interval contains the
 truth. It is the only thing that can tell you an interval is too narrow, and no
 amount of reading the code substitutes for it.
 
+It runs with the design the lab actually uses — an intercept, age, age squared,
+sex and the two age-by-sex products — because an intercept-only check leaves the
+restricted likelihood's determinant term unexercised, which is the part most
+likely to be wrong. Pass `intercept` as a third argument to drop back to one
+column, which is only useful for isolating whether the covariates caused a
+difference.
+
 **All twelve cells pass at n = 1400. Ten of twelve pass at n = 350**, the
 exceptions being true heritabilities of 0.05 and 0.07, which over-cover at 0.979
-and 0.974. Those intervals are wider than they need to be rather than wrong, and
-the effect goes away as the roster grows. If you report an interval near zero at
-SAFS scale, know that it is conservative.
+and 0.974.
 
-Results and seeds are in `evidence/`, and what they mean is in `docs/adr/0004`.
+The reason is worth knowing before you report an interval near zero. The
+maximiser is constrained to [0, 1], so when the unconstrained estimate would be
+negative the fit stops at zero and the likelihood ratio statistic comes out
+smaller than it otherwise would. A statistic that is too small, compared against
+a χ²₁ critical value, falls below it too often, and the interval contains the
+truth too often. The effect tracks how often the estimate pins: 28.6 per cent of
+the time at a true 0.05 with n = 350, 10.1 per cent at n = 1400, and the
+conservatism shrinks with it.
 
-## The comparison against R
+**So intervals near zero are wider than they need to be, and the cost is power
+rather than validity** — a real but small heritability gets called
+non-significant more often than it should. It cannot be repaired by narrowing
+the interval, because coverage is already exactly right at interior truths.
+`docs/adr/0004` sets out what a proper fix would take.
 
-`uv run --no-project python checks/against_r.py` fits the same data in Asterism
-and in R's `regress` — written by other people, from the same published algebra,
-with a different optimiser — and compares them. This is the REML half of
-`docs/adr/0006`'s division of labour.
+Results and seeds are in `evidence/`.
 
-**They agree.** Heritability to about 5e-9 relative across three datasets, total
-variance to 4e-9, every fixed effect to 1e-9. The log-likelihoods differ by a
-constant of −316.114855422, which is exactly −(n − p)/2 · log(2π), the term
-`regress` omits and Asterism keeps; nothing beyond that constant is unexplained,
-to 5e-12. Results in `evidence/`.
+## The comparisons against SOLAR and R
 
-Agreement proves fidelity, never correctness. What it rules out is Asterism
-computing a different function from the one two implementations of this algebra
-both compute.
+`docs/adr/0006` puts correctness in external comparisons with a fixed division
+of labour — SOLAR for ML, R `regress` for REML — because agreement between two
+implementations proves fidelity and never correctness. Both are run, both on the
+six-column design.
+
+- **REML against R `regress`**: heritability to about 5e-9 relative, total
+  variance to 4e-9, every fixed effect to 1e-9.
+- **ML against native SOLAR**: heritability to about 1e-8 relative, which is
+  every digit SOLAR prints, and standard errors agreeing to five figures despite
+  being computed differently.
+
+**Their printed log-likelihoods will not match Asterism's, and that is
+expected.** Asterism keeps the Gaussian normalising constant; both comparators
+drop it. Subtract n/2 · log(2π) to reach SOLAR's convention and (n − p)/2 ·
+log(2π) to reach `regress`'s — ML is a density for n observations, REML for
+n − p error contrasts. Differences between models fitted in the same program
+need no correction, which is why the likelihood ratio tests agree without any of
+it. Both checks assert the offset is that named constant rather than merely
+stable.
 
 ## What is still owed
 
-- **ML has been checked against nothing.** REML is the default and is now
-  compared against R; ML is available and has no external comparison at all.
-  SOLAR is the intended comparator for it and is installed at
-  `/usr/local/bin/solar`.
 - **No real pedigree has ever gone through this.** Every roster here is
   synthetic and block-diagonal, with fourteen-person families and no inbreeding
   loops. A real SAFS pedigree is larger, more tangled, and may make the
   relationship matrix singular, which is the case the upper-bound snap in
   `prepared.rs` exists for and which nothing here exercises.
 - **No real phenotype has ever gone through it either.**
+- **The conservatism near zero is unrepaired.** Decision 12's third tier —
+  calibrate once per design — is the anticipated fix and is not built.
