@@ -1,0 +1,75 @@
+{
+  "what": "the compiled profile intervals against the independent Python ones",
+  "date": "2026-08-12",
+  "estimator": "reml",
+  "people": 150,
+  "observations_by_trait": [
+    150,
+    131
+  ],
+  "balanced": false,
+  "truth": {
+    "h1": 0.6,
+    "h2": 0.35,
+    "rg": 0.55,
+    "re": 0.25
+  },
+  "asterism_point_estimates": {
+    "h2_first": 0.4372545663816787,
+    "h2_second": 0.4840197972467563,
+    "rho_g": 0.34473705520018283,
+    "rho_e": 0.354411748705679
+  },
+  "intervals": {
+    "h2_first": {
+      "asterism": {
+        "lower": 0.1538443827535805,
+        "upper": 0.8256941026158444
+      },
+      "reference": {
+        "lower": 0.15385571896978908,
+        "upper": 0.8256876529370052
+      },
+      "lower_gap": 1.1336216208579497e-05,
+      "upper_gap": 6.449678839226536e-06
+    },
+    "h2_second": {
+      "asterism": {
+        "lower": 0.16623276934560852,
+        "upper": 0.8969772637064137
+      },
+      "reference": {
+        "lower": 0.16623400743929329,
+        "upper": 0.8969865680317037
+      },
+      "lower_gap": 1.238093684768904e-06,
+      "upper_gap": 9.304325290004911e-06
+    },
+    "rho_g": {
+      "asterism": {
+        "lower": -0.3082772133985998,
+        "upper": 0.7808578848756753
+      },
+      "reference": {
+        "lower": -0.308302696828361,
+        "upper": 0.7808723406161084
+      },
+      "lower_gap": 2.548342976116391e-05,
+      "upper_gap": 1.4455740433128028e-05
+    },
+    "rho_e": {
+      "asterism": {
+        "lower": -0.2110931498634779,
+        "upper": 0.7603818971258451
+      },
+      "reference": {
+        "lower": -0.21106991916758927,
+        "upper": 0.7603869059846541
+      },
+      "lower_gap": 2.3230695888637465e-05,
+      "upper_gap": 5.008858808941419e-06
+    }
+  },
+  "comparison_tolerance": 0.002,
+  "not_covered": "the phenotypic correlation, which the reference has no constrained fit for; it rests on calibration and on the four it is built from agreeing here"
+}

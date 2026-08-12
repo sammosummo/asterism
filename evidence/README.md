@@ -193,3 +193,26 @@ So where a heritability is high, the phenotypic correlation is the more reliable
 of the two to report and the residual correlation the less — the opposite of what
 one being derived and the other estimated would suggest. The GOBS height and
 weight fit sits in exactly that regime.
+
+## `bivariate-intervals-against-reference-2026-08-12.json`
+
+The compiled profile intervals against independent Python ones, REML, n = 150,
+unbalanced. Produced by `checks/bivariate_intervals_against_reference.py`.
+
+**This exists because neither external comparator computes these.** SOLAR gives
+standard errors and `regress` gives variance components, so the two-trait
+intervals were the one thing Asterism reports that rested on calibration alone.
+The two answer different questions and the package wants both: calibration says
+a 95 per cent interval contains the truth 95 per cent of the time, which is that
+the recipe works; it cannot say the compiled arithmetic agrees with an
+independent route to the same definition, because two implementations can both
+cover at 95 per cent and still disagree case by case.
+
+All eight endpoints agree to about 1e-5, against a tolerance of 2e-3 set for what
+two bisections over two optimisers can honestly demonstrate.
+
+It covers the four estimated quantities and not the phenotypic correlation, which
+the reference has no constrained fit for — pinning that one means substituting
+for the residual correlation rather than holding a parameter. It rests instead on
+its calibration, on its chain rule being checked against a central difference,
+and on the four it is built from agreeing here.

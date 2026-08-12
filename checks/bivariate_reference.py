@@ -292,6 +292,81 @@ def fit_fixing(
     return {"loglik": -best.fun, "converged": bool(best.success)}
 
 
+def profile_interval(
+    relationship: np.ndarray,
+    y: np.ndarray,
+    observed: np.ndarray,
+    design: np.ndarray,
+    which: int,
+    fitted_value: float,
+    reml: bool = True,
+    tolerance: float = 1e-4,
+) -> dict:
+    """A 95 per cent profile-likelihood interval, by bisection on the refit.
+
+    This exists to be a second opinion. Every other quantity Asterism reports is
+    checked against software written by somebody else — SOLAR for ML, R
+    `regress` for REML — but neither of those computes a profile interval for
+    these models, so the Rust intervals rested on calibration alone. Calibration
+    says the intervals cover; it cannot say the Rust arithmetic matches an
+    independent route to the same definition. This is that route.
+
+    **The maximum comes from a constrained refit at the fitted value, not from
+    the free fit.** Those are the same number in exact arithmetic and not in
+    practice, and taking the free fit's is how the Rust version came to return
+    intervals of zero width: its two log-likelihoods were computed in different
+    units and the constant that left in the deviance never let it fall below the
+    threshold. Deriving both ends the same way makes the difference a deviance
+    and nothing else, which is the point.
+    """
+    from scipy import stats
+
+    threshold = stats.chi2.ppf(0.95, 1)
+    bottom, top = (0.0, 1.0) if which in (2, 3) else (-1.0, 1.0)
+
+    maximum = fit_fixing(
+        relationship, y, observed, design, which, fitted_value, reml
+    )["loglik"]
+
+    def deviance(value: float) -> float:
+        try:
+            refit = fit_fixing(relationship, y, observed, design, which, value, reml)
+        except ValueError:
+            # `fit_fixing` refuses a heritability of exactly nought or one as
+            # outside the exact model domain. A value the model cannot take is
+            # a value the interval cannot reach, so it counts as infinitely far
+            # rather than as an error. The bisection then converges to just
+            # inside the bound, which is where Asterism's own epsilon puts it.
+            return np.inf
+        if not np.isfinite(refit["loglik"]):
+            return np.inf
+        return 2.0 * (maximum - refit["loglik"])
+
+    def endpoint(bound: float) -> tuple[float, bool]:
+        if deviance(bound) <= threshold:
+            # The threshold is never reached: the endpoint is the bound, and the
+            # interval is limited by the parameter space rather than the data.
+            return bound, True
+        inside, outside = fitted_value, bound
+        while abs(outside - inside) > tolerance:
+            middle = 0.5 * (inside + outside)
+            if deviance(middle) <= threshold:
+                inside = middle
+            else:
+                outside = middle
+        return 0.5 * (inside + outside), False
+
+    lower, lower_limited = endpoint(bottom)
+    upper, upper_limited = endpoint(top)
+    return {
+        "lower": lower,
+        "upper": upper,
+        "lower_limited": lower_limited,
+        "upper_limited": upper_limited,
+        "level": 0.95,
+    }
+
+
 def correlation_tests(
     relationship: np.ndarray,
     y: np.ndarray,
