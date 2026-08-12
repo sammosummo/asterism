@@ -8,10 +8,12 @@
 //!
 //! `CONTEXT.md` is the vocabulary. Read it before naming anything here.
 
+mod bivariate;
 mod blocks;
 mod prepared;
 mod relationship;
 
+pub use bivariate::{BivariateFit, BivariateModel};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
 
