@@ -11,18 +11,36 @@
   },
   "intervals": {
     "replicates_requested": 300,
-    "replicates_fitted": 298,
+    "replicates_complete": 298,
+    "replicates_by_quantity": {
+      "h2_first": 300,
+      "h2_second": 300,
+      "rho_g": 300,
+      "rho_e": 298
+    },
     "nominal": 0.95,
     "coverage": {
-      "h2_first": 0.9630872483221476,
-      "h2_second": 0.9731543624161074,
-      "rho_g": 0.9664429530201343,
+      "h2_first": 0.9566666666666667,
+      "h2_second": 0.9666666666666667,
+      "rho_g": 0.96,
       "rho_e": 0.9530201342281879
+    }
+  },
+  "correlation_test_at_the_boundary": {
+    "replicates_requested": 400,
+    "replicates_tested": 400,
+    "null": {
+      "quantity": "rho_g",
+      "value": 1.0,
+      "interior": false
     },
-    "binomial_band": [
-      0.925254584859619,
-      0.9747454151403809
-    ]
+    "rule": "self_liang_50_50_mixture",
+    "rejection_rates": {
+      "0.01": 0.0075,
+      "0.05": 0.0325,
+      "0.1": 0.0675
+    },
+    "atom_at_zero": 0.5525
   },
   "correlation_test": {
     "replicates_requested": 400,
