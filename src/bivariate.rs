@@ -1614,6 +1614,9 @@ mod python {
                 Some(fit.h2[1]),
                 fit.rho_g,
                 fit.rho_e,
+                // Appended rather than placed with the other correlations, so
+                // that callers indexing the first six positions keep working.
+                Some(fit.rho_p),
             ],
             fit.loglik,
             fit.scaled_gradient,

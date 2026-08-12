@@ -1,0 +1,58 @@
+{
+  "what": "the derived phenotypic correlation against SOLAR's, on real GOBS data",
+  "date": "2026-08-12",
+  "estimator": "ml",
+  "pairs": 78,
+  "definition": "rho_p = rho_g*sqrt(h1*h2) + rho_e*sqrt((1-h1)*(1-h2)); the total variances cancel",
+  "note": "derived, never estimated -- SOLAR reports it the same way, with no standard error",
+  "largest_absolute_difference": 5.100843702490754e-07,
+  "median_absolute_difference": 2.8864647359794215e-08,
+  "pairs_agreeing_to_1e_5": 78,
+  "worst": [
+    {
+      "pair": [
+        "weight1",
+        "cc"
+      ],
+      "asterism": -0.03865758991562975,
+      "solar": -0.0386581,
+      "difference": 5.100843702490754e-07
+    },
+    {
+      "pair": [
+        "waistcircum1",
+        "averagefa"
+      ],
+      "asterism": -0.015467582291288792,
+      "solar": -0.0154673,
+      "difference": 2.8229128879245224e-07
+    },
+    {
+      "pair": [
+        "height1",
+        "averagefa"
+      ],
+      "asterism": 0.08695657161803305,
+      "solar": 0.0869564,
+      "difference": 1.716180330485484e-07
+    },
+    {
+      "pair": [
+        "averagefa",
+        "bilateral_hippocampus_volume"
+      ],
+      "asterism": 0.14953873738671022,
+      "solar": 0.1495389,
+      "difference": 1.6261328977806855e-07
+    },
+    {
+      "pair": [
+        "height1",
+        "acr"
+      ],
+      "asterism": 0.06425993867145541,
+      "solar": 0.0642601,
+      "difference": 1.6132854459283141e-07
+    }
+  ]
+}
