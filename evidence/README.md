@@ -68,3 +68,100 @@ else was going on; a recognisable one means the difference is bookkeeping.
 This is fidelity rather than correctness. Two implementations agreeing shows
 they compute the same function, and the predecessor's 2e-11 agreement with
 itself was correlated error.
+
+## `against-solar-2026-08-11.json`
+
+Asterism's ML fit against native SOLAR, three datasets of twenty-five families
+with six fixed effects. Produced by `checks/against_solar.py`.
+
+Heritability agrees to within 5e-7, which is as much as SOLAR's seven printed
+significant figures can demonstrate. The log-likelihoods differ by
+n/2 · log(2π) — the constant SOLAR drops. REML drops (n − p)/2 · log(2π)
+instead, which is why the R comparison expects a different number.
+
+SOLAR silently overrules a sex that contradicts a parental role. The check
+derives sex from role and then verifies against `pedindex.out` rather than
+trusting it, because a rewritten sex means the two fits no longer share a design
+and the comparison is void without saying so.
+
+## `bivariate-against-solar-2026-08-12.json`
+
+The two-trait ML fit against native SOLAR, twenty-five families, n = 350, with
+every seventh person lacking the second trait. Produced by
+`checks/bivariate_against_solar.py`.
+
+All four reported quantities agree to within 2e-7. This is the strongest of the
+two-trait fidelity checks because SOLAR reports the genetic and residual
+correlations directly, so nothing is re-expressed on the way to the comparison —
+unlike the R check, which carries covariances that have to be turned into
+ratios.
+
+The data are unbalanced deliberately. Eigen-simplification per family block
+survives extra traits through the Kronecker structure but breaks when people are
+missing different traits, so a balanced check would pass without touching the
+part most likely to be wrong.
+
+## `bivariate-against-solar-real-2026-08-12.json`
+
+The same comparison on real GOBS material rather than simulated: thirteen
+traits, all seventy-eight pairs of them, both engines reading identical inputs.
+
+Largest disagreement on any reported quantity across all seventy-eight pairs is
+5.9e-06; the median is 1.5e-07. The traits are inverse-normalised once in Python
+and both engines read the result, so nothing in the agreement can come from the
+transform.
+
+**Real data agrees about an order of magnitude less closely than simulated
+data**, and that is SOLAR rather than Asterism. A parallel check on the Acoustic
+v116 univariate batch found SOLAR's own termination on heritability looser than
+its printing — log-likelihoods equal to 1e-8 while heritabilities differed by
+8e-7, worth about 1e-11 in likelihood at that standard error. So a tolerance
+calibrated on synthetic data, where agreement reaches 1e-7, is too tight for
+real-data comparisons. Expect around 1e-6 and treat a tighter demand as a
+statement about SOLAR's stopping rule rather than about correctness.
+
+The file also carries a check that is not a comparison with other software: each
+heritability is estimated twelve times, once per partner, on a slightly
+different set of people. The widest spread across partners is 0.022.
+
+## `bivariate-calibration-2026-08-12.json`
+
+Coverage and test calibration for the two-trait model, which is a different
+question from everything above. The comparisons show Asterism computes the same
+numbers as software already trusted; this asks whether the uncertainty around
+those numbers means what it says. Produced by `checks/bivariate_calibration.py`,
+which takes about a quarter of an hour.
+
+Thirty families of six, n = 180, REML. Interval coverage is 0.957, 0.967, 0.960
+and 0.953 against a nominal 0.95. The test of a correlation against zero — an
+interior point, so a plain chi-squared — rejects 0.005, 0.052 and 0.122 at the
+one, five and ten per cent levels, with Kolmogorov–Smirnov against uniform
+giving p = 0.62. Against a correlation of one, where the null sits on a bound and
+the Self–Liang mixture applies, it rejects 0.007, 0.033 and 0.068, with the
+statistic exactly zero in 55 per cent of samples against the mixture's expected
+50.
+
+**This check earns its runtime.** It found two faults nothing else did: a units
+disagreement between the free and constrained fits that made every interval
+zero-width, and the same disagreement in the test, which under a true null
+rejected about half the time at every level. Neither was caught by the test
+suite, by agreement with SOLAR, or by reading the code.
+
+## `phenotypic-correlation-against-solar-2026-08-12.json`
+
+The derived phenotypic correlation against SOLAR's, on all seventy-eight real
+GOBS pairs. Largest difference 5.1e-07, median 2.9e-08.
+
+It is derived rather than estimated — the genetic and residual covariances add
+and the total variances divide out — so this check cost nothing to run: it is
+arithmetic on fits that already existed. Neither Asterism nor SOLAR gives it a
+standard error, an interval or a test.
+
+## Elsewhere
+
+Asterism's own evidence is all simulated or GOBS. The univariate real-data check
+against SOLAR on the Acoustic v116 batch — nineteen frozen results, seventeen
+better-ear thresholds and two PTA composites, reproducing to 8.2e-7 on
+heritability — lives with that analysis rather than here, in
+`jasa-high-frequency-heritability/reports/`. It is kept there deliberately, so
+that using Asterism does not enlarge Asterism.
