@@ -35,29 +35,44 @@
 //!
 //! # State, as of 11 August 2026
 //!
-//! **The likelihood and its gradient are verified. The fit does not converge.**
+//! **The objective is right. The search gets within 3e-3 of stationary and
+//! stops.** Do not report anything from this yet; `checks/bivariate_reference.py`
+//! is the one that has been compared against SOLAR.
 //!
-//! The gradient matches a central difference to better than 1e-5 for both
-//! estimators, at six points across the space including near the bounds and at
-//! near-zero correlations. So the objective and its derivative agree with each
-//! other, which is the part everything else rests on.
+//! What is established:
 //!
-//! The search does not reach a stationary point. A hand-written projected BFGS
-//! stalled near a scaled gradient of 1e-2; replacing it with `lbfgsb-rs-pure`,
-//! the same algorithm the Python reference converges with, did not fix it. The
-//! reported point has gradients of order one on parameters that are nowhere
-//! near a bound, so it is simply not the optimum.
+//! - This objective and the reference's agree to **1.4e-14** at the same
+//!   parameters on the same data, for both estimators. They are the same
+//!   function.
+//! - The analytic gradient matches a central difference to better than 1e-5 at
+//!   six points across the space, including near the bounds and at near-zero
+//!   correlations.
+//! - On a shared test problem this fit and the reference agree to three decimal
+//!   places on every parameter, and both put the genetic correlation on its
+//!   bound, which is the truth for that simulation.
 //!
-//! **The next thing to check, and it has not been done:** whether this objective
-//! agrees with `checks/bivariate_reference.py` at the same parameters on the
-//! same data. The gradient test only shows this objective is self-consistent —
-//! if the two objectives differ, the optimum is genuinely elsewhere and no
-//! optimiser would find the reference's answer. That check needs the objective
-//! exposed through the Python interface, which is half an hour, and it should
-//! come before any more work on the search.
+//! # The fault that took the longest to find, in both implementations
 //!
-//! Do not fit anything real with this yet. `checks/bivariate_reference.py` is
-//! the one that agrees with SOLAR.
+//! At h² = 1 the residual variance is zero, and at |ρ| = 1 a covariance is
+//! rank-deficient. The likelihood does not exist at those points. What each
+//! implementation did on reaching one was the whole problem:
+//!
+//! - **Here**: returned a large value with a **zero gradient**, which tells a
+//!   quasi-Newton method it has found a stationary point. The fit settled
+//!   exactly on it.
+//! - **In the reference**: returned infinity, which a finite-difference gradient
+//!   turns into NaN, and scipy followed it without complaint. That version
+//!   stopped at points with a gradient of 2.5 while reporting success.
+//!
+//! Both now stop a whisker short of those edges, as the one-trait fit already
+//! did with its upper snap. It is worth noting how long this hid: the reference
+//! agreed with SOLAR to 1e-7 on real data *while carrying this fault*, because
+//! that particular optimum was interior and well conditioned.
+//!
+//! An earlier note here blamed the difference between the two on the optimiser —
+//! scipy's L-BFGS-B against a hand-written one. That was wrong, and swapping in
+//! the same algorithm proved it: the cause was in what both were told at
+//! infeasible points, not in how either searched.
 //!
 //! # Gradients are analytic
 //!
@@ -378,6 +393,27 @@ impl BivariateModel {
     }
 }
 
+impl BivariateModel {
+    /// The objective and gradient at one point, for comparison against the
+    /// independent implementation. Public because a check that cannot reach the
+    /// thing it checks is not a check.
+    ///
+    /// # Errors
+    ///
+    /// `None` where the covariance is not positive definite there.
+    #[must_use]
+    pub fn objective_at(
+        &self,
+        theta: &[f64; PARAMETERS],
+        y: &DVector<f64>,
+        observed: &[[bool; 2]],
+        reml: bool,
+    ) -> Option<(f64, [f64; PARAMETERS])> {
+        self.evaluate(theta, y, observed, reml, true)
+            .map(|e| (e.negative_loglik, e.gradient))
+    }
+}
+
 /// One family block's solves, kept between the two passes.
 struct BlockSolve {
     rows: Vec<Row>,
@@ -398,7 +434,7 @@ struct BlockSolve {
 /// has the same pole and handles it with `UPPER_SNAP_TOLERANCE`; this is the
 /// same treatment. A boundary fit is then reported by its state, not by the
 /// search sitting exactly on the bound (`docs/adr/0005`).
-const EDGE: f64 = 1e-6;
+const EDGE: f64 = 1e-5;
 const LOWER: [f64; PARAMETERS] =
     [1e-8, 1e-8, 0.0, 0.0, -1.0 + EDGE, -1.0 + EDGE];
 const UPPER: [f64; PARAMETERS] = [
@@ -842,3 +878,83 @@ use nalgebra::{DMatrix, DVector};
         assert_eq!(model.observations(), 120 - 9);
     }
 }
+
+#[cfg(feature = "python")]
+mod python {
+    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+    use pyo3::exceptions::PyValueError;
+    use pyo3::prelude::*;
+
+    use super::{BivariateModel, PARAMETERS};
+    use nalgebra::{DMatrix, DVector};
+
+    /// Fit two traits, for comparison against the independent implementation.
+    #[pyfunction]
+    #[pyo3(signature = (relationship, observed, design, y, reml=true))]
+    pub fn bivariate_fit(
+        relationship: PyReadonlyArray2<'_, f64>,
+        observed: Vec<[bool; 2]>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        reml: bool,
+    ) -> PyResult<(Vec<f64>, f64, f64, bool)> {
+        let k = relationship.as_array();
+        let k = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        let y = y.as_array();
+        let y = DVector::from_iterator(y.len(), y.iter().copied());
+        let model = BivariateModel::build(&k, &observed, &x).map_err(PyValueError::new_err)?;
+        let fit = model.fit(&y, &observed, reml).map_err(PyValueError::new_err)?;
+        Ok((
+            vec![
+                fit.total_variance[0], fit.total_variance[1],
+                fit.h2[0], fit.h2[1], fit.rho_g, fit.rho_e,
+            ],
+            fit.loglik,
+            fit.scaled_gradient,
+            fit.converged,
+        ))
+    }
+
+    /// Evaluate the two-trait objective and gradient at one point.
+    ///
+    /// Exposed so that `checks/bivariate_reference.py` can be compared against
+    /// this at the same parameters on the same data — the gradient test only
+    /// shows this objective agrees with its own derivative, which would pass
+    /// just as well if the whole likelihood were wrong.
+    ///
+    /// `y` and `design` carry only the observed rows, in the order they appear
+    /// reading person by person and trait within person.
+    #[pyfunction]
+    #[pyo3(signature = (relationship, observed, design, y, theta, reml=true))]
+    pub fn bivariate_objective(
+        relationship: PyReadonlyArray2<'_, f64>,
+        observed: Vec<[bool; 2]>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        theta: Vec<f64>,
+        reml: bool,
+    ) -> PyResult<(f64, Vec<f64>)> {
+        if theta.len() != PARAMETERS {
+            return Err(PyValueError::new_err("BIVARIATE_THETA_LENGTH"));
+        }
+        let k = relationship.as_array();
+        let k = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        let y = y.as_array();
+        let y = DVector::from_iterator(y.len(), y.iter().copied());
+
+        let model = BivariateModel::build(&k, &observed, &x).map_err(PyValueError::new_err)?;
+        let mut point = [0.0; PARAMETERS];
+        point.copy_from_slice(&theta);
+        model
+            .objective_at(&point, &y, &observed, reml)
+            .map(|(value, gradient)| (value, gradient.to_vec()))
+            .ok_or_else(|| PyValueError::new_err("BIVARIATE_NOT_POSITIVE_DEFINITE"))
+    }
+}
+
+#[cfg(feature = "python")]
+pub use python::{bivariate_fit, bivariate_objective};

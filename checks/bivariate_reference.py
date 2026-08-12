@@ -182,10 +182,17 @@ def fit(
         np.array([scale[0], scale[1], 0.3, 0.3, 0.5, 0.5]),
         np.array([scale[0], scale[1], 0.7, 0.7, -0.3, 0.3]),
     ]
+    # Stop a whisker short of the singular edges. At h² = 1 the residual
+    # variance is zero and at |ρ| = 1 a covariance is rank-deficient, so the
+    # likelihood cannot be evaluated there at all — and an infinity returned to
+    # a finite-difference gradient turns into NaN, which the search then follows
+    # without complaint. That silent corruption is why an earlier version of
+    # this stopped at points with a gradient of two and looked converged.
+    edge = 1e-6
     bounds = [
         (1e-8, None), (1e-8, None),
-        (0.0, 1.0), (0.0, 1.0),
-        (-1.0, 1.0), (-1.0, 1.0),
+        (0.0, 1.0 - edge), (0.0, 1.0 - edge),
+        (-1.0 + edge, 1.0 - edge), (-1.0 + edge, 1.0 - edge),
     ]
 
     best = None
