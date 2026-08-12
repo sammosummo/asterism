@@ -32,8 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent))
-from bivariate_reference import fit as reference_fit  # noqa: E402
+from asterism import _core
 
 # `regress` reports variance components; the comparison is on the quantities
 # anybody reports, which are the ratios.
@@ -140,13 +139,30 @@ def main() -> int:
     design_full[0::2, 0] = 1.0
     design_full[1::2, 1] = 1.0
 
-    ours = reference_fit(relationship, y_full, observed, design_full, reml=True)
-
     rows, matrices = structures(relationship, observed)
     index = [p * 2 + t for p, t in rows]
-    theirs = fit_in_r(
-        Path(tempfile.mkdtemp()), matrices, y_full[index], np.array([t for _, t in rows])
+    theta, ours_loglik, scaled_gradient, converged = _core.bivariate_fit(
+        np.ascontiguousarray(relationship),
+        observed.tolist(),
+        np.ascontiguousarray(design_full[index]),
+        np.ascontiguousarray(y_full[index]),
+        True,
     )
+    ours = {
+        "total_variance_a": theta[0],
+        "total_variance_b": theta[1],
+        "h2_trait_a": theta[2],
+        "h2_trait_b": theta[3],
+        "rho_g": theta[4],
+        "rho_e": theta[5],
+        "loglik": ours_loglik,
+        "scaled_gradient": scaled_gradient,
+        "converged": converged,
+    }
+    with tempfile.TemporaryDirectory() as temporary:
+        theirs = fit_in_r(
+            Path(temporary), matrices, y_full[index], np.array([t for _, t in rows])
+        )
 
     # `regress` gives covariances; the ratios are what anybody reports.
     their_h1 = theirs["a11"] / (theirs["a11"] + theirs["r11"])
@@ -158,13 +174,22 @@ def main() -> int:
           f"{observed[:, 0].sum()} with the first and {observed[:, 1].sum()} with the second.\n")
     print(f"{'':<10} {'asterism':>12} {'R regress':>12} {'difference':>12} {'truth':>8}")
     failures = []
-    for label, ours_value, theirs_value, true_value in (
+    if not ours["converged"]:
+        failures.append("Asterism did not declare convergence")
+    if not ours["scaled_gradient"] < 1e-7:
+        failures.append(
+            f"Asterism scaled projected gradient was {ours['scaled_gradient']:.3e}"
+        )
+    comparisons = (
         ("h2 first", ours["h2_trait_a"], their_h1, truth["h1"]),
         ("h2 second", ours["h2_trait_b"], their_h2, truth["h2"]),
         ("rho_g", ours["rho_g"], their_rg, truth["rg"]),
         ("rho_e", ours["rho_e"], their_re, truth["re"]),
-    ):
+    )
+    differences = {}
+    for label, ours_value, theirs_value, true_value in comparisons:
         difference = abs(ours_value - theirs_value)
+        differences[label] = difference
         print(f"{label:<10} {ours_value:>12.7f} {theirs_value:>12.7f} "
               f"{difference:>12.2e} {true_value:>8.2f}")
         if not difference < TOLERANCE:
@@ -176,8 +201,38 @@ def main() -> int:
             print(f"  {failure}")
         return 1
     print("\nAgreement within tolerance on every reported quantity.")
+    print(f"Asterism scaled projected gradient: {ours['scaled_gradient']:.3e}.")
     print("Different parameterisation, different optimiser, same answer.")
     print("This proves fidelity, not correctness (`docs/adr/0006`).")
+    Path("evidence").mkdir(exist_ok=True)
+    Path("evidence/bivariate-against-r-2026-08-11.json").write_text(
+        json.dumps(
+            {
+                "seed": 31,
+                "families": families,
+                "people_per_family": per_family,
+                "people": n,
+                "observations_by_trait": [
+                    int(observed[:, 0].sum()),
+                    int(observed[:, 1].sum()),
+                ],
+                "estimator": "reml",
+                "truth": truth,
+                "asterism": ours,
+                "regress": {
+                    **theirs,
+                    "h2_trait_a": their_h1,
+                    "h2_trait_b": their_h2,
+                    "rho_g": their_rg,
+                    "rho_e": their_re,
+                },
+                "absolute_differences": differences,
+                "comparison_tolerance": TOLERANCE,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     return 0
 
 

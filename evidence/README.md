@@ -7,6 +7,19 @@ Nothing here is a status, a gate or a certificate. A file in this directory says
 what was measured, on what, when, and with which seed. It says nothing about
 whether anything is approved.
 
+## `bivariate-against-r-2026-08-11.json`
+
+The compiled Rust two-trait optimiser against R's `regress`: REML, sixty
+six-person families, one trait observed for 360 people and the other for 320.
+Produced by `checks/bivariate_against_r.py`.
+
+The two routes use different parameterisations and different optimisers. The two
+heritabilities agree within 2.6e-9 and the genetic and residual correlations
+within 1.9e-8. Asterism's independently recomputed, response-scale-invariant
+projected KKT measure is 5.5e-9. This establishes fixed-problem fidelity and
+numerical convergence; it is not interval coverage or authority for a JASA
+analysis.
+
 ## `coverage-2026-08-11.json`
 
 The coverage check: simulate datasets whose heritability is known, fit every

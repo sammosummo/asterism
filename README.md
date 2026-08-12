@@ -19,6 +19,17 @@ one: there is no genetic or environmental correlation and no joint test, and
 because the joint likelihood does not separate into the two marginals, a joint
 fit's heritabilities are not quite the same numbers as separate fits'.
 
+The Gaussian two-trait model needed for the JASA reanalysis is now admitted but
+not reportable. Its unbalanced ML and REML likelihood and analytic score agree
+with the independent calculation, and its bound-constrained optimiser meets the
+`1e-7` projected KKT criterion. It fits all nine exact lower/interior/upper
+heritability combinations, with a genetic or residual correlation explicitly
+absent when its variance component vanishes, and retains exact correlation-bound
+solutions where the correlation exists. Standard errors, constrained tests,
+profile intervals, coverage and the realised JASA analysis are still absent; a
+converged optimiser is the numerical base for those things, not evidence that
+they have been completed.
+
 ```python
 import asterism
 

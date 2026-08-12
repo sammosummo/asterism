@@ -348,9 +348,11 @@ it was asked for.
 
 `correlation_h2_constraints` enumerates nine boundary states for two traits.
 That is 3^t — twenty-seven at three traits, eighty-one at four, before
-rank-deficient genetic matrices are considered. Enumeration is a wall at four
-traits. The design uses an active set rather than enumeration so the ceiling can
-be lifted without a rewrite.
+rank-deficient genetic matrices are considered. Enumeration is therefore the
+deliberate exact solution for the admitted two-trait model, not the general
+multivariate design. A later general estimator uses an active set before a
+fourth trait is admitted; the current nine-state implementation is not copied
+upward.
 
 **Two traits is a deferred capability and enters under decision 20**, by an
 amendment naming the analysis that needs it. Naming one would be easy: 86 of the
@@ -365,7 +367,28 @@ Astrarium's bivariate machinery is ML throughout, so bivariate REML is new work.
 One thing that does carry: the eigen-rotation survives more traits, so the speed
 would too.
 
-### 14. Bound-constrained BFGS with a Newton polish, warm-started from univariate fits
+### 14. Bound-constrained quasi-Newton with deterministic starts
+
+**Amended on 11 August 2026 after implementing and measuring the two-trait
+search.** The original decision prescribed a full BFGS approximation followed
+by a Newton polish. Neither is now part of the convergence claim. The retained
+L-BFGS-B search, with six curvature pairs for six parameters, reaches the
+independently recomputed projected KKT tolerance; the attempted hand-written
+full approximation did not. A Newton step will be assessed when the Hessian is
+implemented for standard errors, but it is not required merely to relabel a
+point that already meets the stated first-order condition.
+
+The direct `(h², ρ)` coordinates are smooth only while the component exists.
+The implementation therefore enumerates the `3² = 9` lower/interior/upper
+heritability states required by decision 13. Each exact state optimises only its
+identified coordinates: `ρ_G` is absent if either genetic variance is zero and
+`ρ_E` is absent if either residual variance is zero. The fully interior state
+uses the representable epsilon-open interval, while correlations retain their
+exact `±1` bounds. State selection compares the likelihoods and favours the
+lower-dimensional state only inside an explicit numerical objective tie. The
+comparison is evaluated on one reversible trait-standardised scale and the
+reported likelihood transformed back exactly; response units therefore cannot
+change what counts as a tie.
 
 **Bounds on the Cholesky diagonal, `diag(L_k) ≥ 0`.** Sam asked for L-BFGS-B and
 was right about the bounds, for three reasons — one of which had been missed when
@@ -382,13 +405,13 @@ decision 5 was taken:
   for the nested refit in decision 5. The constraint does not merely keep the fit
   legal; it says which comparison to run.
 
-**No limited memory.** The parameter count is K × t(t+1)/2 — eighteen at three
-traits and three components. A full Hessian approximation is 18×18. The limited-
-memory half of L-BFGS-B is for thousands of parameters and here would trade
-curvature quality for nothing. What is wanted is bound-constrained BFGS with a
-full approximation and an active set; that ships under the name L-BFGS-B, but
-anyone implementing the limited-memory part faithfully has added complexity for
-no gain.
+**The memory is the parameter count.** The original argument rejected limited
+memory because a full 18×18 approximation is cheap. That overlooked the hard
+part: a reliable bound-aware line search and active set, not storage. At two
+traits the retained solver keeps six curvature pairs for six parameters. It is
+still L-BFGS-B, but it does not omit a parameter-space direction merely to save
+memory, and its adequacy is decided by the independently recomputed KKT measure
+rather than by the solver's termination message.
 
 **Analytic REML gradients, not numerical**, at every trait count.
 
@@ -414,9 +437,12 @@ But two further arguments do not scale away, and they are the ones that decide i
 The trivariate gradient is a generalisation of the bivariate one already derived,
 not a fresh derivation, so staying analytic costs much less than it appears to.
 
-**Then a Newton polish**, with the Hessian taken as a central difference **of the
-analytic gradient** — the architecture `bfgs_bivariate` already uses at
-`likelihood.rs:11654`, which carries to t traits unchanged.
+**A later Newton assessment uses the Hessian taken as a central difference of
+the analytic gradient.** The architecture `bfgs_bivariate` already uses that at
+`likelihood.rs:11654`, which carries to t traits unchanged. It belongs with the
+standard-error work, where the Hessian is needed in any event; whether a Newton
+step materially improves an already KKT-qualified point is measured there
+rather than assumed here.
 
 To be unambiguous, because the two are easily confused: the first derivatives are
 exact and derived by hand; only the *second* derivatives are differenced, and they
@@ -437,11 +463,15 @@ Its trace cancellation only pays when V is dense and n×n, and the eigen-rotatio
 already makes exact traces cost O(n·t³) — approximating something computable
 exactly.
 
-**Starting values: one good warm start, not many arbitrary ones.** Fit each trait
-univariately with the REML in `prepared.rs`, set the Cholesky diagonals from
-those, set the off-diagonals from a t×t generalisation of
-`moment_based_bivariate_start`, project to the nearest positive semi-definite
-matrix, factorise. Keep two or three fixed insurance starts, not nine.
+**Starting values: three deterministic patterns, not a random cloud.** The
+original decision prescribed marginal univariate fits as the first start. That
+does not cover every design admitted here: a coefficient may be shared across
+traits, or a joint design may lose rank when restricted to either marginal.
+After reversible trait standardisation, unit total variances and the three fixed
+heritability/correlation patterns are meaningful in every admitted design. Each
+is projected into every exact heritability state. The retained thirty-seed ML
+and REML stress test makes those starts accountable; adding more starts without
+a failing case would add cost rather than evidence.
 
 **Dependency note, overtaken on 11 August 2026.** This said the engine had no
 optimisation crate and a hand-written BFGS to extend, so extending it would be
@@ -450,20 +480,26 @@ cheaper than a dependency. The fresh start of decision 4 brought across only
 optimiser at all — it grids thirty-three points across h² and polishes with
 golden section, which is why it never had this problem.
 
-Two traits made an optimiser necessary for the first time, and a hand-written
-projected BFGS was written and then raced against `lbfgsb-rs-pure`, a safe-Rust
-port of the original Fortran, BSD-3-Clause with no dependencies of its own. On
-the same problem with the same starts the library reached a scaled gradient of
-3.0e-3 and a log-likelihood of −126.6833; the hand-written one 1.9e-2 and
-−126.7951, disagreeing on the first heritability by 0.11. **The dependency is
-kept, on that measurement.**
+Two traits made an optimiser necessary for the first time. A hand-written
+projected BFGS and then `lbfgsb-rs-pure` were measured on the same deterministic
+unbalanced problem. The former stalled and the latter abandoned all three
+starts with line-search failures, leaving scaled free-coordinate scores between
+0.07 and 0.11. Neither is retained. `rcompat-lbfgsb`, a safe-Rust implementation
+of the algorithm used by R's `optim(method = "L-BFGS-B")`, reaches Asterism's
+independently recomputed `1e-7` projected KKT criterion for both ML and REML on
+that problem, including an exact correlation-bound solution. **That dependency
+is kept, on this measured comparison.**
 
 A caution worth carrying from how that comparison nearly went wrong. The
-hand-written search was first blamed for a failure that belonged to neither
-search: at h² = 1 and |ρ| = 1 the likelihood does not exist, and the code
-returned a large value with a zero gradient there, which tells a quasi-Newton
-method it has found a stationary point. Swapping in the library changed nothing
-until that was fixed. Only afterwards was the comparison meaningful.
+hand-written search was first blamed for a failure in the objective callback.
+A component covariance at h² = 0 or 1 has an unidentified correlation in the
+direct coordinates; at |ρ| = 1 it is merely rank deficient, and the full
+observation covariance may remain positive definite. The callback nevertheless
+returned a large value with a zero gradient at invalid full-covariance corners,
+which tells a quasi-Newton method it has found a stationary point. The retained
+callback instead gives an invalid trial a matched inward penalty and gradient,
+and convergence is claimed only after independently re-evaluating the analytic
+score at a valid returned point.
 
 ### 15. One general estimator, with fast paths where volume justifies them
 

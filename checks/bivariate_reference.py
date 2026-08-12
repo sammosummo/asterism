@@ -299,8 +299,11 @@ def correlation_tests(
     single parameter on a smooth one-sided boundary — the well-behaved case, so
     the Self–Liang 50:50 mixture applies (`0001` decision 29).
 
-    **The interior tests are calibrated. The boundary tests are not, and must
-    not be used.** Simulation on 11 August 2026, 120 replicates at n = 240:
+    **These are historical diagnostics, not current calibration.** They were run
+    before the admitted Rust optimiser and before exact heritability states.
+    They showed that the old boundary refits were unusable; every test must be
+    recalibrated after the constrained Rust refits exist. Simulation on 11
+    August 2026, 120 replicates at n = 240:
 
         nominal   rho_g = 0   rho_g = 1
            0.01       0.017       0.608
@@ -309,9 +312,10 @@ def correlation_tests(
            0.25       0.250       0.817
            0.50       0.517       0.825
 
-    Every interior level sits inside its binomial band. The boundary test rejects
-    six times in ten at a nominal one in a hundred — it would call a genetic
-    correlation different from one in most samples where it is exactly one.
+    In that historical run every interior level sat inside its binomial band.
+    The boundary test rejected six times in ten at a nominal one in a hundred —
+    it would have called a genetic correlation different from one in most
+    samples where it was exactly one.
 
     So the reasoning that produced it was wrong somewhere. The likely place is
     not the mixture itself but the constrained refit: holding the correlation at
@@ -321,9 +325,10 @@ def correlation_tests(
     neighbourhood for a different reason, and decision 12's parametric bootstrap
     is the fallback decision 29 named.
 
-    Either way the distinction is academic until it is fixed: **`rho_g = 1` and
-    `rho_g = -1` below are not to be reported.** They are left in place, marked,
-    because deleting them would lose the finding.
+    The optimiser has now been replaced, but the constrained-fit inference and
+    its calibration have not. **None of the p-values below is reportable.** They
+    are left in place, marked, because deleting them would lose the finding and
+    the tests that the replacement must rerun.
     """
     from math import erfc, sqrt
 
