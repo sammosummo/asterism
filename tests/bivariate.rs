@@ -90,8 +90,7 @@ fn reml_value_is_invariant_to_fixed_effect_basis_scaling() {
         rescaled_design[(row, 1)] *= 0.5;
     }
     let original = BivariateModel::build(&relationship, &observed, &design).unwrap();
-    let rescaled =
-        BivariateModel::build(&relationship, &observed, &rescaled_design).unwrap();
+    let rescaled = BivariateModel::build(&relationship, &observed, &rescaled_design).unwrap();
     let response = DVector::from_vec(vec![0.2, 0.1, -0.3, 0.4, 0.7, -0.2]);
     let theta = [1.0, 0.8, 0.4, 0.5, 0.2, -0.1];
 
@@ -108,4 +107,75 @@ fn fixed_state_score_refuses_nondifferentiable_zero_variance_coordinates() {
     let theta = [1.0, 0.8, 0.0, 0.5, 0.7, -0.1];
 
     assert!(model.objective_at(&theta, &response, true).is_none());
+}
+
+#[test]
+fn fixed_state_ml_and_reml_match_independent_python_goldens() {
+    // Generated independently from checks/bivariate_reference.py at SHA-256
+    // 1939d033ad66472fee85dda89c86755b8c117569fc0d0730fda5a42166f402d8
+    // from committed source c4b9da4; later start/calibration helpers do not
+    // alter the fixed-state likelihood used for these literals.
+    let (relationship, observed, design) = valid_problem();
+    let model = BivariateModel::build(&relationship, &observed, &design).unwrap();
+    let response = DVector::from_vec(vec![0.2, 0.1, -0.3, 0.4, 0.7, -0.2]);
+    let theta = [1.0, 0.8, 0.4, 0.5, 0.2, -0.1];
+    let expected = [
+        (
+            false,
+            5.525_902_867_765_855,
+            [
+                1.246_640_281_449_273_9,
+                1.688_812_478_750_634_2,
+                -0.071_842_483_073_680_8,
+                -0.023_252_053_023_744_185,
+                0.011_722_142_885_991_124,
+                0.087_255_091_636_832_69,
+            ],
+        ),
+        (
+            true,
+            3.670_543_948_472_71,
+            [
+                0.746_640_281_490_407_2,
+                1.063_812_478_601_594,
+                -0.195_562_217_372_316_9,
+                -0.140_629_256_536_091_9,
+                0.033_690_523_704_166_25,
+                0.103_387_185_277_561_2,
+            ],
+        ),
+    ];
+
+    for (reml, expected_objective, expected_gradient) in expected {
+        let (objective, gradient) = model.objective_at(&theta, &response, reml).unwrap();
+        assert!((objective - expected_objective).abs() < 2.0e-12);
+        for (actual, expected_value) in gradient.iter().zip(expected_gradient) {
+            assert!((actual - expected_value).abs() < 2.0e-8);
+        }
+    }
+}
+
+#[test]
+fn exact_correlation_boundary_is_evaluated_from_the_full_covariance() {
+    let (relationship, observed, design) = valid_problem();
+    let model = BivariateModel::build(&relationship, &observed, &design).unwrap();
+    let response = DVector::from_vec(vec![0.2, 0.1, -0.3, 0.4, 0.7, -0.2]);
+    let theta = [1.0, 0.8, 0.4, 0.5, 1.0, -0.1];
+
+    let (objective, score) = model.objective_at(&theta, &response, true).unwrap();
+    assert!(objective.is_finite());
+    assert!(score.iter().all(|value| value.is_finite()));
+}
+
+#[test]
+fn subjects_counts_the_observed_union_roster_not_ancestors() {
+    let (relationship, mut observed, design) = valid_problem();
+    let mut relationship_with_ancestor = DMatrix::<f64>::identity(5, 5);
+    relationship_with_ancestor
+        .view_mut((0, 0), (4, 4))
+        .copy_from(&relationship);
+    observed.push([false, false]);
+
+    let model = BivariateModel::build(&relationship_with_ancestor, &observed, &design).unwrap();
+    assert_eq!(model.subjects(), 4);
 }

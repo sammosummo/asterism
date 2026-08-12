@@ -164,6 +164,18 @@ def negative_log_likelihood(
     return value
 
 
+def trait_scales(y: np.ndarray, observed: np.ndarray) -> list[float]:
+    """Variance start for each trait without losing trait identity when rows
+    are unbalanced."""
+    matrix = y.reshape(observed.shape)
+    return [
+        float(np.var(matrix[observed[:, trait], trait]))
+        if observed[:, trait].any()
+        else 1.0
+        for trait in (0, 1)
+    ]
+
+
 def fit(
     relationship: np.ndarray,
     y: np.ndarray,
@@ -182,8 +194,7 @@ def fit(
     # Start from each trait on its own, which is what the joint fit reduces to
     # when the correlations are zero, and from a couple of insurance starts
     # (`0001` decision 14: one good warm start, not many arbitrary ones).
-    scale = [float(np.var(y[observed.reshape(-1)][t::2])) if observed[:, t].any() else 1.0
-             for t in (0, 1)]
+    scale = trait_scales(y, observed)
     starts = [
         np.array([scale[0], scale[1], 0.5, 0.5, 0.0, 0.0]),
         np.array([scale[0], scale[1], 0.3, 0.3, 0.5, 0.5]),
@@ -223,3 +234,127 @@ def fit(
         "estimator": "reml" if reml else "ml",
         "message": best.message,
     }
+
+
+def fit_fixing(
+    relationship: np.ndarray,
+    y: np.ndarray,
+    observed: np.ndarray,
+    design: np.ndarray,
+    which: int,
+    value: float,
+    reml: bool = True,
+) -> dict:
+    """Refit with one parameter held at `value`.
+
+    This is what makes the correlations testable. Carried as free parameters
+    (`0001` decision 29), a correlation supports an ordinary likelihood ratio
+    against a constrained refit — no reparameterisation of the model, no special
+    machinery, just one fewer free parameter.
+    """
+    blocks = family_blocks(relationship)
+    args = (blocks, relationship, observed, y, design, reml)
+    scale = trait_scales(y, observed)
+    edge = 1e-5
+    bounds = [
+        (1e-8, None), (1e-8, None),
+        (edge, 1.0 - edge), (edge, 1.0 - edge),
+        (-1.0, 1.0), (-1.0, 1.0),
+    ]
+    held = float(np.clip(value, bounds[which][0], bounds[which][1] or np.inf))
+    if held != value:
+        raise ValueError("the requested constrained value is outside the exact model domain")
+    bounds[which] = (held, held)
+
+    best = None
+    for start in (
+        [scale[0], scale[1], 0.5, 0.5, 0.0, 0.0],
+        [scale[0], scale[1], 0.3, 0.3, 0.4, 0.4],
+    ):
+        start = list(start)
+        start[which] = held
+        result = minimize(
+            negative_log_likelihood, np.array(start), args=args,
+            method="L-BFGS-B", bounds=bounds,
+            options={"maxiter": 2000, "ftol": 1e-12, "gtol": 1e-9},
+        )
+        if best is None or (np.isfinite(result.fun) and result.fun < best.fun):
+            best = result
+    return {"loglik": -best.fun, "converged": bool(best.success)}
+
+
+def correlation_tests(
+    relationship: np.ndarray,
+    y: np.ndarray,
+    observed: np.ndarray,
+    design: np.ndarray,
+    fitted: dict,
+    reml: bool = True,
+) -> dict:
+    """The three tests on the genetic correlation, and one on the environmental.
+
+    Against zero the value is interior and the statistic is chi-square on one
+    degree of freedom. Against plus or minus one it sits on a bound, and with the
+    correlation carried as a free parameter and both variances positive that is a
+    single parameter on a smooth one-sided boundary — the well-behaved case, so
+    the Self–Liang 50:50 mixture applies (`0001` decision 29).
+
+    **The interior tests are calibrated. The boundary tests are not, and must
+    not be used.** Simulation on 11 August 2026, 120 replicates at n = 240:
+
+        nominal   rho_g = 0   rho_g = 1
+           0.01       0.017       0.608
+           0.05       0.033       0.733
+           0.10       0.133       0.783
+           0.25       0.250       0.817
+           0.50       0.517       0.825
+
+    Every interior level sits inside its binomial band. The boundary test rejects
+    six times in ten at a nominal one in a hundred — it would call a genetic
+    correlation different from one in most samples where it is exactly one.
+
+    So the reasoning that produced it was wrong somewhere. The likely place is
+    not the mixture itself but the constrained refit: holding the correlation at
+    its bound makes the genetic covariance near-singular, the refit converges
+    badly, its log-likelihood comes out too low, and the statistic is inflated by
+    the optimiser rather than by the data. Decision 5 warns about exactly this
+    neighbourhood for a different reason, and decision 12's parametric bootstrap
+    is the fallback decision 29 named.
+
+    Either way the distinction is academic until it is fixed: **`rho_g = 1` and
+    `rho_g = -1` below are not to be reported.** They are left in place, marked,
+    because deleting them would lose the finding.
+    """
+    from math import erfc, sqrt
+
+    def chi2_one_tail(statistic: float) -> float:
+        return 1.0 if statistic <= 0 else erfc(sqrt(statistic / 2.0))
+
+    tests = {}
+    for label, which, value, interior in (
+        ("rho_g = 0", 4, 0.0, True),
+        ("rho_g = 1", 4, 1.0, False),
+        ("rho_g = -1", 4, -1.0, False),
+        ("rho_e = 0", 5, 0.0, True),
+    ):
+        null = fit_fixing(relationship, y, observed, design, which, value, reml)
+        statistic = max(0.0, 2.0 * (fitted["loglik"] - null["loglik"]))
+        if interior:
+            p = chi2_one_tail(statistic)
+            rule = "chi2_1"
+        else:
+            # Half the null's mass sits at zero because the parameter is on its
+            # bound; at a statistic of exactly zero nothing can be exceeded.
+            p = 1.0 if statistic <= 0.0 else 0.5 * chi2_one_tail(statistic)
+            rule = "mixture_50_50"
+        tests[label] = {
+            "statistic": statistic,
+            "p_value": p,
+            "rule": rule,
+            "null_loglik": null["loglik"],
+            "converged": null["converged"],
+            # The interior tests are calibrated; the boundary ones reject six
+            # times in ten at a nominal one per cent. See this function's note.
+            "calibrated": interior,
+        }
+    return tests

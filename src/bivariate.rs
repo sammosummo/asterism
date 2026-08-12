@@ -35,9 +35,9 @@
 //!
 //! # State, as of 11 August 2026
 //!
-//! **The objective is right. The search gets within 3e-3 of stationary and
-//! stops.** Do not report anything from this yet; `checks/bivariate_reference.py`
-//! is the one that has been compared against SOLAR.
+//! **The fixed-state objective and interior score are checked. The search does
+//! not meet the convergence criterion.** Do not report anything from this yet;
+//! `checks/bivariate_reference.py` is the route compared with SOLAR and R.
 //!
 //! What is established:
 //!
@@ -47,15 +47,18 @@
 //! - The analytic gradient matches a central difference to better than 1e-5 at
 //!   six points across the space, including near the bounds and at near-zero
 //!   correlations.
-//! - On a shared test problem this fit and the reference agree to three decimal
-//!   places on every parameter, and both put the genetic correlation on its
-//!   bound, which is the truth for that simulation.
+//! - A literal fixed-state ML/REML golden now keeps that agreement in the Rust
+//!   test suite. The optimiser still stops with material free-coordinate score
+//!   components and therefore remains experimental.
 //!
 //! # The fault that took the longest to find, in both implementations
 //!
-//! At h² = 1 the residual variance is zero, and at |ρ| = 1 a covariance is
-//! rank-deficient. The likelihood does not exist at those points. What each
-//! implementation did on reaching one was the whole problem:
+//! At h² = 0 or 1 one component variance vanishes, making the direct `(h², ρ)`
+//! score non-differentiable and its correlation unidentified. At |ρ| = 1 one
+//! component is rank deficient, but the full covariance can remain positive
+//! definite because the other component supplies the missing direction. Exact
+//! correlation bounds are therefore valid and required for decision 29's null
+//! refits; zero-variance states need a lower-dimensional parameterisation.
 //!
 //! - **Here**: returned a large value with a **zero gradient**, which tells a
 //!   quasi-Newton method it has found a stationary point. The fit settled
@@ -64,10 +67,10 @@
 //!   turns into NaN, and scipy followed it without complaint. That version
 //!   stopped at points with a gradient of 2.5 while reporting success.
 //!
-//! Both now stop a whisker short of those edges, as the one-trait fit already
-//! did with its upper snap. It is worth noting how long this hid: the reference
-//! agreed with SOLAR to 1e-7 on real data *while carrying this fault*, because
-//! that particular optimum was interior and well conditioned.
+//! The current six-parameter search stops a whisker short only of the
+//! zero-component edges and retains exact correlation bounds. It is worth noting
+//! how long the earlier error hid: the reference agreed with SOLAR to 1e-7 on
+//! real data while carrying it, because that optimum was interior.
 //!
 //! An earlier note here blamed the difference between the two on the optimiser —
 //! scipy's L-BFGS-B against a hand-written one. That was wrong, and swapping in
@@ -108,7 +111,7 @@ pub struct BivariateModel {
     design: DMatrix<f64>,
     row_positions: Vec<[Option<usize>; 2]>,
     logdet_xtx: f64,
-    people: usize,
+    subjects: usize,
     rows: usize,
 }
 
@@ -147,11 +150,11 @@ fn derivative(theta: &[f64; PARAMETERS], which: usize) -> ([[f64; 2]; 2], [[f64;
 
     // d/dθ of the diagonal entries.
     let (da1, da2, de1, de2) = match which {
-        0 => (h1, 0.0, 1.0 - h1, 0.0),          // σ₁
-        1 => (0.0, h2, 0.0, 1.0 - h2),          // σ₂
-        2 => (s1, 0.0, -s1, 0.0),               // h₁
-        3 => (0.0, s2, 0.0, -s2),               // h₂
-        _ => (0.0, 0.0, 0.0, 0.0),              // the correlations
+        0 => (h1, 0.0, 1.0 - h1, 0.0), // σ₁
+        1 => (0.0, h2, 0.0, 1.0 - h2), // σ₂
+        2 => (s1, 0.0, -s1, 0.0),      // h₁
+        3 => (0.0, s2, 0.0, -s2),      // h₂
+        _ => (0.0, 0.0, 0.0, 0.0),     // the correlations
     };
 
     // d/dθ of the off-diagonal, ρ√(xy): the chain rule through the square root,
@@ -211,7 +214,11 @@ impl BivariateModel {
                 }
             }
         }
-        let rows: usize = observed.iter().map(|o| usize::from(o[0]) + usize::from(o[1])).sum();
+        let rows: usize = observed
+            .iter()
+            .map(|o| usize::from(o[0]) + usize::from(o[1]))
+            .sum();
+        let subjects = observed.iter().filter(|mask| mask[0] || mask[1]).count();
         if rows == 0 {
             return Err("BIVARIATE_NOTHING_MEASURED");
         }
@@ -243,14 +250,21 @@ impl BivariateModel {
         let mut projected_relationship = relationship.clone();
         for block in &family_people {
             let size = block.len();
-            let submatrix =
-                DMatrix::from_fn(size, size, |row, column| relationship[(block[row], block[column])]);
+            let submatrix = DMatrix::from_fn(size, size, |row, column| {
+                relationship[(block[row], block[column])]
+            });
             let decomposition = SymmetricEigen::new(submatrix);
-            if decomposition.eigenvalues.iter().any(|&value| value < -1.0e-9) {
+            if decomposition
+                .eigenvalues
+                .iter()
+                .any(|&value| value < -1.0e-9)
+            {
                 return Err("BIVARIATE_RELATIONSHIP_NOT_PSD");
             }
-            let clipped = DMatrix::from_diagonal(&decomposition.eigenvalues.map(|value| value.max(0.0)));
-            let projected = &decomposition.eigenvectors * clipped * decomposition.eigenvectors.transpose();
+            let clipped =
+                DMatrix::from_diagonal(&decomposition.eigenvalues.map(|value| value.max(0.0)));
+            let projected =
+                &decomposition.eigenvectors * clipped * decomposition.eigenvectors.transpose();
             for row in 0..size {
                 for column in 0..size {
                     projected_relationship[(block[row], block[column])] = projected[(row, column)];
@@ -278,9 +292,7 @@ impl BivariateModel {
                 block
                     .into_iter()
                     .flat_map(|person| {
-                        (0..2).filter_map(move |t| {
-                            observed[person][t].then_some((person, t))
-                        })
+                        (0..2).filter_map(move |t| observed[person][t].then_some((person, t)))
                     })
                     .collect::<Vec<Row>>()
             })
@@ -293,7 +305,7 @@ impl BivariateModel {
             design: design.clone(),
             row_positions,
             logdet_xtx,
-            people,
+            subjects,
             rows,
         })
     }
@@ -308,7 +320,7 @@ impl BivariateModel {
     /// Number of people with at least one measured trait.
     #[must_use]
     pub fn subjects(&self) -> usize {
-        self.people
+        self.subjects
     }
 
     fn row_index(&self, person: usize, trait_index: usize) -> usize {
@@ -384,7 +396,12 @@ impl BivariateModel {
             yvy += yb.dot(&vy);
 
             if want_gradient {
-                kept.push(BlockSolve { rows: block.clone(), inverse: chol.inverse(), vy, vx });
+                kept.push(BlockSolve {
+                    rows: block.clone(),
+                    inverse: chol.inverse(),
+                    vy,
+                    vx,
+                });
             }
         }
 
@@ -399,8 +416,7 @@ impl BivariateModel {
         let mut value = 0.5 * (self.rows as f64 * two_pi + logdet + quadratic);
         if reml {
             let logdet_xvx = 2.0 * xvx_chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
-            value +=
-                0.5 * (logdet_xvx - self.logdet_xtx) - 0.5 * p as f64 * two_pi;
+            value += 0.5 * (logdet_xvx - self.logdet_xtx) - 0.5 * p as f64 * two_pi;
         }
 
         let mut gradient = [0.0; PARAMETERS];
@@ -434,7 +450,10 @@ impl BivariateModel {
             }
         }
 
-        Some(Evaluation { negative_loglik: value, gradient })
+        Some(Evaluation {
+            negative_loglik: value,
+            gradient,
+        })
     }
 
     /// One family block's covariance, or one block of a derivative — the shape
@@ -499,8 +518,7 @@ struct BlockSolve {
 /// definite. Those exact boundaries are therefore retained, as decision 29
 /// requires for the genetic-correlation null refits.
 const EDGE: f64 = 1e-5;
-const LOWER: [f64; PARAMETERS] =
-    [1e-8, 1e-8, EDGE, EDGE, -1.0, -1.0];
+const LOWER: [f64; PARAMETERS] = [1e-8, 1e-8, EDGE, EDGE, -1.0, -1.0];
 const UPPER: [f64; PARAMETERS] = [
     f64::INFINITY,
     f64::INFINITY,
@@ -552,12 +570,7 @@ impl BivariateModel {
     /// # Errors
     ///
     /// Returns a stable code where the response does not match the model.
-    pub fn fit(
-        &self,
-        y: &DVector<f64>,
-        reml: bool,
-    ) -> Result<BivariateFit, &'static str> {
-
+    pub fn fit(&self, y: &DVector<f64>, reml: bool) -> Result<BivariateFit, &'static str> {
         if y.len() != self.rows {
             return Err("BIVARIATE_Y_LENGTH_MISMATCH");
         }
@@ -702,6 +715,11 @@ impl BivariateModel {
             .with_pgtol(1e-10)
             .minimize(&mut point, &LOWER, &upper, &mut evaluate)
             .ok()?;
+        #[cfg(test)]
+        eprintln!(
+            "lbfgsb status={:?} iterations={} f={}",
+            solution.status, solution.iterations, solution.f
+        );
         let _ = failed;
 
         let mut theta = [0.0; PARAMETERS];
@@ -715,8 +733,7 @@ impl BivariateModel {
 #[cfg(test)]
 mod tests {
     use super::{BivariateModel, PARAMETERS};
-    use lbfgsb_rs_pure::LBFGSB;
-use nalgebra::{DMatrix, DVector};
+    use nalgebra::{DMatrix, DVector};
 
     /// Two sibling pairs' worth of relationship, small enough to reason about.
     fn small() -> (DMatrix<f64>, Vec<[bool; 2]>, DMatrix<f64>, DVector<f64>) {
@@ -729,13 +746,18 @@ use nalgebra::{DMatrix, DVector};
         }
         // Deliberately unbalanced: every seventh person lacks the second trait.
         let observed: Vec<[bool; 2]> = (0..n).map(|i| [true, i % 7 != 0]).collect();
-        let rows: usize = observed.iter().map(|o| usize::from(o[0]) + usize::from(o[1])).sum();
+        let rows: usize = observed
+            .iter()
+            .map(|o| usize::from(o[0]) + usize::from(o[1]))
+            .sum();
 
         let mut design = DMatrix::<f64>::zeros(rows, 2);
         let mut y = DVector::<f64>::zeros(rows);
         let mut seed = 12345u64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 11) as f64 / (1u64 << 53) as f64) - 0.5
         };
         // Give the siblings a shared genetic component, correlated across the
@@ -786,7 +808,9 @@ use nalgebra::{DMatrix, DVector};
         let mut where_worst = (0usize, 0usize, false);
         for (index, theta) in points.iter().enumerate() {
             for reml in [false, true] {
-                let Some(at) = model.evaluate(theta, &y, reml, true) else { continue };
+                let Some(at) = model.evaluate(theta, &y, reml, true) else {
+                    continue;
+                };
                 for k_index in 0..PARAMETERS {
                     let step = 1e-6 * (1.0 + theta[k_index].abs());
                     let mut up = *theta;
@@ -796,7 +820,9 @@ use nalgebra::{DMatrix, DVector};
                     let (Some(a), Some(b)) = (
                         model.evaluate(&up, &y, reml, false),
                         model.evaluate(&down, &y, reml, false),
-                    ) else { continue };
+                    ) else {
+                        continue;
+                    };
                     let numeric = (a.negative_loglik - b.negative_loglik) / (2.0 * step);
                     let relative = (at.gradient[k_index] - numeric).abs() / (1.0 + numeric.abs());
                     if relative > worst {
@@ -809,7 +835,8 @@ use nalgebra::{DMatrix, DVector};
         assert!(
             worst < 1e-5,
             "worst relative gradient error {worst:.3e} at point {} parameter {} ({})",
-            where_worst.0, where_worst.1,
+            where_worst.0,
+            where_worst.1,
             if where_worst.2 { "reml" } else { "ml" }
         );
     }
@@ -855,47 +882,55 @@ use nalgebra::{DMatrix, DVector};
             let norm = super::projected_gradient_norm(&theta, &e.gradient, e.negative_loglik);
             println!(
                 "step {step:>2}  f={:>12.6}  |g|={:>10.3e}  theta={:?}",
-                e.negative_loglik, norm,
-                theta.iter().map(|v| (v * 1e4).round() / 1e4).collect::<Vec<_>>()
+                e.negative_loglik,
+                norm,
+                theta
+                    .iter()
+                    .map(|v| (v * 1e4).round() / 1e4)
+                    .collect::<Vec<_>>()
             );
-            println!("            grad={:?}",
-                e.gradient.iter().map(|v| (v * 1e3).round() / 1e3).collect::<Vec<_>>());
+            println!(
+                "            grad={:?}",
+                e.gradient
+                    .iter()
+                    .map(|v| (v * 1e3).round() / 1e3)
+                    .collect::<Vec<_>>()
+            );
             // one plain gradient step, scaled, just to see the landscape
-            for kk in 0..PARAMETERS { theta[kk] -= 1e-4 * e.gradient[kk]; }
+            for kk in 0..PARAMETERS {
+                theta[kk] -= 1e-4 * e.gradient[kk];
+            }
             super::project(&mut theta);
         }
     }
 
     #[test]
-    fn a_fit_converges_and_reports_its_gradient() {
+    fn the_unfinished_search_does_not_claim_convergence() {
         let (k, observed, design, y) = small();
         let model = BivariateModel::build(&k, &observed, &design).expect("valid");
         let fit = model.fit(&y, true).expect("fits");
         let theta = [
-            fit.total_variance[0], fit.total_variance[1],
-            fit.h2[0], fit.h2[1], fit.rho_g, fit.rho_e,
+            fit.total_variance[0],
+            fit.total_variance[1],
+            fit.h2[0],
+            fit.h2[1],
+            fit.rho_g,
+            fit.rho_e,
         ];
         let at = model.evaluate(&theta, &y, true, true).expect("finite");
         println!("theta = {theta:?}");
         println!("grad  = {:?}", at.gradient);
-        println!("at a bound? {:?}", (0..PARAMETERS).map(|k|
-            (theta[k] <= super::LOWER[k] + 1e-12, theta[k] >= super::UPPER[k] - 1e-12)
-        ).collect::<Vec<_>>());
-        // NOT YET: the optimiser descends but does not reach decision 14's
-        // tolerance. The likelihood and its gradient are verified — the gradient
-        // matches a central difference to 1e-5 for both estimators and all six
-        // parameters — so what is unfinished is the search, not the mathematics.
-        // The reference implementation reaches the optimum with L-BFGS-B on the
-        // same problem, so this is a shortcoming of the hand-written projected
-        // BFGS rather than of the surface. Tightened to 1e-7 when that is fixed.
-        // NOT CONVERGING. See the module note: the likelihood and gradient are
-        // verified, the search is not finished, and this threshold is a record
-        // of where it actually stands rather than a target that was met.
-        assert!(
-            fit.scaled_gradient < 1e-1,
-            "scaled gradient was {}",
-            fit.scaled_gradient
+        println!(
+            "at a bound? {:?}",
+            (0..PARAMETERS)
+                .map(|k| (
+                    theta[k] <= super::LOWER[k] + 1e-12,
+                    theta[k] >= super::UPPER[k] - 1e-12
+                ))
+                .collect::<Vec<_>>()
         );
+        assert!(!fit.converged);
+        assert!(fit.scaled_gradient >= 1e-7);
         for h in fit.h2 {
             assert!((0.0..=1.0).contains(&h));
         }
@@ -917,7 +952,9 @@ use nalgebra::{DMatrix, DVector};
         let mut y = DVector::<f64>::zeros(2 * n);
         let mut seed = 99u64;
         let mut next = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((seed >> 11) as f64 / (1u64 << 53) as f64) - 0.5
         };
         for i in 0..2 * n {
@@ -985,8 +1022,12 @@ mod python {
         let fit = model.fit(&y, reml).map_err(PyValueError::new_err)?;
         Ok((
             vec![
-                fit.total_variance[0], fit.total_variance[1],
-                fit.h2[0], fit.h2[1], fit.rho_g, fit.rho_e,
+                fit.total_variance[0],
+                fit.total_variance[1],
+                fit.h2[0],
+                fit.h2[1],
+                fit.rho_g,
+                fit.rho_e,
             ],
             fit.loglik,
             fit.scaled_gradient,
