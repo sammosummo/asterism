@@ -99,7 +99,16 @@ def negative_log_likelihood(
     generalised least squares at every evaluation, as REML does anyway
     (`0001` decision 10)."""
     sigma_a, sigma_e = covariances(theta)
-    if min(np.linalg.eigvalsh(sigma_a).min(), np.linalg.eigvalsh(sigma_e).min()) < 0:
+    # A covariance that is exactly singular is legitimate, not infeasible. At
+    # |ρ| = 1 the genetic covariance has rank one — complete pleiotropy — and V
+    # is still positive definite, because a semi-definite term plus a definite
+    # one is definite. Its smallest eigenvalue comes back a hair negative from
+    # rounding, and rejecting on `< 0` refuses exactly the point a test of
+    # ρ = ±1 has to evaluate. That is what made the boundary test reject sixty
+    # per cent of the time: the constrained refit was handed an infinity and
+    # returned the penalty value. The floor is the one `prepared.rs` already
+    # uses for the same reason.
+    if min(np.linalg.eigvalsh(sigma_a).min(), np.linalg.eigvalsh(sigma_e).min()) < -1e-9:
         return np.inf
 
     logdet = 0.0
