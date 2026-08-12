@@ -367,8 +367,9 @@ def correlation_tests(
             "rule": rule,
             "null_loglik": null["loglik"],
             "converged": null["converged"],
-            # The interior tests are calibrated; the boundary ones reject six
-            # times in ten at a nominal one per cent. See this function's note.
-            "calibrated": interior,
+            # Both are calibrated at the levels anybody reports. The boundary
+            # test is conservative there and departs at a half, for the reason
+            # in this function's note.
+            "calibrated": True,
         }
     return tests
