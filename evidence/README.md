@@ -175,3 +175,21 @@ better-ear thresholds and two PTA composites, reproducing to 8.2e-7 on
 heritability — lives with that analysis rather than here, in
 `jasa-high-frequency-heritability/reports/`. It is kept there deliberately, so
 that using Asterism does not enlarge Asterism.
+
+## `coverage-at-the-real-design-point-2026-08-12.json`
+
+The committed calibration simulates heritabilities of 0.6 and 0.35. The real GOBS
+fits run to 0.83, which is nearer a bound, so coverage was measured there too
+rather than assumed to carry over. It does carry over: 0.960, 0.953, 0.937, 0.971
+and 0.953 against a nominal 0.95, every one inside the band.
+
+**What changes at high heritability is not coverage but which quantity is
+fragile.** A heritability of 0.83 leaves little residual variance in that trait,
+so the residual correlation is poorly determined: its interval failed to compute
+in 23 of 300 replicates and hit a bound in 94 per cent of the rest. The derived
+phenotypic correlation computed in all 300 and hit a bound in none.
+
+So where a heritability is high, the phenotypic correlation is the more reliable
+of the two to report and the residual correlation the less — the opposite of what
+one being derived and the other estimated would suggest. The GOBS height and
+weight fit sits in exactly that regime.

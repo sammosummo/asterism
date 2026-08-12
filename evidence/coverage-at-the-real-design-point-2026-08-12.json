@@ -1,0 +1,39 @@
+{
+  "what": "interval coverage at the heritabilities the real GOBS data produced, rather than the committed check's easier ones",
+  "date": "2026-08-12",
+  "estimator": "reml",
+  "families": 30,
+  "people_per_family": 6,
+  "people": 180,
+  "truth": {
+    "h1": 0.83,
+    "h2": 0.59,
+    "rg": 0.4,
+    "re": 0.28,
+    "rho_p_derived": 0.3538
+  },
+  "why": "the committed calibration uses h2 0.6 and 0.35; the real fits run to 0.83, which is closer to a bound, and the phenotypic correlation depends on sqrt((1-h1)*(1-h2)), which becomes small exactly when a heritability is large",
+  "nominal": 0.95,
+  "coverage": {
+    "h2_first": 0.96,
+    "h2_second": 0.953,
+    "rho_g": 0.937,
+    "rho_e": 0.971,
+    "rho_p": 0.953
+  },
+  "intervals_computed_of_300": {
+    "h2_first": 300,
+    "h2_second": 300,
+    "rho_g": 300,
+    "rho_e": 277,
+    "rho_p": 300
+  },
+  "endpoint_at_a_bound": {
+    "h2_first": 0.733,
+    "h2_second": 0.233,
+    "rho_g": 0.03,
+    "rho_e": 0.935,
+    "rho_p": 0.0
+  },
+  "finding": "where a heritability is high the residual correlation is the fragile quantity and the phenotypic one is not. The residual interval failed to compute in 23 of 300 replicates and hit a bound in 94 per cent of the rest, because a heritability of 0.83 leaves little residual variance for that trait. The derived phenotypic correlation computed in all 300 and hit a bound in none. So at high heritability the derived quantity is the more reliable of the two to report, which is the opposite of what its being derived would suggest."
+}
