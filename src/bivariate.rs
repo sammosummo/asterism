@@ -89,7 +89,7 @@
 //! and only the two 2×2 blocks need differentiating.
 
 use lbfgsb_rs_pure::LBFGSB;
-use nalgebra::{DMatrix, DVector};
+use nalgebra::{DMatrix, DVector, SymmetricEigen};
 
 use crate::blocks::family_blocks;
 
@@ -106,6 +106,8 @@ pub struct BivariateModel {
     relationship: DMatrix<f64>,
     blocks: Vec<Vec<Row>>,
     design: DMatrix<f64>,
+    row_positions: Vec<[Option<usize>; 2]>,
+    logdet_xtx: f64,
     people: usize,
     rows: usize,
 }
@@ -199,6 +201,9 @@ impl BivariateModel {
         if observed.len() != people {
             return Err("BIVARIATE_OBSERVED_LENGTH_MISMATCH");
         }
+        if relationship.iter().any(|value| !value.is_finite()) {
+            return Err("BIVARIATE_RELATIONSHIP_NOT_FINITE");
+        }
         for i in 0..people {
             for j in (i + 1)..people {
                 if relationship[(i, j)] != relationship[(j, i)] {
@@ -213,25 +218,61 @@ impl BivariateModel {
         if design.nrows() != rows {
             return Err("BIVARIATE_DESIGN_ROWS_MISMATCH");
         }
-        if rows <= design.ncols() {
+        if design.ncols() == 0 || rows <= design.ncols() {
             return Err("BIVARIATE_NO_RESIDUAL_DEGREES_OF_FREEDOM");
+        }
+        if design.iter().any(|value| !value.is_finite()) {
+            return Err("BIVARIATE_DESIGN_NOT_FINITE");
+        }
+
+        let gram = design.transpose() * design;
+        let gram_eigenvalues = SymmetricEigen::new(gram).eigenvalues;
+        let largest_gram_eigenvalue = gram_eigenvalues.iter().copied().fold(0.0_f64, f64::max);
+        if gram_eigenvalues
+            .iter()
+            .any(|&value| value <= 1.0e-12 * largest_gram_eigenvalue)
+        {
+            return Err("BIVARIATE_DESIGN_RANK_DEFICIENT");
+        }
+        let logdet_xtx = gram_eigenvalues.iter().map(|value| value.ln()).sum();
+
+        // Validate each exact relationship component at its own spectral scale,
+        // then clip only round-off below zero. The direct block likelihood needs
+        // the same projected PSD matrix that validation accepted.
+        let family_people = family_blocks(relationship);
+        let mut projected_relationship = relationship.clone();
+        for block in &family_people {
+            let size = block.len();
+            let submatrix =
+                DMatrix::from_fn(size, size, |row, column| relationship[(block[row], block[column])]);
+            let decomposition = SymmetricEigen::new(submatrix);
+            if decomposition.eigenvalues.iter().any(|&value| value < -1.0e-9) {
+                return Err("BIVARIATE_RELATIONSHIP_NOT_PSD");
+            }
+            let clipped = DMatrix::from_diagonal(&decomposition.eigenvalues.map(|value| value.max(0.0)));
+            let projected = &decomposition.eigenvectors * clipped * decomposition.eigenvectors.transpose();
+            for row in 0..size {
+                for column in 0..size {
+                    projected_relationship[(block[row], block[column])] = projected[(row, column)];
+                }
+            }
         }
 
         // Rows are ordered person-major: everyone's first trait then second,
         // skipping what was not measured. The index of a row is its position in
         // that order, which is what the design and response are indexed by.
-        let mut position = vec![[usize::MAX; 2]; people];
+        let mut row_positions = vec![[None; 2]; people];
         let mut next = 0usize;
         for (person, mask) in observed.iter().enumerate() {
             for trait_index in 0..2 {
                 if mask[trait_index] {
-                    position[person][trait_index] = next;
+                    row_positions[person][trait_index] = Some(next);
                     next += 1;
                 }
             }
         }
 
-        let blocks = family_blocks(relationship)
+        let blocks = family_people
             .into_iter()
             .map(|block| {
                 block
@@ -247,9 +288,11 @@ impl BivariateModel {
             .collect();
 
         Ok(Self {
-            relationship: relationship.clone(),
+            relationship: projected_relationship,
             blocks,
             design: design.clone(),
+            row_positions,
+            logdet_xtx,
             people,
             rows,
         })
@@ -268,12 +311,9 @@ impl BivariateModel {
         self.people
     }
 
-    fn row_index(&self, person: usize, trait_index: usize, observed: &[[bool; 2]]) -> usize {
-        let mut index = 0;
-        for p in 0..person {
-            index += usize::from(observed[p][0]) + usize::from(observed[p][1]);
-        }
-        index + usize::from(trait_index == 1 && observed[person][0])
+    fn row_index(&self, person: usize, trait_index: usize) -> usize {
+        self.row_positions[person][trait_index]
+            .expect("family blocks contain only rows committed at model construction")
     }
 
     /// The objective, and optionally its gradient, at one point.
@@ -287,10 +327,27 @@ impl BivariateModel {
         &self,
         theta: &[f64; PARAMETERS],
         y: &DVector<f64>,
-        observed: &[[bool; 2]],
         reml: bool,
         want_gradient: bool,
     ) -> Option<Evaluation> {
+        if theta.iter().any(|value| !value.is_finite())
+            || theta[0] <= 0.0
+            || theta[1] <= 0.0
+            || !(0.0..=1.0).contains(&theta[2])
+            || !(0.0..=1.0).contains(&theta[3])
+            || !(-1.0..=1.0).contains(&theta[4])
+            || !(-1.0..=1.0).contains(&theta[5])
+        {
+            return None;
+        }
+        if want_gradient
+            && (theta[2] <= 0.0 || theta[2] >= 1.0 || theta[3] <= 0.0 || theta[3] >= 1.0)
+        {
+            // In direct (h², rho) coordinates, a vanished component makes its
+            // correlation unidentified and the square-root derivative is not
+            // finite. A zero gradient here would invent a stationary point.
+            return None;
+        }
         let (sigma_a, sigma_e) = covariances(theta);
         for sigma in [&sigma_a, &sigma_e] {
             if sigma[0][0] < 0.0 || sigma[1][1] < 0.0 {
@@ -316,7 +373,7 @@ impl BivariateModel {
 
             let index: Vec<usize> = block
                 .iter()
-                .map(|&(person, t)| self.row_index(person, t, observed))
+                .map(|&(person, t)| self.row_index(person, t))
                 .collect();
             let yb = DVector::from_iterator(size, index.iter().map(|&i| y[i]));
             let xb = DMatrix::from_fn(size, p, |r, c| self.design[(index[r], c)]);
@@ -342,7 +399,8 @@ impl BivariateModel {
         let mut value = 0.5 * (self.rows as f64 * two_pi + logdet + quadratic);
         if reml {
             let logdet_xvx = 2.0 * xvx_chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
-            value += 0.5 * logdet_xvx - 0.5 * p as f64 * two_pi;
+            value +=
+                0.5 * (logdet_xvx - self.logdet_xtx) - 0.5 * p as f64 * two_pi;
         }
 
         let mut gradient = [0.0; PARAMETERS];
@@ -413,10 +471,9 @@ impl BivariateModel {
         &self,
         theta: &[f64; PARAMETERS],
         y: &DVector<f64>,
-        observed: &[[bool; 2]],
         reml: bool,
     ) -> Option<(f64, [f64; PARAMETERS])> {
-        self.evaluate(theta, y, observed, reml, true)
+        self.evaluate(theta, y, reml, true)
             .map(|e| (e.negative_loglik, e.gradient))
     }
 }
@@ -432,25 +489,25 @@ struct BlockSolve {
 /// The box the parameters live in: variances positive, heritabilities in [0,1],
 /// correlations in [-1,1]. At two traits that is the whole constraint set.
 ///
-/// The heritabilities and correlations stop a whisker short of their bounds, and
-/// this matters more than it looks. At h² = 1 the residual variance is zero and
-/// the covariance is singular; at |ρ| = 1 one covariance is rank-deficient. The
-/// likelihood cannot be evaluated there at all, so a search allowed to step onto
-/// the bound gets an infeasible point back — and the only honest thing to return
-/// then is a refusal, which a quasi-Newton method cannot use. The univariate fit
-/// has the same pole and handles it with `UPPER_SNAP_TOLERANCE`; this is the
-/// same treatment. A boundary fit is then reported by its state, not by the
-/// search sitting exactly on the bound (`docs/adr/0005`).
+/// The direct `(h², ρ)` coordinates are not differentiable where a component
+/// variance vanishes, so the unconstrained six-parameter search keeps each
+/// heritability a whisker inside `(0, 1)`. An exact zero-variance state needs its
+/// own lower-dimensional fit rather than a fabricated derivative.
+///
+/// Correlations are different: `ρ = ±1` makes one component rank deficient, but
+/// the sum defining the full observation covariance may remain positive
+/// definite. Those exact boundaries are therefore retained, as decision 29
+/// requires for the genetic-correlation null refits.
 const EDGE: f64 = 1e-5;
 const LOWER: [f64; PARAMETERS] =
-    [1e-8, 1e-8, 0.0, 0.0, -1.0 + EDGE, -1.0 + EDGE];
+    [1e-8, 1e-8, EDGE, EDGE, -1.0, -1.0];
 const UPPER: [f64; PARAMETERS] = [
     f64::INFINITY,
     f64::INFINITY,
     1.0 - EDGE,
     1.0 - EDGE,
-    1.0 - EDGE,
-    1.0 - EDGE,
+    1.0,
+    1.0,
 ];
 
 fn project(theta: &mut [f64; PARAMETERS]) {
@@ -498,7 +555,6 @@ impl BivariateModel {
     pub fn fit(
         &self,
         y: &DVector<f64>,
-        observed: &[[bool; 2]],
         reml: bool,
     ) -> Result<BivariateFit, &'static str> {
 
@@ -512,7 +568,7 @@ impl BivariateModel {
         // One good warm start and two insurance starts, not nine
         // (decision 14). The first is each trait taken alone, which is what the
         // joint fit becomes when the correlations are zero.
-        let scale = self.trait_scales(y, observed);
+        let scale = self.trait_scales(y);
         let starts = [
             [scale[0], scale[1], 0.5, 0.5, 0.0, 0.0],
             [scale[0], scale[1], 0.3, 0.3, 0.5, 0.5],
@@ -521,7 +577,7 @@ impl BivariateModel {
 
         let mut best: Option<(f64, [f64; PARAMETERS], f64, bool)> = None;
         for start in starts {
-            if let Some(outcome) = self.minimise(start, y, observed, reml) {
+            if let Some(outcome) = self.minimise(start, y, reml) {
                 let better = best.as_ref().is_none_or(|(value, ..)| outcome.0 < *value);
                 if better {
                     best = Some(outcome);
@@ -551,18 +607,16 @@ impl BivariateModel {
         })
     }
 
-    fn trait_scales(&self, y: &DVector<f64>, observed: &[[bool; 2]]) -> [f64; 2] {
+    fn trait_scales(&self, y: &DVector<f64>) -> [f64; 2] {
         let mut sums = [0.0; 2];
         let mut squares = [0.0; 2];
         let mut counts = [0usize; 2];
-        let mut index = 0;
-        for mask in observed.iter() {
+        for positions in &self.row_positions {
             for t in 0..2 {
-                if mask[t] {
+                if let Some(index) = positions[t] {
                     sums[t] += y[index];
                     squares[t] += y[index] * y[index];
                     counts[t] += 1;
-                    index += 1;
                 }
             }
         }
@@ -610,7 +664,6 @@ impl BivariateModel {
         &self,
         start: [f64; PARAMETERS],
         y: &DVector<f64>,
-        observed: &[[bool; 2]],
         reml: bool,
     ) -> Option<(f64, [f64; PARAMETERS], f64, bool)> {
         const TOLERANCE: f64 = 1e-7;
@@ -630,7 +683,7 @@ impl BivariateModel {
         let mut evaluate = |candidate: &[f64]| -> (f64, Vec<f64>) {
             let mut theta = [0.0; PARAMETERS];
             theta.copy_from_slice(candidate);
-            match self.evaluate(&theta, y, observed, reml, true) {
+            match self.evaluate(&theta, y, reml, true) {
                 Some(e) => (e.negative_loglik, e.gradient.to_vec()),
                 None => {
                     // Outside where the covariance is positive definite. A zero
@@ -653,7 +706,7 @@ impl BivariateModel {
 
         let mut theta = [0.0; PARAMETERS];
         theta.copy_from_slice(&solution.x);
-        let at = self.evaluate(&theta, y, observed, reml, true)?;
+        let at = self.evaluate(&theta, y, reml, true)?;
         let norm = projected_gradient_norm(&theta, &at.gradient, at.negative_loglik);
         Some((at.negative_loglik, theta, norm, norm < TOLERANCE))
     }
@@ -733,7 +786,7 @@ use nalgebra::{DMatrix, DVector};
         let mut where_worst = (0usize, 0usize, false);
         for (index, theta) in points.iter().enumerate() {
             for reml in [false, true] {
-                let Some(at) = model.evaluate(theta, &y, &observed, reml, true) else { continue };
+                let Some(at) = model.evaluate(theta, &y, reml, true) else { continue };
                 for k_index in 0..PARAMETERS {
                     let step = 1e-6 * (1.0 + theta[k_index].abs());
                     let mut up = *theta;
@@ -741,8 +794,8 @@ use nalgebra::{DMatrix, DVector};
                     up[k_index] += step;
                     down[k_index] -= step;
                     let (Some(a), Some(b)) = (
-                        model.evaluate(&up, &y, &observed, reml, false),
-                        model.evaluate(&down, &y, &observed, reml, false),
+                        model.evaluate(&up, &y, reml, false),
+                        model.evaluate(&down, &y, reml, false),
                     ) else { continue };
                     let numeric = (a.negative_loglik - b.negative_loglik) / (2.0 * step);
                     let relative = (at.gradient[k_index] - numeric).abs() / (1.0 + numeric.abs());
@@ -768,15 +821,15 @@ use nalgebra::{DMatrix, DVector};
         let theta = [1.3, 0.8, 0.45, 0.6, 0.35, -0.2];
 
         for reml in [false, true] {
-            let at = model.evaluate(&theta, &y, &observed, reml, true).expect("finite");
+            let at = model.evaluate(&theta, &y, reml, true).expect("finite");
             for k_index in 0..PARAMETERS {
                 let step = 1e-6 * (1.0 + theta[k_index].abs());
                 let mut up = theta;
                 let mut down = theta;
                 up[k_index] += step;
                 down[k_index] -= step;
-                let a = model.evaluate(&up, &y, &observed, reml, false).expect("finite");
-                let b = model.evaluate(&down, &y, &observed, reml, false).expect("finite");
+                let a = model.evaluate(&up, &y, reml, false).expect("finite");
+                let b = model.evaluate(&down, &y, reml, false).expect("finite");
                 let numeric = (a.negative_loglik - b.negative_loglik) / (2.0 * step);
                 let analytic = at.gradient[k_index];
                 let scale = 1.0 + numeric.abs();
@@ -798,7 +851,7 @@ use nalgebra::{DMatrix, DVector};
         let mut theta = [1.0, 1.0, 0.5, 0.5, 0.0, 0.0];
         super::project(&mut theta);
         for step in 0..12 {
-            let e = model.evaluate(&theta, &y, &observed, true, true).expect("finite");
+            let e = model.evaluate(&theta, &y, true, true).expect("finite");
             let norm = super::projected_gradient_norm(&theta, &e.gradient, e.negative_loglik);
             println!(
                 "step {step:>2}  f={:>12.6}  |g|={:>10.3e}  theta={:?}",
@@ -817,12 +870,12 @@ use nalgebra::{DMatrix, DVector};
     fn a_fit_converges_and_reports_its_gradient() {
         let (k, observed, design, y) = small();
         let model = BivariateModel::build(&k, &observed, &design).expect("valid");
-        let fit = model.fit(&y, &observed, true).expect("fits");
+        let fit = model.fit(&y, true).expect("fits");
         let theta = [
             fit.total_variance[0], fit.total_variance[1],
             fit.h2[0], fit.h2[1], fit.rho_g, fit.rho_e,
         ];
-        let at = model.evaluate(&theta, &y, &observed, true, true).expect("finite");
+        let at = model.evaluate(&theta, &y, true, true).expect("finite");
         println!("theta = {theta:?}");
         println!("grad  = {:?}", at.gradient);
         println!("at a bound? {:?}", (0..PARAMETERS).map(|k|
@@ -872,7 +925,7 @@ use nalgebra::{DMatrix, DVector};
             y[i] = next() + next() + next();
         }
         let model = BivariateModel::build(&k, &observed, &design).expect("valid");
-        let fit = model.fit(&y, &observed, true).expect("still returns a fit");
+        let fit = model.fit(&y, true).expect("still returns a fit");
         // With nobody related to anybody, `Σ_A ⊗ I + Σ_E ⊗ I` is `(Σ_A + Σ_E) ⊗ I`
         // and only the sum is determined: the heritability is not near zero, it
         // is not estimable at all, and neither is the genetic correlation. What
@@ -892,6 +945,14 @@ use nalgebra::{DMatrix, DVector};
         // 60 people, every seventh missing the second trait, so not 120 rows.
         assert_eq!(model.subjects(), 60);
         assert_eq!(model.observations(), 120 - 9);
+    }
+
+    #[test]
+    fn genetic_and_residual_correlation_bounds_are_exact() {
+        assert_eq!(super::LOWER[4], -1.0);
+        assert_eq!(super::LOWER[5], -1.0);
+        assert_eq!(super::UPPER[4], 1.0);
+        assert_eq!(super::UPPER[5], 1.0);
     }
 }
 
@@ -921,7 +982,7 @@ mod python {
         let y = y.as_array();
         let y = DVector::from_iterator(y.len(), y.iter().copied());
         let model = BivariateModel::build(&k, &observed, &x).map_err(PyValueError::new_err)?;
-        let fit = model.fit(&y, &observed, reml).map_err(PyValueError::new_err)?;
+        let fit = model.fit(&y, reml).map_err(PyValueError::new_err)?;
         Ok((
             vec![
                 fit.total_variance[0], fit.total_variance[1],
@@ -966,7 +1027,7 @@ mod python {
         let mut point = [0.0; PARAMETERS];
         point.copy_from_slice(&theta);
         model
-            .objective_at(&point, &y, &observed, reml)
+            .objective_at(&point, &y, reml)
             .map(|(value, gradient)| (value, gradient.to_vec()))
             .ok_or_else(|| PyValueError::new_err("BIVARIATE_NOT_POSITIVE_DEFINITE"))
     }

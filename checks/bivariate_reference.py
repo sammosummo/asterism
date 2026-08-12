@@ -151,9 +151,16 @@ def negative_log_likelihood(
         sign, logdet_xvx = np.linalg.slogdet(xvx)
         if sign <= 0:
             return np.inf
+        observed_design = design[observed.reshape(-1)]
+        design_sign, logdet_xtx = np.linalg.slogdet(observed_design.T @ observed_design)
+        if design_sign <= 0:
+            return np.inf
         # The restricted likelihood is a density for n - p error contrasts, so
-        # it drops p of the 2*pi terms and gains the design's determinant.
-        value += 0.5 * logdet_xvx - 0.5 * p * LOG_TWO_PI
+        # it drops p of the 2*pi terms and gains the weighted design determinant.
+        # Subtracting the ordinary design determinant makes the reported value
+        # invariant to a nonsingular change of fixed-effect basis, matching the
+        # one-trait Asterism convention.
+        value += 0.5 * (logdet_xvx - logdet_xtx) - 0.5 * p * LOG_TWO_PI
     return value
 
 
@@ -182,17 +189,15 @@ def fit(
         np.array([scale[0], scale[1], 0.3, 0.3, 0.5, 0.5]),
         np.array([scale[0], scale[1], 0.7, 0.7, -0.3, 0.3]),
     ]
-    # Stop a whisker short of the singular edges. At h² = 1 the residual
-    # variance is zero and at |ρ| = 1 a covariance is rank-deficient, so the
-    # likelihood cannot be evaluated there at all — and an infinity returned to
-    # a finite-difference gradient turns into NaN, which the search then follows
-    # without complaint. That silent corruption is why an earlier version of
-    # this stopped at points with a gradient of two and looked converged.
-    edge = 1e-6
+    # The direct (h², rho) coordinates are not differentiable where a component
+    # variance vanishes, so keep h² just inside its bounds. Exact correlation
+    # boundaries remain valid: one component may be rank deficient while their
+    # sum, the full observation covariance, is still positive definite.
+    edge = 1e-5
     bounds = [
         (1e-8, None), (1e-8, None),
-        (0.0, 1.0 - edge), (0.0, 1.0 - edge),
-        (-1.0 + edge, 1.0 - edge), (-1.0 + edge, 1.0 - edge),
+        (edge, 1.0 - edge), (edge, 1.0 - edge),
+        (-1.0, 1.0), (-1.0, 1.0),
     ]
 
     best = None
