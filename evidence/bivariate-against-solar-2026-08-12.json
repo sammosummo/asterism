@@ -1,0 +1,39 @@
+{
+  "seed": 411,
+  "families": 25,
+  "people": 350,
+  "observations_by_trait": [
+    350,
+    300
+  ],
+  "balanced": false,
+  "estimator": "ml",
+  "truth": {
+    "h1": 0.6,
+    "h2": 0.35,
+    "rg": 0.55,
+    "re": 0.25
+  },
+  "asterism": {
+    "h2_first": 0.6819444826672696,
+    "h2_second": 0.31041513814438154,
+    "rho_g": 0.6104756178935877,
+    "rho_e": 0.2549208440695404,
+    "loglik": -871.6161843202793,
+    "scaled_gradient": 1.2935930506660978e-09,
+    "converged": true
+  },
+  "solar": {
+    "h2_first": 0.6819444,
+    "h2_second": 0.310415,
+    "rho_g": 0.6104755,
+    "rho_e": 0.254921
+  },
+  "absolute_differences": {
+    "h2_first": 8.266726958527926e-08,
+    "h2_second": 1.3814438154513553e-07,
+    "rho_g": 1.178935877810261e-07,
+    "rho_e": 1.5593045959994e-07
+  },
+  "comparison_tolerance": 5e-06
+}

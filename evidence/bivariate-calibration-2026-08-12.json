@@ -1,0 +1,45 @@
+{
+  "families": 30,
+  "people_per_family": 6,
+  "people": 180,
+  "estimator": "reml",
+  "truth": {
+    "h1": 0.6,
+    "h2": 0.35,
+    "rg": 0.55,
+    "re": 0.25
+  },
+  "intervals": {
+    "replicates_requested": 300,
+    "replicates_fitted": 298,
+    "nominal": 0.95,
+    "coverage": {
+      "h2_first": 0.9630872483221476,
+      "h2_second": 0.9731543624161074,
+      "rho_g": 0.9664429530201343,
+      "rho_e": 0.9530201342281879
+    },
+    "binomial_band": [
+      0.925254584859619,
+      0.9747454151403809
+    ]
+  },
+  "correlation_test": {
+    "replicates_requested": 400,
+    "replicates_tested": 400,
+    "null": {
+      "quantity": "rho_g",
+      "value": 0.0,
+      "interior": true
+    },
+    "rejection_rates": {
+      "0.01": 0.005,
+      "0.05": 0.0525,
+      "0.1": 0.1225
+    },
+    "kolmogorov_smirnov": {
+      "statistic": 0.037193524447720616,
+      "p_value": 0.6237618698186385
+    }
+  }
+}
