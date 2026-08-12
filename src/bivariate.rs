@@ -1546,6 +1546,36 @@ mod python {
         ))
     }
 
+    /// Test a correlation against a fixed value.
+    #[pyfunction]
+    #[pyo3(signature = (relationship, observed, design, y, quantity, null, reml=true))]
+    pub fn bivariate_correlation_test(
+        relationship: PyReadonlyArray2<'_, f64>,
+        observed: Vec<[bool; 2]>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        quantity: &str,
+        null: f64,
+        reml: bool,
+    ) -> PyResult<(f64, f64, String, f64)> {
+        let wanted = match quantity {
+            "rho_g" => super::Reported::GeneticCorrelation,
+            "rho_e" => super::Reported::ResidualCorrelation,
+            _ => return Err(PyValueError::new_err("BIVARIATE_NOT_A_CORRELATION")),
+        };
+        let k = relationship.as_array();
+        let k = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        let y = y.as_array();
+        let y = DVector::from_iterator(y.len(), y.iter().copied());
+        let model = BivariateModel::build(&k, &observed, &x).map_err(PyValueError::new_err)?;
+        let test = model
+            .correlation_test(&y, reml, wanted, null)
+            .map_err(PyValueError::new_err)?;
+        Ok((test.statistic, test.p_value, test.rule.to_owned(), test.null_loglik))
+    }
+
     /// A 95 per cent profile-likelihood interval for one reported quantity.
     ///
     /// `quantity` is `h2_first`, `h2_second`, `rho_g` or `rho_e`.
@@ -1625,7 +1655,9 @@ mod python {
 }
 
 #[cfg(feature = "python")]
-pub use python::{bivariate_fit, bivariate_interval, bivariate_objective};
+pub use python::{
+    bivariate_correlation_test, bivariate_fit, bivariate_interval, bivariate_objective,
+};
 
 /// The 0.95 quantile of chi-square with one degree of freedom.
 const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
@@ -1816,5 +1848,89 @@ impl BivariateModel {
             upper_limited,
             level: 0.95,
         })
+    }
+}
+
+/// One test of a correlation against a fixed value.
+#[derive(Clone, Copy, Debug)]
+pub struct CorrelationTest {
+    pub statistic: f64,
+    pub p_value: f64,
+    /// `chi2_1` at an interior null, `mixture_50_50` at a bound.
+    pub rule: &'static str,
+    pub null_loglik: f64,
+}
+
+/// The upper tail of chi-square on one degree of freedom, through the
+/// complementary error function rather than one minus a distribution function,
+/// which loses its digits exactly where a p-value needs them.
+fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
+    if statistic <= 0.0 {
+        return 1.0;
+    }
+    statrs::function::erf::erfc((statistic / 2.0).sqrt())
+}
+
+impl BivariateModel {
+    /// Test a correlation against a fixed value by refitting with it held there.
+    ///
+    /// Carried as a free parameter (decision 29), a correlation supports an
+    /// ordinary likelihood ratio against a constrained refit — no
+    /// reparameterisation and no special machinery.
+    ///
+    /// Against zero the null is interior and the statistic is chi-square on one
+    /// degree of freedom. Against plus or minus one it sits on a bound, and with
+    /// both variances positive that is a single parameter on a smooth one-sided
+    /// boundary, so half the null's mass is at zero and the Self–Liang 50:50
+    /// mixture applies.
+    ///
+    /// **The likelihood exists at |ρ| = 1.** The genetic covariance has rank one
+    /// there — complete pleiotropy — and V is a semi-definite term plus a
+    /// definite one. An earlier version of the reference fenced the correlations
+    /// away from their bounds on the opposite belief and broke this test, which
+    /// then rejected sixty per cent of the time at a nominal one per cent.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit fails or the quantity is absent
+    /// because the variance behind it is exactly zero.
+    pub fn correlation_test(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        quantity: Reported,
+        null: f64,
+    ) -> Result<CorrelationTest, &'static str> {
+        if !matches!(
+            quantity,
+            Reported::GeneticCorrelation | Reported::ResidualCorrelation
+        ) {
+            return Err("BIVARIATE_NOT_A_CORRELATION");
+        }
+        let fit = self.fit(y, reml)?;
+        let present = match quantity {
+            Reported::GeneticCorrelation => fit.rho_g.is_some(),
+            _ => fit.rho_e.is_some(),
+        };
+        if !present {
+            return Err("BIVARIATE_QUANTITY_ABSENT");
+        }
+
+        let null_loglik = self
+            .profile_objective(y, reml, quantity.index(), null)
+            .ok_or("BIVARIATE_NULL_FIT_FAILED")?;
+        let statistic = (2.0 * (fit.loglik - null_loglik)).max(0.0);
+
+        let interior = null.abs() < 1.0;
+        let (p_value, rule) = if interior {
+            (chi2_one_df_upper_tail(statistic), "chi2_1")
+        } else if statistic <= 0.0 {
+            // The estimate sits on the bound: nothing can be more extreme.
+            (1.0, "mixture_50_50")
+        } else {
+            (0.5 * chi2_one_df_upper_tail(statistic), "mixture_50_50")
+        };
+
+        Ok(CorrelationTest { statistic, p_value, rule, null_loglik })
     }
 }
