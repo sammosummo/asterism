@@ -413,14 +413,410 @@ impl ComponentModel {
     }
 }
 
+/// A profile-likelihood interval for one component's share of the variance.
+#[derive(Clone, Copy, Debug)]
+pub struct ComponentInterval {
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the endpoint is the edge of the parameter space rather than a
+    /// point the data ruled out.
+    pub lower_limited: bool,
+    pub upper_limited: bool,
+    pub level: f64,
+}
+
+/// A likelihood ratio test of one component against no variance at all.
+#[derive(Clone, Debug)]
+pub struct ComponentTest {
+    pub statistic: f64,
+    pub p_value: f64,
+    pub rule: &'static str,
+    pub null_loglik: f64,
+}
+
+const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
+
+/// The upper tail of a chi-square on one degree of freedom.
+fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
+    if statistic <= 0.0 {
+        return 1.0;
+    }
+    statrs::function::erf::erfc((statistic / 2.0).sqrt())
+}
+
+impl ComponentModel {
+    /// The best log-likelihood with one component holding a fixed share of the
+    /// total variance.
+    ///
+    /// A share is not a parameter, so it cannot be pinned by fixing one. But
+    /// holding it fixed is a substitution, and an easier one than it looks. From
+    ///
+    /// ```text
+    /// v = s_j / (s_j + S)      where S is the sum of the others
+    /// ```
+    ///
+    /// comes `s_j = S * v / (1 - v)`. So the search runs over the other
+    /// variances and this one follows, and because the relation is linear in
+    /// them the chain rule is a constant rather than a derivative — every free
+    /// variance moves the pinned one by the same `v / (1 - v)`.
+    ///
+    /// A share of exactly one would need every other variance at nought and the
+    /// substitution divides by zero there, so it is refused and the endpoint
+    /// reports itself as limited by the parameter space.
+    fn profile_objective(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+        share: f64,
+    ) -> Option<f64> {
+        if !(0.0..=1.0).contains(&share) || share > 1.0 - 1e-9 {
+            return None;
+        }
+        let count = self.parameters();
+        let free: Vec<usize> = (0..count).filter(|k| *k != component).collect();
+        let factor = share / (1.0 - share);
+
+        let expand = |packed: &[f64]| -> Vec<f64> {
+            let mut theta = vec![0.0; count];
+            let mut others = 0.0;
+            for (slot, &k) in free.iter().enumerate() {
+                theta[k] = packed[slot];
+                others += packed[slot];
+            }
+            theta[component] = factor * others;
+            theta
+        };
+
+        let mut best: Option<f64> = None;
+        for start in [
+            vec![1.0 / count as f64; free.len()],
+            {
+                let mut s = vec![0.1; free.len()];
+                if let Some(last) = s.last_mut() {
+                    *last = 0.9;
+                }
+                s
+            },
+        ] {
+            let value_of = |candidate: &[f64]| -> f64 {
+                self.evaluate(&expand(candidate), y, reml, false)
+                    .map_or(1e30, |e| e.negative_loglik)
+            };
+            let gradient_of = |candidate: &[f64]| -> Vec<f64> {
+                self.evaluate(&expand(candidate), y, reml, true).map_or_else(
+                    || vec![0.0; free.len()],
+                    |e| {
+                        // The pinned component is carried by all the others at
+                        // once, so each of them picks up the same share of its
+                        // slope.
+                        let through = e.gradient[component] * factor;
+                        free.iter().map(|&k| e.gradient[k] + through).collect()
+                    },
+                )
+            };
+            let Ok(bounds) = Bounds::new(vec![0.0; free.len()], vec![f64::INFINITY; free.len()])
+            else {
+                continue;
+            };
+            let mut control = OptimControl::default_for_dimension(free.len());
+            control.maxit = 400;
+            control.fnscale = value_of(&start).abs().max(1.0);
+            control.parscale = vec![1.0; free.len()];
+            control.factr = 0.0;
+            control.pgtol = 1e-9;
+            control.lmm = free.len().min(10);
+            if let Ok(solution) =
+                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+            {
+                if let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false) {
+                    if at.negative_loglik.is_finite()
+                        && best.is_none_or(|b: f64| at.negative_loglik < b)
+                    {
+                        best = Some(at.negative_loglik);
+                    }
+                }
+            }
+        }
+        best.map(|negative| -negative)
+    }
+
+    /// A 95 per cent profile-likelihood interval for one component's share.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit or the profile at the estimate fails.
+    pub fn profile_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+    ) -> Result<ComponentInterval, &'static str> {
+        if component >= self.parameters() {
+            return Err("COMPONENTS_NO_SUCH_COMPONENT");
+        }
+        let fit = self.fit(y, reml)?;
+        let fitted = fit.proportions[component];
+
+        let mean = y.mean();
+        let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
+        let scaled = y / variance.sqrt();
+
+        // Both ends of the difference are measured the same way, by pinning and
+        // re-optimising. Taking the maximum from the free fit instead leaves a
+        // constant in the deviance, which is how the two-trait intervals once
+        // came to have zero width.
+        let maximum = self
+            .profile_objective(&scaled, reml, component, fitted)
+            .ok_or("COMPONENTS_PROFILE_MAXIMUM_FAILED")?;
+        let deviance = |share: f64| -> f64 {
+            self.profile_objective(&scaled, reml, component, share)
+                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+        };
+
+        let endpoint = |bound: f64| -> (f64, bool) {
+            if deviance(bound) <= CHI2_ONE_DF_95 {
+                return (bound, true);
+            }
+            let (mut inside, mut outside) = (fitted, bound);
+            for _ in 0..80 {
+                let middle = 0.5 * (inside + outside);
+                if (outside - inside).abs() <= 1e-9 {
+                    break;
+                }
+                if deviance(middle) <= CHI2_ONE_DF_95 {
+                    inside = middle;
+                } else {
+                    outside = middle;
+                }
+            }
+            (0.5 * (inside + outside), false)
+        };
+
+        let (lower, lower_limited) = endpoint(0.0);
+        let (upper, upper_limited) = endpoint(1.0 - 1e-9);
+        Ok(ComponentInterval {
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level: 0.95,
+        })
+    }
+
+    /// Test one component against having no variance at all.
+    ///
+    /// The null sits on the edge of the parameter space, because a variance
+    /// cannot be negative, so the statistic is not chi-square on one degree of
+    /// freedom. It is the Self–Liang half-and-half mixture of that and a point
+    /// mass at nought, which is the same rule the one-component model uses for
+    /// no additive variance and the rule the port lab's inference catalogue
+    /// records for a household variance under
+    /// `solar_successor.household_univariate.c2_zero_boundary_lrt`.
+    ///
+    /// **This is the single-boundary case and only that.** It holds because the
+    /// other components are away from their bounds at the optimum. Testing one
+    /// component while another also rests on nought is a different question with
+    /// a different null, and this returns a refusal rather than a number there.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where a fit fails or another component is itself at
+    /// the boundary.
+    pub fn component_test(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+    ) -> Result<ComponentTest, &'static str> {
+        if component >= self.parameters() {
+            return Err("COMPONENTS_NO_SUCH_COMPONENT");
+        }
+        if component == self.parameters() - 1 {
+            // A model with no residual variance is not a model anybody wants
+            // tested, and the mixture argument does not apply to it.
+            return Err("COMPONENTS_RESIDUAL_NOT_TESTABLE");
+        }
+        let fit = self.fit(y, reml)?;
+
+        // The mixture assumes one parameter on the boundary and the rest inside
+        // it. If another component has also gone to nought the null is a
+        // different mixture, and returning this one would be a p-value for a
+        // question nobody asked.
+        for (other, share) in fit.proportions.iter().enumerate() {
+            if other != component && *share <= 1e-9 {
+                return Err("COMPONENTS_ANOTHER_COMPONENT_AT_ZERO");
+            }
+        }
+
+        // The null drops the component rather than pinning it at nought, which
+        // is the same model and a smaller one to fit.
+        let kept: Vec<DMatrix<f64>> = self
+            .matrices
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != component)
+            .map(|(_, matrix)| matrix.clone())
+            .collect();
+        let null_loglik = if kept.is_empty() {
+            // Nothing structured left: residual only, which is still a model.
+            let residual = ComponentModel::build(&[DMatrix::identity(self.rows, self.rows)], &self.design)?;
+            residual.fit(y, reml)?.loglik
+        } else {
+            ComponentModel::build(&kept, &self.design)?.fit(y, reml)?.loglik
+        };
+
+        let statistic = (2.0 * (fit.loglik - null_loglik)).max(0.0);
+        let p_value = if statistic <= 0.0 {
+            1.0
+        } else {
+            0.5 * chi2_one_df_upper_tail(statistic)
+        };
+        Ok(ComponentTest {
+            statistic,
+            p_value,
+            rule: "mixture_50_50",
+            null_loglik,
+        })
+    }
+}
+
+#[cfg(feature = "python")]
+mod python {
+    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+    use pyo3::exceptions::PyValueError;
+    use pyo3::prelude::*;
+
+    use super::ComponentModel;
+    use nalgebra::{DMatrix, DVector};
+
+    fn build(
+        matrices: &[PyReadonlyArray2<'_, f64>],
+        design: &PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<ComponentModel> {
+        let converted: Vec<DMatrix<f64>> = matrices
+            .iter()
+            .map(|m| {
+                let a = m.as_array();
+                DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)])
+            })
+            .collect();
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        ComponentModel::build(&converted, &x).map_err(PyValueError::new_err)
+    }
+
+    fn response(y: &PyReadonlyArray1<'_, f64>) -> DVector<f64> {
+        let y = y.as_array();
+        DVector::from_iterator(y.len(), y.iter().copied())
+    }
+
+    /// Fit one trait with any number of variance components.
+    ///
+    /// `matrices` are the structured components in order; the residual is added
+    /// for you and is always last in what comes back.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, reml=true))]
+    pub fn component_fit(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        reml: bool,
+    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, bool)> {
+        let model = build(&matrices, &design)?;
+        let fit = model
+            .fit(&response(&y), reml)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            fit.variances,
+            fit.proportions,
+            fit.total_variance,
+            fit.loglik,
+            fit.scaled_gradient,
+            fit.converged,
+        ))
+    }
+
+    /// A 95 per cent profile interval for one component's share of the variance.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, component, reml=true))]
+    pub fn component_interval(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        component: usize,
+        reml: bool,
+    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+        let model = build(&matrices, &design)?;
+        let interval = model
+            .profile_interval(&response(&y), reml, component)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            interval.lower,
+            interval.upper,
+            interval.lower_limited,
+            interval.upper_limited,
+            interval.level,
+        ))
+    }
+
+    /// Test one component against having no variance at all.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, component, reml=true))]
+    pub fn component_test(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        component: usize,
+        reml: bool,
+    ) -> PyResult<(f64, f64, String, f64)> {
+        let model = build(&matrices, &design)?;
+        let test = model
+            .component_test(&response(&y), reml, component)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            test.statistic,
+            test.p_value,
+            test.rule.to_owned(),
+            test.null_loglik,
+        ))
+    }
+}
+
+#[cfg(feature = "python")]
+pub use python::{component_fit, component_interval, component_test};
+
 #[cfg(test)]
 mod tests {
     use super::ComponentModel;
     use nalgebra::{DMatrix, DVector};
 
-    /// Sibling pairs, plus a household that sometimes crosses a family.
-    fn small() -> (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>, DVector<f64>) {
-        let pairs = 40;
+    /// Sibling pairs, in households of four so that each household holds two
+    /// pairs from different families.
+    ///
+    /// **Drawn from the model rather than from hand-mixed coefficients.** An
+    /// earlier version of this built the response by adding a shared genetic
+    /// term, a shared household term and noise with coefficients chosen by eye,
+    /// and produced a within-pair correlation of 0.81 against 0.25 across the
+    /// household. No additive-plus-household model can reach that: siblings
+    /// share half their additive variance, so it implied a heritability of 1.12.
+    /// The optimiser had nowhere to go but the boundary, and the tests then
+    /// refused to give a p-value because a component was resting on nought. The
+    /// refusal was right and the data were wrong.
+    ///
+    /// Here each sibling gets a value correlated one half with its sib, which is
+    /// what the relationship matrix says, and the three variances are chosen to
+    /// sum to one: two fifths additive, one fifth household, two fifths
+    /// residual.
+    pub(super) fn small() -> (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>, DVector<f64>) {
+        // **Big enough that the sample looks like the model it came from.** At
+        // forty pairs the empirical within-pair correlation came out at 0.57
+        // against a true 0.40, which implies a heritability above one; the fit
+        // then had nowhere to go but the boundary and the tests refused to give
+        // a p-value. Nothing was wrong with the estimator. Two hundred pairs
+        // keeps the sample correlations close enough to the truth that the model
+        // can represent them.
+        let pairs = 200;
         let n = 2 * pairs;
         let mut a = DMatrix::<f64>::identity(n, n);
         for pair in 0..pairs {
@@ -441,24 +837,34 @@ mod tests {
         let design = DMatrix::from_element(n, 1, 1.0);
 
         let mut seed = 20260812u64;
+        // Three uniforms scaled to unit variance.
         let mut next = || {
-            seed = seed
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-            ((seed >> 11) as f64 / (1u64 << 53) as f64) - 0.5
+            let mut total = 0.0;
+            for _ in 0..3 {
+                seed = seed
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                total += ((seed >> 11) as f64 / (1u64 << 53) as f64) - 0.5;
+            }
+            total * 2.0
         };
+
+        let (additive, household_share, residual) = (0.4f64, 0.2f64, 0.4f64);
+        let half = 0.5f64.sqrt();
         let mut y = DVector::<f64>::zeros(n);
         for household in 0..n / 4 {
-            let shared = next() + next() + next();
+            let shared = next();
             for i in 0..4 {
-                let row = household * 4 + i;
-                y[row] += 0.8 * shared;
+                y[household * 4 + i] += household_share.sqrt() * shared;
             }
         }
         for pair in 0..pairs {
-            let genetic = next() + next() + next();
+            // Correlated one half within the pair, unit variance each, which is
+            // exactly what the relationship matrix above describes.
+            let common = next();
             for i in 0..2 {
-                y[2 * pair + i] += 1.2 * genetic + 0.7 * (next() + next() + next());
+                let genetic = half * common + half * next();
+                y[2 * pair + i] += additive.sqrt() * genetic + residual.sqrt() * next();
             }
         }
         (a, h, design, y)
@@ -544,6 +950,85 @@ mod tests {
         );
     }
 
+    /// The interval must contain the estimate and must have width. A
+    /// degenerate interval collapsed onto its own point estimate does contain
+    /// it, so containment alone is not the test -- that exact fault appeared in
+    /// the two-trait intervals and was invisible to a containment check.
+    #[test]
+    fn the_interval_contains_the_estimate_and_has_width() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a, h], &design).expect("valid");
+        let fit = model.fit(&y, true).expect("fits");
+        for component in 0..2 {
+            let interval = model
+                .profile_interval(&y, true, component)
+                .expect("interval");
+            let point = fit.proportions[component];
+            assert!(
+                interval.lower <= point + 1e-9 && point <= interval.upper + 1e-9,
+                "component {component}: [{}, {}] does not contain {point}",
+                interval.lower,
+                interval.upper
+            );
+            assert!(
+                interval.upper - interval.lower > 1e-3,
+                "component {component}: [{}, {}] has no width",
+                interval.lower,
+                interval.upper
+            );
+        }
+    }
+
+    /// A household effect that is really there is detected; one that is not
+    /// there is not invented. Both directions matter, and a test that only ever
+    /// sees data with the effect present cannot tell a working test from one
+    /// that always rejects.
+    #[test]
+    fn a_household_effect_is_detected_when_present_and_not_when_absent() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a, h.clone()], &design).expect("valid");
+        let present = model.component_test(&y, true, 1).expect("tests");
+        assert!(
+            present.p_value < 0.05,
+            "a household effect was simulated but the test gave p = {}",
+            present.p_value
+        );
+
+        // The same pedigree and households, but nothing shared beyond the genes.
+        let n = design.nrows();
+        let mut seed = 99u64;
+        let mut next = || {
+            let mut total = 0.0;
+            for _ in 0..3 {
+                seed = seed
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                total += ((seed >> 11) as f64 / (1u64 << 53) as f64) - 0.5;
+            }
+            total * 2.0
+        };
+        // Drawn the same way as `small`, with the household share set to
+        // nought and the rest of the variance moved to the residual.
+        let half = 0.5f64.sqrt();
+        let (additive, residual) = (0.4f64, 0.6f64);
+        let mut plain = DVector::<f64>::zeros(n);
+        for pair in 0..n / 2 {
+            let common = next();
+            for i in 0..2 {
+                let genetic = half * common + half * next();
+                plain[2 * pair + i] =
+                    additive.sqrt() * genetic + residual.sqrt() * next();
+            }
+        }
+        let absent = model.component_test(&plain, true, 1).expect("tests");
+        assert!(
+            absent.p_value > 0.05,
+            "no household effect was simulated but the test gave p = {}",
+            absent.p_value
+        );
+        assert_eq!(absent.rule, "mixture_50_50");
+    }
+
     /// A household crossing two pedigree families must not be split apart. If
     /// blocks came from the relationship matrix alone these people would land in
     /// different blocks and the covariance between them would vanish, which is a
@@ -573,3 +1058,5 @@ mod tests {
         );
     }
 }
+
+

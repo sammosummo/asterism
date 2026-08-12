@@ -31,6 +31,9 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_objective, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_interval, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         bivariate::bivariate_correlation_test,
         module
