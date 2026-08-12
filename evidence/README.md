@@ -132,14 +132,24 @@ numbers as software already trusted; this asks whether the uncertainty around
 those numbers means what it says. Produced by `checks/bivariate_calibration.py`,
 which takes about a quarter of an hour.
 
-Thirty families of six, n = 180, REML. Interval coverage is 0.957, 0.967, 0.960
-and 0.953 against a nominal 0.95. The test of a correlation against zero — an
-interior point, so a plain chi-squared — rejects 0.005, 0.052 and 0.122 at the
-one, five and ten per cent levels, with Kolmogorov–Smirnov against uniform
-giving p = 0.62. Against a correlation of one, where the null sits on a bound and
-the Self–Liang mixture applies, it rejects 0.007, 0.033 and 0.068, with the
-statistic exactly zero in 55 per cent of samples against the mixture's expected
-50.
+Thirty families of six, n = 180, REML. Interval coverage is 0.957, 0.967, 0.960,
+0.953 and 0.977 against a nominal 0.95 — the last being the phenotypic
+correlation, slightly conservative.
+
+Three tests are calibrated, one per branch of the arithmetic. Against zero, an
+interior point, a plain chi-squared applies and the genetic correlation rejects
+0.005, 0.052 and 0.122 at the one, five and ten per cent levels, with
+Kolmogorov–Smirnov against uniform giving p = 0.62. Against one, where the null
+sits on a bound and the Self–Liang mixture applies, it rejects 0.007, 0.033 and
+0.068, with the statistic exactly zero in 55 per cent of samples against the
+mixture's expected 50.
+
+The third is the phenotypic correlation, which has no coordinate to pin and is
+profiled by substitution instead. Its null is chosen to be awkward: a phenotypic
+correlation of nought could come from both components being nought, which would
+never exercise the substitution, so the genetic correlation is 0.45 and the
+residual −0.4044 and only the sum is nought. It rejects 0.018, 0.055 and 0.107,
+with Kolmogorov–Smirnov giving p = 0.71.
 
 **This check earns its runtime.** It found two faults nothing else did: a units
 disagreement between the free and constrained fits that made every interval

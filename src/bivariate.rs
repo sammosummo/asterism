@@ -1503,6 +1503,109 @@ mod tests {
         );
     }
 
+    /// The substitution that profiles the phenotypic correlation carries a
+    /// chain rule, and a chain rule is the easiest thing in this file to get
+    /// wrong by a sign. The derived residual correlation and its three
+    /// derivatives are checked against a central difference of the substitution
+    /// itself, away from and near the heritability bounds, because the
+    /// derivatives grow large near those bounds and a sign error is easiest to
+    /// hide where the magnitude is already surprising.
+    #[test]
+    fn the_phenotypic_substitution_and_its_slopes_are_right() {
+        // rho_E as a function of the others, exactly as the profile derives it.
+        let implied = |target: f64, h1: f64, h2: f64, rg: f64| -> f64 {
+            (target - rg * (h1 * h2).sqrt()) / ((1.0 - h1) * (1.0 - h2)).sqrt()
+        };
+        let slopes = |target: f64, h1: f64, h2: f64, rg: f64| -> [f64; 3] {
+            let genetic = (h1 * h2).sqrt();
+            let residual = ((1.0 - h1) * (1.0 - h2)).sqrt();
+            let numerator = target - rg * genetic;
+            [
+                -rg * (h2 / (2.0 * genetic)) / residual
+                    + numerator * (1.0 - h2) / (2.0 * residual.powi(3)),
+                -rg * (h1 / (2.0 * genetic)) / residual
+                    + numerator * (1.0 - h1) / (2.0 * residual.powi(3)),
+                -genetic / residual,
+            ]
+        };
+
+        for &(target, h1, h2, rg) in &[
+            (0.30, 0.50, 0.50, 0.40),
+            (0.00, 0.60, 0.35, 0.55),
+            (-0.25, 0.20, 0.80, -0.60),
+            (0.70, 0.90, 0.85, 0.75),
+            (0.10, 0.02, 0.50, 0.30),   // a heritability near nought
+            (0.10, 0.98, 0.50, 0.30),   // and one near one
+        ] {
+            // The substitution must invert the definition it came from.
+            let re = implied(target, h1, h2, rg);
+            let back = rg * (h1 * h2).sqrt() + re * ((1.0 - h1) * (1.0 - h2)).sqrt();
+            assert!(
+                (back - target).abs() < 1e-12,
+                "substitution does not invert: {back} against {target}"
+            );
+
+            let analytic = slopes(target, h1, h2, rg);
+            let step = 1e-6;
+            let numeric = [
+                (implied(target, h1 + step, h2, rg) - implied(target, h1 - step, h2, rg))
+                    / (2.0 * step),
+                (implied(target, h1, h2 + step, rg) - implied(target, h1, h2 - step, rg))
+                    / (2.0 * step),
+                (implied(target, h1, h2, rg + step) - implied(target, h1, h2, rg - step))
+                    / (2.0 * step),
+            ];
+            for slot in 0..3 {
+                let scale = analytic[slot].abs().max(1.0);
+                assert!(
+                    (analytic[slot] - numeric[slot]).abs() / scale < 1e-5,
+                    "slope {slot} at ({target}, {h1}, {h2}, {rg}): analytic {} against \
+                     numeric {}",
+                    analytic[slot],
+                    numeric[slot]
+                );
+            }
+        }
+    }
+
+    /// The phenotypic correlation's interval must behave like the others: it
+    /// must contain the estimate, it must have width, and testing it against
+    /// its own estimate must give nothing. It reaches all of that by a different
+    /// route -- substitution rather than pinning a coordinate -- so passing for
+    /// the other four says nothing about it.
+    #[test]
+    fn the_phenotypic_correlation_has_an_interval_and_a_test() {
+        let (k, observed, design, y) = small();
+        let model = BivariateModel::build(&k, &observed, &design).expect("valid");
+        for reml in [false, true] {
+            let fit = model.fit(&y, reml).expect("fits");
+            let interval = model
+                .profile_interval(&y, reml, Reported::PhenotypicCorrelation)
+                .expect("interval");
+            assert!(
+                interval.lower <= fit.rho_p + 1.0e-9 && fit.rho_p <= interval.upper + 1.0e-9,
+                "reml={reml}: [{}, {}] does not contain {}",
+                interval.lower,
+                interval.upper,
+                fit.rho_p
+            );
+            assert!(
+                interval.upper - interval.lower > 1.0e-3,
+                "reml={reml}: [{}, {}] has no width",
+                interval.lower,
+                interval.upper
+            );
+            let test = model
+                .correlation_test(&y, reml, Reported::PhenotypicCorrelation, fit.rho_p)
+                .expect("tests");
+            assert!(
+                test.statistic < 1.0e-4 && test.p_value > 0.99,
+                "reml={reml}: statistic {} against its own estimate",
+                test.statistic
+            );
+        }
+    }
+
     /// Testing a correlation against the value it was just estimated to have
     /// must produce a statistic of zero. The constrained fit and the free fit
     /// are then the same fit, so any difference between them is arithmetic that
@@ -1639,6 +1742,7 @@ mod python {
         let wanted = match quantity {
             "rho_g" => super::Reported::GeneticCorrelation,
             "rho_e" => super::Reported::ResidualCorrelation,
+            "rho_p" => super::Reported::PhenotypicCorrelation,
             _ => return Err(PyValueError::new_err("BIVARIATE_NOT_A_CORRELATION")),
         };
         let k = relationship.as_array();
@@ -1656,7 +1760,7 @@ mod python {
 
     /// A 95 per cent profile-likelihood interval for one reported quantity.
     ///
-    /// `quantity` is `h2_first`, `h2_second`, `rho_g` or `rho_e`.
+    /// `quantity` is `h2_first`, `h2_second`, `rho_g`, `rho_e` or `rho_p`.
     #[pyfunction]
     #[pyo3(signature = (relationship, observed, design, y, quantity, reml=true))]
     pub fn bivariate_interval(
@@ -1672,6 +1776,7 @@ mod python {
             "h2_second" => super::Reported::HeritabilitySecond,
             "rho_g" => super::Reported::GeneticCorrelation,
             "rho_e" => super::Reported::ResidualCorrelation,
+            "rho_p" => super::Reported::PhenotypicCorrelation,
             _ => return Err(PyValueError::new_err("BIVARIATE_QUANTITY_UNKNOWN")),
         };
         let k = relationship.as_array();
@@ -1765,15 +1870,29 @@ pub enum Reported {
     HeritabilitySecond,
     GeneticCorrelation,
     ResidualCorrelation,
+    /// Derived from the other four rather than estimated, so it has no
+    /// coordinate of its own and is profiled by substitution instead.
+    PhenotypicCorrelation,
 }
 
 impl Reported {
-    const fn index(self) -> usize {
+    /// Which parameter this quantity is, where it is one at all.
+    const fn coordinate(self) -> Option<usize> {
         match self {
-            Self::HeritabilityFirst => 2,
-            Self::HeritabilitySecond => 3,
-            Self::GeneticCorrelation => 4,
-            Self::ResidualCorrelation => 5,
+            Self::HeritabilityFirst => Some(2),
+            Self::HeritabilitySecond => Some(3),
+            Self::GeneticCorrelation => Some(4),
+            Self::ResidualCorrelation => Some(5),
+            Self::PhenotypicCorrelation => None,
+        }
+    }
+
+    /// The range the quantity may take. A correlation runs from minus one to
+    /// one whether it is estimated or derived.
+    const fn range(self) -> (f64, f64) {
+        match self.coordinate() {
+            Some(index) => (LOWER[index], UPPER[index]),
+            None => (-1.0, 1.0),
         }
     }
 }
@@ -1859,16 +1978,180 @@ impl BivariateModel {
         best.map(|negative| -negative)
     }
 
+    /// The best log-likelihood with the phenotypic correlation held at `value`.
+    ///
+    /// The phenotypic correlation is derived rather than estimated, so it cannot
+    /// be pinned by fixing a coordinate the way the other four are. Holding it
+    /// fixed is instead the same as making the residual correlation a function
+    /// of the others. From
+    ///
+    /// ```text
+    /// rho_P = rho_G*sqrt(h1*h2) + rho_E*sqrt((1-h1)*(1-h2))
+    /// ```
+    ///
+    /// which the total variances drop out of entirely, comes
+    ///
+    /// ```text
+    /// rho_E = (rho_P - rho_G*sqrt(h1*h2)) / sqrt((1-h1)*(1-h2))
+    /// ```
+    ///
+    /// So the search runs over the five remaining parameters and the residual
+    /// correlation follows. Where the implied residual correlation would fall
+    /// outside [-1, 1] the value is unreachable and the point is refused, which
+    /// is why this interval can stop short of a bound for reasons of arithmetic
+    /// rather than of data.
+    ///
+    /// The gradient carries the substitution through the chain rule. It stays
+    /// finite because the heritabilities are bounded away from nought and one,
+    /// but it grows large near those bounds, where a small change in a
+    /// heritability moves the implied residual correlation quickly.
+    fn profile_objective_phenotypic(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        value: f64,
+    ) -> Option<f64> {
+        let standardised = self.standardised_problem(y).ok()?;
+        // Everything except the residual correlation, which is derived.
+        let lower: Vec<f64> = (0..5).map(|k| LOWER[k]).collect();
+        let upper: Vec<f64> = (0..5).map(|k| UPPER[k]).collect();
+
+        // The implied residual correlation, with its derivatives with respect
+        // to the two heritabilities and the genetic correlation. `None` where
+        // the phenotypic correlation asked for cannot be reached at all.
+        let implied = |packed: &[f64]| -> Option<[f64; 4]> {
+            let (h1, h2, rg) = (packed[2], packed[3], packed[4]);
+            let genetic = (h1 * h2).sqrt();
+            let residual = ((1.0 - h1) * (1.0 - h2)).sqrt();
+            if !(residual > 0.0) || !(genetic > 0.0) {
+                return None;
+            }
+            let numerator = value - rg * genetic;
+            let re = numerator / residual;
+            if !re.is_finite() || re.abs() > 1.0 {
+                return None;
+            }
+            let d_h1 = -rg * (h2 / (2.0 * genetic)) / residual
+                + numerator * (1.0 - h2) / (2.0 * residual.powi(3));
+            let d_h2 = -rg * (h1 / (2.0 * genetic)) / residual
+                + numerator * (1.0 - h1) / (2.0 * residual.powi(3));
+            let d_rg = -genetic / residual;
+            Some([re, d_h1, d_h2, d_rg])
+        };
+
+        let expand = |packed: &[f64]| -> Option<[f64; PARAMETERS]> {
+            let derived = implied(packed)?;
+            Some([
+                packed[0], packed[1], packed[2], packed[3], packed[4], derived[0],
+            ])
+        };
+
+        let mut best: Option<f64> = None;
+        for start in [
+            [1.0f64, 1.0, 0.5, 0.5, 0.0],
+            [1.0f64, 1.0, 0.3, 0.3, 0.4],
+            [1.0f64, 1.0, 0.7, 0.7, -0.3],
+        ] {
+            let mut packed: Vec<f64> = (0..5)
+                .map(|slot| start[slot].clamp(lower[slot], upper[slot]))
+                .collect();
+            // A start whose implied residual correlation is out of range is no
+            // use. Walk the genetic correlation toward nought, which shrinks the
+            // term being subtracted, before giving up on this start.
+            if implied(&packed).is_none() {
+                for shrink in [0.5, 0.25, 0.0] {
+                    packed[4] = start[4] * shrink;
+                    if implied(&packed).is_some() {
+                        break;
+                    }
+                }
+            }
+            if implied(&packed).is_none() {
+                continue;
+            }
+
+            // A refusal is a large value and never a zero gradient, for the same
+            // reason as the coordinate profile: a zero would tell the search it
+            // had found a stationary point.
+            let value_of = |candidate: &[f64]| -> f64 {
+                expand(candidate).map_or(1e30, |theta| {
+                    self.evaluate(&theta, &standardised.y, reml, false)
+                        .map_or(1e30, |e| e.negative_loglik)
+                })
+            };
+            let gradient_of = |candidate: &[f64]| -> Vec<f64> {
+                let (Some(theta), Some(derived)) = (expand(candidate), implied(candidate)) else {
+                    return vec![0.0; 5];
+                };
+                self.evaluate(&theta, &standardised.y, reml, true)
+                    .map_or_else(
+                        || vec![0.0; 5],
+                        |e| {
+                            // The residual correlation is not free, so its own
+                            // slope feeds back into whatever moved it.
+                            let through = e.gradient[5];
+                            vec![
+                                e.gradient[0],
+                                e.gradient[1],
+                                e.gradient[2] + through * derived[1],
+                                e.gradient[3] + through * derived[2],
+                                e.gradient[4] + through * derived[3],
+                            ]
+                        },
+                    )
+            };
+
+            let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
+                continue;
+            };
+            let mut control = OptimControl::default_for_dimension(5);
+            control.maxit = 400;
+            control.fnscale = value_of(&packed).abs().max(1.0);
+            control.parscale = vec![1.0; 5];
+            control.factr = 0.0;
+            control.pgtol = 1e-8;
+            control.lmm = 5;
+            if let Ok(solution) =
+                optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
+            {
+                if let Some(theta) = expand(&solution.par) {
+                    if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
+                        if at.negative_loglik.is_finite()
+                            && best.is_none_or(|b: f64| at.negative_loglik < b)
+                        {
+                            best = Some(at.negative_loglik);
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|negative| -negative)
+    }
+
+    /// The profile for any reported quantity, pinned or derived.
+    fn profile_at(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        quantity: Reported,
+        value: f64,
+    ) -> Option<f64> {
+        match quantity.coordinate() {
+            Some(index) => self.profile_objective(y, reml, index, value),
+            None => self.profile_objective_phenotypic(y, reml, value),
+        }
+    }
+
     /// A 95 per cent profile-likelihood interval for one reported quantity.
     ///
     /// The deviance from the fitted maximum is followed outward until it crosses
     /// the chi-square-on-one threshold, found by bisection. An endpoint that
     /// reaches a bound without crossing is the bound, and says so.
     ///
-    /// **Not yet calibrated.** Decision 29 requires a coverage check before
-    /// anything is reported from these, and it has not been run. The scalar
-    /// recipe of `docs/adr/0004` was calibrated for one trait and does not
-    /// transfer.
+    /// **Calibrated**, by `checks/bivariate_calibration.py`: coverage runs
+    /// between 0.95 and 0.97 against a nominal 0.95 at two design points, one of
+    /// them the heritabilities the real GOBS data produced. Correcting the note
+    /// that stood here, which said no coverage check had been run.
     ///
     /// # Errors
     ///
@@ -1880,12 +2163,12 @@ impl BivariateModel {
         quantity: Reported,
     ) -> Result<ProfileInterval, &'static str> {
         let fit = self.fit(y, reml)?;
-        let index = quantity.index();
         let fitted = match quantity {
             Reported::HeritabilityFirst => fit.h2[0],
             Reported::HeritabilitySecond => fit.h2[1],
             Reported::GeneticCorrelation => fit.rho_g.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
             Reported::ResidualCorrelation => fit.rho_e.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
+            Reported::PhenotypicCorrelation => fit.rho_p,
         };
         // The maximum must be measured in the same coordinates as the profile
         // points, and it is not enough to take it from the fit: `fit` reports a
@@ -1899,13 +2182,13 @@ impl BivariateModel {
         // rest recovers the same maximum by the same route, so the difference is
         // a deviance and nothing else.
         let maximum = self
-            .profile_objective(y, reml, index, fitted)
+            .profile_at(y, reml, quantity, fitted)
             .ok_or("BIVARIATE_PROFILE_MAXIMUM_FAILED")?;
 
         // Deviance at a value: how much log-likelihood is given up by holding
         // the quantity there. Infinite where the value cannot be supported.
         let deviance = |value: f64| -> f64 {
-            self.profile_objective(y, reml, index, value)
+            self.profile_at(y, reml, quantity, value)
                 .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
         };
 
@@ -1930,8 +2213,9 @@ impl BivariateModel {
             (0.5 * (inside + outside), false)
         };
 
-        let (lower, lower_limited) = endpoint(LOWER[index]);
-        let (upper, upper_limited) = endpoint(UPPER[index]);
+        let (bottom, top) = quantity.range();
+        let (lower, lower_limited) = endpoint(bottom);
+        let (upper, upper_limited) = endpoint(top);
         Ok(ProfileInterval {
             lower,
             upper,
@@ -1992,23 +2276,25 @@ impl BivariateModel {
         quantity: Reported,
         null: f64,
     ) -> Result<CorrelationTest, &'static str> {
-        if !matches!(
+        if matches!(
             quantity,
-            Reported::GeneticCorrelation | Reported::ResidualCorrelation
+            Reported::HeritabilityFirst | Reported::HeritabilitySecond
         ) {
             return Err("BIVARIATE_NOT_A_CORRELATION");
         }
         let fit = self.fit(y, reml)?;
         let present = match quantity {
             Reported::GeneticCorrelation => fit.rho_g.is_some(),
-            _ => fit.rho_e.is_some(),
+            Reported::ResidualCorrelation => fit.rho_e.is_some(),
+            // Derived, so it exists whenever the fit does.
+            _ => true,
         };
         if !present {
             return Err("BIVARIATE_QUANTITY_ABSENT");
         }
 
         let null_loglik = self
-            .profile_objective(y, reml, quantity.index(), null)
+            .profile_at(y, reml, quantity, null)
             .ok_or("BIVARIATE_NULL_FIT_FAILED")?;
 
         // Both ends of the difference must be measured the same way. `fit`
@@ -2022,11 +2308,12 @@ impl BivariateModel {
         // rejection about half the time at every level.
         let fitted = match quantity {
             Reported::GeneticCorrelation => fit.rho_g,
-            _ => fit.rho_e,
+            Reported::ResidualCorrelation => fit.rho_e,
+            _ => Some(fit.rho_p),
         }
         .ok_or("BIVARIATE_QUANTITY_ABSENT")?;
         let maximum = self
-            .profile_objective(y, reml, quantity.index(), fitted)
+            .profile_at(y, reml, quantity, fitted)
             .ok_or("BIVARIATE_MAXIMUM_FAILED")?;
         let statistic = (2.0 * (maximum - null_loglik)).max(0.0);
 

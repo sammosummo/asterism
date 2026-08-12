@@ -16,14 +16,39 @@
       "h2_first": 300,
       "h2_second": 300,
       "rho_g": 300,
-      "rho_e": 298
+      "rho_e": 298,
+      "rho_p": 300
     },
     "nominal": 0.95,
     "coverage": {
       "h2_first": 0.9566666666666667,
       "h2_second": 0.9666666666666667,
       "rho_g": 0.96,
-      "rho_e": 0.9530201342281879
+      "rho_e": 0.9530201342281879,
+      "rho_p": 0.9766666666666667
+    }
+  },
+  "derived_correlation_test": {
+    "replicates_requested": 400,
+    "replicates_tested": 400,
+    "null": {
+      "quantity": "rho_p",
+      "value": 0.0,
+      "interior": true
+    },
+    "simulated_under": {
+      "rho_g": 0.45,
+      "rho_e": -0.4044226654228127,
+      "note": "non-zero components cancelling exactly"
+    },
+    "rejection_rates": {
+      "0.01": 0.0175,
+      "0.05": 0.055,
+      "0.1": 0.1075
+    },
+    "kolmogorov_smirnov": {
+      "statistic": 0.034638790559862576,
+      "p_value": 0.7097324922761903
     }
   },
   "correlation_test_at_the_boundary": {

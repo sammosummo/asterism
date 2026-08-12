@@ -57,7 +57,13 @@ TEST_REPLICATES = 400
 LEVELS = (0.01, 0.05, 0.10)
 
 TRUTH = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
-QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e")
+QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
+
+
+def phenotypic(h1: float, h2: float, rg: float, re_: float) -> float:
+    """The phenotypic correlation the other four imply. The total variances
+    cancel, so this is the whole of it."""
+    return rg * np.sqrt(h1 * h2) + re_ * np.sqrt((1 - h1) * (1 - h2))
 
 
 def relationship() -> np.ndarray:
@@ -100,7 +106,16 @@ def coverage(k: np.ndarray) -> dict:
     design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
     observed = [[True, True]] * n
     true_value = dict(
-        zip(QUANTITIES, (TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"]))
+        zip(
+            QUANTITIES,
+            (
+                TRUTH["h1"],
+                TRUTH["h2"],
+                TRUTH["rg"],
+                TRUTH["re"],
+                phenotypic(TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"]),
+            ),
+        )
     )
 
     contained = {q: 0 for q in QUANTITIES}
@@ -216,6 +231,46 @@ def boundary(k: np.ndarray) -> dict:
     return {"p_values": p_values, "at_zero": at_zero}
 
 
+def phenotypic_null(k: np.ndarray) -> dict:
+    """The test of the derived correlation against zero, under a hard null.
+
+    A phenotypic correlation of nought could come from both components being
+    nought, which would test almost nothing — the substitution would never be
+    exercised. Here the genetic and residual correlations are both well away
+    from zero and cancel exactly, so the traits are genetically correlated and
+    residually anti-correlated and only the sum is nought. A test that quietly
+    ignored the substitution would pass the easy version of this and fail here.
+    """
+    n = k.shape[0]
+    rho_g = 0.45
+    rho_e = -rho_g * np.sqrt(TRUTH["h1"] * TRUTH["h2"]) / np.sqrt(
+        (1 - TRUTH["h1"]) * (1 - TRUTH["h2"])
+    )
+    assert abs(phenotypic(TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)) < 1e-15
+    chol = factor(k, TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)
+    design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
+    observed = [[True, True]] * n
+
+    p_values = []
+    started = time.perf_counter()
+    for replicate in range(TEST_REPLICATES):
+        y = draw(chol, n, 130000 + replicate)
+        try:
+            _, p_value, _, _ = _core.bivariate_correlation_test(
+                k, observed, design, y, "rho_p", 0.0, True
+            )
+            p_values.append(p_value)
+        except Exception:
+            pass
+        if (replicate + 1) % 100 == 0:
+            print(
+                f"  {replicate + 1} replicates, "
+                f"{time.perf_counter() - started:.0f}s",
+                flush=True,
+            )
+    return {"p_values": p_values, "rho_g": rho_g, "rho_e": rho_e}
+
+
 def main() -> int:
     k = relationship()
     n = k.shape[0]
@@ -224,7 +279,9 @@ def main() -> int:
     print(
         f"Two-trait calibration. {FAMILIES} families of {PER_FAMILY}, n = {n}, REML.\n"
         f"Truth: h2 {TRUTH['h1']} and {TRUTH['h2']}, "
-        f"genetic correlation {TRUTH['rg']}, residual {TRUTH['re']}.\n"
+        f"genetic correlation {TRUTH['rg']}, residual {TRUTH['re']}, "
+        f"phenotypic {phenotypic(TRUTH['h1'], TRUTH['h2'], TRUTH['rg'], TRUTH['re']):.4f} "
+        f"(derived).\n"
     )
 
     print("Profile interval coverage, nominal 95 per cent.")
@@ -236,8 +293,8 @@ def main() -> int:
             "of intervals"
         )
     print(
-        f"\n  {complete} of {INTERVAL_REPLICATES} replicates gave all four "
-        "intervals.\n"
+        f"\n  {complete} of {INTERVAL_REPLICATES} replicates gave every "
+        "interval.\n"
     )
     print(f"  {'quantity':<12}{'coverage':>10}{'binomial 95%':>22}{'of':>8}")
     interval_results = {}
@@ -325,6 +382,44 @@ def main() -> int:
     if atom < 0.35:
         failures.append(f"the atom at zero is {atom:.1%}, too small for the mixture")
 
+    print(
+        "\n\nLikelihood ratio test for the derived correlation, null true at zero."
+    )
+    derived = phenotypic_null(k)
+    derived_p = np.array(derived["p_values"])
+    derived_n = len(derived_p)
+    print(
+        f"\n  Genetic correlation {derived['rho_g']:.2f} and residual "
+        f"{derived['rho_e']:.4f} cancel exactly.\n"
+        f"  {derived_n} of {TEST_REPLICATES} replicates tested.\n"
+    )
+    print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
+    derived_rates = {}
+    for level in LEVELS:
+        rate = float((derived_p < level).mean())
+        derived_rates[str(level)] = rate
+        error = np.sqrt(level * (1 - level) / derived_n)
+        lower, upper = level - 1.96 * error, level + 1.96 * error
+        inside = lower <= rate <= upper
+        print(
+            f"  {level:>8.2f}{rate:>12.3f}   [{lower:.3f}, {upper:.3f}]  "
+            f"{'ok' if inside else 'OUT'}"
+        )
+        if not inside:
+            failures.append(
+                f"derived-correlation test rejects {rate:.3f} at the {level:.2f} "
+                "level, outside the band"
+            )
+    derived_ks = stats.kstest(derived_p, "uniform")
+    print(
+        f"\n  Kolmogorov-Smirnov against uniform: D = {derived_ks.statistic:.4f}, "
+        f"p = {derived_ks.pvalue:.3f}"
+    )
+    if derived_ks.pvalue < 0.01:
+        failures.append(
+            f"derived-correlation p-values are not uniform, KS p = {derived_ks.pvalue:.4f}"
+        )
+
     if failures:
         print("\nNOT CALIBRATED:")
         for failure in failures:
@@ -352,6 +447,21 @@ def main() -> int:
                     "nominal": 0.95,
                     "coverage": interval_results,
 
+                },
+                "derived_correlation_test": {
+                    "replicates_requested": TEST_REPLICATES,
+                    "replicates_tested": derived_n,
+                    "null": {"quantity": "rho_p", "value": 0.0, "interior": True},
+                    "simulated_under": {
+                        "rho_g": derived["rho_g"],
+                        "rho_e": derived["rho_e"],
+                        "note": "non-zero components cancelling exactly",
+                    },
+                    "rejection_rates": derived_rates,
+                    "kolmogorov_smirnov": {
+                        "statistic": derived_ks.statistic,
+                        "p_value": derived_ks.pvalue,
+                    },
                 },
                 "correlation_test_at_the_boundary": {
                     "replicates_requested": TEST_REPLICATES,
