@@ -216,3 +216,32 @@ the reference has no constrained fit for — pinning that one means substituting
 for the residual correlation rather than holding a parameter. It rests instead on
 its calibration, on its chain rule being checked against a central difference,
 and on the four it is built from agreeing here.
+
+## `components-calibration-2026-08-12.json`
+
+One trait and three components — additive, household and residual — where every
+other calibration here is one or two components. Produced by
+`checks/components_calibration.py`.
+
+Nothing carries over from the two-trait calibration. The intervals are reached by
+a different substitution, and the test is a boundary test where the two-trait
+correlation tests were interior ones.
+
+Two hundred sibling pairs, n = 400, households of four holding two pairs each.
+Interval coverage is 0.945 for the additive share and 0.955 for the household
+share against a nominal 0.95. Under a true null — no household effect at all —
+the test rejects 0.013, 0.051 and 0.104 at the one, five and ten per cent levels.
+The statistic is exactly nought in 41 per cent of samples against the mixture's
+expected 50.
+
+It also records power, which is not calibration but decides whether any of it is
+worth running: **a test that never rejects is perfectly calibrated.** A true
+household share of 0.2 is found 90 per cent of the time at the five per cent
+level.
+
+**The households must contain unrelated people or none of this works.** Two
+people who are both siblings and co-residents say nothing about which of the two
+causes their similarity, and a design where every household is one nuclear family
+cannot separate the components however much data it has. Here half of every
+household's co-resident pairs share no genes. The real GOBS households are 28 per
+cent unrelated pairs, so this is the easier end of what the data looks like.

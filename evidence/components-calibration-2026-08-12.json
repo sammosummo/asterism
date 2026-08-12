@@ -1,0 +1,39 @@
+{
+  "what": "one trait, three components: additive, household and residual",
+  "date": "2026-08-12",
+  "estimator": "reml",
+  "pairs": 200,
+  "people": 400,
+  "household_size": 4,
+  "design_note": "each household holds two sibling pairs from different families, so half of its co-resident pairs share no genes; the real GOBS households are 28 per cent unrelated pairs",
+  "truth": {
+    "additive": 0.4,
+    "household": 0.2,
+    "residual": 0.4
+  },
+  "intervals": {
+    "replicates_requested": 200,
+    "replicates_complete": 200,
+    "nominal": 0.95,
+    "coverage": {
+      "additive": 0.945,
+      "household": 0.955
+    }
+  },
+  "household_test_under_the_null": {
+    "replicates_requested": 300,
+    "replicates_tested": 297,
+    "replicates_refused": 3,
+    "rule": "self_liang_50_50_mixture",
+    "rejection_rates": {
+      "0.01": 0.013468013468013467,
+      "0.05": 0.050505050505050504,
+      "0.1": 0.10437710437710437
+    },
+    "atom_at_zero": 0.4107744107744108
+  },
+  "power": {
+    "true_household_share": 0.2,
+    "detected_at_five_per_cent": 0.8996655518394648
+  }
+}

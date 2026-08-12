@@ -1568,6 +1568,56 @@ mod tests {
         }
     }
 
+    /// The window of genetic correlations that keep the implied residual
+    /// correlation in range must actually keep it in range, and must be found
+    /// where one exists rather than searched for and missed.
+    ///
+    /// This is the arithmetic that decides whether a profile point can be
+    /// evaluated at all, and getting its direction wrong does not fail loudly:
+    /// it fails only where the phenotypic correlation is large, which is exactly
+    /// where the interesting trait pairs are. An earlier version walked the
+    /// genetic correlation toward nought, which is the wrong way for a large
+    /// phenotypic correlation, and the two most strongly correlated of
+    /// seventy-eight real trait pairs were the only two that failed.
+    #[test]
+    fn the_feasible_window_for_the_genetic_correlation_is_found() {
+        for &(target, h1, h2) in &[
+            (0.90f64, 0.61f64, 0.56f64),  // weight and waist circumference
+            (0.86, 0.61, 0.57),  // two diffusion measures
+            (0.00, 0.60, 0.35),
+            (-0.80, 0.50, 0.50),
+            (0.30, 0.05, 0.05),  // little genetic variance to work with
+        ] {
+            let p = (h1 * h2).sqrt();
+            let d = ((1.0 - h1) * (1.0 - h2)).sqrt();
+            let low = ((target - d) / p).max(-1.0);
+            let high = ((target + d) / p).min(1.0);
+            assert!(
+                low <= high,
+                "no genetic correlation reaches a phenotypic {target} at h2 {h1}/{h2}"
+            );
+            for rg in [low, high, 0.5 * (low + high)] {
+                let re = (target - rg * p) / d;
+                assert!(
+                    re.abs() <= 1.0 + 1e-9,
+                    "rho_G {rg} at target {target} implies a residual correlation of {re}"
+                );
+            }
+            // And the naive start really is outside the window in the cases
+            // that failed, which is what makes the clamp necessary rather than
+            // decorative.
+            if target > 0.8 {
+                let naive = 0.0;
+                let re = (target - naive * p) / d;
+                assert!(
+                    re.abs() > 1.0,
+                    "a genetic correlation of nought was feasible after all at \
+                     target {target}, so this case proves nothing"
+                );
+            }
+        }
+    }
+
     /// The phenotypic correlation's interval must behave like the others: it
     /// must contain the estimate, it must have width, and testing it against
     /// its own estimate must give nothing. It reaches all of that by a different
@@ -2056,13 +2106,30 @@ impl BivariateModel {
                 .map(|slot| start[slot].clamp(lower[slot], upper[slot]))
                 .collect();
             // A start whose implied residual correlation is out of range is no
-            // use. Walk the genetic correlation toward nought, which shrinks the
-            // term being subtracted, before giving up on this start.
-            if implied(&packed).is_none() {
-                for shrink in [0.5, 0.25, 0.0] {
-                    packed[4] = start[4] * shrink;
-                    if implied(&packed).is_some() {
-                        break;
+            // use, and the range of genetic correlations that keep it in range
+            // can be solved for rather than searched. From
+            //
+            //     |value - rho_G*P| <= D,    P = sqrt(h1*h2), D = sqrt((1-h1)*(1-h2))
+            //
+            // comes rho_G between (value - D)/P and (value + D)/P. Clamping the
+            // start into that window, intersected with [-1, 1], finds a feasible
+            // point whenever one exists at these heritabilities.
+            //
+            // An earlier version walked the genetic correlation toward nought
+            // instead, on the reasoning that this shrinks the term being
+            // subtracted. That is backwards for a large phenotypic correlation:
+            // shrinking it raises the numerator and pushes the implied residual
+            // correlation further out of range. The two most strongly correlated
+            // of seventy-eight real trait pairs were exactly the two that failed.
+            {
+                let (h1, h2) = (packed[2], packed[3]);
+                let p = (h1 * h2).sqrt();
+                let d = ((1.0 - h1) * (1.0 - h2)).sqrt();
+                if p > 0.0 {
+                    let low = ((value - d) / p).max(-1.0);
+                    let high = ((value + d) / p).min(1.0);
+                    if low <= high {
+                        packed[4] = packed[4].clamp(low, high);
                     }
                 }
             }
