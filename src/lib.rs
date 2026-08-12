@@ -28,6 +28,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_objective, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_interval, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -1546,6 +1546,45 @@ mod python {
         ))
     }
 
+    /// A 95 per cent profile-likelihood interval for one reported quantity.
+    ///
+    /// `quantity` is `h2_first`, `h2_second`, `rho_g` or `rho_e`.
+    #[pyfunction]
+    #[pyo3(signature = (relationship, observed, design, y, quantity, reml=true))]
+    pub fn bivariate_interval(
+        relationship: PyReadonlyArray2<'_, f64>,
+        observed: Vec<[bool; 2]>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        quantity: &str,
+        reml: bool,
+    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+        let wanted = match quantity {
+            "h2_first" => super::Reported::HeritabilityFirst,
+            "h2_second" => super::Reported::HeritabilitySecond,
+            "rho_g" => super::Reported::GeneticCorrelation,
+            "rho_e" => super::Reported::ResidualCorrelation,
+            _ => return Err(PyValueError::new_err("BIVARIATE_QUANTITY_UNKNOWN")),
+        };
+        let k = relationship.as_array();
+        let k = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        let y = y.as_array();
+        let y = DVector::from_iterator(y.len(), y.iter().copied());
+        let model = BivariateModel::build(&k, &observed, &x).map_err(PyValueError::new_err)?;
+        let interval = model
+            .profile_interval(&y, reml, wanted)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            interval.lower,
+            interval.upper,
+            interval.lower_limited,
+            interval.upper_limited,
+            interval.level,
+        ))
+    }
+
     /// Evaluate the two-trait objective and gradient at one point.
     ///
     /// Exposed so that `checks/bivariate_reference.py` can be compared against
@@ -1586,4 +1625,196 @@ mod python {
 }
 
 #[cfg(feature = "python")]
-pub use python::{bivariate_fit, bivariate_objective};
+pub use python::{bivariate_fit, bivariate_interval, bivariate_objective};
+
+/// The 0.95 quantile of chi-square with one degree of freedom.
+const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
+
+/// A profile-likelihood interval for one reported quantity.
+///
+/// The same shape whatever the fit did (`docs/adr/0005`): a lower and an upper
+/// endpoint, and a flag on each saying whether it reached a bound without the
+/// deviance ever crossing. A `limited` endpoint is the bound itself, not a
+/// crossing, and reporting it as though it were one would overstate what the
+/// data said.
+#[derive(Clone, Copy, Debug)]
+pub struct ProfileInterval {
+    pub lower: f64,
+    pub upper: f64,
+    pub lower_limited: bool,
+    pub upper_limited: bool,
+    pub level: f64,
+}
+
+/// Which reported quantity an interval is for. These are parameters in this
+/// parameterisation, which is what makes profiling them a constrained refit
+/// rather than a reparameterisation (`docs/adr/0001` decision 29).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reported {
+    HeritabilityFirst,
+    HeritabilitySecond,
+    GeneticCorrelation,
+    ResidualCorrelation,
+}
+
+impl Reported {
+    const fn index(self) -> usize {
+        match self {
+            Self::HeritabilityFirst => 2,
+            Self::HeritabilitySecond => 3,
+            Self::GeneticCorrelation => 4,
+            Self::ResidualCorrelation => 5,
+        }
+    }
+}
+
+impl BivariateModel {
+    /// The best log-likelihood with one quantity held at `value`.
+    ///
+    /// Everything else is re-optimised, which is what makes this a profile
+    /// rather than a slice. Returns `None` where no start reached a finite
+    /// point — at a value the data cannot support at all.
+    fn profile_objective(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        index: usize,
+        value: f64,
+    ) -> Option<f64> {
+        let standardised = self.standardised_problem(y).ok()?;
+        let free: Vec<usize> = (0..PARAMETERS).filter(|k| *k != index).collect();
+        let lower: Vec<f64> = free.iter().map(|&k| LOWER[k]).collect();
+        let upper: Vec<f64> = free.iter().map(|&k| UPPER[k]).collect();
+
+        let expand = |packed: &[f64]| -> [f64; PARAMETERS] {
+            let mut theta = [1.0, 1.0, 0.5, 0.5, 0.0, 0.0];
+            theta[index] = value;
+            for (slot, &k) in free.iter().enumerate() {
+                theta[k] = packed[slot];
+            }
+            theta
+        };
+
+        let mut best: Option<f64> = None;
+        for start in [
+            [1.0f64, 1.0, 0.5, 0.5, 0.0, 0.0],
+            [1.0f64, 1.0, 0.3, 0.3, 0.4, 0.4],
+            [1.0f64, 1.0, 0.7, 0.7, -0.3, 0.3],
+        ] {
+            let mut packed: Vec<f64> = free
+                .iter()
+                .enumerate()
+                .map(|(slot, &k)| start[k].clamp(lower[slot], upper[slot]))
+                .collect();
+
+            // The same searcher the unconstrained fit uses, so that a profile
+            // point and the maximum it is measured against are found the same
+            // way. A refusal is a large value and never a zero gradient: a zero
+            // would tell the search it had found a stationary point, which is
+            // how an earlier version of this stalled on the singular edge.
+            let value_of = |candidate: &[f64]| -> f64 {
+                self.evaluate(&expand(candidate), &standardised.y, reml, false)
+                    .map_or(1e30, |e| e.negative_loglik)
+            };
+            let gradient_of = |candidate: &[f64]| -> Vec<f64> {
+                self.evaluate(&expand(candidate), &standardised.y, reml, true)
+                    .map_or_else(
+                        || vec![0.0; free.len()],
+                        |e| free.iter().map(|&k| e.gradient[k]).collect(),
+                    )
+            };
+            let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
+                continue;
+            };
+            let mut control = OptimControl::default_for_dimension(free.len());
+            control.maxit = 400;
+            control.fnscale = value_of(&packed).abs().max(1.0);
+            control.parscale = vec![1.0; free.len()];
+            control.factr = 0.0;
+            control.pgtol = 1e-8;
+            control.lmm = free.len();
+            if let Ok(solution) =
+                optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
+            {
+                let theta = expand(&solution.par);
+                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
+                    if at.negative_loglik.is_finite()
+                        && best.is_none_or(|b: f64| at.negative_loglik < b)
+                    {
+                        best = Some(at.negative_loglik);
+                    }
+                }
+            }
+        }
+        best.map(|negative| -negative)
+    }
+
+    /// A 95 per cent profile-likelihood interval for one reported quantity.
+    ///
+    /// The deviance from the fitted maximum is followed outward until it crosses
+    /// the chi-square-on-one threshold, found by bisection. An endpoint that
+    /// reaches a bound without crossing is the bound, and says so.
+    ///
+    /// **Not yet calibrated.** Decision 29 requires a coverage check before
+    /// anything is reported from these, and it has not been run. The scalar
+    /// recipe of `docs/adr/0004` was calibrated for one trait and does not
+    /// transfer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit itself fails.
+    pub fn profile_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        quantity: Reported,
+    ) -> Result<ProfileInterval, &'static str> {
+        let fit = self.fit(y, reml)?;
+        let index = quantity.index();
+        let fitted = match quantity {
+            Reported::HeritabilityFirst => fit.h2[0],
+            Reported::HeritabilitySecond => fit.h2[1],
+            Reported::GeneticCorrelation => fit.rho_g.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
+            Reported::ResidualCorrelation => fit.rho_e.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
+        };
+        let maximum = fit.loglik;
+
+        // Deviance at a value: how much log-likelihood is given up by holding
+        // the quantity there. Infinite where the value cannot be supported.
+        let deviance = |value: f64| -> f64 {
+            self.profile_objective(y, reml, index, value)
+                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+        };
+
+        let endpoint = |bound: f64| -> (f64, bool) {
+            if deviance(bound) <= CHI2_ONE_DF_95 {
+                // The threshold is never reached: the endpoint is the bound and
+                // the interval is limited by the parameter space, not the data.
+                return (bound, true);
+            }
+            let (mut inside, mut outside) = (fitted, bound);
+            for _ in 0..80 {
+                let middle = 0.5 * (inside + outside);
+                if (outside - inside).abs() <= 1e-9 {
+                    break;
+                }
+                if deviance(middle) <= CHI2_ONE_DF_95 {
+                    inside = middle;
+                } else {
+                    outside = middle;
+                }
+            }
+            (0.5 * (inside + outside), false)
+        };
+
+        let (lower, lower_limited) = endpoint(LOWER[index]);
+        let (upper, upper_limited) = endpoint(UPPER[index]);
+        Ok(ProfileInterval {
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level: 0.95,
+        })
+    }
+}

@@ -334,10 +334,25 @@ def correlation_tests(
     neighbourhood for a different reason, and decision 12's parametric bootstrap
     is the fallback decision 29 named.
 
-    The optimiser has now been replaced, but the constrained-fit inference and
-    its calibration have not. **None of the p-values below is reportable.** They
-    are left in place, marked, because deleting them would lose the finding and
-    the tests that the replacement must rerun.
+    **Recalibrated on 12 August 2026, after the fix, and they now hold.** 200
+    replicates at n = 240:
+
+        nominal   rho_g = 0   rho_g = 1   was
+           0.01       0.015       0.000   0.608
+           0.05       0.035       0.030   0.733
+           0.10       0.115       0.085   0.783
+           0.25       0.245       0.210   0.817
+           0.50       0.495       0.710   0.825
+
+    The interior test is right at every level; the boundary test is right, and
+    slightly conservative, at every level anybody reports. It still departs at a
+    half, because the estimate lands exactly on the bound in 29 per cent of
+    replicates where the mixture expects 50 and 1 − 0.29 = 0.71 is what is
+    observed. The search sometimes stops at 0.9999 rather than exactly one. That
+    error runs in the safe direction at conventional levels.
+
+    These are the *reference's* tests. **The Rust has no correlation tests at
+    all**, and its profile intervals are new and not yet calibrated.
     """
     from math import erfc, sqrt
 
