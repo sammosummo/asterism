@@ -14,11 +14,13 @@ mod blocks;
 mod components;
 mod prepared;
 mod relationship;
+mod spatial;
 
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
+pub use spatial::{SpatialFit, SpatialModel};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -34,6 +36,9 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         bivariate::bivariate_correlation_test,
         module
