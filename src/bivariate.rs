@@ -1809,7 +1809,20 @@ impl BivariateModel {
             Reported::GeneticCorrelation => fit.rho_g.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
             Reported::ResidualCorrelation => fit.rho_e.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
         };
-        let maximum = fit.loglik;
+        // The maximum must be measured in the same coordinates as the profile
+        // points, and it is not enough to take it from the fit: `fit` reports a
+        // log-likelihood in the response's own units while `profile_objective`
+        // works in the trait-standardised ones the optimiser uses. Subtracting
+        // across that gap leaves a large constant in the deviance, which never
+        // falls below the threshold, and both endpoints collapse onto the point
+        // estimate — every interval comes back with zero width.
+        //
+        // Pinning the quantity at its own fitted value and re-optimising the
+        // rest recovers the same maximum by the same route, so the difference is
+        // a deviance and nothing else.
+        let maximum = self
+            .profile_objective(y, reml, index, fitted)
+            .ok_or("BIVARIATE_PROFILE_MAXIMUM_FAILED")?;
 
         // Deviance at a value: how much log-likelihood is given up by holding
         // the quantity there. Infinite where the value cannot be supported.
