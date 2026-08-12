@@ -443,11 +443,27 @@ those, set the off-diagonals from a t×t generalisation of
 `moment_based_bivariate_start`, project to the nearest positive semi-definite
 matrix, factorise. Keep two or three fixed insurance starts, not nine.
 
-**Dependency note:** the engine has no optimisation crate — `nalgebra`, `pyo3`,
-`serde`, `serde_json`, `sha2`, `statrs` — and the BFGS is hand-written. A path
-named `bfgs_bounded_large_component` already exists. Given `unsafe_code =
-"forbid"` and the audited-permissive-licence discipline, extending what is there
-is likely cheaper than adding a dependency.
+**Dependency note, overtaken on 11 August 2026.** This said the engine had no
+optimisation crate and a hand-written BFGS to extend, so extending it would be
+cheaper than a dependency. The fresh start of decision 4 brought across only
+`prepared.rs`, so there was nothing to extend, and the one-trait fit needs no
+optimiser at all — it grids thirty-three points across h² and polishes with
+golden section, which is why it never had this problem.
+
+Two traits made an optimiser necessary for the first time, and a hand-written
+projected BFGS was written and then raced against `lbfgsb-rs-pure`, a safe-Rust
+port of the original Fortran, BSD-3-Clause with no dependencies of its own. On
+the same problem with the same starts the library reached a scaled gradient of
+3.0e-3 and a log-likelihood of −126.6833; the hand-written one 1.9e-2 and
+−126.7951, disagreeing on the first heritability by 0.11. **The dependency is
+kept, on that measurement.**
+
+A caution worth carrying from how that comparison nearly went wrong. The
+hand-written search was first blamed for a failure that belonged to neither
+search: at h² = 1 and |ρ| = 1 the likelihood does not exist, and the code
+returned a large value with a zero gradient there, which tells a quasi-Newton
+method it has found a stationary point. Swapping in the library changed nothing
+until that was fixed. Only afterwards was the comparison meaningful.
 
 ### 15. One general estimator, with fast paths where volume justifies them
 

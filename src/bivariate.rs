@@ -199,6 +199,13 @@ impl BivariateModel {
         if observed.len() != people {
             return Err("BIVARIATE_OBSERVED_LENGTH_MISMATCH");
         }
+        for i in 0..people {
+            for j in (i + 1)..people {
+                if relationship[(i, j)] != relationship[(j, i)] {
+                    return Err("BIVARIATE_RELATIONSHIP_ASYMMETRIC");
+                }
+            }
+        }
         let rows: usize = observed.iter().map(|o| usize::from(o[0]) + usize::from(o[1])).sum();
         if rows == 0 {
             return Err("BIVARIATE_NOTHING_MEASURED");
@@ -494,6 +501,7 @@ impl BivariateModel {
         observed: &[[bool; 2]],
         reml: bool,
     ) -> Result<BivariateFit, &'static str> {
+
         if y.len() != self.rows {
             return Err("BIVARIATE_Y_LENGTH_MISMATCH");
         }
@@ -576,6 +584,14 @@ impl BivariateModel {
     ///
     /// Bound-constrained BFGS, from `lbfgsb-rs-pure` — a safe-Rust port of the
     /// original Fortran L-BFGS-B, BSD-3-Clause, no dependencies of its own.
+    ///
+    /// **The dependency is kept on measurement, not on preference.** Once the
+    /// singular-edge fault was fixed, the hand-written projected BFGS it
+    /// replaced was raced against it on the same problem: this reaches a scaled
+    /// gradient of 3.0e-3 and a log-likelihood of −126.6833, the hand-written one
+    /// 1.9e-2 and −126.7951, and they disagree on the first heritability by 0.11.
+    /// Six times closer to stationary and a better optimum. The hand-written one
+    /// is in the history at f01a734 and is not kept here.
     ///
     /// Decision 14 preferred extending a hand-written BFGS to taking a
     /// dependency, but that reasoning rested on Astrarium already having one and
