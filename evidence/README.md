@@ -239,9 +239,21 @@ worth running: **a test that never rejects is perfectly calibrated.** A true
 household share of 0.2 is found 90 per cent of the time at the five per cent
 level.
 
-**The households must contain unrelated people or none of this works.** Two
-people who are both siblings and co-residents say nothing about which of the two
-causes their similarity, and a design where every household is one nuclear family
-cannot separate the components however much data it has. Here half of every
-household's co-resident pairs share no genes. The real GOBS households are 28 per
-cent unrelated pairs, so this is the easier end of what the data looks like.
+**Correcting a claim made when this was first written**, that the households
+must contain unrelated people or none of it works. That is not the condition.
+Separability is a property of the whole design and not of any one household: the
+three matrices A, H and I have to be linearly independent across all of it. Two
+households that are each a single pair identify the model between them if the
+pairs differ in relatedness, since a sibling pair gives 0.5·σ²_A + σ²_H and a
+spouse pair gives σ²_H, and neither could do it alone.
+
+Unrelated co-residents are therefore the sharpest contrast rather than a
+requirement — full sibs living with a half sib do just as well, because 0.5 and
+0.25 differ and that is enough. What genuinely fails is a design in which every
+co-resident pair in the entire sample has the same relatedness, because A is then
+exactly 0.5·H + 0.5·I.
+
+The real GOBS design is far from that. Of 351 households with two or more
+measured people, 173 are a pair at relatedness 0.5, 81 a pair at nought and 83
+carry varied relatedness within them, and over the whole design 68 per cent of A
+is not explained by any combination of H and I.

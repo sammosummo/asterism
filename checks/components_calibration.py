@@ -21,14 +21,32 @@ running.** A test that never rejects is perfectly calibrated. Simulating with a
 household effect present and counting how often it is found says whether the
 design can see one at all.
 
-**The households must contain unrelated people.** Two people who are both
-siblings and co-residents tell you nothing about which of the two causes their
-similarity, and a design where every household is one nuclear family cannot
-separate the components however much data it has. Here each household holds two
-sibling pairs from different families, so half the co-resident pairs share no
-genes. The real GOBS households are 28 per cent unrelated pairs, so this is the
-easier end of what the data looks like and the coverage below should be read
-with that in mind.
+**What makes the two components separable is not what it first looks like.**
+The obvious answer — that the households must contain unrelated people — is
+wrong, and so is the framing that puts the question inside a single household.
+
+The condition is that the three matrices A, H and I are linearly independent
+across the whole design. It is a property of the design pooled together, not of
+any one household. Two households, each a single pair, identify the model between
+them if their pairs differ in relatedness: a sibling pair contributes a
+covariance of 0.5·σ²_A + σ²_H and a spouse pair contributes σ²_H, and those two
+equations plus the diagonal give three for three unknowns. Neither household
+could do it alone.
+
+So unrelated co-residents give the sharpest contrast but are not required. Full
+sibs living with a half sib separate the components perfectly well, because 0.5
+and 0.25 are two different numbers and one is enough variation. The one case that
+genuinely fails is a design where **every** co-resident pair in the whole sample
+has the **same** relatedness — siblings throughout, say — because A is then
+exactly 0.5·H + 0.5·I and no amount of data recovers what has been added
+together.
+
+The real GOBS households are nowhere near that. Of 351 households holding two or
+more measured people, 173 are a pair at relatedness 0.5, 81 a pair at nought, and
+83 have varied relatedness within them; over the whole design 68 per cent of A is
+not explained by any combination of H and I. The design used below has each
+household holding two sibling pairs from different families, which is a similar
+kind of contrast.
 
 Run with:
 
