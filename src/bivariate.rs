@@ -1126,7 +1126,7 @@ mod tests {
     use super::{
         BivariateHeritabilityBoundary::{Interior, Lower, Upper},
         BivariateModel, HERITABILITY_STATES, HeritabilityState, OptimisationCandidate, PARAMETERS,
-        select_best_candidate,
+        Reported, select_best_candidate,
     };
     use nalgebra::{DMatrix, DVector};
 
@@ -1501,6 +1501,81 @@ mod tests {
             .err(),
             Some("BIVARIATE_BETTER_UNRESOLVED_OPTIMUM")
         );
+    }
+
+    /// Testing a correlation against the value it was just estimated to have
+    /// must produce a statistic of zero. The constrained fit and the free fit
+    /// are then the same fit, so any difference between them is arithmetic that
+    /// does not belong in a likelihood ratio.
+    ///
+    /// This is worth a test of its own because it is the cheapest way to catch a
+    /// whole class of fault. The two log-likelihoods being differenced are
+    /// produced by different routes, and if those routes disagree about units —
+    /// the response's own or the trait-standardised ones the optimiser uses — a
+    /// constant survives into the statistic. It changes sign from one data set
+    /// to the next, so it does not show up as a bias that a rough eye would
+    /// catch: simulated under a true null it rejected about half the time at
+    /// every level, which is what prompted this test.
+    #[test]
+    fn a_correlation_tested_against_its_own_estimate_gives_nothing() {
+        let (k, observed, design, y) = small();
+        let model = BivariateModel::build(&k, &observed, &design).expect("valid");
+        for reml in [false, true] {
+            let fit = model.fit(&y, reml).expect("fits");
+            for (quantity, fitted) in [
+                (Reported::GeneticCorrelation, fit.rho_g),
+                (Reported::ResidualCorrelation, fit.rho_e),
+            ] {
+                let Some(fitted) = fitted else { continue };
+                let test = model
+                    .correlation_test(&y, reml, quantity, fitted)
+                    .expect("tests");
+                assert!(
+                    test.statistic < 1.0e-4,
+                    "reml={reml} statistic was {} against its own estimate",
+                    test.statistic
+                );
+                assert!(
+                    test.p_value > 0.99,
+                    "reml={reml} p was {} against its own estimate",
+                    test.p_value
+                );
+            }
+        }
+    }
+
+    /// The interval must contain the estimate. An interval that does not is
+    /// either empty or somewhere else entirely, and both have happened: the same
+    /// units fault above once collapsed every interval onto its point estimate,
+    /// giving zero width and an interval that technically contained it.
+    /// Checking for width as well as containment is what separates the two.
+    #[test]
+    fn the_two_trait_intervals_have_width_and_contain_their_estimates() {
+        let (k, observed, design, y) = small();
+        let model = BivariateModel::build(&k, &observed, &design).expect("valid");
+        let fit = model.fit(&y, true).expect("fits");
+        let quantities = [
+            (Reported::HeritabilityFirst, Some(fit.h2[0])),
+            (Reported::HeritabilitySecond, Some(fit.h2[1])),
+            (Reported::GeneticCorrelation, fit.rho_g),
+            (Reported::ResidualCorrelation, fit.rho_e),
+        ];
+        for (quantity, fitted) in quantities {
+            let Some(fitted) = fitted else { continue };
+            let interval = model.profile_interval(&y, true, quantity).expect("interval");
+            assert!(
+                interval.lower <= fitted + 1.0e-9 && fitted <= interval.upper + 1.0e-9,
+                "[{}, {}] does not contain {fitted}",
+                interval.lower,
+                interval.upper
+            );
+            assert!(
+                interval.upper - interval.lower > 1.0e-3,
+                "[{}, {}] has no width",
+                interval.lower,
+                interval.upper
+            );
+        }
     }
 }
 
@@ -1932,7 +2007,25 @@ impl BivariateModel {
         let null_loglik = self
             .profile_objective(y, reml, quantity.index(), null)
             .ok_or("BIVARIATE_NULL_FIT_FAILED")?;
-        let statistic = (2.0 * (fit.loglik - null_loglik)).max(0.0);
+
+        // Both ends of the difference must be measured the same way. `fit`
+        // reports a log-likelihood in the response's own units while
+        // `profile_objective` works in the trait-standardised ones, so taking the
+        // maximum from `fit` leaves a constant in the statistic. That constant
+        // changes sign from one data set to the next, which is worse than a bias:
+        // where it is positive the statistic is inflated and the test rejects,
+        // and where it is negative the clamp below takes the statistic to zero
+        // and the test never rejects. Simulated under a true null the result was
+        // rejection about half the time at every level.
+        let fitted = match quantity {
+            Reported::GeneticCorrelation => fit.rho_g,
+            _ => fit.rho_e,
+        }
+        .ok_or("BIVARIATE_QUANTITY_ABSENT")?;
+        let maximum = self
+            .profile_objective(y, reml, quantity.index(), fitted)
+            .ok_or("BIVARIATE_MAXIMUM_FAILED")?;
+        let statistic = (2.0 * (maximum - null_loglik)).max(0.0);
 
         let interior = null.abs() < 1.0;
         let (p_value, rule) = if interior {
