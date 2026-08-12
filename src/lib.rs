@@ -11,10 +11,12 @@
 
 mod bivariate;
 mod blocks;
+mod components;
 mod prepared;
 mod relationship;
 
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
+pub use components::{ComponentFit, ComponentModel};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
 
