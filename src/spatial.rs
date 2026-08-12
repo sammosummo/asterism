@@ -635,6 +635,168 @@ impl SpatialModel {
     }
 }
 
+/// Pairwise great-circle distances in kilometres, on a spherical Earth.
+///
+/// The radius is the mean spherical one the port lab froze, so a distance
+/// computed here and one computed there are the same distance.
+///
+/// # Errors
+///
+/// Returns a stable code for a coordinate outside its range.
+pub fn pairwise_haversine_km(
+    latitude: &[f64],
+    longitude: &[f64],
+) -> Result<DMatrix<f64>, &'static str> {
+    if latitude.len() != longitude.len() {
+        return Err("SPATIAL_COORDINATE_COUNT_MISMATCH");
+    }
+    for (lat, lon) in latitude.iter().zip(longitude) {
+        if !lat.is_finite() || !(-90.0..=90.0).contains(lat) {
+            return Err("SPATIAL_LATITUDE_OUT_OF_RANGE");
+        }
+        if !lon.is_finite() || !(-180.0..=180.0).contains(lon) {
+            return Err("SPATIAL_LONGITUDE_OUT_OF_RANGE");
+        }
+    }
+    let n = latitude.len();
+    let lat: Vec<f64> = latitude.iter().map(|d| d.to_radians()).collect();
+    let lon: Vec<f64> = longitude.iter().map(|d| d.to_radians()).collect();
+    let mut distance = DMatrix::<f64>::zeros(n, n);
+    for i in 0..n {
+        for j in 0..i {
+            let dlat = lat[i] - lat[j];
+            let dlon = lon[i] - lon[j];
+            let inner = (dlat / 2.0).sin().powi(2)
+                + lat[i].cos() * lat[j].cos() * (dlon / 2.0).sin().powi(2);
+            let d = 2.0 * EARTH_RADIUS_KM * inner.clamp(0.0, 1.0).sqrt().asin();
+            distance[(i, j)] = d;
+            distance[(j, i)] = d;
+        }
+    }
+    Ok(distance)
+}
+
+/// Mean spherical Earth radius, in kilometres, matching the port lab's contract.
+pub const EARTH_RADIUS_KM: f64 = 6_371.008_8;
+
+/// splitmix64, so that any bootstrap can be reproduced from its seed alone.
+struct Stream(u64);
+
+impl Stream {
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn uniform(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+    }
+
+    fn normal(&mut self) -> f64 {
+        let u1 = self.uniform();
+        let u2 = self.uniform();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
+}
+
+/// The result of a parametric bootstrap for no spatial variance.
+#[derive(Clone, Debug)]
+pub struct SpatialBootstrap {
+    pub observed: f64,
+    pub exceedances: usize,
+    /// Replicates that produced a usable statistic. A replicate whose fit fails
+    /// is counted out rather than counted as a non-exceedance, which would bias
+    /// the p-value downward.
+    pub replicates: usize,
+    pub requested: usize,
+    pub p_value: f64,
+    pub seed: u64,
+    pub rule: &'static str,
+}
+
+impl SpatialModel {
+    /// The parametric bootstrap p-value for no spatial variance.
+    ///
+    /// **This exists because no table applies.** With the spatial variance at
+    /// nought the decay rate is absent from the likelihood, so the statistic has
+    /// neither a chi-squared nor a chi-bar-squared null. Simulating the reduced
+    /// model is the only reference there is.
+    ///
+    /// Data are simulated from the fit of the reduced model — the one without a
+    /// spatial term — and not from the full fit. Simulating from the full fit
+    /// would be simulating from the alternative and would answer a different
+    /// question.
+    ///
+    /// The p-value adds one to both counts. Without that, a statistic larger
+    /// than every simulated one returns exactly nought, which claims more than
+    /// the replicates can support.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the observed fit or the reduced fit fails.
+    pub fn bootstrap_spatial_variance(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        replicates: usize,
+        seed: u64,
+    ) -> Result<SpatialBootstrap, &'static str> {
+        if replicates == 0 {
+            return Err("SPATIAL_BOOTSTRAP_NO_REPLICATES");
+        }
+        let observed = self.spatial_statistic(y, reml)?;
+
+        let reduced = crate::components::ComponentModel::build(&self.fixed, &self.design)?;
+        let null = reduced.fit(y, reml)?;
+        let n = self.rows;
+        let mut covariance = DMatrix::<f64>::zeros(n, n);
+        for (index, matrix) in self.fixed.iter().enumerate() {
+            covariance += matrix * null.variances[index];
+        }
+        for i in 0..n {
+            covariance[(i, i)] += null.variances[self.fixed.len()];
+        }
+        let factor = covariance
+            .cholesky()
+            .ok_or("SPATIAL_NULL_COVARIANCE_NOT_POSITIVE_DEFINITE")?
+            .l();
+        let mean = &self.design
+            * DVector::from_iterator(self.design.ncols(), null.fixed_effects.iter().copied());
+
+        let mut stream = Stream(seed);
+        let mut exceedances = 0usize;
+        let mut usable = 0usize;
+        for _ in 0..replicates {
+            let draw = DVector::from_iterator(n, (0..n).map(|_| stream.normal()));
+            let simulated = &mean + &factor * draw;
+            match self.spatial_statistic(&simulated, reml) {
+                Ok(statistic) => {
+                    usable += 1;
+                    if statistic >= observed {
+                        exceedances += 1;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        if usable == 0 {
+            return Err("SPATIAL_BOOTSTRAP_NO_USABLE_REPLICATE");
+        }
+        Ok(SpatialBootstrap {
+            observed,
+            exceedances,
+            replicates: usable,
+            requested: replicates,
+            p_value: (1 + exceedances) as f64 / (usable + 1) as f64,
+            seed,
+            rule: "parametric_bootstrap_add_one",
+        })
+    }
+}
+
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -748,10 +910,59 @@ mod python {
             interval.level,
         ))
     }
+
+    /// Pairwise great-circle distances in kilometres.
+    ///
+    /// Here rather than in the caller so that every distance in this package is
+    /// the same distance, on the same Earth, whoever asked for it.
+    #[pyfunction]
+    pub fn spatial_distances(
+        latitude: PyReadonlyArray1<'_, f64>,
+        longitude: PyReadonlyArray1<'_, f64>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let lat: Vec<f64> = latitude.as_array().iter().copied().collect();
+        let lon: Vec<f64> = longitude.as_array().iter().copied().collect();
+        let distance = super::pairwise_haversine_km(&lat, &lon).map_err(PyValueError::new_err)?;
+        Ok((0..distance.nrows())
+            .map(|i| (0..distance.ncols()).map(|j| distance[(i, j)]).collect())
+            .collect())
+    }
+
+    /// The parametric bootstrap p-value for no spatial variance.
+    ///
+    /// Returns the observed statistic, the exceedances, the replicates that
+    /// produced a usable statistic, the number asked for, the p-value and the
+    /// rule.
+    #[pyfunction]
+    #[pyo3(signature = (fixed, distance, design, y, replicates, seed, reml=true))]
+    pub fn spatial_bootstrap(
+        fixed: Vec<PyReadonlyArray2<'_, f64>>,
+        distance: PyReadonlyArray2<'_, f64>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        replicates: usize,
+        seed: u64,
+        reml: bool,
+    ) -> PyResult<(f64, usize, usize, usize, f64, String)> {
+        let model = build(&fixed, &distance, &design)?;
+        let result = model
+            .bootstrap_spatial_variance(&response(&y), reml, replicates, seed)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            result.observed,
+            result.exceedances,
+            result.replicates,
+            result.requested,
+            result.p_value,
+            result.rule.to_owned(),
+        ))
+    }
 }
 
 #[cfg(feature = "python")]
-pub use python::{spatial_fit, spatial_interval, spatial_statistic};
+pub use python::{
+    spatial_bootstrap, spatial_distances, spatial_fit, spatial_interval, spatial_statistic,
+};
 
 #[cfg(test)]
 mod tests {
@@ -870,6 +1081,66 @@ mod tests {
         assert!(
             (fit.half_distance_km * fit.lambda - std::f64::consts::LN_2).abs() < 1e-12
         );
+    }
+
+    /// A bootstrap that cannot be reproduced is not evidence. Two runs at one
+    /// seed must agree exactly, and two different seeds must not, or the seed is
+    /// not doing anything.
+    #[test]
+    fn the_bootstrap_reproduces_from_its_seed() {
+        let (a, distance, design, y) = small();
+        let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
+        let once = model
+            .bootstrap_spatial_variance(&y, true, 12, 20_260_812)
+            .expect("bootstraps");
+        let again = model
+            .bootstrap_spatial_variance(&y, true, 12, 20_260_812)
+            .expect("bootstraps");
+        assert_eq!(once.exceedances, again.exceedances);
+        assert_eq!(once.replicates, again.replicates);
+        assert!((once.p_value - again.p_value).abs() < 1e-15);
+        assert!((once.observed - again.observed).abs() < 1e-12);
+
+        let elsewhere = model
+            .bootstrap_spatial_variance(&y, true, 12, 99)
+            .expect("bootstraps");
+        assert!(
+            (elsewhere.observed - once.observed).abs() < 1e-12,
+            "the observed statistic does not depend on the seed"
+        );
+
+        // The p-value adds one to both counts, so it can never be nought however
+        // extreme the statistic. Claiming nought would claim more than twelve
+        // replicates can support.
+        assert!(once.p_value >= 1.0 / 13.0 - 1e-12);
+        assert!(once.p_value <= 1.0);
+        assert_eq!(once.rule, "parametric_bootstrap_add_one");
+    }
+
+    /// Distances must be the great-circle ones, symmetric, and nought on the
+    /// diagonal. One known separation anchors the scale: a degree of latitude is
+    /// about 111 km anywhere on a sphere.
+    #[test]
+    fn haversine_distances_are_right() {
+        let latitude = [0.0, 1.0, 0.0, 51.5];
+        let longitude = [0.0, 0.0, 1.0, -0.13];
+        let d = super::pairwise_haversine_km(&latitude, &longitude).expect("valid");
+        for i in 0..4 {
+            assert!(d[(i, i)].abs() < 1e-12);
+            for j in 0..4 {
+                assert!((d[(i, j)] - d[(j, i)]).abs() < 1e-12);
+            }
+        }
+        assert!(
+            (d[(0, 1)] - 111.195).abs() < 0.1,
+            "a degree of latitude came to {} km",
+            d[(0, 1)]
+        );
+        // A degree of longitude is the same at the equator and shrinks with the
+        // cosine of latitude, which is the part a flat approximation gets wrong.
+        assert!((d[(0, 2)] - d[(0, 1)]).abs() < 0.1);
+        assert!(super::pairwise_haversine_km(&[91.0], &[0.0]).is_err());
+        assert!(super::pairwise_haversine_km(&[0.0], &[181.0]).is_err());
     }
 
     /// The statistic against no spatial variance is nought when there is none
