@@ -351,8 +351,17 @@ def correlation_tests(
     observed. The search sometimes stops at 0.9999 rather than exactly one. That
     error runs in the safe direction at conventional levels.
 
-    These are the *reference's* tests. **The Rust has no correlation tests at
-    all**, and its profile intervals are new and not yet calibrated.
+    These are the *reference's* tests. Correcting the note that stood here: the
+    Rust now has correlation tests of its own and profile intervals, and both are
+    calibrated -- `checks/bivariate_calibration.py`, 12 August 2026.
+
+    The Rust is calibrated slightly better at the boundary, and for a reason
+    worth recording. The departure above comes from the estimate landing exactly
+    on the bound in only 29 per cent of replicates where the mixture expects 50,
+    because this implementation's search stops at 0.9999 rather than at one. The
+    Rust carries the bound as an exact state rather than approaching it, and its
+    atom is 55 per cent -- near enough the theory that its boundary test sits
+    inside the band at the levels anybody reports.
     """
     from math import erfc, sqrt
 
