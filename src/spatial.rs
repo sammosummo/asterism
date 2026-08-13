@@ -62,6 +62,26 @@ struct Evaluation {
     fixed_effects: Vec<f64>,
 }
 
+/// Where one derivative's elements come from, so the inner loops can read them
+/// without a matrix being built and without an indirect call per element.
+enum DerivativeSource<'a> {
+    Fixed(&'a DMatrix<f64>),
+    Kernel(&'a DMatrix<f64>),
+    /// The decay derivative: minus the distance times the kernel, scaled by the
+    /// spatial variance.
+    Decay(&'a DMatrix<f64>, &'a DMatrix<f64>, f64),
+}
+
+impl DerivativeSource<'_> {
+    #[inline(always)]
+    fn at(&self, i: usize, j: usize) -> f64 {
+        match self {
+            Self::Fixed(m) | Self::Kernel(m) => m[(i, j)],
+            Self::Decay(kernel, distance, scale) => -scale * distance[(i, j)] * kernel[(i, j)],
+        }
+    }
+}
+
 /// One trait, fixed components plus an estimated spatial range.
 pub struct SpatialModel {
     design: DMatrix<f64>,
@@ -255,37 +275,69 @@ impl SpatialModel {
             let xvx_inverse = xvx_chol.inverse();
             let residual_solve = &vy - &vx * &beta;
 
-            // The derivative of the covariance with respect to each parameter.
-            // The variances give their own matrix; the decay rate acts only
-            // through the kernel, and d/dλ exp(−λD) is −D ∘ exp(−λD).
-            let mut derivative = |index: usize| -> DMatrix<f64> {
-                if index < self.fixed.len() {
-                    self.fixed[index].clone()
-                } else if index == self.spatial_index() {
-                    kernel.clone()
-                } else if index == self.residual_index() {
-                    DMatrix::identity(n, n)
-                } else {
-                    let mut d = kernel.clone();
-                    for i in 0..n {
-                        for j in 0..n {
-                            d[(i, j)] *= -self.distance[(i, j)];
-                        }
-                    }
-                    d * theta[self.spatial_index()]
-                }
-            };
-
+            // **The derivative matrices are never built.** Each of them is
+            // something already to hand -- a fixed component, the kernel, the
+            // identity, or the kernel scaled by minus the distances -- and
+            // materialising four dense n-by-n matrices per evaluation was
+            // costing more than the factorisation it accompanies. The identity
+            // was the worst of it: `tr(V⁻¹ I)` is the sum of the diagonal of
+            // `V⁻¹`, and building the identity to discover that is n² writes to
+            // learn n numbers.
             for index in 0..count {
-                let dv = derivative(index);
-                let trace = (0..n)
-                    .map(|i| (0..n).map(|j| inverse[(i, j)] * dv[(j, i)]).sum::<f64>())
-                    .sum::<f64>();
-                let dvr = &dv * &residual_solve;
-                let quadratic_term = residual_solve.dot(&dvr);
+                let (trace, quadratic_term, restricted) = if index == self.residual_index() {
+                    // ∂V/∂σ²_e is the identity, so every term simplifies.
+                    let trace = (0..n).map(|i| inverse[(i, i)]).sum::<f64>();
+                    let quadratic_term = residual_solve.dot(&residual_solve);
+                    let restricted = if reml {
+                        vx.transpose() * &vx
+                    } else {
+                        DMatrix::zeros(p, p)
+                    };
+                    (trace, quadratic_term, restricted)
+                } else {
+                    // Otherwise the derivative is a matrix already held. It is
+                    // still not materialised, but it is read through a match
+                    // outside the loops rather than a boxed closure inside
+                    // them: an indirect call cannot be inlined, and there are
+                    // n² of them per parameter -- thirteen million per
+                    // evaluation at two thousand people, which cost as much as
+                    // the factorisation.
+                    let scale = theta[self.spatial_index()];
+                    let source = if index < self.fixed.len() {
+                        DerivativeSource::Fixed(&self.fixed[index])
+                    } else if index == self.spatial_index() {
+                        DerivativeSource::Kernel(&kernel)
+                    } else {
+                        DerivativeSource::Decay(&kernel, &self.distance, scale)
+                    };
+
+                    let mut trace = 0.0;
+                    let mut dvr = DVector::<f64>::zeros(n);
+                    let mut dvx = DMatrix::<f64>::zeros(n, p);
+                    for i in 0..n {
+                        let mut acc = 0.0;
+                        for j in 0..n {
+                            let e = source.at(i, j);
+                            trace += inverse[(i, j)] * e;
+                            acc += e * residual_solve[j];
+                            if reml {
+                                for c in 0..p {
+                                    dvx[(i, c)] += e * vx[(j, c)];
+                                }
+                            }
+                        }
+                        dvr[i] = acc;
+                    }
+                    let restricted = if reml {
+                        vx.transpose() * &dvx
+                    } else {
+                        DMatrix::zeros(p, p)
+                    };
+                    (trace, residual_solve.dot(&dvr), restricted)
+                };
+
                 let mut d = 0.5 * (trace - quadratic_term);
                 if reml {
-                    let restricted = vx.transpose() * (&dv * &vx);
                     d -= 0.5 * (&xvx_inverse * &restricted).trace();
                 }
                 gradient[index] = d;
@@ -359,8 +411,17 @@ impl SpatialModel {
             control.maxit = 300;
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; count];
-            control.factr = 0.0;
-            control.pgtol = 1e-9;
+            // **`factr` at nought disables stopping on the function**, leaving
+            // only the gradient test, so the search runs to `maxit` every time
+            // whatever it has found. On four parameters that meant eight hundred
+            // evaluations where tens would do, and every one of them factorises
+            // a dense covariance. This is R's own default and stops when the
+            // objective has settled to about 1e-9 relative.
+            control.factr = 1.0e3;
+            // The fit declares convergence at a scaled gradient below 1e-6, so
+            // asking the optimiser for 1e-9 was three orders tighter than
+            // anything downstream reads.
+            control.pgtol = 1e-8;
             control.lmm = count.min(10);
             let Ok(solution) =
                 optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
@@ -588,7 +649,7 @@ impl SpatialModel {
             control.maxit = 300;
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; free.len()];
-            control.factr = 0.0;
+            control.factr = 1.0e3;
             control.pgtol = 1e-9;
             control.lmm = free.len().min(10);
             if let Ok(solution) =
