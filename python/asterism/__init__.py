@@ -16,6 +16,7 @@ then fitted::
     asterism.ComponentModel([relationship, household], x).fit(y)
     asterism.BivariateModel(k, observed, design).fit(y)
     asterism.SpatialModel([relationship], distance, design).fit(y)
+    asterism.GxeModel(relationship, environment, design).fit(y)
 
 Only `prepare` diagonalises. The rest factorise a covariance on every
 evaluation, which is why the one-trait model is enormously faster and why it is
@@ -37,6 +38,7 @@ from ._core import relationship as _relationship
 from .models import (
     BivariateModel,
     ComponentModel,
+    GxeModel,
     SpatialModel,
     kinship_classes,
 )
@@ -47,6 +49,7 @@ __all__ = [
     "relationship_matrix",
     "ComponentModel",
     "BivariateModel",
+    "GxeModel",
     "SpatialModel",
     "kinship_classes",
     "__version__",

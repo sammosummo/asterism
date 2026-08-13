@@ -15,6 +15,7 @@ mod components;
 mod dense;
 mod kinship_classes;
 mod prepared;
+mod gxe;
 mod relationship;
 mod spatial;
 
@@ -22,6 +23,7 @@ pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel}
 pub use components::{ComponentFit, ComponentModel};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
+pub use gxe::{GxeFit, GxeModel, Surface};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
 pub use spatial::{SpatialFit, SpatialModel};
 
@@ -41,6 +43,8 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_blup, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;

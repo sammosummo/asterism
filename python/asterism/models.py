@@ -380,6 +380,137 @@ class SpatialModel:
         }
 
 
+class GxeModel:
+    """One trait whose genetic effects may act differently across an environment.
+
+    The genetic covariance between two people becomes their relationship times a
+    surface in their two environments, and the residual variance a surface in
+    one. Two surfaces are available and they are given the same data and asked
+    the same questions:
+
+    - ``"exponential"``: the genetic and residual variances are log-linear in
+      the environment, and genetic effects a distance apart in the environment
+      correlate as ``exp(-λ|Δ|)``. Five parameters.
+    - ``"random_regression"``: a smooth quadratic surface on each covariance,
+      held by its Cholesky factor so it stays a covariance. Six parameters.
+
+    Nothing is reported in either surface's own coordinates. What comes back is
+    the heritability at each environment you ask about and the genetic
+    correlation between each pair — quantities that mean the same thing whichever
+    surface produced them.
+
+    **Choose the surface before looking at the answer, and know what it costs to
+    choose wrongly.** Neither family contains the other, and a rank-one genetic
+    surface from one is misspecified for the other. The misfit goes into the one
+    parameter that is free under the alternative and pinned under the null, so a
+    surface that cannot bend its variance function the way the data does will
+    bend its correlation instead. In calibration the exponential surface rejected
+    ``test(y, "correlation")`` on 14 per cent of samples with a linear rank-one
+    genetic surface and no reordering at all, against a nominal 5. The smooth
+    surface was conservative rather than anti-conservative in the mirror case.
+    Fitting both and reporting whichever rejects is not a defensible procedure.
+
+    **A correlation below one is not by itself evidence of an interaction.** The
+    estimate cannot exceed one, so under the null every departure runs downward:
+    on the exponential surface a tenth of null samples came back below 0.25. Use
+    ``test``.
+    """
+
+    def __init__(self, relationship: Any, environment: Any, design: Any,
+                 surface: str = "random_regression") -> None:
+        if surface not in ("exponential", "random_regression"):
+            raise ValueError(
+                f"surface must be exponential or random_regression, not {surface!r}"
+            )
+        self._relationship = _matrix(relationship, "relationship")
+        self._environment = [float(v) for v in np.asarray(environment).ravel()]
+        self._design = _matrix(design, "design")
+        self._surface = surface
+
+    def fit(self, y: Any, grid: Any = (-1.0, 0.0, 1.0), reml: bool = True) -> dict[str, Any]:
+        """Fit, and report the surface at the environments in ``grid``.
+
+        ``grid`` is in the environment's own units, so it should be chosen from
+        the data — quantiles of the observed environment usually. The genetic
+        correlations come back as a square list of lists in the grid's order.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        grid = [float(v) for v in np.asarray(grid).ravel()]
+        (
+            parameters,
+            loglik,
+            converged,
+            gradient,
+            effects,
+            errors,
+            genetic,
+            residual,
+            heritability,
+            correlations,
+        ) = _core.gxe_fit(
+            self._relationship, self._environment, self._design, y,
+            self._surface, grid, reml,
+        )
+        width = len(grid)
+        return {
+            "surface": self._surface,
+            # Kept so a fit can be reproduced and inspected. They are not the
+            # answer and do not mean the same thing across surfaces.
+            "parameters": list(parameters),
+            "environment": grid,
+            "genetic_variance": list(genetic),
+            "residual_variance": list(residual),
+            "heritability": list(heritability),
+            "genetic_correlation": [
+                list(correlations[row * width:(row + 1) * width]) for row in range(width)
+            ],
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors)
+            ],
+            "loglik": loglik,
+            "scaled_gradient": gradient,
+            "converged": converged,
+            "estimator": "reml" if reml else "ml",
+        }
+
+    def test(self, y: Any, null: str = "correlation", reml: bool = True) -> dict[str, Any]:
+        """Test one of the two genotype-by-environment nulls.
+
+        - ``"correlation"``: the genetic effects at any two environments are the
+          same effects. The genetic variance may still change; what is ruled out
+          is a change in *which* genes matter. This is the narrower claim and
+          usually the interesting one — a heritability that rises with an
+          environment can follow from a change of scale in the measurement, and a
+          correlation below one cannot.
+        - ``"interaction"``: the genetic covariance does not involve the
+          environment at all. Rejecting says something about genes and
+          environment together, but not what.
+
+        The residual surface is free under both nulls, so a residual variance
+        that changes with the environment is not mistaken for a genetic one.
+        """
+        if null not in ("interaction", "correlation"):
+            raise ValueError(f"null must be interaction or correlation, not {null!r}")
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxe_test(
+            self._relationship, self._environment, self._design, y,
+            self._surface, null, reml,
+        )
+        return {
+            "surface": self._surface,
+            "null": null,
+            "statistic": statistic,
+            "p_value": p_value,
+            # `mixture_50_50` for the correlation null, which holds one bounded
+            # coordinate; `half_chi2_1_half_chi2_2` for the interaction null,
+            # which holds one bounded and one free.
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
+            "estimator": "reml" if reml else "ml",
+        }
+
+
 def kinship_classes(
     ids: list[str],
     father: list[str | None],
