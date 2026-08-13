@@ -1,0 +1,53 @@
+{
+  "what": "class-weighted kinship: do the class shares cover and are they unbiased",
+  "date": "2026-08-13",
+  "estimator": "reml",
+  "people": 720,
+  "true_weight": 1.0,
+  "replicates": 200,
+  "completed": 200,
+  "nominal": 0.95,
+  "classes": {
+    "mother_son": {
+      "pairs": 100,
+      "true_share": 0.16666666666666666,
+      "share_mean": 0.16161486077482362,
+      "share_bias": -0.005051805891843036,
+      "coverage": 0.945,
+      "intervals": 200,
+      "weight_mean": 3.143337487228718,
+      "weight_bias": 2.143337487228718
+    },
+    "mother_daughter": {
+      "pairs": 140,
+      "true_share": 0.16666666666666666,
+      "share_mean": 0.16657462138838144,
+      "share_bias": -9.204527828521325e-05,
+      "coverage": 0.935,
+      "intervals": 200,
+      "weight_mean": 3.248857769442336,
+      "weight_bias": 2.248857769442336
+    },
+    "father_son": {
+      "pairs": 50,
+      "true_share": 0.16666666666666666,
+      "share_mean": 0.1665526799185785,
+      "share_bias": -0.00011398674808815734,
+      "coverage": 0.94,
+      "intervals": 200,
+      "weight_mean": 3.5707619426552126,
+      "weight_bias": 2.5707619426552126
+    },
+    "father_daughter": {
+      "pairs": 70,
+      "true_share": 0.16666666666666666,
+      "share_mean": 0.15967340740032973,
+      "share_bias": -0.006993259266336926,
+      "coverage": 0.925,
+      "intervals": 200,
+      "weight_mean": 3.0599705381145657,
+      "weight_bias": 2.0599705381145657
+    }
+  },
+  "note": "the weights are ratios of two estimated variances and are biased upward; the shares are not and are what the model should report. The 2026 qualification gate failed this model on parent-weight bias and was right to."
+}
