@@ -115,18 +115,23 @@ struct Evaluation {
 /// without a matrix being built and without an indirect call per element.
 enum DerivativeSource<'a> {
     Fixed(&'a DMatrix<f64>),
-    Kernel(&'a DMatrix<f64>),
+    /// The kernel, read through the place each person lives at.
+    Kernel(&'a DMatrix<f64>, &'a [usize]),
     /// The decay derivative: minus the distance times the kernel, scaled by the
-    /// spatial variance.
-    Decay(&'a DMatrix<f64>, &'a DMatrix<f64>, f64),
+    /// spatial variance. Also read by place.
+    Decay(&'a DMatrix<f64>, &'a DMatrix<f64>, &'a [usize], f64),
 }
 
 impl DerivativeSource<'_> {
     #[inline(always)]
     fn at(&self, i: usize, j: usize) -> f64 {
         match self {
-            Self::Fixed(m) | Self::Kernel(m) => m[(i, j)],
-            Self::Decay(kernel, distance, scale) => -scale * distance[(i, j)] * kernel[(i, j)],
+            Self::Fixed(m) => m[(i, j)],
+            Self::Kernel(kernel, place) => kernel[(place[i], place[j])],
+            Self::Decay(kernel, distance, place, scale) => {
+                let (a, b) = (place[i], place[j]);
+                -scale * distance[(a, b)] * kernel[(a, b)]
+            }
         }
     }
 }
@@ -136,6 +141,19 @@ pub struct SpatialModel {
     design: DMatrix<f64>,
     fixed: Vec<DMatrix<f64>>,
     distance: DMatrix<f64>,
+    /// Which place each person lives at, indexing `place_distance`.
+    ///
+    /// **People share addresses, and the kernel does not care which of them is
+    /// which.** Two people at one address are nought apart and exactly as far
+    /// from everybody else, so their rows of `exp(-lambda*D)` are identical and
+    /// computing both is wasted work. In GOBS 1,881 people live at 1,363
+    /// addresses, so the kernel is evaluated over 1.86 million pairs of places
+    /// instead of 3.54 million pairs of people -- a little over half the
+    /// exponentials, which had grown to be the largest single cost in a fit once
+    /// the factorisation was handed to `faer`.
+    place: Vec<usize>,
+    /// Distances between places rather than between people.
+    place_distance: DMatrix<f64>,
     rows: usize,
     logdet_xtx: f64,
     /// Set from the distances rather than chosen; see `decay_bounds`.
@@ -229,8 +247,34 @@ impl SpatialModel {
         let xtx = design.transpose() * design;
         let chol = xtx.cholesky().ok_or("SPATIAL_DESIGN_RANK_DEFICIENT")?;
         let logdet_xtx = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+        // Group people by address. Two are at the same one when the distance
+        // between them is exactly nought, which is what the haversine returns
+        // for identical coordinates. Anything merely close forms its own group,
+        // which costs a little of the saving and cannot cost correctness.
+        let mut place = vec![usize::MAX; n];
+        let mut representative: Vec<usize> = Vec::new();
+        for person in 0..n {
+            if place[person] != usize::MAX {
+                continue;
+            }
+            let here = representative.len();
+            representative.push(person);
+            place[person] = here;
+            for other in (person + 1)..n {
+                if place[other] == usize::MAX && distance[(person, other)] == 0.0 {
+                    place[other] = here;
+                }
+            }
+        }
+        let places = representative.len();
+        let place_distance = DMatrix::from_fn(places, places, |a, b| {
+            distance[(representative[a], representative[b])]
+        });
+
         let (lambda_lower, lambda_upper) = decay_bounds(distance);
         Ok(Self {
+            place,
+            place_distance,
             design: design.clone(),
             fixed: fixed.to_vec(),
             distance: distance.clone(),
@@ -260,9 +304,18 @@ impl SpatialModel {
         self.fixed.len() + 2
     }
 
-    /// `exp(−λD)`, the spatial correlation itself.
+    /// `exp(−λD)` between places, not between people.
+    ///
+    /// Every read of it goes through `self.place`, so a person's row is looked
+    /// up rather than stored twice.
     fn kernel(&self, lambda: f64) -> DMatrix<f64> {
-        self.distance.map(|d| (-lambda * d).exp())
+        self.place_distance.map(|d| (-lambda * d).exp())
+    }
+
+    /// The spatial correlation between two people.
+    #[inline(always)]
+    fn kernel_at(&self, kernel: &DMatrix<f64>, i: usize, j: usize) -> f64 {
+        kernel[(self.place[i], self.place[j])]
     }
 
     fn evaluate(
@@ -292,7 +345,14 @@ impl SpatialModel {
                 v += matrix * theta[index];
             }
         }
-        v += &kernel * theta[self.spatial_index()];
+        let spatial = theta[self.spatial_index()];
+        if spatial != 0.0 {
+            for i in 0..n {
+                for j in 0..n {
+                    v[(i, j)] += spatial * self.kernel_at(&kernel, i, j);
+                }
+            }
+        }
         for i in 0..n {
             v[(i, i)] += theta[self.residual_index()];
         }
@@ -355,9 +415,14 @@ impl SpatialModel {
                     let source = if index < self.fixed.len() {
                         DerivativeSource::Fixed(&self.fixed[index])
                     } else if index == self.spatial_index() {
-                        DerivativeSource::Kernel(&kernel)
+                        DerivativeSource::Kernel(&kernel, &self.place)
                     } else {
-                        DerivativeSource::Decay(&kernel, &self.distance, scale)
+                        DerivativeSource::Decay(
+                            &kernel,
+                            &self.place_distance,
+                            &self.place,
+                            scale,
+                        )
                     };
 
                     let mut trace = 0.0;
@@ -1254,6 +1319,46 @@ mod tests {
         assert!(
             (fit.half_distance_km * fit.lambda - std::f64::consts::LN_2).abs() < 1e-12
         );
+    }
+
+    /// The kernel is stored between places and read between people, so the
+    /// indirection has to be right: every pair must give exactly what
+    /// `exp(-lambda*d)` gives for that pair's own distance. An error here would
+    /// not crash or look odd -- it would quietly fit somebody else's
+    /// correlations.
+    #[test]
+    fn the_kernel_read_by_place_matches_the_distance_between_the_people() {
+        // Twelve people at five addresses, deliberately out of order so that a
+        // grouping which assumed people at one place are adjacent would fail.
+        let places: [f64; 12] =
+            [0.0, 12.0, 3.0, 0.0, 40.0, 12.0, 3.0, 0.0, 40.0, 3.0, 12.0, 0.0];
+        let n = places.len();
+        let distance = DMatrix::from_fn(n, n, |i, j| (places[i] - places[j]).abs());
+        let design = DMatrix::from_element(n, 1, 1.0);
+        let model = SpatialModel::build(&[DMatrix::identity(n, n)], &distance, &design)
+            .expect("valid");
+
+        assert_eq!(
+            model.place_distance.nrows(),
+            4,
+            "twelve people at four distinct addresses were not grouped into four"
+        );
+        for lambda in [0.001f64, 0.05, 0.5] {
+            let kernel = model.kernel(lambda);
+            for i in 0..n {
+                for j in 0..n {
+                    let expected = (-lambda * distance[(i, j)]).exp();
+                    let got = model.kernel_at(&kernel, i, j);
+                    assert!(
+                        (got - expected).abs() < 1e-15,
+                        "lambda {lambda}, people {i} and {j} at {} and {}: \
+                         {got} against {expected}",
+                        places[i],
+                        places[j]
+                    );
+                }
+            }
+        }
     }
 
     /// A bootstrap that cannot be reproduced is not evidence. Two runs at one
