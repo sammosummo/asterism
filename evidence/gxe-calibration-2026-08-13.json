@@ -1,0 +1,245 @@
+{
+  "what": "level and power of the two genotype-by-environment tests",
+  "date": "2026-08-13",
+  "estimator": "reml",
+  "pairs": 250,
+  "people": 500,
+  "replicates": 2000,
+  "levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "surfaces": [
+    "exponential",
+    "random_regression"
+  ],
+  "scenarios": {
+    "flat": {
+      "what": "no interaction of any kind",
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0075,
+            "0.05": 0.046,
+            "0.1": 0.0925
+          },
+          "atom_at_one": 0.0015
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0075,
+            "0.05": 0.048,
+            "0.1": 0.094
+          },
+          "atom_at_one": 0.5675
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0025,
+            "0.05": 0.012,
+            "0.1": 0.0215
+          },
+          "atom_at_one": 0.0015
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0,
+            "0.05": 0.0025,
+            "0.1": 0.0115
+          },
+          "atom_at_one": 0.7615
+        }
+      }
+    },
+    "residual_tilt": {
+      "what": "residual variance changes with the environment, genes do not",
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.007,
+            "0.05": 0.0565,
+            "0.1": 0.106
+          },
+          "atom_at_one": 0.0
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.007,
+            "0.05": 0.038,
+            "0.1": 0.075
+          },
+          "atom_at_one": 0.6105
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0015,
+            "0.05": 0.0175,
+            "0.1": 0.042
+          },
+          "atom_at_one": 0.001
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0,
+            "0.05": 0.002,
+            "0.1": 0.0055
+          },
+          "atom_at_one": 0.841
+        }
+      }
+    },
+    "rank_one_linear": {
+      "what": "same genes throughout, genetic standard deviation linear in z",
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.288,
+            "0.05": 0.601,
+            "0.1": 0.7405
+          },
+          "atom_at_one": 0.0
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "misspecified",
+          "rejection": {
+            "0.01": 0.0305,
+            "0.05": 0.1075,
+            "0.1": 0.187
+          },
+          "atom_at_one": 0.374
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.282,
+            "0.05": 0.552,
+            "0.1": 0.689
+          },
+          "atom_at_one": 0.001
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.0,
+            "0.05": 0.0075,
+            "0.1": 0.021
+          },
+          "atom_at_one": 0.677
+        }
+      }
+    },
+    "rank_one_loglinear": {
+      "what": "same genes throughout, genetic standard deviation log-linear in z",
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.0835,
+            "0.05": 0.2585,
+            "0.1": 0.4055
+          },
+          "atom_at_one": 0.0
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "null",
+          "rejection": {
+            "0.01": 0.011,
+            "0.05": 0.053,
+            "0.1": 0.106
+          },
+          "atom_at_one": 0.528
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.053,
+            "0.05": 0.183,
+            "0.1": 0.312
+          },
+          "atom_at_one": 0.001
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "misspecified",
+          "rejection": {
+            "0.01": 0.0,
+            "0.05": 0.006,
+            "0.1": 0.021
+          },
+          "atom_at_one": 0.692
+        }
+      }
+    },
+    "reordering": {
+      "what": "different genes at different environments: power, not level",
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.854,
+            "0.05": 0.949,
+            "0.1": 0.975
+          },
+          "atom_at_one": 0.0
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.107,
+            "0.05": 0.3385,
+            "0.1": 0.4925
+          },
+          "atom_at_one": 0.124
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.141,
+            "0.05": 0.372,
+            "0.1": 0.5255
+          },
+          "atom_at_one": 0.0
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.0815,
+            "0.05": 0.333,
+            "0.1": 0.5015
+          },
+          "atom_at_one": 0.0805
+        }
+      }
+    }
+  },
+  "note": "the criterion is validity and not uniformity: both statistics sit on a bound under their null, so about half of all fits return a p-value of one. Rows marked misspecified are true nulls outside the fitted surface's family and are not failed on"
+}

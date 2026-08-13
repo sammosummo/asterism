@@ -9,7 +9,7 @@ the vocabulary before writing anything here, and `docs/adr/` for the decisions.
 
 ## What it does today
 
-Five families of model, all of them one or two traits on a pedigree, all fitted
+Six families of model, all of them one or two traits on a pedigree, all fitted
 by REML or ML, and all calibrated before being used on anything real.
 
 | model | what it adds | reports |
@@ -19,6 +19,7 @@ by REML or ML, and all calibrated before being used on anything real.
 | one trait, spatial | a kernel `exp(-λd)` whose range is estimated rather than chosen | the spatial share and interval, the range, a bootstrapped p-value |
 | one trait, spatial, range integrated out | the range averaged over rather than maximised over | the share and interval, no range at all |
 | two traits | joint fit, unbalanced | both h², genetic, residual and phenotypic correlations, an interval and a test for each |
+| one trait, gene by environment | a surface on the genetic and residual covariances, in an environment measured per person | h² at each environment asked about, the genetic correlation between each pair, and two tests |
 
 Which to reach for is a statistical question rather than a menu. The one-trait
 model diagonalises the relationship matrix once per family block and is
@@ -34,6 +35,27 @@ integrated version exists because it is the better answer — with the range
 integrated over, the share's uncertainty includes not knowing it, where
 otherwise the share is conditional on an estimate that came back at 6 km when
 the truth was 35.
+
+**The gene-by-environment model comes in two surfaces, and the choice is not
+free.** One makes the variances log-linear in the environment with genetic
+effects correlating as `exp(-λ|Δ|)`; the other puts a smooth quadratic on each
+covariance, held by its Cholesky factor so it stays a covariance. They report
+the same quantities. But neither family contains the other, and a surface that
+cannot bend its variance function the way the data does will bend its
+correlation instead: on a rank-one genetic surface with no reordering at all,
+the exponential form rejected the correlation null on 14 per cent of samples
+against a nominal 5. Choose the surface before seeing the answer. Fitting both
+and reporting whichever rejects is not a procedure. Only the smooth surface can
+represent a crossover, where a genotype that helps in one environment harms in
+another: the exponential kernel is positive at every rate, so it reports a
+correlation near nought where the truth is near minus one.
+
+**A genetic correlation below one is not on its own evidence of an
+interaction.** The estimate cannot exceed one, so under the null every departure
+runs downward; a tenth of null samples came back below 0.25 on the exponential
+surface. The tests exist for this reason, and unlike the spatial model they need
+no bootstrap — at either null every remaining parameter is still identified, so
+a mixture of chi-squares is a real reference rather than a hopeful one.
 
 **The class-weighted kinship model needs no code of its own.** It multiplies the
 four classes of direct parent–offspring cells by class-specific weights, which
@@ -73,6 +95,12 @@ space = asterism.SpatialModel([relationship], distance_km, design)
 space.fit(y, integrated=True)         # the range averaged over, not estimated
 space.bootstrap(y, replicates=199)    # the only honest p-value here
 space.predict(y, component=0)         # BLUP, with the range profiled
+
+# one trait whose genes may act differently across an environment
+gxe = asterism.GxeModel(relationship, exposure, design, "random_regression")
+fit = gxe.fit(y, grid=[low, middle, high])   # h2 and rho_G at those environments
+gxe.test(y, "correlation")            # the same genes throughout?
+gxe.test(y, "interaction")            # the environment in the genetics at all?
 
 # the class-weighted kinship split, for ComponentModel
 split = asterism.kinship_classes(ids, father, mother, sex, keep=measured)

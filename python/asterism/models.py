@@ -399,6 +399,13 @@ class GxeModel:
     correlation between each pair — quantities that mean the same thing whichever
     surface produced them.
 
+    **Only the smooth surface can represent a crossover** — a genotype that
+    helps in one environment and harms in another, so the genetic correlation
+    falls below nought rather than merely below one. The exponential surface
+    correlates two environments as ``exp(-λ|Δ|)``, which is positive at every
+    rate, so it will report a correlation near nought where the truth is near
+    minus one. If a crossover is on the table, the choice is already made.
+
     **Choose the surface before looking at the answer, and know what it costs to
     choose wrongly.** Neither family contains the other, and a rank-one genetic
     surface from one is misspecified for the other. The misfit goes into the one

@@ -27,11 +27,22 @@
 //!
 //! **The smooth surface has to stay a covariance, and that is not a box.** Its
 //! `q01` is free to be negative while `[[q00, q01], [q01, q11]]` must remain
-//! positive semidefinite, so the surface is held by its Cholesky factor: with
-//! `L = [[l00, 0], [l10, l11]]`, `q00 = l00^2`, `q01 = l00*l10` and
-//! `q11 = l10^2 + l11^2`. Every finite `l10` and non-negative `l00`, `l11` gives
-//! a covariance, so the awkward constraint becomes a box the optimiser already
-//! handles. This follows the source the model was recovered from.
+//! positive semidefinite. The surface is therefore held by loadings rather than
+//! by its entries: with `q00 = l00^2`, `q01 = l00*l10` and `q11 = l10^2 + u`,
+//! every finite `l10` and non-negative `l00`, `u` gives a covariance, because
+//! the determinant is `l00^2 * u`. The awkward constraint becomes a box the
+//! optimiser already handles.
+//!
+//! **The third coordinate is `u` and not a Cholesky `l11`**, which is a
+//! departure from the source this model was recovered from and is deliberate.
+//! Written as `l11` the determinant is `l00^2 * l11^2`, so `dq11/dl11 = 2*l11`
+//! vanishes at exactly the point both tests hold it at. A parameter whose
+//! gradient is nought at the null is one the search will not move away from and
+//! one the usual mixture reference does not describe: in calibration the smooth
+//! surface sat on its bound in 68 to 84 per cent of null samples where the
+//! theory says 50, and rejected on 0.3 per cent of them at a nominal 5. Valid,
+//! but with most of its power thrown away. Squaring the coordinate away gives
+//! `dq11/du = 1` and costs nothing else.
 //!
 //! The environment is the caller's to centre and scale. Where it is centred
 //! decides what the surface's intercept means, and that is a scientific choice
@@ -45,7 +56,21 @@ use crate::dense::DenseFactor;
 
 /// Which surface is put on the environment-by-environment covariance.
 ///
-/// This is the only thing that differs between the two cross-sectional forms.
+/// This is the only thing that differs between the two cross-sectional forms,
+/// and they report the same quantities. But **neither family contains the
+/// other**, and the choice has two consequences worth knowing before it is
+/// made.
+///
+/// A crossover -- a genotype that helps in one environment and harms in another,
+/// so the genetic correlation is below nought rather than merely below one -- is
+/// reachable by the smooth surface and not by the exponential one, whose kernel
+/// is positive at every rate.
+///
+/// And a surface that cannot bend its variance function the way the data does
+/// will bend its correlation instead. On a rank-one genetic surface it cannot
+/// represent, with no reordering present at all, the exponential form rejected
+/// the correlation null far above its nominal rate. Choose before seeing the
+/// answer; `checks/gxe_calibration.py` measures what choosing wrongly costs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
     /// Log-linear variances with an exponential decay in environmental
@@ -153,7 +178,7 @@ impl GxeFit {
                     * (-theta[2] * (first - second).abs()).exp()
             }
             Surface::RandomRegression => {
-                let g = block_from_cholesky(theta[0], theta[1], theta[2]);
+                let g = block_from_loadings(theta[0], theta[1], theta[2]);
                 g[0] + g[1] * (first + second) + g[2] * first * second
             }
         };
@@ -173,7 +198,7 @@ impl GxeFit {
         let value = match self.surface {
             Surface::Exponential => (theta[3] + theta[4] * z).exp(),
             Surface::RandomRegression => {
-                let e = block_from_cholesky(theta[3], theta[4], theta[5]);
+                let e = block_from_loadings(theta[3], theta[4], theta[5]);
                 e[0] + 2.0 * e[1] * z + e[2] * z * z
             }
         };
@@ -226,8 +251,8 @@ pub struct GxeModel {
 }
 
 /// Turn a Cholesky factor into the covariance entries it stands for.
-fn block_from_cholesky(l00: f64, l10: f64, l11: f64) -> [f64; 3] {
-    [l00 * l00, l00 * l10, l10 * l10 + l11 * l11]
+fn block_from_loadings(l00: f64, l10: f64, u: f64) -> [f64; 3] {
+    [l00 * l00, l00 * l10, l10 * l10 + u]
 }
 
 impl GxeModel {
@@ -286,7 +311,7 @@ impl GxeModel {
                     * (-lambda * (zi - zj).abs()).exp()
             }
             Surface::RandomRegression => {
-                let g = block_from_cholesky(theta[0], theta[1], theta[2]);
+                let g = block_from_loadings(theta[0], theta[1], theta[2]);
                 g[0] + g[1] * (zi + zj) + g[2] * zi * zj
             }
         }
@@ -297,7 +322,7 @@ impl GxeModel {
         match self.surface {
             Surface::Exponential => (theta[3] + theta[4] * zi).exp(),
             Surface::RandomRegression => {
-                let e = block_from_cholesky(theta[3], theta[4], theta[5]);
+                let e = block_from_loadings(theta[3], theta[4], theta[5]);
                 e[0] + 2.0 * e[1] * zi + e[2] * zi * zi
             }
         }
@@ -354,15 +379,17 @@ impl GxeModel {
                 }
                 Surface::RandomRegression => {
                     let genetic_side = parameter < 3;
-                    let (l00, l10, l11) = if genetic_side {
-                        (theta[0], theta[1], theta[2])
+                    let (l00, l10) = if genetic_side {
+                        (theta[0], theta[1])
                     } else {
-                        (theta[3], theta[4], theta[5])
+                        (theta[3], theta[4])
                     };
                     let d = match parameter % 3 {
                         0 => [2.0 * l00, l10, 0.0],
                         1 => [0.0, l00, 2.0 * l10],
-                        _ => [0.0, 0.0, 2.0 * l11],
+                        // The whole reason for carrying u rather than its root:
+                        // this is one, not something that vanishes at the null.
+                        _ => [0.0, 0.0, 1.0],
                     };
                     if genetic_side {
                         self.relationship[(a, b)] * (d[0] + d[1] * (zi + zj) + d[2] * zi * zj)
@@ -795,7 +822,7 @@ fn mixture(
 
 #[cfg(test)]
 mod tests {
-    use super::{GxeModel, Surface, block_from_cholesky};
+    use super::{GxeFit, GxeModel, Surface, block_from_loadings};
     use nalgebra::{DMatrix, DVector};
 
     const BOTH: [Surface; 2] = [Surface::Exponential, Surface::RandomRegression];
@@ -850,29 +877,29 @@ mod tests {
         (a, z.clone(), DMatrix::from_element(n, 1, 1.0), factor * draw)
     }
 
-    /// **The Cholesky parameterisation exists to keep the smooth surface a
+    /// **The loadings exist to keep the smooth surface a
     /// covariance**, and it must do so including where the off-diagonal loading
     /// is large and negative -- the case a non-negativity constraint would
     /// wrongly forbid and a careless parameterisation would wrongly allow.
     #[test]
-    fn every_cholesky_gives_a_positive_semidefinite_block() {
-        for &(l00, l10, l11) in &[
+    fn every_loading_gives_a_positive_semidefinite_block() {
+        for &(l00, l10, u) in &[
             (1.0, 0.0, 0.0),
             (1.0, -3.0, 0.0),
             (0.5, 2.0, 1.5),
             (0.0, 0.0, 0.0),
             (2.0, -0.4, 0.1),
         ] {
-            let [q00, q01, q11] = block_from_cholesky(l00, l10, l11);
+            let [q00, q01, q11] = block_from_loadings(l00, l10, u);
             assert!(q00 >= -1e-12 && q11 >= -1e-12);
             assert!(
                 q00 * q11 - q01 * q01 >= -1e-12,
-                "not a covariance at ({l00}, {l10}, {l11})"
+                "not a covariance at ({l00}, {l10}, {u})"
             );
         }
         // A negative covariance must be reachable, which is the whole reason
         // for not using non-negative variances.
-        let [_, q01, _] = block_from_cholesky(1.0, -0.5, 0.2);
+        let [_, q01, _] = block_from_loadings(1.0, -0.5, 0.2);
         assert!(q01 < 0.0, "no negative covariance is reachable");
     }
 
@@ -1000,6 +1027,48 @@ mod tests {
                 middle.abs() < 0.1,
                 "{surface:?}: no interaction was simulated but the heritability \
                  runs {middle:+.3} across the environment in the typical fit"
+            );
+        }
+    }
+
+    /// **A crossover is representable by one surface and not the other**, which
+    /// is the sharpest difference between them and the one most likely to
+    /// decide which to use. A crossover is a genotype that helps in one
+    /// environment and harms in another: a genetic correlation below nought,
+    /// not merely below one. The exponential surface correlates two
+    /// environments as `exp(-lambda |difference|)`, which is positive whatever
+    /// the rate, so it cannot reach one however strong the crossover in the
+    /// data. The smooth surface can, because its covariance is
+    /// `(l00 + l10 z1)(l00 + l10 z2) + l11^2 z1 z2`, which changes sign when the
+    /// two environments fall either side of `-l00 / l10`.
+    #[test]
+    fn only_the_smooth_surface_can_cross_over() {
+        let made = |surface: Surface, parameters: Vec<f64>| GxeFit {
+            surface,
+            parameters,
+            fixed_effects: vec![],
+            fixed_effect_errors: vec![],
+            loglik: 0.0,
+            converged: true,
+            scaled_gradient: 0.0,
+            estimator: "reml",
+            variance_scale: 1.0,
+        };
+        // l00 = 0.5, l10 = 1.0, l11 = 0: the sign changes at z = -0.5.
+        let smooth = made(Surface::RandomRegression, vec![0.5, 1.0, 0.0, 0.7, 0.0, 0.0]);
+        let crossed = smooth.genetic_correlation(-1.5, 1.5);
+        assert!(
+            crossed < -0.9,
+            "the smooth surface should reach a crossover, and got {crossed}"
+        );
+        // No rate, however large, takes the exponential surface below nought.
+        for rate in [0.0, 0.5, 5.0, 50.0] {
+            let exponential = made(Surface::Exponential, vec![-0.7, 0.6, rate, -0.7, 0.0]);
+            let got = exponential.genetic_correlation(-1.5, 1.5);
+            assert!(
+                got >= 0.0,
+                "the exponential surface reached {got} at rate {rate}, which its \
+                 kernel cannot do"
             );
         }
     }
