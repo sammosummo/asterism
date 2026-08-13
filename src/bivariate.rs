@@ -464,8 +464,11 @@ impl BivariateModel {
         for block in &self.blocks {
             let size = block.len();
             let v = self.assemble(block, &sigma_a, &sigma_e);
-            let chol = v.cholesky()?;
-            logdet += 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+            // Whichever library is faster at this block's size; see `dense.rs`.
+            // A pedigree is mostly small families, but the cost is cubic in
+            // block size so the few large ones are nearly all the work.
+            let chol = crate::dense::DenseFactor::new(&v)?;
+            logdet += chol.logdet();
 
             let index: Vec<usize> = block
                 .iter()
@@ -473,8 +476,8 @@ impl BivariateModel {
                 .collect();
             let yb = DVector::from_iterator(size, index.iter().map(|&i| y[i]));
             let xb = DMatrix::from_fn(size, p, |r, c| self.design[(index[r], c)]);
-            let vy = chol.solve(&yb);
-            let vx = chol.solve(&xb);
+            let vy = chol.solve_vector(&yb);
+            let vx = chol.solve_matrix(&xb);
             xvx += xb.transpose() * &vx;
             xvy += xb.transpose() * &vy;
             yvy += yb.dot(&vy);

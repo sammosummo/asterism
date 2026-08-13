@@ -12,6 +12,7 @@
 mod bivariate;
 mod blocks;
 mod components;
+mod dense;
 mod prepared;
 mod relationship;
 mod spatial;
