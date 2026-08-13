@@ -609,10 +609,17 @@ impl SpatialModel {
             if deviance(bound) <= CHI2_ONE_DF_95 {
                 return (bound, true);
             }
+            // **The endpoint is bisected to a ten-thousandth and no further.**
+            // Each halving re-optimises every other parameter over several
+            // starts, so the last twenty halvings cost as much as the first
+            // twenty and buy digits nobody reports. Pinning an endpoint to 1e-9
+            // was most of the cost of a spatial interval and none of its
+            // meaning.
+            let tolerance = 1e-4 * fitted.abs().max(1e-3);
             let (mut inside, mut outside) = (fitted, bound);
             for _ in 0..60 {
                 let middle = 0.5 * (inside + outside);
-                if (outside - inside).abs() <= 1e-9 * fitted.abs().max(1e-6) {
+                if (outside - inside).abs() <= tolerance {
                     break;
                 }
                 if deviance(middle) <= CHI2_ONE_DF_95 {
