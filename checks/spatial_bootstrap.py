@@ -52,6 +52,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import os
+
 import numpy as np
 from scipy import stats
 
@@ -65,7 +67,13 @@ BOOTSTRAP = 199
 # which would call almost anything calibrated; 400 narrows it to 0.028-0.072 for
 # about an hour.
 OUTER = 400
-WORKERS = 6
+WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+# Which treatment of the decay rate is being calibrated: the supremum over it,
+# which is what profiling does, or the average across it. They are different
+# statistics with different nulls, so neither calibration transfers to the other
+# and each has to be run.
+INTEGRATED = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
+MODE = "integrated" if INTEGRATED else "profile"
 
 
 def structure(pairs: int = PAIRS):
@@ -91,7 +99,7 @@ def bootstrap_p_value(
 ) -> dict:
     """The add-one bootstrap p-value, computed in the Rust."""
     observed, exceedances, usable, requested, p_value, rule = _core.spatial_bootstrap(
-        [relationship], distance, design, y, replicates, seed, True
+        [relationship], distance, design, y, replicates, seed, True, INTEGRATED
     )
     return {
         "observed": observed,
@@ -117,8 +125,8 @@ def one_null_data_set(index: int) -> float | None:
 def main() -> int:
     relationship, distance, design, n = structure()
     print(
-        f"Bootstrap for no spatial variance. {PAIRS} sibling pairs, n = {n}, "
-        f"placed {SPACING_KM:.0f} km apart.\n"
+        f"Bootstrap for no spatial variance, {MODE}. {PAIRS} sibling pairs, "
+        f"n = {n}, placed {SPACING_KM:.0f} km apart.\n"
     )
 
     # One worked example first, so the numbers below have something concrete
@@ -228,12 +236,13 @@ def main() -> int:
     print("null, no closed-form reference exists to compare it against.")
 
     Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/spatial-bootstrap-2026-08-12.json").write_text(
+    Path(f"evidence/spatial-bootstrap-{MODE}-2026-08-13.json").write_text(
         json.dumps(
             {
                 "what": "the parametric bootstrap for no spatial variance, and whether it holds its level",
                 "date": "2026-08-12",
                 "estimator": "reml",
+                "decay_rate": MODE,
                 "pairs": PAIRS,
                 "people": n,
                 "spacing_km": SPACING_KM,

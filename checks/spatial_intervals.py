@@ -35,6 +35,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import os
+
 import numpy as np
 
 from asterism import _core
@@ -42,7 +44,13 @@ from asterism import _core
 PAIRS = 150
 SPACING_KM = 2.0
 REPLICATES = 250
-WORKERS = 6
+WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+# Which treatment of the decay rate is being calibrated: the supremum over it,
+# which is what profiling does, or the average across it. They are different
+# statistics with different nulls, so neither calibration transfers to the other
+# and each has to be run.
+INTEGRATED = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
+MODE = "integrated" if INTEGRATED else "profile"
 
 TRUTH = dict(additive=0.35, spatial=0.25, residual=0.40, decay_per_km=0.02)
 TRUE_HALF_KM = np.log(2) / TRUTH["decay_per_km"]
@@ -73,11 +81,16 @@ def one(index: int) -> dict | None:
     out: dict = {}
     try:
         lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
-            [relationship], distance, design, y, "1", True
+            [relationship], distance, design, y, "1", True, INTEGRATED
         )
         out["share"] = {"lower": lower, "upper": upper, "at_bound": at_lower or at_upper}
     except Exception:
         out["share"] = None
+    if INTEGRATED:
+        # There is no range once it has been integrated out, so there is nothing
+        # to cover and nothing to check.
+        out["half_distance"] = None
+        return out
     try:
         lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
             [relationship], distance, design, y, "lambda", True
@@ -97,7 +110,7 @@ def one(index: int) -> dict | None:
 def main() -> int:
     relationship, distance, design, n = structure()
     print(
-        f"Spatial intervals, REML. {PAIRS} sibling pairs, n = {n}, "
+        f"Spatial intervals, REML, {MODE}. {PAIRS} sibling pairs, n = {n}, "
         f"{SPACING_KM:.0f} km apart.\n"
         f"Truth: additive {TRUTH['additive']}, spatial {TRUTH['spatial']}, "
         f"residual {TRUTH['residual']},\n"
@@ -113,7 +126,13 @@ def main() -> int:
     failures = []
     print(f"{'quantity':<16}{'coverage':>10}{'binomial 95%':>22}{'of':>6}{'at a bound':>12}")
     recorded = {}
-    for key, truth in (("share", TRUTH["spatial"]), ("half_distance", TRUE_HALF_KM)):
+    quantities = [("share", TRUTH["spatial"])]
+    if not INTEGRATED:
+        # There is no range to cover once it has been integrated out, so its
+        # absence is the correct answer rather than a missing result. Treating
+        # it as one failed the check for having worked properly.
+        quantities.append(("half_distance", TRUE_HALF_KM))
+    for key, truth in quantities:
         got = [r[key] for r in results if r[key] is not None]
         if not got:
             failures.append(f"no interval was computed for {key}")
@@ -143,17 +162,21 @@ def main() -> int:
             print(f"  {failure}")
         return 1
 
-    print("\nBoth intervals cover. The share's lower endpoint is still not a test of")
-    print("whether there is a spatial effect: under that null the decay rate is")
-    print("unidentified, which is why the test is bootstrapped instead.")
+    print(
+        f"\n{'The share covers' if INTEGRATED else 'Both intervals cover'}. Its lower "
+        f"endpoint is still not a test of whether\nthere is a spatial effect: under "
+        f"that null the decay rate is unidentified,\nwhich is why the test is "
+        f"bootstrapped instead."
+    )
 
     Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/spatial-intervals-2026-08-13.json").write_text(
+    Path(f"evidence/spatial-intervals-{MODE}-2026-08-13.json").write_text(
         json.dumps(
             {
                 "what": "coverage of the spatial share and the half distance",
                 "date": "2026-08-13",
                 "estimator": "reml",
+                "decay_rate": MODE,
                 "pairs": PAIRS,
                 "people": n,
                 "spacing_km": SPACING_KM,
