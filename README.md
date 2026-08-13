@@ -49,6 +49,37 @@ component, seventy-eight pairs with two, thirteen with a household component,
 and a spatial run in progress. The bivariate fits reproduce SOLAR on every one
 of the seventy-eight pairs to better than 1e-5.
 
+Each model family is an object built from its matrices and then fitted, and a
+fit returns a dictionary with named fields rather than a tuple::
+
+```python
+import asterism
+
+# one trait, several components -- household here
+model = asterism.ComponentModel([relationship, household], x)
+fit = model.fit(y)                    # shares, variances, log-likelihood
+model.interval(y, component=1)        # 95 per cent profile interval
+model.test(y, component=1)            # against no household variance
+
+# two traits
+both = asterism.BivariateModel(k, observed, design)
+both.fit(y)["rho_g"]
+both.test(y, "rho_g", null=0.0)
+
+# one trait with a spatial component
+space = asterism.SpatialModel([relationship], distance_km, design)
+space.fit(y, integrated=True)         # the range averaged over, not estimated
+space.bootstrap(y, replicates=199)    # the only honest p-value here
+
+# the class-weighted kinship split, for ComponentModel
+split = asterism.kinship_classes(ids, father, mother, sex, keep=measured)
+asterism.ComponentModel(split["matrices"], x).fit(y)["shares"]
+```
+
+**Only `prepare` diagonalises.** The rest factorise a covariance on every
+evaluation, which is why one trait with one component is enormously faster and
+why it stays the right thing to use when one component will do.
+
 ```python
 import asterism
 

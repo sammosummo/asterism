@@ -1,6 +1,6 @@
 """Asterism: variance components models for quantitative genetics.
 
-One way in, and it is two steps::
+One trait with one component is two steps::
 
     model = asterism.prepare(x, k)
     record = model.fit(y)
@@ -9,6 +9,17 @@ Building the model validates and decomposes; the decomposition is what every
 fit runs against, so many fits against one prepared model cost one preparation.
 Holding a prepared model is itself the proof that validation happened, which is
 why there is no way to skip it.
+
+The other models are objects of the same shape, built from their matrices and
+then fitted::
+
+    asterism.ComponentModel([relationship, household], x).fit(y)
+    asterism.BivariateModel(k, observed, design).fit(y)
+    asterism.SpatialModel([relationship], distance, design).fit(y)
+
+Only `prepare` diagonalises. The rest factorise a covariance on every
+evaluation, which is why the one-trait model is enormously faster and why it is
+still the right thing to use when one component will do.
 
 Asterism takes arrays that are already in memory and returns a record, also in
 memory. It reads no files, knows no databases, and writes nothing. Where the
@@ -23,8 +34,23 @@ import numpy as np
 
 from ._core import PreparedModel, __version__
 from ._core import relationship as _relationship
+from .models import (
+    BivariateModel,
+    ComponentModel,
+    SpatialModel,
+    kinship_classes,
+)
 
-__all__ = ["PreparedModel", "prepare", "relationship_matrix", "__version__"]
+__all__ = [
+    "PreparedModel",
+    "prepare",
+    "relationship_matrix",
+    "ComponentModel",
+    "BivariateModel",
+    "SpatialModel",
+    "kinship_classes",
+    "__version__",
+]
 
 
 def prepare(
