@@ -831,11 +831,24 @@ impl SpatialModel {
 
     /// The observed likelihood ratio for no spatial variance at all.
     ///
+    /// `integrated` chooses which treatment of the decay rate the numerator
+    /// uses: the supremum over it, or the average across it. The null is the
+    /// same either way, having no decay rate in it at all.
+    ///
     /// # Errors
     ///
     /// Returns a stable code where either fit fails.
-    pub fn spatial_statistic(&self, y: &DVector<f64>, reml: bool) -> Result<f64, &'static str> {
-        let full = self.fit(y, reml)?;
+    pub fn spatial_statistic(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        integrated: bool,
+    ) -> Result<f64, &'static str> {
+        let full = if integrated {
+            self.fit_integrated(y, reml)?
+        } else {
+            self.fit(y, reml)?
+        };
         let null = self.null_loglik(y, reml)?;
         Ok((2.0 * (full.loglik - null)).max(0.0))
     }
@@ -874,7 +887,14 @@ impl SpatialModel {
         reml: bool,
         quantity: SpatialQuantity,
         value: f64,
+        integrated: bool,
     ) -> Option<f64> {
+        // With the decay rate integrated out there is no decay rate to hold, so
+        // asking for an interval on it is a question about a parameter that no
+        // longer exists.
+        if integrated && quantity == SpatialQuantity::Lambda {
+            return None;
+        }
         let count = self.parameters();
         let variances = count - 1;
         let (free, factor): (Vec<usize>, f64) = match quantity {
@@ -948,11 +968,34 @@ impl SpatialModel {
                 })
                 .collect();
             let value_of = |candidate: &[f64]| -> f64 {
-                self.evaluate(&expand(candidate), y, reml, false)
-                    .map_or(1e30, |e| e.negative_loglik)
+                let theta = expand(candidate);
+                if integrated {
+                    self.evaluate_integrated(&theta[..variances], y, reml, false)
+                } else {
+                    self.evaluate(&theta, y, reml, false)
+                }
+                .map_or(1e30, |e| e.negative_loglik)
             };
             let gradient_of = |candidate: &[f64]| -> Vec<f64> {
-                self.evaluate(&expand(candidate), y, reml, true).map_or_else(
+                let theta = expand(candidate);
+                if integrated {
+                    return self
+                        .evaluate_integrated(&theta[..variances], y, reml, true)
+                        .map_or_else(
+                            || vec![0.0; free.len()],
+                            |e| match quantity {
+                                SpatialQuantity::Share(index) => {
+                                    let through = e.gradient[index] * factor;
+                                    free.iter()
+                                        .filter(|&&k| k < variances)
+                                        .map(|&k| e.gradient[k] + through)
+                                        .collect()
+                                }
+                                SpatialQuantity::Lambda => vec![0.0; free.len()],
+                            },
+                        );
+                }
+                self.evaluate(&theta, y, reml, true).map_or_else(
                     || vec![0.0; free.len()],
                     |e| match quantity {
                         SpatialQuantity::Share(index) => {
@@ -1021,8 +1064,16 @@ impl SpatialModel {
         y: &DVector<f64>,
         reml: bool,
         quantity: SpatialQuantity,
+        integrated: bool,
     ) -> Result<SpatialInterval, &'static str> {
-        let fit = self.fit(y, reml)?;
+        if integrated && quantity == SpatialQuantity::Lambda {
+            return Err("SPATIAL_NO_RANGE_WHEN_INTEGRATED");
+        }
+        let fit = if integrated {
+            self.fit_integrated(y, reml)?
+        } else {
+            self.fit(y, reml)?
+        };
         let (fitted, bottom, top) = match quantity {
             SpatialQuantity::Share(index) => {
                 if index >= self.parameters() - 1 {
@@ -1038,10 +1089,10 @@ impl SpatialModel {
         let scaled = y / variance.sqrt();
 
         let maximum = self
-            .profile_objective(&scaled, reml, quantity, fitted)
+            .profile_objective(&scaled, reml, quantity, fitted, integrated)
             .ok_or("SPATIAL_PROFILE_MAXIMUM_FAILED")?;
         let deviance = |value: f64| -> f64 {
-            self.profile_objective(&scaled, reml, quantity, value)
+            self.profile_objective(&scaled, reml, quantity, value, integrated)
                 .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
         };
         let endpoint = |bound: f64| -> (f64, bool) {
@@ -1189,11 +1240,12 @@ impl SpatialModel {
         reml: bool,
         replicates: usize,
         seed: u64,
+        integrated: bool,
     ) -> Result<SpatialBootstrap, &'static str> {
         if replicates == 0 {
             return Err("SPATIAL_BOOTSTRAP_NO_REPLICATES");
         }
-        let observed = self.spatial_statistic(y, reml)?;
+        let observed = self.spatial_statistic(y, reml, integrated)?;
 
         let reduced = crate::components::ComponentModel::build(&self.fixed, &self.design)?;
         let null = reduced.fit(y, reml)?;
@@ -1218,7 +1270,7 @@ impl SpatialModel {
         for _ in 0..replicates {
             let draw = DVector::from_iterator(n, (0..n).map(|_| stream.normal()));
             let simulated = &mean + &factor * draw;
-            match self.spatial_statistic(&simulated, reml) {
+            match self.spatial_statistic(&simulated, reml, integrated) {
                 Ok(statistic) => {
                     usable += 1;
                     if statistic >= observed {
@@ -1277,7 +1329,7 @@ mod python {
     /// kilometre, the distance at which the spatial correlation is a half, the
     /// log-likelihood, the scaled gradient and whether it converged.
     #[pyfunction]
-    #[pyo3(signature = (fixed, distance, design, y, reml=true))]
+    #[pyo3(signature = (fixed, distance, design, y, reml=true, integrated=false))]
     #[allow(clippy::type_complexity)]
     pub fn spatial_fit(
         fixed: Vec<PyReadonlyArray2<'_, f64>>,
@@ -1285,11 +1337,16 @@ mod python {
         design: PyReadonlyArray2<'_, f64>,
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
+        integrated: bool,
     ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, f64, f64, bool)> {
         let model = build(&fixed, &distance, &design)?;
-        let fit = model
-            .fit(&response(&y), reml)
-            .map_err(PyValueError::new_err)?;
+        let response = response(&y);
+        let fit = if integrated {
+            model.fit_integrated(&response, reml)
+        } else {
+            model.fit(&response, reml)
+        }
+        .map_err(PyValueError::new_err)?;
         Ok((
             fit.variances,
             fit.proportions,
@@ -1308,17 +1365,18 @@ mod python {
     /// unidentified when the spatial variance is nought, there is no closed-form
     /// null distribution, so turning this into a p-value takes a bootstrap.
     #[pyfunction]
-    #[pyo3(signature = (fixed, distance, design, y, reml=true))]
+    #[pyo3(signature = (fixed, distance, design, y, reml=true, integrated=false))]
     pub fn spatial_statistic(
         fixed: Vec<PyReadonlyArray2<'_, f64>>,
         distance: PyReadonlyArray2<'_, f64>,
         design: PyReadonlyArray2<'_, f64>,
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
+        integrated: bool,
     ) -> PyResult<f64> {
         let model = build(&fixed, &distance, &design)?;
         model
-            .spatial_statistic(&response(&y), reml)
+            .spatial_statistic(&response(&y), reml, integrated)
             .map_err(PyValueError::new_err)
     }
 
@@ -1326,7 +1384,7 @@ mod python {
     ///
     /// `quantity` is an index into the variances, or the string `lambda`.
     #[pyfunction]
-    #[pyo3(signature = (fixed, distance, design, y, quantity, reml=true))]
+    #[pyo3(signature = (fixed, distance, design, y, quantity, reml=true, integrated=false))]
     pub fn spatial_interval(
         fixed: Vec<PyReadonlyArray2<'_, f64>>,
         distance: PyReadonlyArray2<'_, f64>,
@@ -1334,6 +1392,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         quantity: &str,
         reml: bool,
+        integrated: bool,
     ) -> PyResult<(f64, f64, bool, bool, f64)> {
         let wanted = if quantity == "lambda" {
             SpatialQuantity::Lambda
@@ -1346,7 +1405,7 @@ mod python {
         };
         let model = build(&fixed, &distance, &design)?;
         let interval = model
-            .profile_interval(&response(&y), reml, wanted)
+            .profile_interval(&response(&y), reml, wanted, integrated)
             .map_err(PyValueError::new_err)?;
         Ok((
             interval.lower,
@@ -1380,7 +1439,7 @@ mod python {
     /// produced a usable statistic, the number asked for, the p-value and the
     /// rule.
     #[pyfunction]
-    #[pyo3(signature = (fixed, distance, design, y, replicates, seed, reml=true))]
+    #[pyo3(signature = (fixed, distance, design, y, replicates, seed, reml=true, integrated=false))]
     pub fn spatial_bootstrap(
         fixed: Vec<PyReadonlyArray2<'_, f64>>,
         distance: PyReadonlyArray2<'_, f64>,
@@ -1389,10 +1448,11 @@ mod python {
         replicates: usize,
         seed: u64,
         reml: bool,
+        integrated: bool,
     ) -> PyResult<(f64, usize, usize, usize, f64, String)> {
         let model = build(&fixed, &distance, &design)?;
         let result = model
-            .bootstrap_spatial_variance(&response(&y), reml, replicates, seed)
+            .bootstrap_spatial_variance(&response(&y), reml, replicates, seed, integrated)
             .map_err(PyValueError::new_err)?;
         Ok((
             result.observed,
@@ -1412,7 +1472,7 @@ pub use python::{
 
 #[cfg(test)]
 mod tests {
-    use super::SpatialModel;
+    use super::{SpatialModel, SpatialQuantity};
     use nalgebra::{DMatrix, DVector};
 
     /// Sibling pairs scattered over a line, so distance means something.
@@ -1644,6 +1704,39 @@ mod tests {
         assert!(fit.half_distance_km.is_nan());
     }
 
+    /// The integrated share still gets an interval, and asking for one on the
+    /// range is refused rather than answered. There is no range once it has been
+    /// integrated out, and returning something would invite it to be read.
+    #[test]
+    fn the_integrated_share_has_an_interval_and_the_range_has_none() {
+        let (a, distance, design, y) = small();
+        let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
+        let fit = model.fit_integrated(&y, true).expect("fits");
+        let interval = model
+            .profile_interval(&y, true, SpatialQuantity::Share(1), true)
+            .expect("interval");
+        assert!(
+            interval.lower <= fit.proportions[1] + 1e-9
+                && fit.proportions[1] <= interval.upper + 1e-9,
+            "[{}, {}] does not contain {}",
+            interval.lower,
+            interval.upper,
+            fit.proportions[1]
+        );
+        assert!(
+            interval.upper - interval.lower > 1e-3,
+            "[{}, {}] has no width",
+            interval.lower,
+            interval.upper
+        );
+        assert_eq!(
+            model
+                .profile_interval(&y, true, SpatialQuantity::Lambda, true)
+                .err(),
+            Some("SPATIAL_NO_RANGE_WHEN_INTEGRATED")
+        );
+    }
+
     /// A bootstrap that cannot be reproduced is not evidence. Two runs at one
     /// seed must agree exactly, and two different seeds must not, or the seed is
     /// not doing anything.
@@ -1652,10 +1745,10 @@ mod tests {
         let (a, distance, design, y) = small();
         let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
         let once = model
-            .bootstrap_spatial_variance(&y, true, 12, 20_260_812)
+            .bootstrap_spatial_variance(&y, true, 12, 20_260_812, false)
             .expect("bootstraps");
         let again = model
-            .bootstrap_spatial_variance(&y, true, 12, 20_260_812)
+            .bootstrap_spatial_variance(&y, true, 12, 20_260_812, false)
             .expect("bootstraps");
         assert_eq!(once.exceedances, again.exceedances);
         assert_eq!(once.replicates, again.replicates);
@@ -1663,7 +1756,7 @@ mod tests {
         assert!((once.observed - again.observed).abs() < 1e-12);
 
         let elsewhere = model
-            .bootstrap_spatial_variance(&y, true, 12, 99)
+            .bootstrap_spatial_variance(&y, true, 12, 99, false)
             .expect("bootstraps");
         assert!(
             (elsewhere.observed - once.observed).abs() < 1e-12,
@@ -1713,7 +1806,7 @@ mod tests {
         let (a, distance, design, y) = small();
         let model = SpatialModel::build(&[a.clone()], &distance, &design).expect("valid");
         assert!(
-            model.spatial_statistic(&y, true).expect("statistic") > 1.0,
+            model.spatial_statistic(&y, true, false).expect("statistic") > 1.0,
             "no signal found on data simulated with a spatial effect"
         );
 
@@ -1738,7 +1831,7 @@ mod tests {
                 plain[2 * pair + i] = 0.6 * genetic + 0.8 * next();
             }
         }
-        let statistic = model.spatial_statistic(&plain, true).expect("statistic");
+        let statistic = model.spatial_statistic(&plain, true, false).expect("statistic");
         assert!(
             statistic < 6.0,
             "a large statistic on data with no spatial effect: {statistic}"
