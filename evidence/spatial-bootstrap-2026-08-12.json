@@ -1,0 +1,36 @@
+{
+  "what": "the parametric bootstrap for no spatial variance, and whether it holds its level",
+  "date": "2026-08-12",
+  "estimator": "reml",
+  "pairs": 100,
+  "people": 200,
+  "spacing_km": 3.0,
+  "why_a_bootstrap": "the decay rate is unidentified when the spatial variance is nought, so the likelihood ratio has neither a chi-squared nor a chi-bar-squared null and no closed form exists",
+  "bootstrap_replicates": 199,
+  "p_value_rule": "add_one: (1 + exceedances) / (replicates + 1)",
+  "worked_example": {
+    "observed": 4.8340499223152165,
+    "exceedances": 6,
+    "replicates": 199,
+    "requested": 199,
+    "p_value": 0.035,
+    "rule": "parametric_bootstrap_add_one"
+  },
+  "calibration": {
+    "data_sets": 400,
+    "completed": 400,
+    "rejection_rates": {
+      "0.01": 0.0025,
+      "0.05": 0.05,
+      "0.1": 0.1025,
+      "0.25": 0.255,
+      "0.5": 0.5475
+    },
+    "atom_at_one": 0.2725,
+    "kolmogorov_smirnov_away_from_the_atom": {
+      "statistic": 0.08934707903780081,
+      "p_value": 0.018001405428230133,
+      "note": "uniformity is tested only where it applies; the statistic is exactly nought in a good fraction of null data sets and those give a p-value of exactly one"
+    }
+  }
+}

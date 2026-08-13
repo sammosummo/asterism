@@ -257,3 +257,40 @@ The real GOBS design is far from that. Of 351 households with two or more
 measured people, 173 are a pair at relatedness 0.5, 81 a pair at nought and 83
 carry varied relatedness within them, and over the whole design 68 per cent of A
 is not explained by any combination of H and I.
+
+## `spatial-bootstrap-2026-08-12.json`
+
+The parametric bootstrap for no spatial variance, and whether it holds its level.
+Produced by `checks/spatial_bootstrap.py`, which takes about an hour: four
+hundred null data sets, each put through a complete 199-replicate bootstrap, so
+roughly eighty thousand spatial fits.
+
+**Nothing else here could stand in for it.** When the spatial variance is nought
+the decay rate is absent from the likelihood, so the statistic has neither a
+chi-squared nor a chi-bar-squared null and there is no table to read it against.
+Simulating the reduced model is the only reference there is.
+
+It holds: rejection rates of 0.003, 0.050, 0.102, 0.255 and 0.547 against nominal
+0.01, 0.05, 0.10, 0.25 and 0.50, every one inside its band.
+
+**The criterion took three attempts and the first two were wrong**, which is
+worth recording because both failures looked like faults in the bootstrap and
+were faults in the check.
+
+Comparing the p-values against a continuous uniform failed at D = 0.2725. The
+statistic cannot go below nought and is exactly nought in 27.3 per cent of null
+data sets — the spatial variance fits to nothing — and every one of those gets a
+p-value of exactly one, because no simulated statistic can fail to reach nought.
+The Kolmogorov–Smirnov statistic was measuring that atom and nothing else, to
+three decimal places.
+
+Removing the atom and asking again failed too, at D = 0.3141, for the same reason
+one step removed: the bootstrap replicates carry the atom as well, so no replicate
+sitting at nought can exceed an observed statistic above nought, and the largest
+p-value such a data set can reach is about one minus the atom. Rescaling by that
+brings the statistic to 0.089.
+
+What a p-value must satisfy is validity — P(p ≤ α) ≤ α — not uniformity, and a
+bootstrap p-value from a statistic with an atom is valid without being uniform.
+The rejection rates are the criterion; the distribution is reported because it is
+informative.

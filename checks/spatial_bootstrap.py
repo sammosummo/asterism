@@ -28,8 +28,14 @@ bootstrap can be reproduced from its seed alone, and there is a test that two
 runs at one seed agree exactly.
 
 **What this file checks.** That the recipe is calibrated: simulate data with no
-spatial effect, run the whole bootstrap on each, and see whether the resulting
-p-values are uniform. That is expensive — every replicate of the outer loop runs
+spatial effect, run the whole bootstrap on each, and see how often it rejects.
+
+Not whether the p-values are uniform, which they are not and should not be. The
+statistic cannot go below nought and is exactly nought whenever the spatial
+variance fits to nothing, which happens in about a quarter of null data sets;
+each of those gets a p-value of exactly one. That atom cannot touch the lower
+tail, so the rejection rates are the real test, and uniformity is asked only of
+the p-values away from it. That is expensive — every replicate of the outer loop runs
 a whole inner bootstrap — so it is run small and rarely. A p-value procedure that
 has never been checked this way is an assertion.
 
@@ -54,7 +60,11 @@ from asterism import _core
 PAIRS = 100
 SPACING_KM = 3.0
 BOOTSTRAP = 199
-OUTER = 150
+# Each of these runs a whole inner bootstrap, so this is the expensive number.
+# At 150 the binomial band on a five per cent rate runs from 0.015 to 0.085,
+# which would call almost anything calibrated; 400 narrows it to 0.028-0.072 for
+# about an hour.
+OUTER = 400
 WORKERS = 6
 
 
@@ -127,7 +137,8 @@ def main() -> int:
 
     print(
         f"Calibration: {OUTER} data sets with no spatial effect at all, each put "
-        f"through the whole\nbootstrap. The p-values should be uniform.\n"
+        f"through the whole\nbootstrap. It should reject at its nominal rate and no "
+        f"more.\n"
     )
     started = time.perf_counter()
     with ProcessPoolExecutor(WORKERS) as pool:
@@ -138,7 +149,7 @@ def main() -> int:
     failures = []
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
     rates = {}
-    for level in (0.05, 0.10, 0.25):
+    for level in (0.01, 0.05, 0.10, 0.25, 0.50):
         rate = float((p_values <= level).mean())
         rates[str(level)] = rate
         error = np.sqrt(level * (1 - level) / len(p_values))
@@ -148,25 +159,63 @@ def main() -> int:
             f"  {level:>8.2f}{rate:>12.3f}   [{lower:.3f}, {upper:.3f}]  "
             f"{'ok' if inside else ('OVER' if rate > upper else 'conservative')}"
         )
+        # Only over-rejection is a fault. A test that rejects less often than
+        # its level is conservative, which costs power rather than manufacturing
+        # a finding.
         if rate > upper:
             failures.append(
                 f"rejects {rate:.3f} at the {level:.2f} level, above the band"
             )
 
-    # A bootstrap p-value is discrete, taking values k/(B+1), so it cannot be
-    # exactly uniform and the test is run against the discrete reference rather
-    # than the continuous one it is easy to reach for by mistake.
-    test = stats.kstest(p_values, "uniform")
+    # **The p-values are not uniform and should not be, so uniformity is tested
+    # only where it applies.** A likelihood ratio against no spatial variance
+    # cannot go below nought, and in a good fraction of null data sets it is
+    # exactly nought: the spatial variance fits to nothing and there is no
+    # evidence of anything. Every one of those gets a p-value of exactly one,
+    # because no simulated statistic can fail to reach nought.
+    #
+    # That is a point mass at one, and it is correct. It cannot affect the lower
+    # tail, which is why the rejection rates above are the substantive test and
+    # come out right. Comparing the whole distribution against a *continuous*
+    # uniform simply measures the atom: the first run of this check reported
+    # D = 0.2725 and failed, and the fraction of null data sets with a statistic
+    # of exactly nought was 27.3 per cent. The check was wrong, not the
+    # bootstrap.
+    atom = float((p_values >= 1.0).mean())
+    print(f"\n  The p-value is exactly one in {atom:.1%} of null data sets, where the")
+    print("  statistic itself is nought and nothing can fail to reach it.")
+
+    # **Uniformity is the wrong thing to ask for, and asking it twice was a
+    # mistake.** The first version of this check compared every p-value against
+    # a continuous uniform and failed at D = 0.2725; the atom turned out to be
+    # 27.3 per cent, so the statistic was measuring the atom and nothing else.
+    # Removing the atom and asking again still failed, at D = 0.3141, and for a
+    # second reason with the same root: the bootstrap replicates carry that atom
+    # too. No replicate sitting at nought can exceed an observed statistic above
+    # nought, so the largest p-value such a data set can reach is about one
+    # minus the atom, and the conditional p-values are uniform on (0, 0.73]
+    # rather than (0, 1].
+    #
+    # What a p-value has to satisfy is not uniformity but **validity**:
+    # P(p <= alpha) <= alpha at every level anybody uses. That is what the
+    # rejection rates above measure, and they are what this check passes or
+    # fails on. The distribution is reported because it is informative, not
+    # because a departure from uniform is a fault.
+    interior = p_values[p_values < 1.0]
+    reference = 1.0 - atom
+    rescaled = interior / reference if reference > 0 else interior
+    test = stats.kstest(np.clip(rescaled, 0.0, 1.0), "uniform")
     print(
-        f"\n  Kolmogorov-Smirnov against uniform: D = {test.statistic:.4f}, "
-        f"p = {test.pvalue:.3f}"
+        f"\n  Away from the atom the p-values can only reach about "
+        f"{reference:.2f}, since no\n  replicate at nought can exceed a statistic "
+        f"above it. Rescaled by that and\n  compared with uniform: D = "
+        f"{test.statistic:.4f}, p = {test.pvalue:.3f}."
     )
     print(
-        f"  (a bootstrap p-value is discrete on multiples of 1/{BOOTSTRAP + 1}, so a "
-        f"little\n   departure here is the grid and not a fault)"
+        f"  This is reported, not required. A bootstrap p-value from a statistic\n"
+        f"  with an atom is valid without being uniform, and validity is what the\n"
+        f"  rejection rates above test."
     )
-    if test.pvalue < 0.001:
-        failures.append(f"p-values are far from uniform, KS p = {test.pvalue:.5f}")
 
     if failures:
         print("\nNOT CALIBRATED:")
@@ -200,9 +249,15 @@ def main() -> int:
                     "data_sets": OUTER,
                     "completed": len(p_values),
                     "rejection_rates": rates,
-                    "kolmogorov_smirnov": {
+                    "atom_at_one": atom,
+                    "kolmogorov_smirnov_away_from_the_atom": {
                         "statistic": test.statistic,
                         "p_value": test.pvalue,
+                        "note": (
+                            "uniformity is tested only where it applies; the "
+                            "statistic is exactly nought in a good fraction of null "
+                            "data sets and those give a p-value of exactly one"
+                        ),
                     },
                 },
             },
