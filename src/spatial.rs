@@ -69,15 +69,54 @@ pub struct SpatialModel {
     distance: DMatrix<f64>,
     rows: usize,
     logdet_xtx: f64,
+    /// Set from the distances rather than chosen; see `decay_bounds`.
+    lambda_lower: f64,
+    lambda_upper: f64,
 }
 
-/// The decay rate is bounded away from nought and from very large values. At the
-/// bottom the kernel is indistinguishable from a matrix of ones, which is a
-/// grand mean rather than a spatial effect; at the top it is indistinguishable
-/// from the identity, which is residual. Neither end is a spatial model, and
-/// leaving them reachable invites the search to report one.
-const LAMBDA_LOWER: f64 = 1.0e-5;
-const LAMBDA_UPPER: f64 = 5.0;
+/// How far the decay rate may go, in units of the data's own spread.
+///
+/// **The bounds have to come from the distances, not from a constant.** At a
+/// small enough decay the kernel is a matrix of ones, which is a random grand
+/// mean and not a spatial effect at all; it is also rank one, so the covariance
+/// goes near-singular and the search thrashes. At a large enough decay the
+/// kernel is the identity, which is residual. What counts as small or large
+/// depends entirely on how far apart the people are: a decay of 1e-5 per km is
+/// indistinguishable from nought across a county and enormous across a
+/// continent.
+///
+/// So the range is set by the data. The correlation must halve somewhere between
+/// the closest pair and the widest separation: any less and it has not halved
+/// across the whole study area, any more and it has already halved before the
+/// two nearest people. Both ends are then a statement about this data set rather
+/// than a number chosen in advance.
+///
+/// This was originally a pair of constants, 1e-5 and 5. On real distances of a
+/// few hundred kilometres the lower one let the search walk to the all-ones
+/// kernel, where it did not converge and each fit took hours instead of seconds.
+fn decay_bounds(distance: &DMatrix<f64>) -> (f64, f64) {
+    let mut widest = 0.0f64;
+    let mut closest = f64::INFINITY;
+    for i in 0..distance.nrows() {
+        for j in 0..i {
+            let d = distance[(i, j)];
+            if d > 0.0 {
+                widest = widest.max(d);
+                closest = closest.min(d);
+            }
+        }
+    }
+    if !(widest > 0.0) || !closest.is_finite() {
+        // Everybody in one place: no spatial information at all, and any decay
+        // rate describes the data equally. The range is left nominal and the
+        // fit will report a spatial share of nothing.
+        return (1.0e-6, 1.0);
+    }
+    (
+        std::f64::consts::LN_2 / widest,
+        std::f64::consts::LN_2 / closest,
+    )
+}
 
 impl SpatialModel {
     /// Validate and prepare.
@@ -121,12 +160,15 @@ impl SpatialModel {
         let xtx = design.transpose() * design;
         let chol = xtx.cholesky().ok_or("SPATIAL_DESIGN_RANK_DEFICIENT")?;
         let logdet_xtx = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+        let (lambda_lower, lambda_upper) = decay_bounds(distance);
         Ok(Self {
             design: design.clone(),
             fixed: fixed.to_vec(),
             distance: distance.clone(),
             rows: n,
             logdet_xtx,
+            lambda_lower,
+            lambda_upper,
         })
     }
 
@@ -166,7 +208,7 @@ impl SpatialModel {
         if theta[..count - 1].iter().any(|v| !v.is_finite() || *v < 0.0) {
             return None;
         }
-        if !lambda.is_finite() || !(LAMBDA_LOWER..=LAMBDA_UPPER).contains(&lambda) {
+        if !lambda.is_finite() || !(self.lambda_lower..=self.lambda_upper).contains(&lambda) {
             return None;
         }
         if theta[..count - 1].iter().all(|v| *v <= 0.0) {
@@ -281,14 +323,16 @@ impl SpatialModel {
         let count = self.parameters();
         let mut lower = vec![0.0; count];
         let mut upper = vec![f64::INFINITY; count];
-        lower[self.lambda_index()] = LAMBDA_LOWER;
-        upper[self.lambda_index()] = LAMBDA_UPPER;
+        lower[self.lambda_index()] = self.lambda_lower;
+        upper[self.lambda_index()] = self.lambda_upper;
 
         let variance_count = count - 1;
         let mut starts: Vec<Vec<f64>> = Vec::new();
-        // The decay rates that used to be the frozen grid, now used as starting
-        // points rather than as the answer.
-        for lambda in [0.0005, 0.005, 0.05, 0.5] {
+        // Starts spread across the range the data allows, on a log scale
+        // because the decay rate spans orders of magnitude.
+        let span = (self.lambda_upper / self.lambda_lower).ln();
+        for step in 0..4 {
+            let lambda = self.lambda_lower * (span * (step as f64 + 0.5) / 4.0).exp();
             let mut even = vec![1.0 / variance_count as f64; count];
             even[self.lambda_index()] = lambda;
             starts.push(even);
@@ -451,7 +495,7 @@ impl SpatialModel {
                 )
             }
             SpatialQuantity::Lambda => {
-                if !(LAMBDA_LOWER..=LAMBDA_UPPER).contains(&value) {
+                if !(self.lambda_lower..=self.lambda_upper).contains(&value) {
                     return None;
                 }
                 ((0..variances).collect(), 0.0)
@@ -483,13 +527,13 @@ impl SpatialModel {
 
         let lower: Vec<f64> = free
             .iter()
-            .map(|&k| if k == self.lambda_index() { LAMBDA_LOWER } else { 0.0 })
+            .map(|&k| if k == self.lambda_index() { self.lambda_lower } else { 0.0 })
             .collect();
         let upper: Vec<f64> = free
             .iter()
             .map(|&k| {
                 if k == self.lambda_index() {
-                    LAMBDA_UPPER
+                    self.lambda_upper
                 } else {
                     f64::INFINITY
                 }
@@ -497,7 +541,9 @@ impl SpatialModel {
             .collect();
 
         let mut best: Option<f64> = None;
-        for lambda_start in [0.005f64, 0.05, 0.5] {
+        let profile_span = (self.lambda_upper / self.lambda_lower).ln();
+        for step in 0..3 {
+            let lambda_start = self.lambda_lower * (profile_span * (step as f64 + 0.5) / 3.0).exp();
             let start: Vec<f64> = free
                 .iter()
                 .map(|&k| {
@@ -591,7 +637,7 @@ impl SpatialModel {
                 }
                 (fit.proportions[index], 0.0, 1.0 - 1e-9)
             }
-            SpatialQuantity::Lambda => (fit.lambda, LAMBDA_LOWER, LAMBDA_UPPER),
+            SpatialQuantity::Lambda => (fit.lambda, self.lambda_lower, self.lambda_upper),
         };
 
         let mean = y.mean();
@@ -973,7 +1019,7 @@ pub use python::{
 
 #[cfg(test)]
 mod tests {
-    use super::{SpatialModel, LAMBDA_LOWER, LAMBDA_UPPER};
+    use super::SpatialModel;
     use nalgebra::{DMatrix, DVector};
 
     /// Sibling pairs scattered over a line, so distance means something.
@@ -1032,12 +1078,20 @@ mod tests {
     fn the_gradient_matches_a_central_difference_including_the_decay_rate() {
         let (a, distance, design, y) = small();
         let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
+        // The decay rates are placed inside the range this data set allows,
+        // because the bounds now come from the distances. Hardcoded values
+        // silently fall outside them on a different geography, and `evaluate`
+        // then refuses the point rather than reporting a wrong gradient -- which
+        // is right, but it made this test fail for a reason that had nothing to
+        // do with the gradient.
+        let (bottom, top) = super::decay_bounds(&distance);
+        let at = |fraction: f64| bottom * (top / bottom).powf(fraction);
         for reml in [false, true] {
             for point in [
-                vec![0.4, 0.3, 0.3, 0.01],
-                vec![0.6, 0.1, 0.5, 0.002],
-                vec![0.2, 0.5, 0.4, 0.1],
-                vec![1.0, 0.2, 0.8, 0.05],
+                vec![0.4, 0.3, 0.3, at(0.2)],
+                vec![0.6, 0.1, 0.5, at(0.5)],
+                vec![0.2, 0.5, 0.4, at(0.8)],
+                vec![1.0, 0.2, 0.8, at(0.35)],
             ] {
                 let at = model.evaluate(&point, &y, reml, true).expect("evaluates");
                 for k in 0..point.len() {
@@ -1078,9 +1132,11 @@ mod tests {
             "the spatial share came out at {} on data simulated with one",
             fit.proportions[1]
         );
+        let (bottom, top) = super::decay_bounds(&distance);
         assert!(
-            fit.lambda > LAMBDA_LOWER * 10.0 && fit.lambda < LAMBDA_UPPER * 0.5,
-            "the decay rate went to a bound: {} (half distance {} km)",
+            fit.lambda > bottom * 1.001 && fit.lambda < top * 0.999,
+            "the decay rate went to a bound: {} in [{bottom}, {top}] \
+             (half distance {} km)",
             fit.lambda,
             fit.half_distance_km
         );
