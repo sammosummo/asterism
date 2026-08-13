@@ -13,12 +13,14 @@ mod bivariate;
 mod blocks;
 mod components;
 mod dense;
+mod kinship_classes;
 mod prepared;
 mod relationship;
 mod spatial;
 
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
+pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
 pub use spatial::{SpatialFit, SpatialModel};
@@ -34,6 +36,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_objective, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_interval, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(kinship_classes::kinship_classes, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
