@@ -136,6 +136,14 @@ impl DerivativeSource<'_> {
     }
 }
 
+/// How many decay rates the integrated likelihood averages over.
+///
+/// Equally spaced on the logarithm, because a decay rate spans orders of
+/// magnitude. Twelve is enough that halving the spacing moves the integrated
+/// log-likelihood by less than the convergence tolerance, and every one of them
+/// costs a factorisation.
+const INTEGRATION_POINTS: usize = 12;
+
 /// One trait, fixed components plus an estimated spatial range.
 pub struct SpatialModel {
     design: DMatrix<f64>,
@@ -590,6 +598,216 @@ impl SpatialModel {
             total_variance: total,
             lambda,
             half_distance_km: std::f64::consts::LN_2 / lambda,
+            fixed_effects: beta.iter().map(|b| b * scale).collect(),
+            loglik: -negative - observations * scale.ln(),
+            converged: scaled_gradient < 1e-6,
+            scaled_gradient,
+            estimator: if reml { "reml" } else { "ml" },
+        })
+    }
+
+    /// The log-likelihood with the decay rate integrated out rather than
+    /// maximised over.
+    ///
+    /// **This is the other classical answer to an unidentified nuisance
+    /// parameter.** When the spatial variance is nought the decay rate is absent
+    /// from the likelihood entirely, and there are two things one can do about
+    /// it: take the supremum over the decay rate, which is what profiling does,
+    /// or average over it. `fit` takes the supremum. This averages:
+    ///
+    /// ```text
+    /// L(sigma) = integral over lambda of L(sigma, lambda) w(lambda) d lambda
+    /// ```
+    ///
+    /// The weight is uniform on the logarithm of the decay rate across the range
+    /// the distances support, because a decay rate spans orders of magnitude and
+    /// nothing in the data picks a scale. That is the same instinct as the port
+    /// lab's outcome-blind frozen grid, reached from the other direction: it
+    /// declines to let the data choose a range and then report the choice as
+    /// though it were estimated.
+    ///
+    /// Three things follow. There is no decay rate to report, so the
+    /// uninformative interval on it disappears rather than being suppressed. The
+    /// spatial share's uncertainty now includes not knowing the range, where
+    /// before it was conditional on a badly determined estimate of it. And the
+    /// statistic is an integrated likelihood ratio, which is better behaved
+    /// under the null than a supremum over something unidentified.
+    ///
+    /// The sum is taken in logarithms because the terms differ by many orders of
+    /// magnitude, and the gradient is exact rather than differenced: the
+    /// derivative of a logged weighted sum of likelihoods is the average of
+    /// their derivatives, weighted by each one's share of the sum.
+    fn evaluate_integrated(
+        &self,
+        variances: &[f64],
+        y: &DVector<f64>,
+        reml: bool,
+        want_gradient: bool,
+    ) -> Option<Evaluation> {
+        let count = variances.len();
+        let mut logliks = Vec::with_capacity(INTEGRATION_POINTS);
+        let mut gradients = Vec::with_capacity(INTEGRATION_POINTS);
+        let mut fixed_effects = Vec::new();
+
+        let span = (self.lambda_upper / self.lambda_lower).ln();
+        for point in 0..INTEGRATION_POINTS {
+            // Midpoints of equal intervals in log lambda, which is the uniform
+            // weight on the logarithm written as a rectangle rule.
+            let fraction = (point as f64 + 0.5) / INTEGRATION_POINTS as f64;
+            let lambda = self.lambda_lower * (span * fraction).exp();
+            let mut theta = variances.to_vec();
+            theta.push(lambda);
+            let Some(at) = self.evaluate(&theta, y, reml, want_gradient) else {
+                continue;
+            };
+            logliks.push(-at.negative_loglik);
+            if want_gradient {
+                gradients.push(at.gradient[..count].to_vec());
+            }
+            if fixed_effects.is_empty() {
+                fixed_effects = at.fixed_effects;
+            }
+        }
+        if logliks.is_empty() {
+            return None;
+        }
+
+        // log of the mean of the likelihoods, taken safely.
+        let largest = logliks.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let total: f64 = logliks.iter().map(|l| (l - largest).exp()).sum();
+        let integrated = largest + (total / logliks.len() as f64).ln();
+        if !integrated.is_finite() {
+            return None;
+        }
+
+        let mut gradient = vec![0.0; count];
+        if want_gradient && gradients.len() == logliks.len() {
+            // Each grid point contributes in proportion to its share of the
+            // integral. The gradients here are of the negative log-likelihood,
+            // so the weighted average is too.
+            for (index, g) in gradients.iter().enumerate() {
+                let share = (logliks[index] - largest).exp() / total;
+                for k in 0..count {
+                    gradient[k] += share * g[k];
+                }
+            }
+        }
+
+        Some(Evaluation {
+            negative_loglik: -integrated,
+            gradient,
+            fixed_effects,
+        })
+    }
+
+    /// Fit with the decay rate integrated out.
+    ///
+    /// The variances are the only free parameters, so this is a three-parameter
+    /// search where `fit` runs a four-parameter one, and each evaluation costs
+    /// `INTEGRATION_POINTS` factorisations rather than one.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no start reached a usable optimum.
+    pub fn fit_integrated(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+    ) -> Result<SpatialFit, &'static str> {
+        if y.len() != self.rows {
+            return Err("SPATIAL_RESPONSE_WRONG_LENGTH");
+        }
+        let mean = y.mean();
+        let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
+        if !(variance > 0.0) {
+            return Err("SPATIAL_RESPONSE_CONSTANT");
+        }
+        let scale = variance.sqrt();
+        let scaled = y / scale;
+
+        let count = self.parameters() - 1;
+        let lower = vec![0.0; count];
+        let upper = vec![f64::INFINITY; count];
+        let starts: Vec<Vec<f64>> = vec![
+            vec![1.0 / count as f64; count],
+            {
+                let mut s = vec![0.1; count];
+                s[count - 1] = 0.8;
+                s
+            },
+            {
+                let mut s = vec![0.1; count];
+                s[self.spatial_index()] = 0.6;
+                s[count - 1] = 0.3;
+                s
+            },
+        ];
+
+        let mut best: Option<(f64, Vec<f64>, Vec<f64>)> = None;
+        for start in starts {
+            let value_of = |c: &[f64]| -> f64 {
+                self.evaluate_integrated(c, &scaled, reml, false)
+                    .map_or(1e30, |e| e.negative_loglik)
+            };
+            let gradient_of = |c: &[f64]| -> Vec<f64> {
+                self.evaluate_integrated(c, &scaled, reml, true)
+                    .map_or_else(|| vec![0.0; count], |e| e.gradient)
+            };
+            let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
+                continue;
+            };
+            let mut control = OptimControl::default_for_dimension(count);
+            control.maxit = 300;
+            control.fnscale = value_of(&start).abs().max(1.0);
+            control.parscale = vec![1.0; count];
+            control.factr = 1.0e3;
+            control.pgtol = 1e-8;
+            control.lmm = count.min(10);
+            let Ok(solution) =
+                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+            else {
+                continue;
+            };
+            let Some(at) = self.evaluate_integrated(&solution.par, &scaled, reml, true) else {
+                continue;
+            };
+            if at.negative_loglik.is_finite()
+                && best.as_ref().is_none_or(|(v, _, _)| at.negative_loglik < *v)
+            {
+                best = Some((at.negative_loglik, solution.par.clone(), at.fixed_effects));
+            }
+        }
+
+        let (negative, par, beta) = best.ok_or("SPATIAL_NO_START_CONVERGED")?;
+        let at = self
+            .evaluate_integrated(&par, &scaled, reml, true)
+            .ok_or("SPATIAL_OPTIMUM_NOT_EVALUABLE")?;
+        let projected = at
+            .gradient
+            .iter()
+            .enumerate()
+            .map(|(k, g)| if par[k] <= 0.0 { g.min(0.0) } else { *g })
+            .fold(0.0f64, |worst, g| worst.max(g.abs()));
+        let scaled_gradient = projected / negative.abs().max(1.0);
+
+        let variances: Vec<f64> = par.iter().map(|v| v * variance).collect();
+        let total: f64 = variances.iter().sum();
+        let proportions = variances.iter().map(|v| v / total).collect();
+        let observations = if reml {
+            (self.rows - self.design.ncols()) as f64
+        } else {
+            self.rows as f64
+        };
+
+        Ok(SpatialFit {
+            variances,
+            proportions,
+            total_variance: total,
+            // There is no decay rate to report: it has been integrated out.
+            // Reporting the middle of the range would invite it to be read as an
+            // estimate, so it is reported as not a number.
+            lambda: f64::NAN,
+            half_distance_km: f64::NAN,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
@@ -1359,6 +1577,71 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The integrated objective's gradient is a weighted average of the
+    /// gradients at each decay rate, weighted by that rate's share of the
+    /// integral. That is exact rather than approximate, and it is easy to write
+    /// something that looks right and is not -- weighting by the wrong thing, or
+    /// forgetting that the weights themselves depend on the parameters. Checked
+    /// against a central difference of the integrated objective.
+    #[test]
+    fn the_integrated_gradient_matches_a_central_difference() {
+        let (a, distance, design, y) = small();
+        let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
+        for reml in [false, true] {
+            for point in [
+                vec![0.4, 0.3, 0.3],
+                vec![0.6, 0.1, 0.5],
+                vec![0.2, 0.5, 0.4],
+            ] {
+                let at = model
+                    .evaluate_integrated(&point, &y, reml, true)
+                    .expect("evaluates");
+                for k in 0..point.len() {
+                    let step = 1e-6 * point[k].max(1e-3);
+                    let mut up = point.clone();
+                    let mut down = point.clone();
+                    up[k] += step;
+                    down[k] -= step;
+                    let numeric = (model
+                        .evaluate_integrated(&up, &y, reml, false)
+                        .unwrap()
+                        .negative_loglik
+                        - model
+                            .evaluate_integrated(&down, &y, reml, false)
+                            .unwrap()
+                            .negative_loglik)
+                        / (2.0 * step);
+                    let scale = at.gradient[k].abs().max(1.0);
+                    assert!(
+                        (at.gradient[k] - numeric).abs() / scale < 1e-4,
+                        "reml={reml} parameter {k} at {point:?}: analytic {} against \
+                         numeric {}",
+                        at.gradient[k],
+                        numeric
+                    );
+                }
+            }
+        }
+    }
+
+    /// Integrating over the decay rate must find a spatial effect that is there,
+    /// and must report no decay rate at all -- there is none to report, and a
+    /// number in that slot would be read as an estimate.
+    #[test]
+    fn the_integrated_fit_recovers_the_share_and_reports_no_range() {
+        let (a, distance, design, y) = small();
+        let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
+        let fit = model.fit_integrated(&y, true).expect("fits");
+        assert!(fit.converged, "did not converge, |g| = {}", fit.scaled_gradient);
+        assert!(
+            fit.proportions[1] > 0.02,
+            "the spatial share came out at {} on data simulated with one",
+            fit.proportions[1]
+        );
+        assert!(fit.lambda.is_nan(), "a decay rate was reported after integrating it out");
+        assert!(fit.half_distance_km.is_nan());
     }
 
     /// A bootstrap that cannot be reproduced is not evidence. Two runs at one
