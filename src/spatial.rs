@@ -902,10 +902,16 @@ impl SpatialModel {
                 if index >= variances || !(0.0..=1.0).contains(&value) || value > 1.0 - 1e-9 {
                     return None;
                 }
-                (
-                    (0..count).filter(|k| *k != index).collect(),
-                    value / (1.0 - value),
-                )
+                // **The decay rate is not a free coordinate when it has been
+                // integrated out.** Leaving it in the search gave the optimiser
+                // a dimension that does nothing and a gradient of the wrong
+                // length, and the profile then failed at its own fitted value.
+                let free: Vec<usize> = if integrated {
+                    (0..count - 1).filter(|k| *k != index).collect()
+                } else {
+                    (0..count).filter(|k| *k != index).collect()
+                };
+                (free, value / (1.0 - value))
             }
             SpatialQuantity::Lambda => {
                 if !(self.lambda_lower..=self.lambda_upper).contains(&value) {
@@ -986,10 +992,7 @@ impl SpatialModel {
                             |e| match quantity {
                                 SpatialQuantity::Share(index) => {
                                     let through = e.gradient[index] * factor;
-                                    free.iter()
-                                        .filter(|&&k| k < variances)
-                                        .map(|&k| e.gradient[k] + through)
-                                        .collect()
+                                    free.iter().map(|&k| e.gradient[k] + through).collect()
                                 }
                                 SpatialQuantity::Lambda => vec![0.0; free.len()],
                             },
@@ -1030,7 +1033,20 @@ impl SpatialModel {
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
             {
-                if let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false) {
+                // The final evaluation has to take the same route as the
+                // search did. Taking the coordinate one here while the search
+                // integrated meant handing `evaluate` a theta whose decay rate
+                // slot was nought -- it is not a free coordinate once integrated
+                // out -- which is outside the allowed range, so every profile
+                // point was refused and every interval failed at its own fitted
+                // value.
+                let theta = expand(&solution.par);
+                let at = if integrated {
+                    self.evaluate_integrated(&theta[..variances], y, reml, false)
+                } else {
+                    self.evaluate(&theta, y, reml, false)
+                };
+                if let Some(at) = at {
                     if at.negative_loglik.is_finite()
                         && best.is_none_or(|b: f64| at.negative_loglik < b)
                     {
@@ -1476,7 +1492,7 @@ mod tests {
     use nalgebra::{DMatrix, DVector};
 
     /// Sibling pairs scattered over a line, so distance means something.
-    fn small() -> (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>, DVector<f64>) {
+    pub(super) fn small() -> (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>, DVector<f64>) {
         let pairs = 60;
         let n = 2 * pairs;
         let mut a = DMatrix::<f64>::identity(n, n);
@@ -1838,3 +1854,4 @@ mod tests {
         );
     }
 }
+
