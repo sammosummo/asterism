@@ -17,6 +17,14 @@
   "scenarios": {
     "flat": {
       "what": "no interaction of any kind",
+      "nulls_true": [
+        "correlation",
+        "interaction"
+      ],
+      "family": [
+        "exponential",
+        "random_regression"
+      ],
       "tests": {
         "exponential/interaction": {
           "computed": 2000,
@@ -62,6 +70,14 @@
     },
     "residual_tilt": {
       "what": "residual variance changes with the environment, genes do not",
+      "nulls_true": [
+        "correlation",
+        "interaction"
+      ],
+      "family": [
+        "exponential",
+        "random_regression"
+      ],
       "tests": {
         "exponential/interaction": {
           "computed": 2000,
@@ -107,10 +123,16 @@
     },
     "rank_one_linear": {
       "what": "same genes throughout, genetic standard deviation linear in z",
+      "nulls_true": [
+        "correlation"
+      ],
+      "family": [
+        "random_regression"
+      ],
       "tests": {
         "exponential/interaction": {
           "computed": 2000,
-          "role": "power",
+          "role": "power_wrong_family",
           "rejection": {
             "0.01": 0.288,
             "0.05": 0.601,
@@ -146,12 +168,18 @@
             "0.05": 0.0075,
             "0.1": 0.021
           },
-          "atom_at_one": 0.677
+          "atom_at_one": 0.676
         }
       }
     },
     "rank_one_loglinear": {
       "what": "same genes throughout, genetic standard deviation log-linear in z",
+      "nulls_true": [
+        "correlation"
+      ],
+      "family": [
+        "exponential"
+      ],
       "tests": {
         "exponential/interaction": {
           "computed": 2000,
@@ -175,7 +203,7 @@
         },
         "random_regression/interaction": {
           "computed": 2000,
-          "role": "power",
+          "role": "power_wrong_family",
           "rejection": {
             "0.01": 0.053,
             "0.05": 0.183,
@@ -195,12 +223,16 @@
         }
       }
     },
-    "reordering": {
-      "what": "different genes at different environments: power, not level",
+    "reordering_quadratic": {
+      "what": "different genes at different environments, quadratic surface",
+      "nulls_true": [],
+      "family": [
+        "random_regression"
+      ],
       "tests": {
         "exponential/interaction": {
           "computed": 2000,
-          "role": "power",
+          "role": "power_wrong_family",
           "rejection": {
             "0.01": 0.854,
             "0.05": 0.949,
@@ -210,7 +242,7 @@
         },
         "exponential/correlation": {
           "computed": 2000,
-          "role": "power",
+          "role": "power_wrong_family",
           "rejection": {
             "0.01": 0.107,
             "0.05": 0.3385,
@@ -237,6 +269,55 @@
             "0.1": 0.5015
           },
           "atom_at_one": 0.0805
+        }
+      }
+    },
+    "reordering_loglinear": {
+      "what": "different genes at different environments, exponential surface",
+      "nulls_true": [],
+      "family": [
+        "exponential"
+      ],
+      "tests": {
+        "exponential/interaction": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.1125,
+            "0.05": 0.294,
+            "0.1": 0.4345
+          },
+          "atom_at_one": 0.0005
+        },
+        "exponential/correlation": {
+          "computed": 2000,
+          "role": "power",
+          "rejection": {
+            "0.01": 0.051,
+            "0.05": 0.189,
+            "0.1": 0.292
+          },
+          "atom_at_one": 0.2615
+        },
+        "random_regression/interaction": {
+          "computed": 2000,
+          "role": "power_wrong_family",
+          "rejection": {
+            "0.01": 0.0395,
+            "0.05": 0.139,
+            "0.1": 0.243
+          },
+          "atom_at_one": 0.0005
+        },
+        "random_regression/correlation": {
+          "computed": 2000,
+          "role": "power_wrong_family",
+          "rejection": {
+            "0.01": 0.0,
+            "0.05": 0.013,
+            "0.1": 0.043
+          },
+          "atom_at_one": 0.5445
         }
       }
     }

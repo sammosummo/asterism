@@ -34,15 +34,39 @@
 //! optimiser already handles.
 //!
 //! **The third coordinate is `u` and not a Cholesky `l11`**, which is a
-//! departure from the source this model was recovered from and is deliberate.
-//! Written as `l11` the determinant is `l00^2 * l11^2`, so `dq11/dl11 = 2*l11`
-//! vanishes at exactly the point both tests hold it at. A parameter whose
-//! gradient is nought at the null is one the search will not move away from and
-//! one the usual mixture reference does not describe: in calibration the smooth
-//! surface sat on its bound in 68 to 84 per cent of null samples where the
-//! theory says 50, and rejected on 0.3 per cent of them at a nominal 5. Valid,
-//! but with most of its power thrown away. Squaring the coordinate away gives
-//! `dq11/du = 1` and costs nothing else.
+//! departure from the source this model was recovered from. It buys clarity
+//! rather than anything statistical: written this way the determinant is
+//! `l00^2 * u`, so what keeps the surface a covariance can be read off.
+//!
+//! It was first made for a reason that turned out to be wrong, and the wrong
+//! reason is worth keeping written down because it is an easy one to have
+//! again. Written as `l11` the derivative `dq11/dl11 = 2*l11` vanishes at
+//! exactly the point both tests hold it at, which looked like an optimiser
+//! stalling where it could not move. It is not: **a likelihood ratio is
+//! invariant to reparameterisation**, since both fits maximise the same
+//! likelihood over the same set of covariances, so a change of coordinates
+//! cannot change the deviance. Changing it altered not one digit of the
+//! calibration, which is the proof that the search was already finding the
+//! optimum.
+//!
+//! What actually makes the smooth surface's tests conservative is the shape of
+//! the null, and the two surfaces differ in it. The exponential surface's null
+//! is `lambda = 0`, a flat face of its parameter box, which is the case the
+//! even mixture of chi-squares is derived for -- and there the level comes out
+//! at 0.048 against a nominal 0.05. The smooth surface's null is
+//! `q00*q11 - q01^2 = 0`, the *curved* boundary of the positive semidefinite
+//! cone. On a cone the mixture weights follow the local solid angle rather than
+//! being even, so the even mixture is the wrong reference. It errs the safe
+//! way: the tests are valid but conservative, sitting on the bound in 68 to 84
+//! per cent of null samples where an even mixture would say 50, and rejecting
+//! on 0.3 per cent at a nominal 5.
+//!
+//! That costs power in principle and less than expected in practice. On its own
+//! family the smooth surface still finds a reordering more often than the
+//! exponential one finds a reordering on *its* own family -- 0.333 against
+//! 0.189 at a nominal 0.05. Where more power is wanted the reference would have
+//! to be bootstrapped rather than looked up.
+//!
 //!
 //! The environment is the caller's to centre and scale. Where it is centred
 //! decides what the surface's intercept means, and that is a scientific choice
@@ -69,7 +93,7 @@ use crate::dense::DenseFactor;
 /// And a surface that cannot bend its variance function the way the data does
 /// will bend its correlation instead. On a rank-one genetic surface it cannot
 /// represent, with no reordering present at all, the exponential form rejected
-/// the correlation null far above its nominal rate. Choose before seeing the
+/// the correlation null on 10.7 per cent of 2000 samples against a nominal 5. Choose before seeing the
 /// answer; `checks/gxe_calibration.py` measures what choosing wrongly costs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {

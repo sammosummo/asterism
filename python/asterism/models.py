@@ -411,10 +411,11 @@ class GxeModel:
     surface from one is misspecified for the other. The misfit goes into the one
     parameter that is free under the alternative and pinned under the null, so a
     surface that cannot bend its variance function the way the data does will
-    bend its correlation instead. In calibration the exponential surface rejected
-    ``test(y, "correlation")`` on 14 per cent of samples with a linear rank-one
-    genetic surface and no reordering at all, against a nominal 5. The smooth
-    surface was conservative rather than anti-conservative in the mirror case.
+    bend its correlation instead. In calibration over 2000 samples with a linear rank-one genetic
+    surface and no reordering at all, the exponential surface rejected
+    ``test(y, "correlation")`` on 10.7 per cent of them against a nominal 5. The
+    smooth surface was conservative rather than anti-conservative in the mirror
+    case, which is why it is the default.
     Fitting both and reporting whichever rejects is not a defensible procedure.
 
     **A correlation below one is not by itself evidence of an interaction.** The

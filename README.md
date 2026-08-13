@@ -43,8 +43,8 @@ covariance, held by its Cholesky factor so it stays a covariance. They report
 the same quantities. But neither family contains the other, and a surface that
 cannot bend its variance function the way the data does will bend its
 correlation instead: on a rank-one genetic surface with no reordering at all,
-the exponential form rejected the correlation null on 14 per cent of samples
-against a nominal 5. Choose the surface before seeing the answer. Fitting both
+the exponential form rejected the correlation null on 10.7 per cent of samples
+against a nominal 5, over 2000 of them. Choose the surface before seeing the answer. Fitting both
 and reporting whichever rejects is not a procedure. Only the smooth surface can
 represent a crossover, where a genotype that helps in one environment harms in
 another: the exponential kernel is positive at every rate, so it reports a

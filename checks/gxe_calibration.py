@@ -49,10 +49,22 @@ or does not.
 
 ## The criterion is validity, not uniformity
 
-Both statistics sit on a bound under their null, so about half of all fits land
+Both statistics sit on a bound under their null, so a large share of fits land
 exactly on it and return a p-value of one. The p-values are uniform below a half
 with an atom at one. That is correct and is not a departure. What must hold is
 that the rejection rate at each level does not exceed that level.
+
+**The two surfaces do not sit on the same kind of bound, and it shows here.**
+The exponential surface's null is `lambda = 0`, a flat face of its parameter
+box, which is the case the even mixture of chi-squares is derived for — and its
+level comes out very close to nominal. The smooth surface's null is
+`q00*q11 - q01^2 = 0`, the *curved* boundary of the positive semidefinite cone,
+where the mixture weights follow the local solid angle instead of being even.
+The even mixture is therefore the wrong reference for it, erring the safe way:
+its tests are valid but conservative, and its atom runs well above a half.
+Restoring that power would mean bootstrapping the reference rather than looking
+it up. Reparameterising will not do it — a likelihood ratio is invariant to the
+coordinates it is computed in.
 
 Run with:
 
