@@ -294,3 +294,28 @@ What a p-value must satisfy is validity — P(p ≤ α) ≤ α — not uniformit
 bootstrap p-value from a statistic with an atom is valid without being uniform.
 The rejection rates are the criterion; the distribution is reported because it is
 informative.
+
+## `spatial-intervals-2026-08-13.json`
+
+Coverage of the two things a spatial fit reports beside its p-value: the share of
+variance and the distance at which the correlation halves. 250 replicates at
+n = 300, produced by `checks/spatial_intervals.py`.
+
+Both cover — 0.984 for the share and 0.976 for the half distance against a
+nominal 0.95 — **and the second number should not be read as saying the range is
+well estimated.** 98.4 per cent of the half-distance intervals have an endpoint
+at a bound. They cover because they are wide enough to reach the edge of the
+allowed range almost every time, which is coverage without information. The
+share's intervals reach a bound in 5.6 per cent.
+
+That matches what a single fit showed earlier: simulated with a true half
+distance of 35 km, the estimate came back at 6.
+
+**So a spatial result should carry the share with its interval and its
+bootstrapped p-value, and the range as a point estimate only.** An interval on
+the range would look like a result and is not one.
+
+One thing the share's interval cannot do either: its lower endpoint reaching
+nought is not a test of whether there is a spatial effect. Under that null the
+decay rate is unidentified and the deviance has no chi-squared reference, which
+is the whole reason the test is bootstrapped.

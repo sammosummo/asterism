@@ -1,0 +1,30 @@
+{
+  "what": "coverage of the spatial share and the half distance",
+  "date": "2026-08-13",
+  "estimator": "reml",
+  "pairs": 150,
+  "people": 300,
+  "spacing_km": 2.0,
+  "truth": {
+    "additive": 0.35,
+    "spatial": 0.25,
+    "residual": 0.4,
+    "decay_per_km": 0.02,
+    "half_distance_km": 34.657359027997266
+  },
+  "replicates": 250,
+  "nominal": 0.95,
+  "intervals": {
+    "share": {
+      "coverage": 0.984,
+      "computed": 250,
+      "at_a_bound": 0.056
+    },
+    "half_distance": {
+      "coverage": 0.976,
+      "computed": 250,
+      "at_a_bound": 0.984
+    }
+  },
+  "note": "an interval for the spatial share reaching nought is not a test of whether there is a spatial effect; the decay rate is unidentified under that null and the test is bootstrapped"
+}
