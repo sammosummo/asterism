@@ -39,13 +39,13 @@ the truth was 35.
 **The gene-by-environment model comes in two surfaces, and the choice is not
 free.** One makes the variances log-linear in the environment with genetic
 effects correlating as `exp(-λ|Δ|)`; the other puts a smooth quadratic on each
-covariance, held by its Cholesky factor so it stays a covariance. They report
-the same quantities. But neither family contains the other, and a surface that
-cannot bend its variance function the way the data does will bend its
-correlation instead: on a rank-one genetic surface with no reordering at all,
-the exponential form rejected the correlation null on 10.7 per cent of samples
-against a nominal 5, over 2000 of them. Choose the surface before seeing the answer. Fitting both
-and reporting whichever rejects is not a procedure. Only the smooth surface can
+covariance, held by loadings so it stays one. They report the same quantities.
+But neither family contains the other, and a surface that cannot bend its
+variance function the way the data does will bend its correlation instead: on a
+rank-one genetic surface with no reordering at all, the exponential form
+rejected the correlation null on 10.7 per cent of 2000 samples against a nominal
+5. Choose the surface before seeing the answer. Fitting both and reporting
+whichever rejects is not a procedure. Only the smooth surface can
 represent a crossover, where a genotype that helps in one environment harms in
 another: the exponential kernel is positive at every rate, so it reports a
 correlation near nought where the truth is near minus one.
@@ -54,8 +54,18 @@ correlation near nought where the truth is near minus one.
 interaction.** The estimate cannot exceed one, so under the null every departure
 runs downward; a tenth of null samples came back below 0.25 on the exponential
 surface. The tests exist for this reason, and unlike the spatial model they need
-no bootstrap — at either null every remaining parameter is still identified, so
-a mixture of chi-squares is a real reference rather than a hopeful one.
+no bootstrap: at either null every remaining parameter is still identified, so a
+mixture of chi-squares is a real reference rather than a hopeful one.
+
+**The two surfaces do not sit on the same kind of bound**, and only one of them
+gets the even mixture it is referred to. The exponential surface's null is
+`λ = 0`, a flat face of its parameter box, and its level comes out at 0.048
+against a nominal 0.05. The smooth surface's null is the curved boundary of the
+positive semidefinite cone, where the weights follow the local solid angle
+instead, so the even mixture is the wrong reference and errs the safe way — its
+tests are valid but conservative. That costs less than it sounds: compared
+fairly, each surface on an alternative from its own family, the smooth one finds
+a reordering more often than the exponential does, 0.333 against 0.189.
 
 **The class-weighted kinship model needs no code of its own.** It multiplies the
 four classes of direct parent–offspring cells by class-specific weights, which
