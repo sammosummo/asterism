@@ -9,26 +9,45 @@ the vocabulary before writing anything here, and `docs/adr/` for the decisions.
 
 ## What it does today
 
-One trait, additive and residual variance, REML and ML, a 95 per cent interval
-and a likelihood ratio test against no additive variance. That is the whole of
-it, and it is the whole of the first release.
+Five families of model, all of them one or two traits on a pedigree, all fitted
+by REML or ML, and all calibrated before being used on anything real.
 
-Many traits can be fitted in a loop against one prepared model, each returning
-its own heritability. That is not a bivariate model and does not substitute for
-one: there is no genetic or environmental correlation and no joint test, and
-because the joint likelihood does not separate into the two marginals, a joint
-fit's heritabilities are not quite the same numbers as separate fits'.
+| model | what it adds | reports |
+| --- | --- | --- |
+| one trait | additive and residual variance | h², interval, test against no additive variance |
+| one trait, several components | any number of extra covariance matrices — household, dominance, whatever is handed in | a share and interval for each, a boundary test for each |
+| one trait, spatial | a kernel `exp(-λd)` whose range is estimated rather than chosen | the spatial share and interval, the range, a bootstrapped p-value |
+| one trait, spatial, range integrated out | the range averaged over rather than maximised over | the share and interval, no range at all |
+| two traits | joint fit, unbalanced | both h², genetic, residual and phenotypic correlations, an interval and a test for each |
 
-The Gaussian two-trait model needed for the JASA reanalysis is now admitted but
-not reportable. Its unbalanced ML and REML likelihood and analytic score agree
-with the independent calculation, and its bound-constrained optimiser meets the
-`1e-7` projected KKT criterion. It fits all nine exact lower/interior/upper
-heritability combinations, with a genetic or residual correlation explicitly
-absent when its variance component vanishes, and retains exact correlation-bound
-solutions where the correlation exists. Standard errors, constrained tests,
-profile intervals, coverage and the realised JASA analysis are still absent; a
-converged optimiser is the numerical base for those things, not evidence that
-they have been completed.
+Which to reach for is a statistical question rather than a menu. The one-trait
+model diagonalises the relationship matrix once per family block and is
+enormously faster than the rest; the multi-component model gives that up,
+because two structured matrices share no eigenbasis; the spatial model gives up
+the family blocks entirely, because a distance kernel couples everybody.
+
+**The spatial range is the one thing here that is not really estimated.** Its
+interval reaches a bound in 98 per cent of calibration replicates: it covers
+because it is wide, which is coverage without information. Report the share and
+the p-value; report the range as a point estimate or integrate it out. The
+integrated version exists because it is the better answer — with the range
+integrated over, the share's uncertainty includes not knowing it, where
+otherwise the share is conditional on an estimate that came back at 6 km when
+the truth was 35.
+
+**The class-weighted kinship model needs no code of its own.** It multiplies the
+four classes of direct parent–offspring cells by class-specific weights, which
+is linear in the weights, so splitting the relationship matrix by class and
+handing the pieces to the multi-component model fits it exactly. Report each
+class as a share of the total variance and not as a weight: a weight is a ratio
+of two estimated variances, and on the GOBS design the ratios come back near 3
+when the truth is 1 while the shares are unbiased. An independent qualification
+gate failed this model on that bias in 2026 and was right to.
+
+**Real traits have gone through all of it.** Thirteen GOBS traits with one
+component, seventy-eight pairs with two, thirteen with a household component,
+and a spatial run in progress. The bivariate fits reproduce SOLAR on every one
+of the seventy-eight pairs to better than 1e-5.
 
 ```python
 import asterism
@@ -100,9 +119,10 @@ nothing.
 
 It grows when a planned analysis needs it to and not before, and every
 capability it gains is written into `docs/adr/` first. Liability and threshold
-models, survival, gene-by-environment, spatial, longitudinal, Tobit, signal
-detection, BLUP and prospective design analysis are all deferred. Deferred means
-not yet, not never, and the list carries no order.
+models, survival, gene-by-environment, longitudinal, Tobit, signal detection,
+BLUP and prospective design analysis are all deferred. Deferred means not yet,
+not never, and the list carries no order. Spatial has left that list because an
+analysis needed it.
 
 SOLAR is a comparator. Differences between the two are recorded rather than
 treated as defects, and replacing SOLAR is not what defines this.
@@ -246,10 +266,23 @@ implementations proves fidelity and never correctness. Both are run, both on the
 six-column design.
 
 - **REML against R `regress`**: heritability to about 5e-9 relative, total
-  variance to 4e-9, every fixed effect to 1e-9.
+  variance to 4e-9, every fixed effect to 1e-9. Two traits agree too, against
+  `regress` handed the six covariance structures directly.
 - **ML against native SOLAR**: heritability to about 1e-8 relative, which is
   every digit SOLAR prints, and standard errors agreeing to five figures despite
-  being computed differently.
+  being computed differently. Two traits agree on unbalanced simulated data to
+  2e-7, and on all seventy-eight real GOBS trait pairs to better than 1e-5.
+
+**Real data agrees about an order of magnitude less closely than simulated
+data, and that is SOLAR.** Its termination on heritability is looser than its
+printing — log-likelihoods equal to 1e-8 while heritabilities differ by 8e-7 —
+so a tolerance calibrated on simulated data is too tight for a real comparison.
+Expect around 1e-6 and treat a tighter demand as a statement about SOLAR's
+stopping rule.
+
+**Neither computes a profile interval**, so the intervals have no external
+comparator at all. The two-trait ones are checked against an independent Python
+implementation instead; the others rest on calibration.
 
 **Their printed log-likelihoods will not match Asterism's, and that is
 expected.** Asterism keeps the Gaussian normalising constant; both comparators
@@ -266,12 +299,18 @@ stable.
   at the whole SAFS pedigree and 800 MB at 10,000 people. `prepare` then
   exploits the family blocks, but the matrix between them does not. Nothing has
   needed more yet.
-- **No real phenotype has gone through it.** The pedigree has; a measured trait
-  has not. Every roster here is
-  synthetic and block-diagonal, with fourteen-person families and no inbreeding
-  loops. A real SAFS pedigree is larger, more tangled, and may make the
-  relationship matrix singular, which is the case the upper-bound snap in
-  `prepared.rs` exists for and which nothing here exercises.
-- **No real phenotype has ever gone through it either.**
+- **The spatial model is slow and does not scale like the others.** A distance
+  kernel couples everybody, so there are no family blocks and every evaluation
+  factorises a dense matrix of the whole roster. At 1,800 people a fit is about
+  forty seconds and a 199-replicate bootstrap is hours. The block models are
+  three orders of magnitude cheaper.
+- **The spatial range is not usefully estimated**, as above. Nothing here fixes
+  that; integrating it out sidesteps it.
+- **The two-trait profile intervals have one independent implementation and the
+  rest have none.** SOLAR and R do not compute profile intervals for these
+  models, so every other interval rests on calibration alone. Calibration says
+  the recipe covers; it does not say the arithmetic matches a second opinion.
 - **The conservatism near zero is unrepaired.** Decision 12's third tier —
   calibrate once per design — is the anticipated fix and is not built.
+- **Three traits at once is not possible.** The ratio parameterisation fails at
+  three or more, and the boundary enumeration is 3^t.
