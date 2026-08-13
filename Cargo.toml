@@ -29,3 +29,6 @@ pyo3 = { version = "0.29.0", features = ["abi3-py39"], optional = true }
 rcompat-lbfgsb = "0.2.1"
 sha2 = "0.10.9"
 statrs = { version = "0.18.0", default-features = false }
+
+[dev-dependencies]
+lbfgsb-rs-pure = "0.1.2"

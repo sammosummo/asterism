@@ -277,6 +277,26 @@ impl ComponentModel {
         })
     }
 
+    /// The objective and its gradient, for the optimiser comparison in
+    /// `tests/optimiser_race.rs`.
+    ///
+    /// Every fit in this package goes through one bound-constrained optimiser,
+    /// so which one is not a detail to be settled by a commit message. This seam
+    /// exists so the two candidates can be raced on a real objective rather than
+    /// on a textbook function.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn objective_for_test(
+        &self,
+        theta: &[f64],
+        y: &DVector<f64>,
+        reml: bool,
+        want_gradient: bool,
+    ) -> Option<(f64, Vec<f64>)> {
+        self.evaluate(theta, y, reml, want_gradient)
+            .map(|e| (e.negative_loglik, e.gradient))
+    }
+
     /// Fit by bounded search from several starts.
     ///
     /// The response is scaled to unit variance first and the variances scaled
