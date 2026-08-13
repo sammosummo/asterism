@@ -99,6 +99,11 @@ pub struct SpatialFit {
     /// This is what `λ` means in the units anybody thinks in.
     pub half_distance_km: f64,
     pub fixed_effects: Vec<f64>,
+    /// The standard error of each fixed effect, from the diagonal of
+    /// `(X' V^-1 X)^-1` at the fitted parameters. As elsewhere, the variance
+    /// components and the range are treated as known though they were
+    /// estimated, so these are a little optimistic.
+    pub fixed_effect_errors: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
     pub scaled_gradient: f64,
@@ -109,6 +114,8 @@ struct Evaluation {
     negative_loglik: f64,
     gradient: Vec<f64>,
     fixed_effects: Vec<f64>,
+    /// `(X' V^-1 X)^-1`, the covariance of the fixed effects.
+    fixed_covariance: Option<DMatrix<f64>>,
 }
 
 /// Where one derivative's elements come from, so the inner loops can read them
@@ -470,6 +477,7 @@ impl SpatialModel {
             negative_loglik: value,
             gradient,
             fixed_effects: beta.iter().copied().collect(),
+            fixed_covariance: Some(xvx_chol.inverse()),
         })
     }
 
@@ -599,6 +607,11 @@ impl SpatialModel {
             lambda,
             half_distance_km: std::f64::consts::LN_2 / lambda,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
+            fixed_effect_errors: at
+                .fixed_covariance
+                .as_ref()
+                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
             scaled_gradient,
@@ -647,7 +660,9 @@ impl SpatialModel {
         let count = variances.len();
         let mut logliks = Vec::with_capacity(INTEGRATION_POINTS);
         let mut gradients = Vec::with_capacity(INTEGRATION_POINTS);
-        let mut fixed_effects = Vec::new();
+        let mut effects: Vec<Vec<f64>> = Vec::with_capacity(INTEGRATION_POINTS);
+        let mut covariances: Vec<Option<DMatrix<f64>>> =
+            Vec::with_capacity(INTEGRATION_POINTS);
 
         let span = (self.lambda_upper / self.lambda_lower).ln();
         for point in 0..INTEGRATION_POINTS {
@@ -664,9 +679,8 @@ impl SpatialModel {
             if want_gradient {
                 gradients.push(at.gradient[..count].to_vec());
             }
-            if fixed_effects.is_empty() {
-                fixed_effects = at.fixed_effects;
-            }
+            effects.push(at.fixed_effects);
+            covariances.push(at.fixed_covariance);
         }
         if logliks.is_empty() {
             return None;
@@ -693,10 +707,44 @@ impl SpatialModel {
             }
         }
 
+        // **The fixed effects are averaged across the grid too, and their
+        // covariance gains a term for the spread between grid points.** Taking
+        // them from one decay rate would report an estimate conditional on a
+        // rate the integration exists to avoid committing to. The two terms are
+        // the average of the within-rate covariances and the spread of the
+        // estimates across rates -- the same decomposition multiple imputation
+        // uses, and the second term is exactly the extra uncertainty that comes
+        // from not knowing the range.
+        let p = self.design.ncols();
+        let shares: Vec<f64> = logliks
+            .iter()
+            .map(|l| (l - largest).exp() / total)
+            .collect();
+        let mut fixed_effects = vec![0.0; p];
+        for (index, effect) in effects.iter().enumerate() {
+            for k in 0..p.min(effect.len()) {
+                fixed_effects[k] += shares[index] * effect[k];
+            }
+        }
+        let mut fixed_covariance = DMatrix::<f64>::zeros(p, p);
+        for (index, covariance) in covariances.iter().enumerate() {
+            if let Some(c) = covariance {
+                fixed_covariance += c * shares[index];
+            }
+            for a in 0..p.min(effects[index].len()) {
+                for b in 0..p.min(effects[index].len()) {
+                    fixed_covariance[(a, b)] += shares[index]
+                        * (effects[index][a] - fixed_effects[a])
+                        * (effects[index][b] - fixed_effects[b]);
+                }
+            }
+        }
+
         Some(Evaluation {
             negative_loglik: -integrated,
             gradient,
             fixed_effects,
+            fixed_covariance: Some(fixed_covariance),
         })
     }
 
@@ -809,11 +857,94 @@ impl SpatialModel {
             lambda: f64::NAN,
             half_distance_km: f64::NAN,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
+            fixed_effect_errors: at
+                .fixed_covariance
+                .as_ref()
+                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
             scaled_gradient,
             estimator: if reml { "reml" } else { "ml" },
         })
+    }
+
+    /// Predict the random effects of one component.
+    ///
+    /// The same best linear unbiased prediction the component model makes, on a
+    /// dense covariance rather than family blocks. `component` indexes the fixed
+    /// components first and then the spatial one; the residual cannot be
+    /// predicted.
+    ///
+    /// **Only with the decay rate profiled.** With it integrated out there is no
+    /// single kernel to predict from, and averaging predictions across the grid
+    /// is a different quantity that has not been calibrated. Asking is refused
+    /// rather than answered with the middle of the range.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit fails, the component does not exist,
+    /// or the range has been integrated out.
+    pub fn blup(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+        integrated: bool,
+    ) -> Result<(Vec<f64>, Vec<f64>), &'static str> {
+        if integrated {
+            return Err("SPATIAL_NO_PREDICTION_WHEN_INTEGRATED");
+        }
+        if component > self.spatial_index() {
+            return Err("SPATIAL_NO_SUCH_COMPONENT_TO_PREDICT");
+        }
+        let fit = self.fit(y, reml)?;
+        let n = self.rows;
+        let p = self.design.ncols();
+
+        let kernel = self.kernel(fit.lambda);
+        let mut v = DMatrix::<f64>::zeros(n, n);
+        for (index, matrix) in self.fixed.iter().enumerate() {
+            v += matrix * fit.variances[index];
+        }
+        let spatial = fit.variances[self.spatial_index()];
+        for i in 0..n {
+            for j in 0..n {
+                v[(i, j)] += spatial * self.kernel_at(&kernel, i, j);
+            }
+        }
+        for i in 0..n {
+            v[(i, i)] += fit.variances[self.residual_index()];
+        }
+
+        let factor = crate::dense::DenseFactor::new(&v)
+            .ok_or("SPATIAL_NOT_POSITIVE_DEFINITE")?;
+        let inverse = factor.inverse();
+        let beta = DVector::from_iterator(p, fit.fixed_effects.iter().copied());
+        let residual = y - &self.design * &beta;
+        let vx = factor.solve_matrix(&self.design);
+        let xvx = self.design.transpose() * &vx;
+        let xvx_inverse = xvx
+            .cholesky()
+            .ok_or("SPATIAL_DESIGN_RANK_DEFICIENT")?
+            .inverse();
+
+        // The component's own covariance.
+        let g = if component == self.spatial_index() {
+            DMatrix::from_fn(n, n, |i, j| spatial * self.kernel_at(&kernel, i, j))
+        } else {
+            &self.fixed[component] * fit.variances[component]
+        };
+
+        let predicted = &g * &inverse * &residual;
+        let gvi = &g * &inverse;
+        let gvig = &gvi * &g;
+        let gvx = &g * &vx;
+        let correction = &gvx * &xvx_inverse * gvx.transpose();
+        let errors = (0..n)
+            .map(|i| (g[(i, i)] - gvig[(i, i)] + correction[(i, i)]).max(0.0).sqrt())
+            .collect();
+        Ok((predicted.iter().copied().collect(), errors))
     }
 
     /// The best log-likelihood with the spatial variance held at nought.
@@ -1354,7 +1485,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
         integrated: bool,
-    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, f64, f64, bool)> {
+    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, f64, f64, bool, Vec<f64>, Vec<f64>)> {
         let model = build(&fixed, &distance, &design)?;
         let response = response(&y);
         let fit = if integrated {
@@ -1372,7 +1503,27 @@ mod python {
             fit.loglik,
             fit.scaled_gradient,
             fit.converged,
+            fit.fixed_effects,
+            fit.fixed_effect_errors,
         ))
+    }
+
+    /// Predict the random effects of one component.
+    #[pyfunction]
+    #[pyo3(signature = (fixed, distance, design, y, component, reml=true, integrated=false))]
+    pub fn spatial_blup(
+        fixed: Vec<PyReadonlyArray2<'_, f64>>,
+        distance: PyReadonlyArray2<'_, f64>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        component: usize,
+        reml: bool,
+        integrated: bool,
+    ) -> PyResult<(Vec<f64>, Vec<f64>)> {
+        let model = build(&fixed, &distance, &design)?;
+        model
+            .blup(&response(&y), reml, component, integrated)
+            .map_err(PyValueError::new_err)
     }
 
     /// The likelihood ratio against no spatial variance.
@@ -1483,7 +1634,8 @@ mod python {
 
 #[cfg(feature = "python")]
 pub use python::{
-    spatial_bootstrap, spatial_distances, spatial_fit, spatial_interval, spatial_statistic,
+    spatial_blup, spatial_bootstrap, spatial_distances, spatial_fit, spatial_interval,
+    spatial_statistic,
 };
 
 #[cfg(test)]

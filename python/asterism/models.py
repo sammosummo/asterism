@@ -272,11 +272,20 @@ class SpatialModel:
             loglik,
             gradient,
             converged,
+            effects,
+            errors,
         ) = _core.spatial_fit(self._fixed, self._distance, self._design, y, reml, integrated)
         return {
             "variances": list(variances),
             "shares": list(shares),
             "total_variance": total,
+            # With the range integrated out these carry the extra uncertainty of
+            # not knowing it: the standard errors are the average of the
+            # within-range ones plus the spread of the estimates across ranges.
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s}
+                for e, s in zip(effects, errors)
+            ],
             "decay_per_km": None if integrated else lam,
             "half_distance_km": None if integrated else half,
             "loglik": loglik,
@@ -285,6 +294,22 @@ class SpatialModel:
             "estimator": "reml" if reml else "ml",
             "range_treatment": "integrated" if integrated else "profile",
         }
+
+    def predict(
+        self, y: Any, component: int, reml: bool = True, integrated: bool = False
+    ) -> dict[str, Any]:
+        """Predict the random effects of one component.
+
+        `component` indexes the fixed components first and then the spatial one.
+        With the range integrated out this is refused: there is no single kernel
+        to predict from, and averaging predictions across the grid is a
+        different quantity that has not been calibrated.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        values, errors = _core.spatial_blup(
+            self._fixed, self._distance, self._design, y, component, reml, integrated
+        )
+        return {"component": component, "values": list(values), "errors": list(errors)}
 
     def interval(
         self, y: Any, quantity: str, reml: bool = True, integrated: bool = False

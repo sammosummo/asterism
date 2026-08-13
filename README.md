@@ -72,6 +72,7 @@ both.test(y, "rho_g", null=0.0)
 space = asterism.SpatialModel([relationship], distance_km, design)
 space.fit(y, integrated=True)         # the range averaged over, not estimated
 space.bootstrap(y, replicates=199)    # the only honest p-value here
+space.predict(y, component=0)         # BLUP, with the range profiled
 
 # the class-weighted kinship split, for ComponentModel
 split = asterism.kinship_classes(ids, father, mother, sex, keep=measured)
