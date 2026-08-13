@@ -40,6 +40,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(components::component_blup, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;

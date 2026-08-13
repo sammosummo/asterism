@@ -60,6 +60,8 @@ model = asterism.ComponentModel([relationship, household], x)
 fit = model.fit(y)                    # shares, variances, log-likelihood
 model.interval(y, component=1)        # 95 per cent profile interval
 model.test(y, component=1)            # against no household variance
+fit["fixed_effects"]                  # BLUE, with standard errors
+model.predict(y, component=0)         # BLUP, with prediction errors
 
 # two traits
 both = asterism.BivariateModel(k, observed, design)
@@ -150,8 +152,8 @@ nothing.
 
 It grows when a planned analysis needs it to and not before, and every
 capability it gains is written into `docs/adr/` first. Liability and threshold
-models, survival, gene-by-environment, longitudinal, Tobit, signal detection,
-BLUP and prospective design analysis are all deferred. Deferred means not yet,
+models, survival, gene-by-environment, longitudinal, Tobit, signal detection and
+prospective design analysis are all deferred. Deferred means not yet,
 not never, and the list carries no order. Spatial has left that list because an
 analysis needed it.
 

@@ -5,9 +5,9 @@ Building one validates; fitting returns a dictionary with named fields rather
 than a tuple whose meaning has to be remembered.
 
 **This layer exists because the compiled bindings are positional.**
-`_core.component_fit` returns six values in a fixed order and `_core.spatial_fit`
-eight, and reading the fourth of eight correctly every time is not a reasonable
-thing to ask of an analysis script. Nothing here computes anything: every number
+`_core.component_fit` returns eight values in a fixed order and
+`_core.spatial_fit` eight more, and reading the fourth of eight correctly every
+time is not a reasonable thing to ask of an analysis script. Nothing here computes anything: every number
 comes from the same compiled code, and this only names it.
 """
 
@@ -64,17 +64,56 @@ class ComponentModel:
         relationship-plus-residual model is the heritability.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        variances, shares, total, loglik, gradient, converged = _core.component_fit(
-            self._matrices, self._x, y, reml
-        )
+        (
+            variances,
+            shares,
+            total,
+            loglik,
+            gradient,
+            converged,
+            effects,
+            errors,
+        ) = _core.component_fit(self._matrices, self._x, y, reml)
         return {
             "variances": list(variances),
             "shares": list(shares),
             "total_variance": total,
+            # The generalised least squares estimates: the best linear unbiased
+            # estimator of the fixed effects at the fitted variances, with the
+            # standard errors from the diagonal of (X' V^-1 X)^-1.
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s}
+                for e, s in zip(effects, errors)
+            ],
             "loglik": loglik,
             "scaled_gradient": gradient,
             "converged": converged,
             "estimator": "reml" if reml else "ml",
+        }
+
+    def predict(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
+        """Predict the random effects of one component.
+
+        The best linear unbiased prediction, one value per person, with the
+        standard error of prediction beside it.
+
+        **The error is how far the prediction may be from the effect**, not the
+        spread of the predictions. A prediction is shrunk toward nought, so its
+        own spread is smaller than the effect's; the question worth answering is
+        how wrong it might be.
+
+        The variance components are treated as known, though they were estimated
+        from the same data, so the errors are a little optimistic. That is the
+        usual approximation and the same one the fixed effects make.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        values, errors = _core.component_blup(
+            self._matrices, self._x, y, component, reml
+        )
+        return {
+            "component": component,
+            "values": list(values),
+            "errors": list(errors),
         }
 
     def interval(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:

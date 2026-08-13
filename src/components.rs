@@ -39,6 +39,15 @@ pub struct ComponentFit {
     pub proportions: Vec<f64>,
     pub total_variance: f64,
     pub fixed_effects: Vec<f64>,
+    /// The standard error of each fixed effect, the square root of the diagonal
+    /// of `(X' V^-1 X)^-1` at the fitted variances.
+    ///
+    /// **This is the usual approximation and it is worth saying so.** It treats
+    /// the variance components as known when they were estimated from the same
+    /// data, so it is a little optimistic; the size of that depends on how well
+    /// the components are determined, and it is the same approximation the
+    /// one-trait model and SOLAR both make.
+    pub fixed_effect_errors: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
     pub scaled_gradient: f64,
@@ -49,6 +58,9 @@ struct Evaluation {
     negative_loglik: f64,
     gradient: Vec<f64>,
     fixed_effects: Vec<f64>,
+    /// `(X' V^-1 X)^-1`, which is the covariance of the fixed effects and is
+    /// wanted for their standard errors. Kept only where it was formed.
+    fixed_covariance: Option<DMatrix<f64>>,
 }
 
 struct BlockSolve {
@@ -274,6 +286,7 @@ impl ComponentModel {
             negative_loglik: value,
             gradient,
             fixed_effects: beta.iter().copied().collect(),
+            fixed_covariance: Some(xvx_chol.inverse()),
         })
     }
 
@@ -420,11 +433,19 @@ impl ComponentModel {
         };
         let loglik = -negative - observations * scale.ln();
 
+        // The standard errors scale with the response like the effects do,
+        // being square roots of a variance in the response's own units.
+        let errors = at
+            .fixed_covariance
+            .as_ref()
+            .map(|c| (0..c.nrows()).map(|i| (c[(i, i)].max(0.0)).sqrt() * scale).collect())
+            .unwrap_or_default();
         Ok(ComponentFit {
             variances,
             proportions,
             total_variance: total,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
+            fixed_effect_errors: errors,
             loglik,
             converged,
             scaled_gradient: projected / negative.abs().max(1.0),
@@ -701,6 +722,119 @@ impl ComponentModel {
     }
 }
 
+/// Predicted random effects for one component, with how uncertain each is.
+#[derive(Clone, Debug)]
+pub struct Prediction {
+    /// Which component was predicted.
+    pub component: usize,
+    /// One predicted effect per person, in the order the matrices are indexed.
+    pub values: Vec<f64>,
+    /// The standard error of prediction for each, the square root of the
+    /// diagonal of the prediction error variance.
+    ///
+    /// **Not the standard deviation of the prediction.** A prediction is shrunk
+    /// toward nought, so its own spread is smaller than the effect's; what is
+    /// wanted is how far the prediction may be from the effect it predicts, and
+    /// that is what this is.
+    pub errors: Vec<f64>,
+}
+
+impl ComponentModel {
+    /// Predict the random effects of one component.
+    ///
+    /// This is the best linear unbiased prediction: for component `k` with
+    /// covariance `G = s_k K_k`,
+    ///
+    /// ```text
+    /// u_hat = G V^-1 (y - X beta_hat)
+    /// ```
+    ///
+    /// with the prediction error variance
+    ///
+    /// ```text
+    /// G - G V^-1 G + G V^-1 X (X' V^-1 X)^-1 X' V^-1 G
+    /// ```
+    ///
+    /// whose diagonal gives the standard errors. The third term is the price of
+    /// having estimated the fixed effects rather than known them, and dropping
+    /// it -- which is easy to do, since the first two terms look like a complete
+    /// formula -- makes every prediction look more certain than it is.
+    ///
+    /// **The variance components are treated as known.** They were estimated
+    /// from the same data, so these errors are a little optimistic. That is the
+    /// usual approximation and the same one the fixed effects' standard errors
+    /// make.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit fails or the component does not
+    /// exist. The residual cannot be predicted this way and is refused: its
+    /// "prediction" is just the residual itself.
+    pub fn blup(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+    ) -> Result<Prediction, &'static str> {
+        if component >= self.matrices.len() {
+            return Err("COMPONENTS_NO_SUCH_COMPONENT_TO_PREDICT");
+        }
+        let fit = self.fit(y, reml)?;
+        let theta: Vec<f64> = fit.variances.clone();
+        let p = self.design.ncols();
+        let n = self.rows;
+
+        // The residual after the fixed effects, and the pieces every block
+        // needs. `xvx` is accumulated across blocks because the fixed effects
+        // are global even though the covariance is not.
+        let beta = DVector::from_iterator(p, fit.fixed_effects.iter().copied());
+        let residual = y - &self.design * &beta;
+
+        let mut xvx = DMatrix::<f64>::zeros(p, p);
+        let mut solves: Vec<(Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>)> =
+            Vec::with_capacity(self.blocks.len());
+        for block in &self.blocks {
+            let size = block.len();
+            let v = self.assemble(block, &theta);
+            let chol = crate::dense::DenseFactor::new(&v).ok_or("COMPONENTS_NOT_POSITIVE_DEFINITE")?;
+            let rb = DVector::from_iterator(size, block.iter().map(|&i| residual[i]));
+            let xb = DMatrix::from_fn(size, p, |r, c| self.design[(block[r], c)]);
+            let vr = chol.solve_vector(&rb);
+            let vx = chol.solve_matrix(&xb);
+            xvx += xb.transpose() * &vx;
+            solves.push((block.clone(), chol.inverse(), vr, vx));
+        }
+        let xvx_inverse = xvx.cholesky().ok_or("COMPONENTS_DESIGN_RANK_DEFICIENT")?.inverse();
+
+        let mut values = vec![0.0; n];
+        let mut errors = vec![0.0; n];
+        let matrix = &self.matrices[component];
+        let scale = theta[component];
+        for (block, inverse, vr, vx) in &solves {
+            let size = block.len();
+            // G over this block, which is the component's own matrix scaled.
+            let g = DMatrix::from_fn(size, size, |i, j| scale * matrix[(block[i], block[j])]);
+            let predicted = &g * vr;
+            // G V^-1 G, and the correction for having estimated beta.
+            let gvi = &g * inverse;
+            let gvig = &gvi * &g;
+            // G V^-1 X, and `vx` already holds V^-1 X for this block.
+            let gvx = &g * vx;
+            let correction = &gvx * &xvx_inverse * gvx.transpose();
+            for i in 0..size {
+                values[block[i]] = predicted[i];
+                let variance = g[(i, i)] - gvig[(i, i)] + correction[(i, i)];
+                errors[block[i]] = variance.max(0.0).sqrt();
+            }
+        }
+        Ok(Prediction {
+            component,
+            values,
+            errors,
+        })
+    }
+}
+
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -737,12 +871,13 @@ mod python {
     /// for you and is always last in what comes back.
     #[pyfunction]
     #[pyo3(signature = (matrices, design, y, reml=true))]
+    #[allow(clippy::type_complexity)]
     pub fn component_fit(
         matrices: Vec<PyReadonlyArray2<'_, f64>>,
         design: PyReadonlyArray2<'_, f64>,
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
-    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, bool)> {
+    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, bool, Vec<f64>, Vec<f64>)> {
         let model = build(&matrices, &design)?;
         let fit = model
             .fit(&response(&y), reml)
@@ -754,7 +889,29 @@ mod python {
             fit.loglik,
             fit.scaled_gradient,
             fit.converged,
+            fit.fixed_effects,
+            fit.fixed_effect_errors,
         ))
+    }
+
+    /// Predict the random effects of one component.
+    ///
+    /// Returns one predicted effect per person and the standard error of each,
+    /// in the order the matrices are indexed.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, component, reml=true))]
+    pub fn component_blup(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        component: usize,
+        reml: bool,
+    ) -> PyResult<(Vec<f64>, Vec<f64>)> {
+        let model = build(&matrices, &design)?;
+        let prediction = model
+            .blup(&response(&y), reml, component)
+            .map_err(PyValueError::new_err)?;
+        Ok((prediction.values, prediction.errors))
     }
 
     /// A 95 per cent profile interval for one component's share of the variance.
@@ -804,7 +961,7 @@ mod python {
 }
 
 #[cfg(feature = "python")]
-pub use python::{component_fit, component_interval, component_test};
+pub use python::{component_blup, component_fit, component_interval, component_test};
 
 #[cfg(test)]
 mod tests {
@@ -967,6 +1124,98 @@ mod tests {
             "log-likelihoods {} against {}",
             fit.loglik,
             theirs.loglik
+        );
+    }
+
+    /// **The prediction is computed block by block and must equal the textbook
+    /// formula computed densely.** The blocks are an optimisation and nothing
+    /// else, so a difference between the two is a bug in the bookkeeping rather
+    /// than a modelling choice -- and it would show up as predictions that were
+    /// subtly wrong for people in large families and right for everybody else.
+    #[test]
+    fn the_prediction_matches_the_dense_formula() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a.clone(), h.clone()], &design).expect("valid");
+        let fit = model.fit(&y, true).expect("fits");
+        let n = y.len();
+        let p = design.ncols();
+
+        for component in 0..2 {
+            let got = model.blup(&y, true, component).expect("predicts");
+
+            // The same thing, written out with no blocks at all.
+            let mut v = &a * fit.variances[0] + &h * fit.variances[1];
+            for i in 0..n {
+                v[(i, i)] += fit.variances[2];
+            }
+            let inverse = v.clone().cholesky().expect("positive definite").inverse();
+            let beta = DVector::from_iterator(p, fit.fixed_effects.iter().copied());
+            let residual = &y - &design * &beta;
+            let g = if component == 0 { &a * fit.variances[0] } else { &h * fit.variances[1] };
+            let expected = &g * &inverse * &residual;
+
+            let xvx = design.transpose() * &inverse * &design;
+            let xvx_inverse = xvx.cholesky().expect("full rank").inverse();
+            let gvx = &g * &inverse * &design;
+            let pev = &g - &g * &inverse * &g + &gvx * &xvx_inverse * gvx.transpose();
+
+            for i in 0..n {
+                assert!(
+                    (got.values[i] - expected[i]).abs() < 1e-9,
+                    "component {component}, person {i}: {} against {}",
+                    got.values[i],
+                    expected[i]
+                );
+                let error = pev[(i, i)].max(0.0).sqrt();
+                assert!(
+                    (got.errors[i] - error).abs() < 1e-9,
+                    "component {component}, person {i}: error {} against {}",
+                    got.errors[i],
+                    error
+                );
+            }
+        }
+    }
+
+    /// A prediction is shrunk toward nought, and the error of prediction is
+    /// smaller than the effect's own spread. Both are properties of what a BLUP
+    /// is, and a formula missing its shrinkage would still look plausible.
+    #[test]
+    fn predictions_are_shrunk_and_carry_less_error_than_the_effect() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a, h], &design).expect("valid");
+        let fit = model.fit(&y, true).expect("fits");
+        let predicted = model.blup(&y, true, 0).expect("predicts");
+
+        let spread = {
+            let mean = predicted.values.iter().sum::<f64>() / predicted.values.len() as f64;
+            (predicted.values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
+                / predicted.values.len() as f64)
+                .sqrt()
+        };
+        let effect = fit.variances[0].sqrt();
+        assert!(
+            spread < effect,
+            "predictions spread {spread} against an effect of {effect}: not shrunk"
+        );
+        for (index, error) in predicted.errors.iter().enumerate() {
+            assert!(
+                *error <= effect + 1e-9,
+                "person {index} has a prediction error {error} above the effect's own \
+                 spread {effect}"
+            );
+            assert!(*error > 0.0, "person {index} has no prediction error at all");
+        }
+    }
+
+    /// The residual cannot be predicted this way and asking is refused.
+    #[test]
+    fn the_residual_is_not_a_component_that_can_be_predicted() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a, h], &design).expect("valid");
+        assert_eq!(
+            model.blup(&y, true, 2).err(),
+            Some("COMPONENTS_NO_SUCH_COMPONENT_TO_PREDICT")
         );
     }
 
