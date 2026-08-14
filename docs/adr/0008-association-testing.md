@@ -119,6 +119,16 @@ all of which belong to whatever prepares the marker matrix.
 - Still not a measured type I error rate across the tail, which is what a
   genome-wide claim would need. A median-based lambda says nothing about
   behaviour at 5e-08.
-- No comparison against an independent implementation. Under ADR 0006 that means
-  it is not qualified, the same standing the liability model had this morning
-  before SOLAR was run against it.
+- **Native SOLAR agrees exactly.** SOLAR does measured-genotype association by
+  putting the marker in as a covariate and screening it, which drops it and
+  refits -- so the like-for-like mode is `refitted`, not the held sweep. On three
+  simulated pedigrees the p-values agree to every digit printed
+  (6.554e-01, 3.324e-07, 6.357e-20) and the effects to four decimals. Under
+  ADR 0006 that is fidelity, and it is independent.
+- **The held sweep is conservative, and the comparison shows by how much.**
+  Against SOLAR's 3.3e-07 it gives 4.5e-07, and against 6.4e-20 it gives
+  1.6e-18: about an order of magnitude at a strong effect. The marker's own
+  contribution inflates the polygenic variance estimated under the null, and the
+  held test then over-corrects for it. At the effect sizes a scan is looking for
+  this is negligible; for a large-effect hit it is not, so a top marker should
+  be re-tested with `refitted` rather than reported from the sweep.

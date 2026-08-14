@@ -1,0 +1,51 @@
+{
+  "what": "association test against native SOLAR measured genotype",
+  "date": "2026-08-14",
+  "compared": "refitted, because SOLAR refits with the marker present",
+  "worst_log10_p_disagreement": 2.972703869730253e-07,
+  "threshold": 0.15,
+  "cases": [
+    {
+      "true_heritability": 0.5,
+      "true_effect": 0.0,
+      "people": 560,
+      "solar_p": 0.655356,
+      "solar_beta": null,
+      "solar_h2": 0.5225916,
+      "asterism_refitted_p": 0.6553563336547226,
+      "asterism_refitted_effect": 0.024902422797765496,
+      "asterism_refitted_statistic": 0.19921362708282686,
+      "asterism_held_p": 0.6557198731623683,
+      "asterism_held_effect": 0.02485579648264662,
+      "asterism_held_statistic": 0.19876460668562346
+    },
+    {
+      "true_heritability": 0.5,
+      "true_effect": 0.3,
+      "people": 560,
+      "solar_p": 3.3239191e-07,
+      "solar_beta": 0.3150277,
+      "solar_h2": 0.5584244,
+      "asterism_refitted_p": 3.323921375191361e-07,
+      "asterism_refitted_effect": 0.3150277260302139,
+      "asterism_refitted_statistic": 26.051722701159406,
+      "asterism_held_p": 4.528510187602716e-07,
+      "asterism_held_effect": 0.3150530076360251,
+      "asterism_held_statistic": 25.454878719349896
+    },
+    {
+      "true_heritability": 0.3,
+      "true_effect": 0.55,
+      "people": 560,
+      "solar_p": 6.3571612e-20,
+      "solar_beta": 0.5462634,
+      "solar_h2": 0.2470936,
+      "asterism_refitted_p": 6.35715776900489e-20,
+      "asterism_refitted_effect": 0.5462634132613242,
+      "asterism_refitted_statistic": 83.5044850540487,
+      "asterism_held_p": 1.5765520830003238e-18,
+      "asterism_held_effect": 0.5511897755900094,
+      "asterism_held_statistic": 77.15998952887132
+    }
+  ]
+}
