@@ -20,6 +20,8 @@ by REML or ML, and all calibrated before being used on anything real.
 | one trait, spatial, range integrated out | the range averaged over rather than maximised over | the share and interval, no range at all |
 | two traits | joint fit, unbalanced | both h², genetic, residual and phenotypic correlations, an interval and a test for each |
 | one trait, gene by environment | a surface on the genetic and residual covariances, in an environment measured per person | h² at each environment asked about, the genetic correlation between each pair, a profile interval for either, and three tests |
+| one binary trait, liability threshold | an unobserved liability crossing a threshold, so a heritability of the liability rather than of the observed status | h² on the liability scale, its profile interval, and a boundary test — maximum likelihood, never REML |
+| one trait, many markers | each marker in turn as a fixed effect beside the ancestry components | an effect, a standard error and a p-value per marker, with the variance components held from the null or refitted per marker |
 
 Which to reach for is a statistical question rather than a menu. The one-trait
 model diagonalises the relationship matrix once per family block and is
@@ -131,6 +133,23 @@ fit = gxe.fit(y, grid=[low, middle, high])   # h2 and rho_G at those environment
 gxe.test(y, "correlation")            # the same genes throughout?
 gxe.test(y, "interaction")            # the environment in the genetics at all?
 
+# one binary trait through a liability threshold
+liability = asterism.LiabilityModel(relationship, affected, design)
+liability.fit()["heritability"]       # of the liability, not of the status
+liability.interval()                  # 95 per cent profile interval
+liability.test()                      # against no heritability
+
+# many markers, each a fixed effect in a polygenic model
+scan = asterism.AssociationModel(relationship, design_with_pcs, y)
+scan.sweep(markers)["markers"][0]["p_value"]   # variance components held
+scan.sweep(markers, variance="refitted")       # slower, and a different test
+
+# which class of a split differs from the average class
+split = asterism.kinship_classes(ids, father, mother, sex, keep=measured)
+model = asterism.ComponentModel(split["matrices"], x)
+model.equality_test(y)                # do the classes differ at all?
+model.contrasts(y, classes=[1, 2, 3, 4])   # and which one, with an interval
+
 # the class-weighted kinship split, for ComponentModel
 split = asterism.kinship_classes(ids, father, mother, sex, keep=measured)
 asterism.ComponentModel(split["matrices"], x).fit(y)["shares"]
@@ -209,11 +228,14 @@ nothing.
 ## What it is not
 
 It grows when a planned analysis needs it to and not before, and every
-capability it gains is written into `docs/adr/` first. Liability and threshold
-models, survival, gene-by-environment, longitudinal, Tobit, signal detection and
-prospective design analysis are all deferred. Deferred means not yet,
-not never, and the list carries no order. Spatial has left that list because an
-analysis needed it.
+capability it gains is written into `docs/adr/` first. Survival, longitudinal,
+Tobit, signal detection and prospective design analysis are all deferred.
+Deferred means not yet, not never, and the list carries no order.
+
+Spatial, gene-by-environment, BLUP, liability and association have all left that
+list because analyses needed them, each by its own amendment. Longitudinal has
+not: the repeated-measures gene-by-environment model has a source-pinned form
+waiting for it, and SAFS.db carries no repeated measures to fit it on.
 
 SOLAR is a comparator. Differences between the two are recorded rather than
 treated as defects, and replacing SOLAR is not what defines this.

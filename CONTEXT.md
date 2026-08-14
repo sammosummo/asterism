@@ -54,10 +54,13 @@ _Avoid_: receipt, artefact, run record
 
 **Deferred capability**:
 Something Asterism does not do yet and will do when an analysis needs it.
-Liability and threshold models, survival, gene-by-environment, spatial,
-longitudinal, Tobit, signal detection, BLUP and prospective design analysis are
-all deferred. The list carries no order, priority or dates, because a list with
-an order is a roadmap.
+Survival, longitudinal, Tobit, signal detection and prospective design analysis
+are all deferred. The list carries no order, priority or dates, because a list
+with an order is a roadmap.
+
+Liability and threshold models, gene-by-environment, spatial, BLUP and
+association have each left this list by an amendment naming the analysis that
+needed them.
 
 **SOLAR**:
 A comparator, never the definition of correct. Differences between Asterism and

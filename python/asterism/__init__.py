@@ -38,7 +38,9 @@ from ._core import relationship as _relationship
 from .models import (
     BivariateModel,
     ComponentModel,
+    AssociationModel,
     GxeModel,
+    LiabilityModel,
     SpatialModel,
     kinship_classes,
 )
@@ -49,7 +51,9 @@ __all__ = [
     "relationship_matrix",
     "ComponentModel",
     "BivariateModel",
+    "AssociationModel",
     "GxeModel",
+    "LiabilityModel",
     "SpatialModel",
     "kinship_classes",
     "__version__",

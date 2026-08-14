@@ -165,6 +165,54 @@ class ComponentModel:
             "estimator": "reml" if reml else "ml",
         }
 
+    def contrasts(
+        self, y: Any, classes: list[int] | None = None, reml: bool = True
+    ) -> list[dict[str, Any]]:
+        """Every class's deviation from the average class, with an interval.
+
+        **This is what `equality_test` cannot give.** The omnibus says the
+        classes are not all alike and stops; a contrast against the others
+        *pooled* couples them, because raising one class raises the pool the
+        rest are measured against — in calibration a single lifted class made a
+        second reject half the time.
+
+        The deviations are constrained to sum to nought, so the baseline is the
+        average class variance and each deviation is a departure from it. The
+        obvious alternative, a free baseline plus free differences, is rank
+        deficient: a constant moved from the baseline into every difference
+        changes nothing.
+
+        ``classes`` must name only things that are classes of one split.
+        Anything not named keeps its own variance, which is what should happen
+        to a remainder component — pooling "everything that is not a
+        parent–child tie" into the baseline would compare siblings with parents.
+
+        With only two classes this says less than it appears to: the deviations
+        must be mirror images, so "the first is above average" and "the second
+        is below" are one statement.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if classes is None:
+            classes = list(range(len(self._matrices)))
+        rows = _core.component_contrasts(
+            self._matrices, self._x, y, [int(c) for c in classes], reml
+        )
+        return [
+            {
+                "class": int(c),
+                "deviation": deviation,
+                "lower": lower,
+                "upper": upper,
+                "lower_limited": at_lower,
+                "upper_limited": at_upper,
+                "p_value": p_value,
+                "statistic": statistic,
+                "level": 0.95,
+            }
+            for c, (deviation, lower, upper, at_lower, at_upper, p_value, statistic)
+            in zip(classes, rows)
+        ]
+
     def test(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
         """Test one component against having no variance at all.
 
@@ -631,6 +679,163 @@ class GxeModel:
             "upper_at_bound": at_upper,
             "level": 0.95,
             "estimator": "reml" if reml else "ml",
+        }
+
+
+class LiabilityModel:
+    """One binary trait on a pedigree, through a liability threshold.
+
+    Every person carries an unobserved liability and is a case when it crosses
+    a threshold. Only the sign is ever seen, so the liability's variance is
+    fixed at one and the threshold at nought, with the intercept carrying it.
+
+    **The heritability is of the liability, not of the observed status**, which
+    is what anybody means by the heritability of a disease. It is not comparable
+    with the REML heritabilities the rest of this package reports, and the fit
+    record says ``estimator: ml`` so the difference is visible rather than
+    remembered — there is no REML here, because there is no response to project
+    onto the null space of the design.
+
+    A family's likelihood is the probability of an orthant: exact at one and two
+    people, and the Mendell–Elston sequential truncation above that, taking the
+    rarer class first. Agreement with native SOLAR is exact where no
+    approximation is used and within a tenth of a standard error where it is.
+
+    ``build`` refuses a relationship above 0.9 off the diagonal. Twins and
+    duplicated people push the liability correlation to ``h2`` rather than
+    ``h2 / 2``, which is where the two-person quadrature starts losing digits.
+    """
+
+    def __init__(self, relationship: Any, status: Any, design: Any) -> None:
+        self._relationship = _matrix(relationship, "relationship")
+        self._status = np.ascontiguousarray(
+            np.asarray(status, dtype=np.float64).ravel()
+        )
+        self._design = _matrix(design, "design")
+
+    def fit(self) -> dict[str, Any]:
+        """Fit, by maximum likelihood because nothing else is available."""
+        (
+            heritability,
+            effects,
+            loglik,
+            converged,
+            gradient,
+            prevalence,
+            largest_family,
+        ) = _core.liability_fit(self._relationship, self._status, self._design)
+        return {
+            "heritability": heritability,
+            "scale": "liability, not observed status",
+            # The first is an intercept only in the sense that it carries the
+            # threshold: Phi(intercept) is the prevalence a covariate-free model
+            # implies.
+            "fixed_effects": list(effects),
+            "loglik": loglik,
+            "converged": converged,
+            "scaled_gradient": gradient,
+            "prevalence": prevalence,
+            "largest_family": largest_family,
+            "estimator": "ml",
+        }
+
+    def interval(self) -> dict[str, Any]:
+        """A 95 per cent profile interval for the liability heritability."""
+        estimate, lower, upper, at_lower, at_upper = _core.liability_interval(
+            self._relationship, self._status, self._design
+        )
+        return {
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_at_bound": at_lower,
+            "upper_at_bound": at_upper,
+            "level": 0.95,
+        }
+
+    def test(self) -> dict[str, Any]:
+        """Test the liability heritability against nought.
+
+        A heritability of nought sits on a bound, so the reference is the even
+        mixture of a point mass and chi-square on one degree of freedom. That
+        was assumed from the Gaussian case rather than derived for a liability,
+        and then measured: on the real pedigree it rejects 0.055 of the time at
+        a nominal 0.05.
+        """
+        statistic, p_value, rule, null_loglik = _core.liability_test(
+            self._relationship, self._status, self._design
+        )
+        return {
+            "statistic": statistic,
+            "p_value": p_value,
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "estimator": "ml",
+        }
+
+
+class AssociationModel:
+    """Many markers, one at a time, each a fixed effect in a polygenic model.
+
+    The model is ``y = X0 b + m_j c + g + e``, where ``X0`` carries the
+    intercept, the ancestry components and any other covariate. The polygenic
+    term is what makes it worth doing: relatedness and population structure
+    inflate an association test, and the relationship matrix absorbs both.
+
+    **The variance components are fitted once under the null and then held**,
+    which is what makes a scan take minutes rather than hours — each marker
+    becomes a weighted least squares on rotated data. That is an assumption, not
+    a trick: it is good when no single marker explains much of the variance,
+    which is the situation a scan is in and exactly not the situation for a
+    marker of large effect. Pass ``variance="refitted"`` to refit under every
+    marker, which is around a hundred times slower.
+
+    **Wald and the likelihood ratio are the same number when held.** The profile
+    log likelihood in the fixed effects is exactly quadratic when the covariance
+    is known, so the likelihood ratio is the Wald statistic squared. Both come
+    back because both are asked for; they differ only under ``refitted``.
+
+    **The marker under test is inside the relationship matrix.** Leaving its
+    chromosome out is the usual answer and is not done, so every test is biased
+    towards the null.
+    """
+
+    def __init__(self, relationship: Any, design: Any, y: Any) -> None:
+        self._relationship = _matrix(relationship, "relationship")
+        self._design = _matrix(design, "design")
+        self._y = np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel())
+
+    def sweep(self, markers: Any, variance: str = "held") -> dict[str, Any]:
+        """Test every column of ``markers``.
+
+        A marker that cannot be tested — one with no variation, or one leaving
+        the design rank deficient — comes back with a stable code in place of
+        its numbers rather than stopping the sweep.
+        """
+        if variance not in ("held", "refitted"):
+            raise ValueError(f"variance must be held or refitted, not {variance!r}")
+        markers = np.ascontiguousarray(np.asarray(markers, dtype=np.float64))
+        if markers.ndim == 1:
+            markers = markers.reshape(-1, 1)
+        heritability, null_loglik, rows = _core.association_sweep(
+            self._relationship, self._design, self._y, markers, variance
+        )
+        return {
+            "null_heritability": heritability,
+            "null_loglik": null_loglik,
+            "variance_components": variance,
+            "leave_one_chromosome_out": False,
+            "markers": [
+                {
+                    "effect": effect,
+                    "standard_error": error,
+                    "wald": wald,
+                    "likelihood_ratio": ratio,
+                    "p_value": p_value,
+                    "refused": code or None,
+                }
+                for effect, error, wald, ratio, p_value, code in rows
+            ],
         }
 
 
