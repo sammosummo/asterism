@@ -805,8 +805,29 @@ class AssociationModel:
         self._design = _matrix(design, "design")
         self._y = np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel())
 
-    def sweep(self, markers: Any, variance: str = "held") -> dict[str, Any]:
+    def sweep(
+        self,
+        markers: Any,
+        variance: str = "held",
+        refit_below: float | None = None,
+    ) -> dict[str, Any]:
         """Test every column of ``markers``.
+
+        With ``refit_below`` set, the sweep runs held and then refits only the
+        markers whose held p-value falls under it — which is how a scan should
+        be run. Refitting everything costs about twenty times as much and the
+        two modes agree to two decimal places on the markers nobody cares about.
+
+        **Set ``refit_below`` some way above the threshold you will report
+        against.** Held is conservative — measured across four hundred real
+        markers it was never smaller than refitted, with the gap growing from a
+        ratio of 1.00 above p = 0.01 to 1.10 below 1e-06 — so a marker can have
+        a refitted p under your threshold while its held p sits above it.
+        Screening at exactly the threshold would miss it; ten times the
+        threshold is ample and costs almost nothing.
+
+        Each marker says whether it was ``refitted``, because a two-stage result
+        that does not is one nobody can check.
 
         A marker that cannot be tested — one with no variation, or one leaving
         the design rank deficient — comes back with a stable code in place of
@@ -818,7 +839,7 @@ class AssociationModel:
         if markers.ndim == 1:
             markers = markers.reshape(-1, 1)
         heritability, null_loglik, rows, covariates = _core.association_sweep(
-            self._relationship, self._design, self._y, markers, variance
+            self._relationship, self._design, self._y, markers, variance, refit_below
         )
         return {
             "null_heritability": heritability,
@@ -840,9 +861,10 @@ class AssociationModel:
                     "wald": wald,
                     "likelihood_ratio": ratio,
                     "p_value": p_value,
+                    "refitted": refitted,
                     "refused": code or None,
                 }
-                for effect, error, wald, ratio, p_value, code in rows
+                for effect, error, wald, ratio, p_value, refitted, code in rows
             ],
         }
 

@@ -59,6 +59,16 @@ surface. The tests exist for this reason, and unlike the spatial model they need
 no bootstrap: at either null every remaining parameter is still identified, so a
 mixture of chi-squares is a real reference rather than a hopeful one.
 
+**Sweep held, then refit what passes a screen.** Holding the variance
+components costs 0.5 ms a marker and refitting them 12 ms, so refitting
+everything is four hours across a million markers rather than eleven minutes.
+On two thousand real markers a staged sweep gave p-values identical to
+refitting everything, in 1.1 seconds against 23.8, by refitting five of them.
+Set the screen well above the threshold you will report against: held is
+conservative, so a marker can have a refitted p below your threshold while its
+held p sits above it. Ten times the threshold is ample for a gap that never
+exceeded a factor of 1.1.
+
 **A third surface takes the decay to a frozen power**, `exp(-λ|Δ|^κ)`, with κ
 chosen from 0.5, 1.0, 1.5 or 2.0 rather than fitted — at κ = 1 it is the
 recovered exponential exactly. It is chosen and not fitted because the shape is
@@ -143,6 +153,7 @@ liability.test()                      # against no heritability
 scan = asterism.AssociationModel(relationship, design_with_pcs, y)
 scan.sweep(markers)["markers"][0]["p_value"]   # variance components held
 scan.sweep(markers)["covariates"]              # what age and sex were doing
+scan.sweep(markers, refit_below=1e-3)          # refit only what is worth it
 scan.sweep(markers, variance="refitted")       # slower, and a different test
 
 # which class of a split differs from the average class

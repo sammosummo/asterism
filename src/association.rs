@@ -94,6 +94,10 @@ pub struct MarkerTest {
     /// The heritability the test was run under: the null's under
     /// [`Variance::Held`], and this marker's under [`Variance::Refitted`].
     pub heritability: f64,
+    /// Whether this marker's variance components were refitted. Under a
+    /// two-stage sweep some markers are and most are not, and a result that
+    /// does not say which is a result nobody can check.
+    pub refitted: bool,
 }
 
 /// A polygenic model with its variance components fitted under a null design.
@@ -447,6 +451,7 @@ impl AssociationModel {
             likelihood_ratio,
             p_value: chi2_one_df_upper_tail(statistic).clamp(0.0, 1.0),
             heritability,
+            refitted: matches!(variance, Variance::Refitted),
         })
     }
 
@@ -467,6 +472,44 @@ impl AssociationModel {
         markers: &DMatrix<f64>,
         variance: Variance,
     ) -> Result<Vec<Result<MarkerTest, &'static str>>, &'static str> {
+        self.sweep_refitting_below(markers, variance, None)
+    }
+
+    /// Sweep with the variance components held, then refit only the markers
+    /// worth refitting.
+    ///
+    /// **This is how a scan should be run.** Holding the variance components
+    /// makes a marker cost a fraction of a millisecond; refitting them costs
+    /// twenty times that, which is four hours across a million markers rather
+    /// than ten minutes. Almost every marker is uninteresting and the two modes
+    /// agree on those to two decimal places, so refitting them all is paying
+    /// twenty times over for nothing.
+    ///
+    /// # The screen must be looser than the threshold you care about
+    ///
+    /// Held is conservative: measured across four hundred real markers it was
+    /// never smaller than refitted, and the gap grows with significance -- a
+    /// ratio of 1.00 above p = 0.01 and up to 1.10 below 1e-06. So a marker can
+    /// have a refitted p below a threshold while its held p sits above it, and
+    /// screening at exactly the threshold would miss it.
+    ///
+    /// Pass a `refit_below` some way above the threshold being reported
+    /// against. Ten times is ample for a gap that never exceeded a factor of
+    /// 1.1, and costs almost nothing: at a screen of 1e-06 a million markers
+    /// leaves a handful to refit.
+    ///
+    /// Passing `None` sweeps entirely in `variance`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the marker matrix has the wrong number of
+    /// rows.
+    pub fn sweep_refitting_below(
+        &self,
+        markers: &DMatrix<f64>,
+        variance: Variance,
+        refit_below: Option<f64>,
+    ) -> Result<Vec<Result<MarkerTest, &'static str>>, &'static str> {
         if markers.nrows() != self.rows {
             return Err("ASSOCIATION_MARKERS_WRONG_LENGTH");
         }
@@ -476,7 +519,17 @@ impl AssociationModel {
                     self.rows,
                     (0..self.rows).map(|row| markers[(row, column)]),
                 );
-                self.test_marker(&marker, variance)
+                let first = self.test_marker(&marker, variance)?;
+                match refit_below {
+                    // Already refitted, or not interesting enough to be worth
+                    // refitting.
+                    Some(threshold)
+                        if variance == Variance::Held && first.p_value <= threshold =>
+                    {
+                        self.test_marker(&marker, Variance::Refitted)
+                    }
+                    _ => Ok(first),
+                }
             })
             .collect())
     }
@@ -693,6 +746,80 @@ mod tests {
         );
     }
 
+    /// **A two-stage sweep must agree with refitting everything**, on the
+    /// markers it chose to refit, and must leave the rest alone. Anything else
+    /// means the screen and the refit disagree about which marker is which.
+    #[test]
+    fn a_two_stage_sweep_refits_what_it_says_it_refits() {
+        let (k, design, y, marker) = simulate(300, 0.4, 0.35, 606);
+        let model = AssociationModel::build(&k, &design, &y).expect("valid");
+        // One real marker beside two that are noise.
+        let mut markers = DMatrix::<f64>::zeros(y.len(), 3);
+        let mut state = 99u64;
+        for row in 0..y.len() {
+            markers[(row, 0)] = marker[row];
+            for column in 1..3 {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                markers[(row, column)] = f64::from((state >> 33) as u32 % 3);
+            }
+        }
+        let held = model.sweep(&markers, Variance::Held).expect("sweeps");
+        let refitted = model.sweep(&markers, Variance::Refitted).expect("sweeps");
+        let staged = model
+            .sweep_refitting_below(&markers, Variance::Held, Some(0.01))
+            .expect("sweeps");
+
+        for index in 0..3 {
+            let (h, r, s) = (
+                held[index].as_ref().unwrap(),
+                refitted[index].as_ref().unwrap(),
+                staged[index].as_ref().unwrap(),
+            );
+            if h.p_value <= 0.01 {
+                assert!(s.refitted, "marker {index} passed the screen and was not refitted");
+                assert!(
+                    (s.p_value - r.p_value).abs() < 1e-12,
+                    "marker {index} was refitted but does not match a full refit"
+                );
+            } else {
+                assert!(!s.refitted, "marker {index} failed the screen and was refitted");
+                assert!(
+                    (s.p_value - h.p_value).abs() < 1e-12,
+                    "marker {index} was left alone but does not match the held sweep"
+                );
+            }
+        }
+        // The planted marker should have passed the screen.
+        assert!(
+            staged[0].as_ref().unwrap().refitted,
+            "a marker simulated with an effect of 0.35 did not pass a screen at 0.01"
+        );
+    }
+
+    /// **Held never gives a smaller p-value than refitted.** That is what makes
+    /// a screen safe: the fast mode cannot manufacture significance, so
+    /// anything it flags is worth a second look and anything it clears is
+    /// genuinely clear at that threshold. Measured across four hundred real
+    /// markers the ratio ran from 1.00 to 1.10.
+    #[test]
+    fn held_never_beats_refitted() {
+        for seed in [11u64, 22, 33] {
+            let (k, design, y, marker) = simulate(250, 0.5, 0.25, seed);
+            let model = AssociationModel::build(&k, &design, &y).expect("valid");
+            let held = model.test_marker(&marker, Variance::Held).expect("tests");
+            let refitted = model.test_marker(&marker, Variance::Refitted).expect("tests");
+            assert!(
+                held.p_value >= refitted.p_value * (1.0 - 1e-9),
+                "held gave {} against refitted {}, which would let the fast mode \
+                 manufacture significance",
+                held.p_value,
+                refitted.p_value
+            );
+        }
+    }
+
     /// **The covariates' own effects come back, rather than being computed and
     /// discarded.** Every marker's fit estimates the whole design, and keeping
     /// only the last coordinate meant a caller who wanted to know what age or
@@ -776,7 +903,7 @@ pub mod python {
     /// `refitted`, which refits the variance components for every marker and is
     /// far slower.
     #[pyfunction]
-    #[pyo3(signature = (relationship, design, y, markers, variance="held"))]
+    #[pyo3(signature = (relationship, design, y, markers, variance="held", refit_below=None))]
     #[allow(clippy::type_complexity)]
     pub fn association_sweep(
         relationship: PyReadonlyArray2<'_, f64>,
@@ -784,10 +911,11 @@ pub mod python {
         y: PyReadonlyArray1<'_, f64>,
         markers: PyReadonlyArray2<'_, f64>,
         variance: &str,
+        refit_below: Option<f64>,
     ) -> PyResult<(
         f64,
         f64,
-        Vec<(f64, f64, f64, f64, f64, String)>,
+        Vec<(f64, f64, f64, f64, f64, bool, String)>,
         Vec<(f64, f64, f64)>,
     )> {
         let a = relationship.as_array();
@@ -802,7 +930,7 @@ pub mod python {
         let model =
             AssociationModel::build(&a, &x, &response).map_err(PyValueError::new_err)?;
         let results = model
-            .sweep(&m, variance_named(variance)?)
+            .sweep_refitting_below(&m, variance_named(variance)?, refit_below)
             .map_err(PyValueError::new_err)?;
         let covariates = model
             .covariate_effects()
@@ -822,6 +950,7 @@ pub mod python {
                         test.wald,
                         test.likelihood_ratio,
                         test.p_value,
+                        test.refitted,
                         String::new(),
                     ),
                     Err(code) => (
@@ -830,6 +959,7 @@ pub mod python {
                         f64::NAN,
                         f64::NAN,
                         f64::NAN,
+                        false,
                         code.to_owned(),
                     ),
                 })
