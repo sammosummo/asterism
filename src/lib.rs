@@ -50,6 +50,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         components::component_equality_test,
         module
     )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(components::component_contrasts, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_blup, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_test, module)?)?;

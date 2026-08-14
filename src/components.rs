@@ -321,6 +321,54 @@ impl ComponentModel {
     ///
     /// Returns a stable code where no start reached a usable optimum.
     pub fn fit(&self, y: &DVector<f64>, reml: bool) -> Result<ComponentFit, &'static str> {
+        self.fit_with_signs(y, reml, &[])
+    }
+
+    /// Fit with some coordinates free to take either sign.
+    ///
+    /// **Every variance is bounded below at nought, and that is right until it
+    /// is not.** A model written as a baseline plus per-class differences needs
+    /// those differences signed: a class carrying *less* than the baseline is
+    /// exactly as meaningful as one carrying more, and bounding the difference
+    /// at nought would make one direction unreachable and the other
+    /// unfalsifiable.
+    ///
+    /// Nothing else guards positive definiteness once a coordinate can go
+    /// negative. The covariance is factorised on every evaluation anyway, so a
+    /// combination that is not a covariance fails there and the search reads it
+    /// as somewhere not to go -- which is the same way every other infeasible
+    /// point in this package is handled.
+    ///
+    /// `signed` lists the coordinates that may go negative. An empty list is
+    /// the ordinary fit.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the response is the wrong length or
+    /// constant, or where no start reached a usable optimum.
+    pub fn fit_with_signs(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        signed: &[usize],
+    ) -> Result<ComponentFit, &'static str> {
+        self.fit_general(y, reml, signed, &[])
+    }
+
+    /// Fit with some coordinates signed and some pinned at a value.
+    ///
+    /// Pinned values are in the response's own units, like everything a caller
+    /// sees; the search runs on a standardised response, so they are converted
+    /// here rather than by whoever calls this. A coordinate is pinned by making
+    /// its two bounds equal, which is how every other held fit in this package
+    /// works and keeps one code path for the free and the constrained case.
+    fn fit_general(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        signed: &[usize],
+        pinned: &[(usize, f64)],
+    ) -> Result<ComponentFit, &'static str> {
         if y.len() != self.rows {
             return Err("COMPONENTS_RESPONSE_WRONG_LENGTH");
         }
@@ -333,8 +381,24 @@ impl ComponentModel {
         let scaled = y / scale;
 
         let count = self.parameters();
-        let lower = vec![0.0; count];
+        let mut lower = vec![0.0; count];
         let upper = vec![f64::INFINITY; count];
+        let mut upper = upper;
+        for &k in signed {
+            if k >= count {
+                return Err("COMPONENTS_SIGNED_INDEX_OUT_OF_RANGE");
+            }
+            lower[k] = f64::NEG_INFINITY;
+        }
+        for &(k, value) in pinned {
+            if k >= count {
+                return Err("COMPONENTS_PINNED_INDEX_OUT_OF_RANGE");
+            }
+            // The search sees a response scaled to unit variance.
+            let scaled_value = value / variance;
+            lower[k] = scaled_value;
+            upper[k] = scaled_value;
+        }
 
         // Starts: everything equal, residual-heavy, and each component in turn
         // carrying most of the variance. A component that is genuinely zero is
@@ -476,6 +540,171 @@ pub struct ComponentTest {
 }
 
 const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
+
+/// One class's difference from the shared baseline.
+#[derive(Clone, Copy, Debug)]
+pub struct Contrast {
+    /// The class's variance minus the baseline. Signed: below nought means the
+    /// class carries less than the classes it is being compared with.
+    pub difference: f64,
+    pub lower: f64,
+    pub upper: f64,
+    pub lower_limited: bool,
+    pub upper_limited: bool,
+    /// Against this class carrying the same variance as the baseline. An
+    /// interior null, so an ordinary chi-square on one degree of freedom.
+    pub p_value: f64,
+    pub statistic: f64,
+}
+
+impl ComponentModel {
+    /// Every class's difference from a shared baseline, with an interval each.
+    ///
+    /// **This is what the omnibus and the pooled contrasts cannot give.** The
+    /// omnibus says the classes are not all alike and stops. A pooled contrast
+    /// compares one class against the others *combined*, so raising one class
+    /// raises the pool every other class is measured against -- which is why
+    /// lifting a single class in calibration made a second class reject half
+    /// the time. Two findings, one effect.
+    ///
+    /// Writing every class as `baseline + difference` removes that coupling.
+    /// The differences are free to take either sign, so a class carrying less
+    /// than the others is as reachable as one carrying more, and each comes
+    /// with an interval rather than only a p-value.
+    ///
+    /// The model fitted is
+    ///
+    /// ```text
+    /// V = baseline * (sum of the class matrices) + sum_c difference_c * K_c
+    ///     + other components + residual
+    /// ```
+    ///
+    /// which is the same covariance as before, differently coordinated.
+    ///
+    /// **`classes` must name only things that are classes of one split.**
+    /// Anything not named keeps its own variance and is left alone, which is
+    /// what should happen to a remainder component: pooling "everything that is
+    /// not a parent-child tie" into a baseline with the parent-child classes
+    /// compares siblings with parents and calls the difference a finding.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where fewer than two classes are named, an index
+    /// is out of range, or a fit fails.
+    pub fn contrasts(
+        &self,
+        y: &DVector<f64>,
+        classes: &[usize],
+        reml: bool,
+    ) -> Result<Vec<Contrast>, &'static str> {
+        let structured = self.matrices.len();
+        if classes.iter().any(|k| *k >= structured) {
+            return Err("COMPONENTS_INDEX_OUT_OF_RANGE");
+        }
+        let mut named: Vec<usize> = classes.to_vec();
+        named.sort_unstable();
+        named.dedup();
+        if named.len() < 2 {
+            return Err("COMPONENTS_CONTRASTS_NEED_TWO");
+        }
+
+        // The baseline matrix is the classes summed, and each class then
+        // carries only its difference from it.
+        let mut baseline = self.matrices[named[0]].clone();
+        for &k in &named[1..] {
+            baseline += &self.matrices[k];
+        }
+        let mut matrices = vec![baseline];
+        for &k in &named {
+            matrices.push(self.matrices[k].clone());
+        }
+        for (k, matrix) in self.matrices.iter().enumerate() {
+            if !named.contains(&k) {
+                matrices.push(matrix.clone());
+            }
+        }
+        let model = Self::build(&matrices, &self.design)?;
+        // Coordinate 0 is the baseline; the differences follow it and are the
+        // ones allowed to go negative.
+        let signed: Vec<usize> = (1..=named.len()).collect();
+        let free = model.fit_with_signs(y, reml, &signed)?;
+
+        let mut out = Vec::with_capacity(named.len());
+        for (slot, _) in named.iter().enumerate() {
+            let coordinate = slot + 1;
+            let difference = free.variances[coordinate];
+            let (lower, lower_limited, upper, upper_limited) =
+                model.signed_interval(y, reml, coordinate, &signed, difference)?;
+            let held = model
+                .fit_general(y, reml, &signed, &[(coordinate, 0.0)])?
+                .loglik;
+            let statistic = (2.0 * (free.loglik - held)).max(0.0);
+            out.push(Contrast {
+                difference,
+                lower,
+                upper,
+                lower_limited,
+                upper_limited,
+                // An interior null: the difference is free to take either sign,
+                // so there is no boundary and no mixture.
+                p_value: chi2_one_df_upper_tail(statistic).clamp(0.0, 1.0),
+                statistic,
+            });
+        }
+        Ok(out)
+    }
+
+    /// A profile interval for one signed coordinate, walked outward and then
+    /// bisected.
+    fn signed_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        coordinate: usize,
+        signed: &[usize],
+        estimate: f64,
+    ) -> Result<(f64, bool, f64, bool), &'static str> {
+        let free = self.fit_with_signs(y, reml, signed)?.loglik;
+        let threshold = free - 0.5 * 3.841_458_820_694_124;
+        let outside = |value: f64| {
+            self.fit_general(y, reml, signed, &[(coordinate, value)])
+                .map_or(true, |fit| fit.loglik < threshold)
+        };
+        let spread = estimate.abs().max(1e-3);
+        let walk = |direction: f64| -> (f64, bool) {
+            let mut step = 0.5 * spread;
+            let mut far = estimate;
+            let mut found = false;
+            for _ in 0..30 {
+                far = estimate + direction * step;
+                if outside(far) {
+                    found = true;
+                    break;
+                }
+                step *= 2.0;
+            }
+            if !found {
+                return (far, true);
+            }
+            let (mut inside, mut out) = (estimate, far);
+            for _ in 0..50 {
+                let middle = 0.5 * (inside + out);
+                if outside(middle) {
+                    out = middle;
+                } else {
+                    inside = middle;
+                }
+                if (out - inside).abs() < 1e-6 * spread {
+                    break;
+                }
+            }
+            (0.5 * (inside + out), false)
+        };
+        let (lower, lower_limited) = walk(-1.0);
+        let (upper, upper_limited) = walk(1.0);
+        Ok((lower, lower_limited, upper, upper_limited))
+    }
+}
 
 /// The upper tail of a chi-square on one degree of freedom.
 fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
@@ -894,6 +1123,41 @@ mod python {
         ))
     }
 
+    /// Every class's difference from a shared baseline, with an interval each.
+    ///
+    /// `classes` indexes the structured matrices that are classes of one split.
+    /// Returns one row per class: the difference, its interval, whether either
+    /// end ran to a limit, and a test against the class matching the baseline.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, classes, reml=true))]
+    #[allow(clippy::type_complexity)]
+    pub fn component_contrasts(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        classes: Vec<usize>,
+        reml: bool,
+    ) -> PyResult<Vec<(f64, f64, f64, bool, bool, f64, f64)>> {
+        let model = build(&matrices, &design)?;
+        let got = model
+            .contrasts(&response(&y), &classes, reml)
+            .map_err(PyValueError::new_err)?;
+        Ok(got
+            .into_iter()
+            .map(|c| {
+                (
+                    c.difference,
+                    c.lower,
+                    c.upper,
+                    c.lower_limited,
+                    c.upper_limited,
+                    c.p_value,
+                    c.statistic,
+                )
+            })
+            .collect())
+    }
+
     /// Test whether several components share one variance.
     ///
     /// `components` indexes the structured matrices. Pool every one of them and
@@ -982,8 +1246,8 @@ mod python {
 
 #[cfg(feature = "python")]
 pub use python::{
-    component_blup, component_equality_test, component_fit, component_interval,
-    component_test,
+    component_blup, component_contrasts, component_equality_test, component_fit,
+    component_interval, component_test,
 };
 
 impl ComponentModel {
@@ -1071,6 +1335,74 @@ fn chi2_upper_tail(statistic: f64, df: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    /// **The reason this exists.** A pooled contrast compares one class against
+    /// the others combined, so lifting one class raises the pool every other
+    /// class is measured against, and a second class then looks low. In
+    /// calibration that made a single lifted class produce a second rejection
+    /// half the time. Writing every class as a baseline plus a signed
+    /// difference removes the coupling: the lifted class should come back high,
+    /// and the untouched ones should come back at nought.
+    #[test]
+    fn a_lifted_class_does_not_drag_the_others_with_it() {
+        let (matrices, design, y) = split_by_class(1.2);
+        let model = ComponentModel::build(&matrices, &design).expect("valid");
+        // **Only the classes go in the baseline.** Matrix 0 here is the
+        // remainder -- everything that is not a parent-child tie -- and it is
+        // not a class of anything. Pooling it into the baseline would compare
+        // siblings with parent-child ties and call the difference a finding.
+        let got = model.contrasts(&y, &[1, 2], true).expect("contrasts");
+        assert_eq!(got.len(), 2);
+        // The first named class is the one carrying the extra variance.
+        assert!(
+            got[0].difference > 0.0 && got[0].p_value < 0.05,
+            "the lifted class came back at {} with p {}",
+            got[0].difference,
+            got[0].p_value
+        );
+        assert!(
+            got[1].p_value > 0.05,
+            "the untouched class came back at {} with p {}, which is the \
+             coupling this parameterisation exists to remove",
+            got[1].difference,
+            got[1].p_value
+        );
+    }
+
+    /// A difference can be negative, and its interval must be able to say so.
+    /// Bounding it at nought would make one direction unreachable and the other
+    /// unfalsifiable.
+    #[test]
+    fn a_difference_and_its_interval_can_be_negative() {
+        let (matrices, design, y) = split_by_class(1.2);
+        let model = ComponentModel::build(&matrices, &design).expect("valid");
+        let got = model.contrasts(&y, &[1, 2], true).expect("contrasts");
+        assert!(
+            got.iter().any(|c| c.lower < 0.0),
+            "no interval reaches below nought, so a class carrying less than \
+             the baseline could never be reported"
+        );
+        for contrast in &got {
+            assert!(
+                contrast.lower <= contrast.difference + 1e-9
+                    && contrast.difference <= contrast.upper + 1e-9,
+                "[{}, {}] does not contain {}",
+                contrast.lower,
+                contrast.upper,
+                contrast.difference
+            );
+        }
+    }
+
+    /// Fewer than two classes is a comparison with nothing to compare.
+    #[test]
+    fn contrasts_need_two_classes() {
+        let (matrices, design, y) = split_by_class(0.0);
+        let model = ComponentModel::build(&matrices, &design).expect("valid");
+        assert!(model.contrasts(&y, &[0], true).is_err());
+        assert!(model.contrasts(&y, &[1, 1], true).is_err());
+        assert!(model.contrasts(&y, &[0, 99], true).is_err());
+    }
 
     /// **Pooling every piece back together must reproduce the whole**, or the
     /// null this test uses is not the model it claims to be. A relationship
