@@ -143,6 +143,32 @@ impl Surface {
         }
     }
 
+    /// The box the search runs in, as parallel lower and upper vectors.
+    ///
+    /// Kept here so the free fit, the held fits and the profile all read the
+    /// same definition rather than three copies that can drift apart.
+    #[must_use]
+    pub fn bounds(self) -> (Vec<f64>, Vec<f64>) {
+        match self {
+            // alpha_g, gamma_g, lambda >= 0, alpha_e, gamma_e
+            Self::Exponential => (
+                vec![
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                    0.0,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                vec![f64::INFINITY; 5],
+            ),
+            // l00 >= 0, l10, u >= 0, for each of the two blocks
+            Self::RandomRegression => (
+                vec![0.0, f64::NEG_INFINITY, 0.0, 0.0, f64::NEG_INFINITY, 0.0],
+                vec![f64::INFINITY; 6],
+            ),
+        }
+    }
+
     /// The single coordinate that is nought exactly when the genetic effects at
     /// any two environments are perfectly correlated.
     ///
@@ -571,17 +597,7 @@ impl GxeModel {
         let scaled = y / scale;
 
         let count = self.surface.parameters();
-        let (lower, upper) = match self.surface {
-            Surface::Exponential => (
-                vec![f64::NEG_INFINITY, f64::NEG_INFINITY, 0.0, f64::NEG_INFINITY, f64::NEG_INFINITY],
-                vec![f64::INFINITY; 5],
-            ),
-            Surface::RandomRegression => (
-                vec![0.0, f64::NEG_INFINITY, 0.0, 0.0, f64::NEG_INFINITY, 0.0],
-                vec![f64::INFINITY; 6],
-            ),
-        };
-        let (mut lower, mut upper) = (lower, upper);
+        let (mut lower, mut upper) = self.surface.bounds();
         for &k in held {
             if k >= count {
                 return Err("GXE_HELD_COORDINATE_OUT_OF_RANGE");
@@ -785,6 +801,40 @@ impl GxeModel {
         ))
     }
 
+    /// Test whether the genetic variance changes with the environment at all.
+    ///
+    /// This is the source-defined `gamma_G = 0` null of the recovered SOLAR
+    /// model, and on the exponential surface it is exactly that: one interior
+    /// coordinate held at nought, referred to chi-square on one degree of
+    /// freedom with no boundary and no mixture.
+    ///
+    /// **On the smooth surface it is not a separate test**, and saying so is
+    /// better than inventing one. There the genetic variance is
+    /// `q00 + 2 q01 z + q11 z^2`, which is constant only when `q01` and `q11`
+    /// are both nought, and that is the same pair of coordinates
+    /// `interaction_test` holds. So this returns that test on that surface,
+    /// with its mixture reference, rather than a differently named copy.
+    ///
+    /// A variance that changes while the correlation stays at one is
+    /// amplification rather than a reordering: the same genes throughout,
+    /// acting more strongly in some environments. It can follow from a change
+    /// of scale in the measurement, which is why `correlation_test` is usually
+    /// the more interesting of the two.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where either fit fails.
+    pub fn variance_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
+        match self.surface {
+            Surface::RandomRegression => self.interaction_test(y, reml),
+            Surface::Exponential => {
+                let free = self.fit(y, reml)?;
+                let held = self.fit_holding(y, reml, &[self.surface.genetic_shape()[0]])?;
+                Ok(mixture(free.loglik, held.loglik, "chi2_1", chi2_one_df_upper_tail))
+            }
+        }
+    }
+
     /// Test whether the genetic effects at two environments are the same
     /// effects.
     ///
@@ -844,9 +894,306 @@ fn mixture(
     }
 }
 
+/// A quantity the model reports and can put a profile interval on.
+///
+/// Both are free of the scale the response was standardised by, being ratios,
+/// so the profile can run entirely on the standardised scale.
+#[derive(Clone, Copy, Debug)]
+pub enum Reported {
+    /// The heritability at one environment.
+    Heritability { at: f64 },
+    /// The genetic correlation between two environments.
+    GeneticCorrelation { first: f64, second: f64 },
+}
+
+/// One profile-likelihood interval.
+#[derive(Clone, Copy, Debug)]
+pub struct GxeInterval {
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// The endpoint ran to the edge of what the quantity can be rather than to
+    /// a likelihood crossing, so it is a limit of the parameter space and not a
+    /// measurement.
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+}
+
+/// Chi-square on one degree of freedom at 0.95, the profile's threshold.
+const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+
+impl GxeModel {
+    /// Move a parameter vector onto the surface where a reported quantity
+    /// takes a given value.
+    ///
+    /// **This returns a whole repaired vector rather than one coordinate to
+    /// overwrite**, because the obvious per-coordinate solve is a trap. Holding
+    /// a heritability by solving the smooth surface's `u_e` gives
+    /// `u_e = (wanted - (l00_e + l10_e z)^2) / z^2`, which is negative over much
+    /// of the search, and an infeasible point scores as no fit at all -- so the
+    /// profile stops at the edge of the feasible region and reports it as a
+    /// likelihood crossing. The interval then looks tight and precise and is
+    /// neither. It showed up as two different heritabilities whose intervals
+    /// began at the same number.
+    ///
+    /// A heritability is therefore held by *scaling the whole residual
+    /// surface*, which is feasible at every point because the scale is a
+    /// positive number and nothing constrains it. The search keeps all its
+    /// coordinates and gains one redundant direction along which the objective
+    /// is flat; that costs a little time and no correctness, since the maximum
+    /// over a set does not care how the set is parameterised.
+    ///
+    /// Returns `None` only where the value is genuinely out of reach.
+    fn repair(
+        &self,
+        theta: &[f64; PARAMETERS],
+        quantity: Reported,
+        value: f64,
+    ) -> Option<[f64; PARAMETERS]> {
+        let mut out = *theta;
+        match quantity {
+            Reported::Heritability { at } => {
+                if !(value > 0.0 && value < 1.0) {
+                    return None;
+                }
+                let genetic = self.genetic_surface(theta, at, at);
+                let wanted = genetic * (1.0 - value) / value;
+                let have = self.residual_surface(theta, at);
+                if !(wanted > 0.0) || !(have > 0.0) || !wanted.is_finite() {
+                    return None;
+                }
+                let scale = wanted / have;
+                match self.surface {
+                    // exp(alpha_e + gamma_e z) * scale
+                    Surface::Exponential => out[3] += scale.ln(),
+                    // Scaling a covariance block by s scales its loadings by
+                    // sqrt(s), and u -- being already a square -- by s.
+                    Surface::RandomRegression => {
+                        let root = scale.sqrt();
+                        out[3] *= root;
+                        out[4] *= root;
+                        out[5] *= scale;
+                    }
+                }
+                Some(out)
+            }
+            Reported::GeneticCorrelation { first, second } => {
+                let gap = (first - second).abs();
+                if gap < 1e-12 || !(-1.0..=1.0).contains(&value) {
+                    // At one environment the correlation is one by
+                    // construction and nothing is free to hold.
+                    return None;
+                }
+                match self.surface {
+                    // exp(-lambda gap) = value; the kernel cannot be negative
+                    // however large the rate.
+                    Surface::Exponential => {
+                        if !(value > 0.0 && value <= 1.0) {
+                            return None;
+                        }
+                        out[2] = -value.ln() / gap;
+                        Some(out)
+                    }
+                    Surface::RandomRegression => {
+                        // With A = l00 + l10 z1 and B = l00 + l10 z2, holding
+                        // r^2 q11 q22 = q12^2 is a plain quadratic in u.
+                        let (l00, l10) = (theta[0], theta[1]);
+                        let (a, b) = (l00 + l10 * first, l00 + l10 * second);
+                        let (r2, z1, z2) = (value * value, first, second);
+                        let qa = z1 * z1 * z2 * z2 * (r2 - 1.0);
+                        let qb =
+                            r2 * (a * a * z2 * z2 + b * b * z1 * z1) - 2.0 * a * b * z1 * z2;
+                        let qc = a * a * b * b * (r2 - 1.0);
+                        let u = solve_quadratic(qa, qb, qc)?
+                            .into_iter()
+                            .filter(|u| *u >= 0.0 && u.is_finite())
+                            // Squaring the constraint threw the sign away, so
+                            // the root has to reproduce it as well as the size.
+                            .find(|u| {
+                                let q12 = a * b + u * z1 * z2;
+                                (q12 >= 0.0) == (value >= 0.0)
+                            })?;
+                        out[2] = u;
+                        Some(out)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The best log likelihood with one reported quantity held at `value`.
+    ///
+    /// The held coordinate is solved rather than searched, so the search runs
+    /// over one coordinate fewer. Its gradient carries the chain term through
+    /// the substitution: the likelihood's own derivatives are exact and only
+    /// the cheap algebraic map is differenced, which costs no extra
+    /// factorisation.
+    fn profile_objective(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        quantity: Reported,
+        value: f64,
+        start_from: &[f64],
+    ) -> Option<f64> {
+        let count = self.surface.parameters();
+        let repair = |free: &[f64]| self.repair(&to_theta(free), quantity, value);
+
+        let value_of = |free: &[f64]| -> f64 {
+            repair(free)
+                .and_then(|theta| self.evaluate(&theta, y, reml, false))
+                .map_or(1e30, |e| e.negative_loglik)
+        };
+        // The likelihood's own derivatives are exact; only the repair, which is
+        // cheap algebra and factorises nothing, is differenced.
+        let gradient_of = |free: &[f64]| -> Vec<f64> {
+            let Some(theta) = repair(free) else {
+                return vec![0.0; count];
+            };
+            let Some(at) = self.evaluate(&theta, y, reml, true) else {
+                return vec![0.0; count];
+            };
+            (0..count)
+                .map(|j| {
+                    let step = 1e-6 * free[j].abs().max(1.0);
+                    let mut up = free.to_vec();
+                    let mut down = free.to_vec();
+                    up[j] += step;
+                    down[j] -= step;
+                    match (repair(&up), repair(&down)) {
+                        (Some(u), Some(d)) => (0..count)
+                            .map(|k| at.gradient[k] * (u[k] - d[k]) / (2.0 * step))
+                            .sum(),
+                        _ => at.gradient[j],
+                    }
+                })
+                .collect()
+        };
+
+        let start = start_from[..count].to_vec();
+        repair(&start)?;
+        let (lower, upper) = self.surface.bounds();
+        let bounds = Bounds::new(lower, upper).ok()?;
+        let mut control = OptimControl::default_for_dimension(count);
+        control.maxit = 300;
+        control.fnscale = value_of(&start).abs().max(1.0);
+        control.parscale = vec![1.0; count];
+        control.factr = 1.0e3;
+        control.pgtol = 1e-8;
+        control.lmm = count;
+        let best = optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+            .map_or_else(|_| value_of(&start), |s| value_of(&s.par).min(value_of(&start)));
+        best.is_finite().then_some(-best)
+    }
+
+    /// A 95 per cent profile-likelihood interval for one reported quantity.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails or the quantity cannot be
+    /// held at its own estimate, which is how an unreachable request shows up.
+    pub fn profile_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        quantity: Reported,
+    ) -> Result<GxeInterval, &'static str> {
+        let fit = self.fit(y, reml)?;
+        let estimate = match quantity {
+            Reported::Heritability { at } => fit.heritability_at(at),
+            Reported::GeneticCorrelation { first, second } => {
+                fit.genetic_correlation(first, second)
+            }
+        };
+        if !estimate.is_finite() {
+            return Err("GXE_QUANTITY_NOT_FINITE");
+        }
+
+        let mean = y.mean();
+        let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
+        let scaled = y / variance.sqrt();
+        let start = fit.parameters.clone();
+
+        // **The maximum comes from the profile objective and not from the
+        // fit's own log likelihood.** They differ by a constant that depends on
+        // the scaling, and taking one from the other is what made this
+        // package's bivariate intervals zero-width once already.
+        let at_estimate = self
+            .profile_objective(&scaled, reml, quantity, estimate, &start)
+            .ok_or("GXE_QUANTITY_NOT_HELD_AT_ITS_OWN_ESTIMATE")?;
+        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
+
+        let (floor, ceiling) = match quantity {
+            Reported::Heritability { .. } => (1e-6, 1.0 - 1e-6),
+            Reported::GeneticCorrelation { .. } => match self.surface {
+                // The exponential kernel is positive at every rate.
+                Surface::Exponential => (1e-6, 1.0),
+                Surface::RandomRegression => (-1.0, 1.0),
+            },
+        };
+        let outside = |v: f64| {
+            self.profile_objective(&scaled, reml, quantity, v, &start)
+                .is_none_or(|value| value < threshold)
+        };
+        let (lower, lower_at_bound) = if outside(floor) {
+            (bisect(floor, estimate, &outside), false)
+        } else {
+            (floor, true)
+        };
+        let (upper, upper_at_bound) = if outside(ceiling) {
+            (bisect(ceiling, estimate, &outside), false)
+        } else {
+            (ceiling, true)
+        };
+        Ok(GxeInterval {
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+        })
+    }
+}
+
+/// Real non-negative roots of `a x^2 + b x + c`, linear case included.
+fn solve_quadratic(a: f64, b: f64, c: f64) -> Option<Vec<f64>> {
+    if a.abs() < 1e-14 {
+        return (b.abs() > 1e-14).then(|| vec![-c / b]);
+    }
+    let discriminant = b * b - 4.0 * a * c;
+    (discriminant >= 0.0).then(|| {
+        let root = discriminant.sqrt();
+        vec![(-b + root) / (2.0 * a), (-b - root) / (2.0 * a)]
+    })
+}
+
+/// Bisect between a point known to be outside the interval and one inside it.
+fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
+    for _ in 0..60 {
+        let middle = 0.5 * (out + inside);
+        if outside(middle) {
+            out = middle;
+        } else {
+            inside = middle;
+        }
+        if (out - inside).abs() < 1e-7 {
+            break;
+        }
+    }
+    0.5 * (out + inside)
+}
+
+fn to_theta(values: &[f64]) -> [f64; PARAMETERS] {
+    let mut theta = [0.0; PARAMETERS];
+    theta[..values.len()].copy_from_slice(values);
+    theta
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{GxeFit, GxeModel, Surface, block_from_loadings};
+    use super::{GxeFit, GxeModel, Reported, Surface, block_from_loadings};
     use nalgebra::{DMatrix, DVector};
 
     const BOTH: [Surface; 2] = [Surface::Exponential, Surface::RandomRegression];
@@ -1132,6 +1479,49 @@ mod tests {
         }
     }
 
+    /// An interval has to contain its own estimate and be narrower than the
+    /// whole range, or it is not saying anything. **The first is not automatic
+    /// here**: the maximum is taken from the profile objective rather than from
+    /// the fit's log likelihood, because those differ by a scaling constant,
+    /// and taking one from the other is what made this package's bivariate
+    /// intervals zero-width once already.
+    #[test]
+    fn an_interval_contains_its_estimate_and_says_something() {
+        let (a, z, design, y) = small([0.4, 0.15, 0.30], [0.5, 0.0, 0.05], 31);
+        for surface in BOTH {
+            let model = GxeModel::build(surface, &a, &z, &design).expect("valid");
+            for quantity in [
+                Reported::Heritability { at: 0.0 },
+                Reported::Heritability { at: 1.0 },
+                Reported::GeneticCorrelation { first: -1.0, second: 1.0 },
+            ] {
+                let got = model
+                    .profile_interval(&y, true, quantity)
+                    .unwrap_or_else(|e| panic!("{surface:?} {quantity:?}: {e}"));
+                assert!(
+                    got.lower <= got.estimate + 1e-6 && got.estimate <= got.upper + 1e-6,
+                    "{surface:?} {quantity:?}: [{}, {}] does not contain {}",
+                    got.lower,
+                    got.upper,
+                    got.estimate
+                );
+                assert!(
+                    got.upper - got.lower > 1e-4,
+                    "{surface:?} {quantity:?}: the interval is {} wide, which is the \
+                     zero-width fault returning",
+                    got.upper - got.lower
+                );
+                assert!(
+                    got.upper - got.lower < 1.999,
+                    "{surface:?} {quantity:?}: [{}, {}] is the whole range and says \
+                     nothing",
+                    got.lower,
+                    got.upper
+                );
+            }
+        }
+    }
+
     /// The two surfaces carry different numbers of parameters, and the fit says
     /// which it used rather than leaving the caller to infer it from a length.
     #[test]
@@ -1155,7 +1545,7 @@ pub mod python {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
 
-    use super::{GxeModel, Surface};
+    use super::{GxeModel, Reported, Surface};
     use nalgebra::{DMatrix, DVector};
 
     fn surface_named(name: &str) -> PyResult<Surface> {
@@ -1267,9 +1657,10 @@ pub mod python {
         let test = match null {
             "interaction" => model.interaction_test(&y, reml),
             "correlation" => model.correlation_test(&y, reml),
+            "variance" => model.variance_test(&y, reml),
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "GXE_UNKNOWN_NULL: {other}, wanted interaction or correlation"
+                    "GXE_UNKNOWN_NULL: {other}, wanted interaction, correlation or variance"
                 )));
             }
         }
@@ -1282,4 +1673,100 @@ pub mod python {
             test.alternative_loglik,
         ))
     }
+
+    /// A 95 per cent profile-likelihood interval for one reported quantity.
+    ///
+    /// `quantity` is `heritability`, which uses `first` as the environment, or
+    /// `correlation`, which uses both.
+    #[pyfunction]
+    #[pyo3(signature = (relationship, environment, design, y, surface, quantity, first, second=0.0, reml=true))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn gxe_interval(
+        relationship: PyReadonlyArray2<'_, f64>,
+        environment: Vec<f64>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        surface: &str,
+        quantity: &str,
+        first: f64,
+        second: f64,
+        reml: bool,
+    ) -> PyResult<(f64, f64, f64, bool, bool)> {
+        let model = build(&relationship, &environment, &design, surface)?;
+        let wanted = match quantity {
+            "heritability" => Reported::Heritability { at: first },
+            "correlation" => Reported::GeneticCorrelation { first, second },
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "GXE_UNKNOWN_QUANTITY: {other}, wanted heritability or correlation"
+                )));
+            }
+        };
+        let got = model
+            .profile_interval(&response(&y), reml, wanted)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            got.estimate,
+            got.lower,
+            got.upper,
+            got.lower_at_bound,
+            got.upper_at_bound,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod against_the_source {
+    use super::{GxeFit, Surface};
+
+    /// **Is the exponential surface the recovered SOLAR model, or something
+    /// like it?** The source-fidelity crate beside this one preserves the Tcl
+    /// continuous-environment covariance
+    /// `K_ij sqrt(VG_i VG_j) exp(-lambda_g |e_i - e_j|) + I_ij VE_i`, with the
+    /// two variances log-linear in the environment. This reproduces its output
+    /// on a fixed input rather than arguing from the algebra.
+    #[test]
+    fn the_exponential_surface_reproduces_the_recovered_solar_covariance() {
+        let k = [
+            [1.0, 0.5, 0.25, 0.0],
+            [0.5, 1.0, 0.25, 0.0],
+            [0.25, 0.25, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let e = [-1.3, 0.4, 2.1, 0.9];
+        // alpha_g, gamma_g, lambda_g, alpha_e, gamma_e -- the same five.
+        let fit = GxeFit {
+            surface: Surface::Exponential,
+            parameters: vec![-0.6, 0.35, 0.22, -0.4, -0.15],
+            fixed_effects: vec![],
+            fixed_effect_errors: vec![],
+            loglik: 0.0,
+            converged: true,
+            scaled_gradient: 0.0,
+            estimator: "reml",
+            variance_scale: 1.0,
+        };
+        // Printed by the source-fidelity crate at these inputs, centre = 0.
+        let source = [
+            [1.162_839_743_718, 0.161_274_534_884, 0.074_698_567_695, 0.0],
+            [0.161_274_534_884, 1.262_567_291_014, 0.146_197_861_190, 0.0],
+            [0.074_698_567_695, 0.146_197_861_190, 1.633_728_896_148, 0.0],
+            [0.0, 0.0, 0.0, 1.337_683_544_464],
+        ];
+        for i in 0..4 {
+            for j in 0..4 {
+                let mut mine = k[i][j] * fit.genetic_covariance(e[i], e[j]);
+                if i == j {
+                    mine += fit.residual_variance_at(e[i]);
+                }
+                assert!(
+                    (mine - source[i][j]).abs() < 1e-11,
+                    "({i}, {j}): this package gives {mine}, the recovered source \
+                     gives {}",
+                    source[i][j]
+                );
+            }
+        }
+    }
+
 }

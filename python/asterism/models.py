@@ -493,12 +493,22 @@ class GxeModel:
         - ``"interaction"``: the genetic covariance does not involve the
           environment at all. Rejecting says something about genes and
           environment together, but not what.
+        - ``"variance"``: the genetic variance does not change with the
+          environment. This is the recovered SOLAR model's own ``gamma_G = 0``
+          null, and on the exponential surface it is one interior coordinate
+          referred to chi-square on one degree of freedom. On the smooth
+          surface it is not a separate test — a quadratic genetic variance is
+          constant only when both its shape coordinates are nought, which is
+          the interaction null — so it returns that instead of a differently
+          named copy.
 
         The residual surface is free under both nulls, so a residual variance
         that changes with the environment is not mistaken for a genetic one.
         """
-        if null not in ("interaction", "correlation"):
-            raise ValueError(f"null must be interaction or correlation, not {null!r}")
+        if null not in ("interaction", "correlation", "variance"):
+            raise ValueError(
+                f"null must be interaction, correlation or variance, not {null!r}"
+            )
         y = np.ascontiguousarray(y, dtype=np.float64)
         statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxe_test(
             self._relationship, self._environment, self._design, y,
@@ -511,10 +521,53 @@ class GxeModel:
             "p_value": p_value,
             # `mixture_50_50` for the correlation null, which holds one bounded
             # coordinate; `half_chi2_1_half_chi2_2` for the interaction null,
-            # which holds one bounded and one free.
+            # which holds one bounded and one free; `chi2_1` for the variance
+            # null on the exponential surface, which holds one interior one.
             "rule": rule,
             "null_loglik": null_loglik,
             "alternative_loglik": alternative_loglik,
+            "estimator": "reml" if reml else "ml",
+        }
+
+    def interval(
+        self,
+        y: Any,
+        quantity: str = "heritability",
+        first: float = 0.0,
+        second: float = 0.0,
+        reml: bool = True,
+    ) -> dict[str, Any]:
+        """A 95 per cent profile-likelihood interval for a reported quantity.
+
+        ``"heritability"`` uses ``first`` as the environment; ``"correlation"``
+        uses both, and is the genetic correlation between them.
+
+        The quantity is held by solving one coordinate of the surface for it and
+        re-maximising over the rest, so the interval is a likelihood one and not
+        a Wald one — it is not symmetric about the estimate and does not have to
+        be. ``lower_at_bound`` or ``upper_at_bound`` says the endpoint ran to
+        the edge of what the quantity can be rather than to a likelihood
+        crossing, which is a limit of the model rather than a measurement.
+        """
+        if quantity not in ("heritability", "correlation"):
+            raise ValueError(
+                f"quantity must be heritability or correlation, not {quantity!r}"
+            )
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
+            self._relationship, self._environment, self._design, y,
+            self._surface, quantity, float(first), float(second), reml,
+        )
+        return {
+            "surface": self._surface,
+            "quantity": quantity,
+            "environment": [first] if quantity == "heritability" else [first, second],
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_at_bound": at_lower,
+            "upper_at_bound": at_upper,
+            "level": 0.95,
             "estimator": "reml" if reml else "ml",
         }
 
