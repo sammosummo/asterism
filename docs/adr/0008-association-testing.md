@@ -106,11 +106,19 @@ all of which belong to whatever prepares the marker matrix.
 - `src/association.rs`, self-contained. `prepared.rs` is untouched, because it
   is the most used and most validated path in the package and a faster scan is
   not worth destabilising it.
-- Not calibrated. Six tests establish that an effect is recovered, that an
-  absent one is not, that the two statistics coincide when held, and — the one
-  that matters — that markers correlated with family membership and nothing else
-  are not called associations. None of that is a measured type I error rate
-  across a scan, and until it is, no genome-wide claim rests on this.
+- **The genomic inflation is one under a realistic null**, which is the check
+  that matters for a scan. On the real pedigree, the real ancestry components
+  and 20,000 real markers, with the response drawn from the fitted polygenic
+  model and no marker effect anywhere, lambda came back at 0.991. The same scan
+  on real height gives 1.168, and the null draw is what says that difference is
+  the polygenicity of height rather than uncontrolled structure — the two are
+  otherwise indistinguishable from the scan alone.
+- Six tests also establish that an effect is recovered, that an absent one is
+  not, that the two statistics coincide when held, and that markers correlated
+  with family membership and nothing else are not called associations.
+- Still not a measured type I error rate across the tail, which is what a
+  genome-wide claim would need. A median-based lambda says nothing about
+  behaviour at 5e-08.
 - No comparison against an independent implementation. Under ADR 0006 that means
   it is not qualified, the same standing the liability model had this morning
   before SOLAR was run against it.
