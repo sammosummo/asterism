@@ -19,7 +19,7 @@ by REML or ML, and all calibrated before being used on anything real.
 | one trait, spatial | a kernel `exp(-λd)` whose range is estimated rather than chosen | the spatial share and interval, the range, a bootstrapped p-value |
 | one trait, spatial, range integrated out | the range averaged over rather than maximised over | the share and interval, no range at all |
 | two traits | joint fit, unbalanced | both h², genetic, residual and phenotypic correlations, an interval and a test for each |
-| one trait, gene by environment | a surface on the genetic and residual covariances, in an environment measured per person | h² at each environment asked about, the genetic correlation between each pair, and two tests |
+| one trait, gene by environment | a surface on the genetic and residual covariances, in an environment measured per person | h² at each environment asked about, the genetic correlation between each pair, a profile interval for either, and three tests |
 
 Which to reach for is a statistical question rather than a menu. The one-trait
 model diagonalises the relationship matrix once per family block and is
@@ -56,6 +56,17 @@ runs downward; a tenth of null samples came back below 0.25 on the exponential
 surface. The tests exist for this reason, and unlike the spatial model they need
 no bootstrap: at either null every remaining parameter is still identified, so a
 mixture of chi-squares is a real reference rather than a hopeful one.
+
+**Report the G-by-E tests; treat the intervals as the caveat rather than the
+finding.** They cover — 0.953 to 0.983 against a nominal 0.95 over 300
+replicates, on both surfaces and all three quantities — but the genetic
+correlation's interval runs to a bound in 80 to 92 per cent of replicates, so it
+covers largely by being wide. And the point estimates are pulled towards no
+interaction by the same boundary: on the smooth surface a true correlation of
+0.053 came back with a median of 0.178, because the fits that find no
+reordering return exactly one and drag the middle up. The heritability at a
+single environment is likewise weakly identified when people are spread along a
+continuous environment, reaching a bound in 13 to 64 per cent of replicates.
 
 **The two surfaces do not sit on the same kind of bound**, and only one of them
 gets the even mixture it is referred to. The exponential surface's null is

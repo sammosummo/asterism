@@ -4,7 +4,7 @@
   "estimator": "reml",
   "pairs": 250,
   "people": 500,
-  "replicates": 12,
+  "replicates": 300,
   "environments": [
     -1.0,
     1.0
@@ -14,47 +14,47 @@
     "exponential": {
       "heritability@-1.0": {
         "truth": 0.40131233988754805,
-        "median_estimate": 0.4529968334279634,
-        "coverage": 0.9166666666666666,
-        "computed": 12,
-        "at_a_bound": 0.6666666666666666
+        "median_estimate": 0.500138028000833,
+        "coverage": 0.9629629629629629,
+        "computed": 297,
+        "at_a_bound": 0.6430976430976431
       },
       "heritability@1.0": {
         "truth": 0.5986876601124521,
-        "median_estimate": 0.6189367633601152,
-        "coverage": 1.0,
-        "computed": 11,
-        "at_a_bound": 0.45454545454545453
+        "median_estimate": 0.593589065361511,
+        "coverage": 0.9831081081081081,
+        "computed": 296,
+        "at_a_bound": 0.625
       },
       "correlation@-1.0": {
         "truth": 0.4493289641172215,
-        "median_estimate": 0.7349360505405921,
-        "coverage": 0.8333333333333334,
-        "computed": 12,
-        "at_a_bound": 0.75
+        "median_estimate": 0.5045293549616868,
+        "coverage": 0.9566666666666667,
+        "computed": 300,
+        "at_a_bound": 0.9233333333333333
       }
     },
     "random_regression": {
       "heritability@-1.0": {
         "truth": 0.6538461538461539,
-        "median_estimate": 0.6565147409232942,
-        "coverage": 1.0,
-        "computed": 12,
-        "at_a_bound": 0.16666666666666666
+        "median_estimate": 0.5935559349662907,
+        "coverage": 0.9566666666666667,
+        "computed": 300,
+        "at_a_bound": 0.24666666666666667
       },
       "heritability@1.0": {
         "truth": 0.6176470588235293,
-        "median_estimate": 0.6725371954658487,
-        "coverage": 1.0,
-        "computed": 12,
-        "at_a_bound": 0.08333333333333333
+        "median_estimate": 0.5888357127756756,
+        "coverage": 0.9666666666666667,
+        "computed": 300,
+        "at_a_bound": 0.13
       },
       "correlation@-1.0": {
         "truth": 0.0529256124024963,
-        "median_estimate": 0.19514793691979426,
-        "coverage": 1.0,
-        "computed": 12,
-        "at_a_bound": 0.75
+        "median_estimate": 0.17780690250660858,
+        "coverage": 0.9533333333333334,
+        "computed": 300,
+        "at_a_bound": 0.8
       }
     }
   },
