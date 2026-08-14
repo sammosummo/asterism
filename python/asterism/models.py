@@ -817,7 +817,7 @@ class AssociationModel:
         markers = np.ascontiguousarray(np.asarray(markers, dtype=np.float64))
         if markers.ndim == 1:
             markers = markers.reshape(-1, 1)
-        heritability, null_loglik, rows = _core.association_sweep(
+        heritability, null_loglik, rows, covariates = _core.association_sweep(
             self._relationship, self._design, self._y, markers, variance
         )
         return {
@@ -825,6 +825,14 @@ class AssociationModel:
             "null_loglik": null_loglik,
             "variance_components": variance,
             "leave_one_chromosome_out": False,
+            # The covariates' own effects, from the null model rather than from
+            # any one marker. They were previously computed and discarded, so a
+            # caller who wanted to know what age or sex was doing had to fit a
+            # second model to find out.
+            "covariates": [
+                {"estimate": estimate, "standard_error": error, "p_value": p_value}
+                for estimate, error, p_value in covariates
+            ],
             "markers": [
                 {
                     "effect": effect,

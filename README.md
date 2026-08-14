@@ -21,7 +21,7 @@ by REML or ML, and all calibrated before being used on anything real.
 | two traits | joint fit, unbalanced | both h², genetic, residual and phenotypic correlations, an interval and a test for each |
 | one trait, gene by environment | a surface on the genetic and residual covariances, in an environment measured per person | h² at each environment asked about, the genetic correlation between each pair, a profile interval for either, and three tests |
 | one binary trait, liability threshold | an unobserved liability crossing a threshold, so a heritability of the liability rather than of the observed status | h² on the liability scale, its profile interval, and a boundary test — maximum likelihood, never REML |
-| one trait, many markers | each marker in turn as a fixed effect beside the ancestry components | an effect, a standard error and a p-value per marker, with the variance components held from the null or refitted per marker |
+| one trait, many markers | each marker in turn as a fixed effect, beside whatever covariates the design carries | an effect, a standard error and a p-value per marker, the covariates' own effects from the null, and the variance components held or refitted |
 
 Which to reach for is a statistical question rather than a menu. The one-trait
 model diagonalises the relationship matrix once per family block and is
@@ -142,6 +142,7 @@ liability.test()                      # against no heritability
 # many markers, each a fixed effect in a polygenic model
 scan = asterism.AssociationModel(relationship, design_with_pcs, y)
 scan.sweep(markers)["markers"][0]["p_value"]   # variance components held
+scan.sweep(markers)["covariates"]              # what age and sex were doing
 scan.sweep(markers, variance="refitted")       # slower, and a different test
 
 # which class of a split differs from the average class

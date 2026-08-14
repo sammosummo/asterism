@@ -69,6 +69,15 @@ pub enum Variance {
     Refitted,
 }
 
+/// One covariate's effect under the null model.
+#[derive(Clone, Copy, Debug)]
+pub struct CovariateEffect {
+    pub estimate: f64,
+    pub standard_error: f64,
+    /// Two-sided, against the covariate having no effect.
+    pub p_value: f64,
+}
+
 /// One marker's result.
 #[derive(Clone, Copy, Debug)]
 pub struct MarkerTest {
@@ -472,6 +481,52 @@ impl AssociationModel {
             .collect())
     }
 
+    /// The covariates' own effects, under the null model.
+    ///
+    /// **These were being computed and thrown away.** Every marker's fit
+    /// estimates the whole design and this package kept only the last
+    /// coordinate, so a caller who wanted to know what age or sex or an
+    /// ancestry component was doing had to fit a second model to find out.
+    ///
+    /// They come from the null model rather than from any one marker, which is
+    /// the right place for them: under a held-variance sweep the null is what
+    /// the covariates are estimated in, and reporting them per marker would be
+    /// thirty thousand copies of nearly the same number.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the null model cannot be factorised.
+    pub fn covariate_effects(&self) -> Result<Vec<CovariateEffect>, &'static str> {
+        let weights = self.weights(self.heritability);
+        let (beta, _, _) = self
+            .weighted_least_squares(&weights, None)
+            .ok_or("ASSOCIATION_NULL_RANK_DEFICIENT")?;
+        let columns = self.x0.ncols();
+        let mut normal = DMatrix::<f64>::zeros(columns, columns);
+        for row in 0..self.rows {
+            let weight = weights[row];
+            for i in 0..columns {
+                for j in 0..columns {
+                    normal[(i, j)] += weight * self.x0[(row, i)] * self.x0[(row, j)];
+                }
+            }
+        }
+        let inverse = normal
+            .try_inverse()
+            .ok_or("ASSOCIATION_NULL_RANK_DEFICIENT")?;
+        Ok((0..columns)
+            .map(|k| {
+                let error = (self.total_variance * inverse[(k, k)]).max(0.0).sqrt();
+                let z = if error > 0.0 { beta[k] / error } else { 0.0 };
+                CovariateEffect {
+                    estimate: beta[k],
+                    standard_error: error,
+                    p_value: chi2_one_df_upper_tail(z * z).clamp(0.0, 1.0),
+                }
+            })
+            .collect())
+    }
+
     /// Whether any chromosome was left out of the relationship matrix.
     ///
     /// Always false. The marker under test is inside `K`, which biases its test
@@ -638,6 +693,36 @@ mod tests {
         );
     }
 
+    /// **The covariates' own effects come back, rather than being computed and
+    /// discarded.** Every marker's fit estimates the whole design, and keeping
+    /// only the last coordinate meant a caller who wanted to know what age or
+    /// sex was doing had to fit a second model to find out.
+    #[test]
+    fn the_covariates_report_their_own_effects() {
+        // The response is built with a known effect on the second covariate.
+        let (k, design, y, _) = simulate(300, 0.4, 0.0, 12_345);
+        let model = AssociationModel::build(&k, &design, &y).expect("valid");
+        let got = model.covariate_effects().expect("effects");
+        assert_eq!(got.len(), design.ncols());
+        // simulate() puts 0.3 on the first covariate and -0.2 on the second.
+        assert!(
+            (got[1].estimate - 0.3).abs() < 0.15,
+            "the first covariate was simulated at 0.3 and came back at {}",
+            got[1].estimate
+        );
+        assert!(
+            got[1].p_value < 0.01,
+            "a covariate simulated at 0.3 has p {}",
+            got[1].p_value
+        );
+        for effect in &got {
+            assert!(
+                effect.standard_error > 0.0 && effect.p_value.is_finite(),
+                "an effect came back without a usable standard error"
+            );
+        }
+    }
+
     /// A marker that does not vary carries no information and is refused
     /// rather than returned as a rank-deficient fit with a plausible number.
     #[test]
@@ -699,7 +784,12 @@ pub mod python {
         y: PyReadonlyArray1<'_, f64>,
         markers: PyReadonlyArray2<'_, f64>,
         variance: &str,
-    ) -> PyResult<(f64, f64, Vec<(f64, f64, f64, f64, f64, String)>)> {
+    ) -> PyResult<(
+        f64,
+        f64,
+        Vec<(f64, f64, f64, f64, f64, String)>,
+        Vec<(f64, f64, f64)>,
+    )> {
         let a = relationship.as_array();
         let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
         let x = design.as_array();
@@ -714,6 +804,12 @@ pub mod python {
         let results = model
             .sweep(&m, variance_named(variance)?)
             .map_err(PyValueError::new_err)?;
+        let covariates = model
+            .covariate_effects()
+            .map_err(PyValueError::new_err)?
+            .into_iter()
+            .map(|c| (c.estimate, c.standard_error, c.p_value))
+            .collect();
         Ok((
             model.heritability(),
             model.null_loglik(),
@@ -738,6 +834,7 @@ pub mod python {
                     ),
                 })
                 .collect(),
+            covariates,
         ))
     }
 }
