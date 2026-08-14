@@ -1,0 +1,40 @@
+{
+  "what": "type I error of the association test in the tail",
+  "date": "2026-08-14",
+  "pedigree": "the real GOBS pedigree; only responses simulated",
+  "people": 1821,
+  "markers": 5000,
+  "draws": 4,
+  "null_tests": 20000,
+  "heritability": 0.5,
+  "variance_components": "held",
+  "thresholds": {
+    "0.01": {
+      "expected": 200.0,
+      "seen": 165,
+      "ratio": 0.825
+    },
+    "0.001": {
+      "expected": 20.0,
+      "seen": 9,
+      "ratio": 0.45
+    },
+    "0.0001": {
+      "expected": 2.0,
+      "seen": 0,
+      "ratio": 0.0
+    },
+    "1e-05": {
+      "expected": 0.2,
+      "seen": 0,
+      "ratio": 0.0
+    },
+    "1e-06": {
+      "expected": 0.02,
+      "seen": 0,
+      "ratio": 0.0
+    }
+  },
+  "smallest_judged": 0.001,
+  "note": "5e-08 is not reached: it would need of order ten billion null tests. What is established is honesty down to the smallest threshold with enough expected crossings to judge"
+}
