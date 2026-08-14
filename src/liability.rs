@@ -650,3 +650,95 @@ mod tests {
         assert!(LiabilityModel::build(&relationship, &status, &design).is_ok());
     }
 }
+
+#[cfg(test)]
+mod against_the_source {
+    use super::LiabilityModel;
+    use nalgebra::DMatrix;
+
+    /// Sibling pairs whose statuses come from a liability with a known
+    /// heritability. **The generator is duplicated on both sides on purpose**:
+    /// it is a dozen lines of arithmetic, and copying it is cheaper and safer
+    /// than shipping four hundred numbers between two crates.
+    fn simulate(pairs: usize, h2: f64, threshold: f64, seed: u64) -> (DMatrix<f64>, Vec<f64>) {
+        let n = 2 * pairs;
+        let mut a = DMatrix::<f64>::identity(n, n);
+        for p in 0..pairs {
+            a[(2 * p, 2 * p + 1)] = 0.5;
+            a[(2 * p + 1, 2 * p)] = 0.5;
+        }
+        let mut state = seed;
+        let mut draw = || {
+            let mut total = 0.0;
+            for _ in 0..12 {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                total += (state >> 11) as f64 / (1u64 << 53) as f64;
+            }
+            total - 6.0
+        };
+        let shared = (h2 / 2.0).sqrt();
+        let own = (1.0 - h2 / 2.0).sqrt();
+        let mut status = Vec::with_capacity(n);
+        for _ in 0..pairs {
+            let common = draw() * shared;
+            for _ in 0..2 {
+                let liability = common + draw() * own;
+                status.push(f64::from(u8::from(liability > threshold)));
+            }
+        }
+        (a, status)
+    }
+
+    /// **Is this the same likelihood the SOLAR successor computes?**
+    ///
+    /// The region probability, the sequential approximation and the ordering
+    /// were all cannibalised from that engine, so this is not an independent
+    /// derivation and does not pretend to be one. What it does establish is
+    /// that the transplant is faithful: two hundred sibling pairs, a grid of
+    /// heritabilities and intercepts, and every value agreeing to the ten
+    /// digits the reference printed.
+    ///
+    /// **The intercept runs the other way here.** That engine takes a case as
+    /// the negative direction, so its intercept is the negative of this one's.
+    /// This package's convention makes the intercept readable: `Phi(intercept)`
+    /// is the prevalence a model with no covariates implies, which is 0.30
+    /// against the 124 of 400 simulated here.
+    #[test]
+    fn the_likelihood_matches_the_solar_successor() {
+        let (a, status) = simulate(200, 0.5, 0.524_400_512_708_040_9, 12_345);
+        assert_eq!(status.len(), 400, "the two sides must see the same data");
+        assert_eq!(
+            status.iter().filter(|v| **v > 0.5).count(),
+            124,
+            "the two sides must see the same statuses"
+        );
+        let design = DMatrix::from_element(status.len(), 1, 1.0);
+        let model = LiabilityModel::build(&a, &status, &design).expect("valid");
+
+        // Printed by that engine at these inputs, with `log_sd` at nought.
+        // Its intercept is the negative of ours, so ours is negated below.
+        let reference: [(f64, f64, f64); 9] = [
+            (0.0, -0.8, -457.832_103_073_8),
+            (0.0, -0.5244, -376.524_054_617_1),
+            (0.0, -0.2, -306.648_648_121_7),
+            (0.1, -0.8, -450.260_386_871_9),
+            (0.1, -0.5244, -371.645_210_734_8),
+            (0.1, -0.2, -304.041_378_536_3),
+            (0.2, -0.8, -443.305_591_065_0),
+            (0.2, -0.5244, -367.181_634_833_7),
+            (0.2, -0.2, -301.688_694_053_5),
+        ];
+        for (heritability, their_beta, wanted) in reference {
+            let ours = model
+                .loglik(heritability, &[-their_beta])
+                .expect("evaluates");
+            assert!(
+                (ours - wanted).abs() < 1e-8,
+                "at h2 {heritability} and their beta {their_beta}: this package \
+                 gives {ours}, the successor gives {wanted}"
+            );
+        }
+    }
+}

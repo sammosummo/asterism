@@ -102,10 +102,21 @@ quadrature first.
 - The code is cannibalised from the SOLAR successor at
   `~/Documents/MathiasLab/Studies/Planned/Unaffiliated/Projects/SOLARSuccessor`,
   which Sam intends to delete. No provenance obligation follows it here.
-- Fidelity is not yet established. Under ADR 0006 agreement proves fidelity, and
-  nothing in this amendment claims a validated liability heritability until the
-  model has been compared against an independent implementation and calibrated.
-  Until then it fits and it is tested; it is not qualified.
+- **The transplant is faithful, and that is not the same as qualified.** The
+  likelihood agrees with the SOLAR successor's to ten digits across a grid of
+  heritabilities and intercepts on the same four hundred simulated people, and a
+  test holds it there now that the source is going. But the region probability,
+  the sequential approximation and the ordering were all cannibalised from that
+  engine, so this is a transplant checked against its donor rather than an
+  independent derivation. Under ADR 0006 agreement proves fidelity only against
+  something arrived at separately; native SOLAR is that thing, and it has not
+  been run. Nor has the model been calibrated. Until both, it fits and it is
+  tested and it is not qualified.
+- The intercept sign is this package's own choice and differs from the
+  successor's. Here a case is the positive direction, so `Phi(intercept)` reads
+  directly as the prevalence a covariate-free model implies. That is worth
+  keeping and worth writing down, because a fitted intercept compared across the
+  two engines will otherwise look wrong.
 - `gobs_mdd_recurr` is not analysed. 88 of its 240 cases are coded with no
   lifetime depression, no current episode and no past episode. That is either a
   coding fault or a variable meaning something other than recurrent major
