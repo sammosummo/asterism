@@ -17,11 +17,32 @@ y = X0 b + m_j c + g + e,    V = s2 (h K + (1 - h) I)
 `m_j` is one marker; `c` is what is tested.
 
 **The specific trait and marker set are to be filled in here before this is run
-on anything real.** Two facts constrain what they can be. There is no genotype
-data anywhere in this workspace — no PLINK files, no VCF, no genomic
-relationship matrix — so a SNP scan needs genotypes brought in first. What does
-exist, in `bulk/safs-emma-knowles-20260805`, is 485,578 methylation probes on
-859 people and 22,414 transcripts on 1,241.
+on anything real.** What is available to fill them with:
+
+| markers | count | subjects |
+| --- | --- | --- |
+| array genotypes, `chp-genotype-subject` | 1,146,843 | 2,620 |
+| whole-genome sequence, `wgs_vendor-genotype-subject` | 51,258,090 | 2,621 |
+| methylation probes | 485,578 | 859 |
+| expression transcripts | 22,414 | 1,241 |
+
+The genotypes and sequence live on the bulk drive at
+`Studies/Existing/SAFS/Data/Genotypes`, with array dosages beside them and two
+recent WGS freezes under `WGSReacquisition`. **They are not reachable from the
+workspace**: `bulk` links to the Emma Knowles drop and the pedigree evidence and
+to nothing else, so a link is needed before any of this can be run. Genotypes
+are restricted material and belong behind a `bulk` symlink rather than copied
+in, like everything else of that kind.
+
+Correcting an earlier version of this document, which said there was no genotype
+data anywhere in the workspace: there is 9 GB of it one symlink away, and the
+search that concluded otherwise looked inside `bulk` without following what
+`bulk` points at.
+
+At the measured cost the array scan is about seven minutes and the full sequence
+five to seven hours with the variance components held. Refitted, the sequence is
+not a run anybody would start. Whatever filtering by frequency precedes a scan
+cuts both figures substantially and belongs to whatever prepares the markers.
 
 ## Why this is not the one-trait model in a loop
 
