@@ -1,0 +1,62 @@
+{
+  "what": "binary liability heritability against native SOLAR",
+  "date": "2026-08-14",
+  "estimator": "ml",
+  "worst_absolute_difference": 0.013386337439176721,
+  "worst_difference_in_standard_errors": 0.0857890130486037,
+  "threshold_in_standard_errors": 0.25,
+  "cases": [
+    {
+      "true_heritability": 0.5,
+      "true_prevalence": 0.25,
+      "people": 420,
+      "observed_prevalence": 0.3523809523809524,
+      "largest_family": 14,
+      "asterism_h2": 0.4534301374391767,
+      "solar_h2": 0.4400438,
+      "difference": 0.013386337439176721,
+      "asterism_loglik": -257.2234511720519,
+      "solar_loglik": -257.330037,
+      "solar_standard_error": 0.1560379,
+      "difference_in_standard_errors": 0.0857890130486037,
+      "loglik_difference": 0.1065858279480949,
+      "asterism_converged": true,
+      "asterism_scaled_gradient": 8.291487677104595e-08
+    },
+    {
+      "true_heritability": 0.4,
+      "true_prevalence": 0.3,
+      "people": 630,
+      "observed_prevalence": 0.34285714285714286,
+      "largest_family": 14,
+      "asterism_h2": 0.35808119311750436,
+      "solar_h2": 0.3518466,
+      "difference": 0.00623459311750435,
+      "asterism_loglik": -380.1704937298746,
+      "solar_loglik": -380.233574,
+      "solar_standard_error": 0.1146106,
+      "difference_in_standard_errors": 0.05439804972231495,
+      "loglik_difference": 0.06308027012539696,
+      "asterism_converged": true,
+      "asterism_scaled_gradient": 8.113749423892609e-08
+    },
+    {
+      "true_heritability": 0.0,
+      "true_prevalence": 0.3,
+      "people": 420,
+      "observed_prevalence": 0.38571428571428573,
+      "largest_family": 14,
+      "asterism_h2": 0.0,
+      "solar_h2": 0.0,
+      "difference": 0.0,
+      "asterism_loglik": -273.7010041345381,
+      "solar_loglik": -273.701004,
+      "solar_standard_error": null,
+      "difference_in_standard_errors": null,
+      "loglik_difference": -1.3453808378471876e-07,
+      "asterism_converged": true,
+      "asterism_scaled_gradient": 5.109035344598477e-09
+    }
+  ],
+  "note": "independent agreement: SOLAR shares no code with this package, unlike the SOLAR successor this model was cannibalised from"
+}

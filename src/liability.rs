@@ -306,6 +306,20 @@ impl LiabilityModel {
     ///
     /// Returns a stable code where no start reached a usable optimum.
     pub fn fit(&self) -> Result<LiabilityFit, &'static str> {
+        self.fit_holding(None)
+    }
+
+    /// Fit with the heritability held, which is how every null and every
+    /// profile endpoint here is imposed.
+    ///
+    /// Holding it by fixing both bounds keeps one code path for the free and
+    /// the constrained fit. A null fitted by different machinery from the
+    /// alternative is the classic way to get a deviance that is not one.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no start reached a usable optimum.
+    fn fit_holding(&self, held: Option<f64>) -> Result<LiabilityFit, &'static str> {
         let columns = self.design.ncols();
         let count = columns + 1;
         let prevalence = self.prevalence();
@@ -319,12 +333,19 @@ impl LiabilityModel {
         let mut upper = vec![f64::INFINITY; count];
         lower[0] = 0.0;
         upper[0] = 1.0;
+        if let Some(value) = held {
+            if !(0.0..=1.0).contains(&value) {
+                return Err("LIABILITY_HELD_HERITABILITY_OUT_OF_RANGE");
+            }
+            lower[0] = value;
+            upper[0] = value;
+        }
 
         let starts: Vec<Vec<f64>> = [0.05_f64, 0.3, 0.6]
             .iter()
             .map(|&h| {
                 let mut start = vec![0.0; count];
-                start[0] = h;
+                start[0] = held.unwrap_or(h);
                 // The intercept carries the threshold, and the sign is the
                 // other way round: a common trait needs a low bar.
                 start[1] = threshold;
@@ -384,8 +405,10 @@ impl LiabilityModel {
             .iter()
             .enumerate()
             .map(|(k, g)| {
-                if (k == 0 && theta[0] <= 0.0 && *g > 0.0)
-                    || (k == 0 && theta[0] >= 1.0 && *g < 0.0)
+                if k == 0
+                    && (held.is_some()
+                        || (theta[0] <= 0.0 && *g > 0.0)
+                        || (theta[0] >= 1.0 && *g < 0.0))
                 {
                     0.0
                 } else {
@@ -740,5 +763,210 @@ mod against_the_source {
                  gives {ours}, the successor gives {wanted}"
             );
         }
+    }
+}
+
+/// One test of a heritability against nought.
+#[derive(Clone, Copy, Debug)]
+pub struct LiabilityTest {
+    pub statistic: f64,
+    pub p_value: f64,
+    pub rule: &'static str,
+    pub null_loglik: f64,
+}
+
+/// One profile-likelihood interval for a heritability.
+#[derive(Clone, Copy, Debug)]
+pub struct LiabilityInterval {
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+}
+
+/// Chi-square on one degree of freedom at 0.95.
+const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+
+impl LiabilityModel {
+    /// Test the liability heritability against nought.
+    ///
+    /// **The reference is assumed and not yet earned.** A heritability of
+    /// nought sits on a bound, so the even mixture of a point mass and
+    /// chi-square on one degree of freedom is the natural reference, and it is
+    /// what a Gaussian variance component gets. Decision 16 of the estimator
+    /// record warned that the boundary geometry changes for a liability model,
+    /// and whether it changes this is a question for `checks/liability.py`
+    /// rather than for a doc comment. Until that check has run, read this
+    /// p-value as provisional.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where either fit fails.
+    pub fn heritability_test(&self) -> Result<LiabilityTest, &'static str> {
+        let free = self.fit()?;
+        let null = self.fit_holding(Some(0.0))?;
+        let statistic = (2.0 * (free.loglik - null.loglik)).max(0.0);
+        let p_value = if statistic < 1e-6 {
+            1.0
+        } else {
+            0.5 * chi2_one_df_upper_tail(statistic)
+        };
+        Ok(LiabilityTest {
+            statistic,
+            p_value: p_value.clamp(0.0, 1.0),
+            rule: "mixture_50_50",
+            null_loglik: null.loglik,
+        })
+    }
+
+    /// A 95 per cent profile-likelihood interval for the liability
+    /// heritability.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails.
+    pub fn heritability_interval(&self) -> Result<LiabilityInterval, &'static str> {
+        let free = self.fit()?;
+        let estimate = free.heritability;
+        // **The maximum comes from the held fit at the estimate**, not from the
+        // free fit's own log likelihood, so that both ends of the comparison
+        // are computed the same way.
+        let at_estimate = self.fit_holding(Some(estimate))?.loglik;
+        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
+        let outside = |value: f64| {
+            self.fit_holding(Some(value))
+                .map_or(true, |fit| fit.loglik < threshold)
+        };
+        let (lower, lower_at_bound) = if outside(0.0) {
+            (bisect(0.0, estimate, &outside), false)
+        } else {
+            (0.0, true)
+        };
+        let (upper, upper_at_bound) = if outside(1.0) {
+            (bisect(1.0, estimate, &outside), false)
+        } else {
+            (1.0, true)
+        };
+        Ok(LiabilityInterval {
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+        })
+    }
+}
+
+/// The upper tail of chi-square on one degree of freedom, through the
+/// complementary error function.
+fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
+    if statistic <= 0.0 {
+        return 1.0;
+    }
+    statrs::function::erf::erfc((statistic / 2.0).sqrt())
+}
+
+/// Bisect between a point outside the interval and one inside it.
+fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
+    for _ in 0..40 {
+        let middle = 0.5 * (out + inside);
+        if outside(middle) {
+            out = middle;
+        } else {
+            inside = middle;
+        }
+        if (out - inside).abs() < 1e-5 {
+            break;
+        }
+    }
+    0.5 * (out + inside)
+}
+
+#[cfg(feature = "python")]
+pub mod python {
+    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+    use pyo3::exceptions::PyValueError;
+    use pyo3::prelude::*;
+
+    use super::LiabilityModel;
+    use nalgebra::DMatrix;
+
+    fn build(
+        relationship: &PyReadonlyArray2<'_, f64>,
+        status: &PyReadonlyArray1<'_, f64>,
+        design: &PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<LiabilityModel> {
+        let a = relationship.as_array();
+        let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
+        let x = design.as_array();
+        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+        let status: Vec<f64> = status.as_array().iter().copied().collect();
+        LiabilityModel::build(&a, &status, &x).map_err(PyValueError::new_err)
+    }
+
+    /// Fit one binary trait through a liability threshold.
+    ///
+    /// Returns the liability heritability, the fixed effects, the log
+    /// likelihood, whether the search converged, its scaled gradient, the
+    /// prevalence and the largest family the region probability had to cover.
+    #[pyfunction]
+    #[allow(clippy::type_complexity)]
+    pub fn liability_fit(
+        relationship: PyReadonlyArray2<'_, f64>,
+        status: PyReadonlyArray1<'_, f64>,
+        design: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<(f64, Vec<f64>, f64, bool, f64, f64, usize)> {
+        let fit = build(&relationship, &status, &design)?
+            .fit()
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            fit.heritability,
+            fit.fixed_effects,
+            fit.loglik,
+            fit.converged,
+            fit.scaled_gradient,
+            fit.prevalence,
+            fit.largest_family,
+        ))
+    }
+
+    /// A 95 per cent profile interval for the liability heritability.
+    #[pyfunction]
+    pub fn liability_interval(
+        relationship: PyReadonlyArray2<'_, f64>,
+        status: PyReadonlyArray1<'_, f64>,
+        design: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<(f64, f64, f64, bool, bool)> {
+        let got = build(&relationship, &status, &design)?
+            .heritability_interval()
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            got.estimate,
+            got.lower,
+            got.upper,
+            got.lower_at_bound,
+            got.upper_at_bound,
+        ))
+    }
+
+    /// Test the liability heritability against nought.
+    #[pyfunction]
+    pub fn liability_test(
+        relationship: PyReadonlyArray2<'_, f64>,
+        status: PyReadonlyArray1<'_, f64>,
+        design: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<(f64, f64, String, f64)> {
+        let test = build(&relationship, &status, &design)?
+            .heritability_test()
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            test.statistic,
+            test.p_value,
+            test.rule.to_owned(),
+            test.null_loglik,
+        ))
     }
 }
