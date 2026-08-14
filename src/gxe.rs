@@ -227,10 +227,24 @@ impl Surface {
                 ],
                 vec![f64::INFINITY; 5],
             ),
-            // l00 >= 0, l10, u >= 0, for each of the two blocks
+            // **No bounds at all**, for each of the two blocks. The intercept
+            // is carried as its logarithm and the orthogonal loading enters
+            // squared, so the block is a covariance whatever the six numbers
+            // are and the search never meets an edge it can sit on. This
+            // follows the custom implementation this model came from; an
+            // earlier version here bounded the intercept and the squared
+            // loading directly, which put two walls in the parameter space
+            // that the original does not have.
             Self::RandomRegression => (
-                vec![0.0, f64::NEG_INFINITY, 0.0, 0.0, f64::NEG_INFINITY, 0.0],
-                vec![f64::INFINITY; 6],
+                vec![
+                    -15.0,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                    -15.0,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                vec![15.0, f64::INFINITY, f64::INFINITY, 15.0, f64::INFINITY, f64::INFINITY],
             ),
         }
     }
@@ -370,8 +384,13 @@ pub struct GxeModel {
 }
 
 /// Turn a Cholesky factor into the covariance entries it stands for.
-fn block_from_loadings(l00: f64, l10: f64, u: f64) -> [f64; 3] {
-    [l00 * l00, l00 * l10, l10 * l10 + u]
+fn block_from_loadings(log_intercept: f64, linear: f64, orthogonal: f64) -> [f64; 3] {
+    let intercept = log_intercept.exp();
+    [
+        intercept * intercept,
+        intercept * linear,
+        linear * linear + orthogonal * orthogonal,
+    ]
 }
 
 impl GxeModel {
@@ -502,17 +521,18 @@ impl GxeModel {
                 }
                 Surface::RandomRegression => {
                     let genetic_side = parameter < 3;
-                    let (l00, l10) = if genetic_side {
-                        (theta[0], theta[1])
+                    let (log_intercept, linear, orthogonal) = if genetic_side {
+                        (theta[0], theta[1], theta[2])
                     } else {
-                        (theta[3], theta[4])
+                        (theta[3], theta[4], theta[5])
                     };
+                    let intercept = log_intercept.exp();
                     let d = match parameter % 3 {
-                        0 => [2.0 * l00, l10, 0.0],
-                        1 => [0.0, l00, 2.0 * l10],
-                        // The whole reason for carrying u rather than its root:
-                        // this is one, not something that vanishes at the null.
-                        _ => [0.0, 0.0, 1.0],
+                        // q00 = a^2, q01 = a * linear, and a = exp(.), so both
+                        // carry a factor of a through the chain.
+                        0 => [2.0 * intercept * intercept, intercept * linear, 0.0],
+                        1 => [0.0, intercept, 2.0 * linear],
+                        _ => [0.0, 0.0, 2.0 * orthogonal],
                     };
                     if genetic_side {
                         self.relationship[(a, b)] * (d[0] + d[1] * (zi + zj) + d[2] * zi * zj)
@@ -547,13 +567,11 @@ impl GxeModel {
                     return None;
                 }
             }
-            // The diagonal loadings are non-negative and the off-diagonal ones
-            // free; that box is what keeps each block a covariance.
-            Surface::RandomRegression => {
-                if theta[0] < 0.0 || theta[2] < 0.0 || theta[3] < 0.0 || theta[5] < 0.0 {
-                    return None;
-                }
-            }
+            // **Nothing to check.** The intercept is carried as its logarithm
+            // and the orthogonal loading enters squared, so every real six
+            // numbers give two covariances. That is the point of the
+            // parameterisation and the reason the search has no edge to sit on.
+            Surface::RandomRegression => {}
         }
 
         let p = self.design.ncols();
@@ -690,11 +708,25 @@ impl GxeModel {
                 vec![-0.7, -0.3, 0.1, -0.7, -0.1],
                 vec![-0.7, 0.0, 2.0, -0.7, 0.0],
             ],
+            // **The five frozen starts from the original's own multistart
+            // audit**, in its `(g_l10, g_l11)` coordinates, plus a flat one.
+            // That audit exists because this model is start-sensitive: it
+            // tested whether the single embedded start reached the same
+            // likelihood as these five, and its receipt records
+            // `promotion_pass: false` with empirical execution never
+            // authorised. Four starts of my own choosing were not evidence of
+            // anything; these are what the problem was actually found to need.
+            //
+            // ln(0.7) is about -0.36, which puts half the response's own
+            // variance in each block -- a heritability of a half.
             Surface::RandomRegression => vec![
-                vec![0.7, 0.0, 0.0, 0.7, 0.0, 0.0],
-                vec![0.7, 0.3, 0.2, 0.7, 0.1, 0.1],
-                vec![0.7, -0.3, 0.2, 0.7, -0.1, 0.1],
-                vec![0.4, 0.0, 0.4, 0.8, 0.0, 0.2],
+                vec![-0.36, 0.0, 0.0, -0.36, 0.0, 0.0],
+                vec![-0.36, -0.6, 0.4, -0.36, -0.1, 0.3],
+                vec![-0.36, -0.2, 0.6, -0.36, -0.1, 0.3],
+                vec![-0.36, 0.0, 0.6, -0.36, 0.0, 0.3],
+                vec![-0.36, 0.2, 0.6, -0.36, 0.1, 0.3],
+                vec![-0.36, 0.6, 0.4, -0.36, 0.1, 0.3],
+                vec![-0.9, 0.0, 0.6, -0.22, 0.0, 0.45],
             ],
         };
         // Holding a coordinate collapses starts onto one another, and running
@@ -1042,13 +1074,14 @@ impl GxeModel {
                     Surface::Exponential | Surface::PoweredExponential(_) => {
                         out[3] += scale.ln();
                     }
-                    // Scaling a covariance block by s scales its loadings by
-                    // sqrt(s), and u -- being already a square -- by s.
+                    // Scaling a covariance block by s scales all three of its
+                    // loadings by sqrt(s) -- and the intercept is carried as a
+                    // logarithm, so its share of that is an addition.
                     Surface::RandomRegression => {
                         let root = scale.sqrt();
-                        out[3] *= root;
+                        out[3] += 0.5 * scale.ln();
                         out[4] *= root;
-                        out[5] *= scale;
+                        out[5] *= root;
                     }
                 }
                 Some(out)
@@ -1073,8 +1106,9 @@ impl GxeModel {
                     Surface::RandomRegression => {
                         // With A = l00 + l10 z1 and B = l00 + l10 z2, holding
                         // r^2 q11 q22 = q12^2 is a plain quadratic in u.
-                        let (l00, l10) = (theta[0], theta[1]);
-                        let (a, b) = (l00 + l10 * first, l00 + l10 * second);
+                        let (intercept, linear) = (theta[0].exp(), theta[1]);
+                        let (a, b) =
+                            (intercept + linear * first, intercept + linear * second);
                         let (r2, z1, z2) = (value * value, first, second);
                         let qa = z1 * z1 * z2 * z2 * (r2 - 1.0);
                         let qb =
@@ -1089,7 +1123,9 @@ impl GxeModel {
                                 let q12 = a * b + u * z1 * z2;
                                 (q12 >= 0.0) == (value >= 0.0)
                             })?;
-                        out[2] = u;
+                        // The coordinate is the orthogonal loading, and the
+                        // quadratic was solved for its square.
+                        out[2] = u.sqrt();
                         Some(out)
                     }
                 }
@@ -1371,9 +1407,9 @@ mod tests {
                     [-0.7, 0.0, 0.05, -0.7, 0.0, 0.0],
                 ],
                 Surface::RandomRegression => vec![
-                    [0.7, 0.2, 0.3, 0.7, 0.1, 0.2],
-                    [0.6, -0.3, 0.4, 0.8, -0.2, 0.1],
-                    [0.5, 0.0, 0.5, 0.5, 0.0, 0.5],
+                    [-0.36, 0.2, 0.55, -0.36, 0.1, 0.45],
+                    [-0.51, -0.3, 0.63, -0.22, -0.2, 0.32],
+                    [-0.69, 0.0, 0.71, -0.69, 0.0, 0.71],
                 ],
             };
             for reml in [false, true] {
@@ -1506,8 +1542,9 @@ mod tests {
             estimator: "reml",
             variance_scale: 1.0,
         };
-        // l00 = 0.5, l10 = 1.0, l11 = 0: the sign changes at z = -0.5.
-        let regression = made(Surface::RandomRegression, vec![0.5, 1.0, 0.0, 0.7, 0.0, 0.0]);
+        // intercept 0.5, linear 1.0, orthogonal 0: the sign changes at z = -0.5.
+        let regression =
+            made(Surface::RandomRegression, vec![0.5_f64.ln(), 1.0, 0.0, 0.7_f64.ln(), 0.0, 0.0]);
         let crossed = regression.genetic_correlation(-1.5, 1.5);
         assert!(
             crossed < -0.9,
@@ -1887,11 +1924,12 @@ mod against_the_source {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let z = [-1.3, 0.4, 2.1, 0.9];
-        // Their loadings are (intercept, linear, orthogonal); ours carries the
-        // orthogonal one squared, so 0.5 becomes 0.25 and 0.3 becomes 0.09.
+        // Their loadings are (intercept, linear, orthogonal) and ours are the
+        // same three with the intercept carried as its logarithm, which is the
+        // custom implementation's own convention.
         let fit = GxeFit {
             surface: Surface::RandomRegression,
-            parameters: vec![0.8, -0.35, 0.25, 0.7, 0.2, 0.09],
+            parameters: vec![0.8_f64.ln(), -0.35, 0.5, 0.7_f64.ln(), 0.2, 0.3],
             fixed_effects: vec![],
             fixed_effect_errors: vec![],
             loglik: 0.0,
