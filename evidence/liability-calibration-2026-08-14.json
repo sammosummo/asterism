@@ -7,7 +7,7 @@
   "largest_family": 180,
   "prevalence": 0.254,
   "true_heritability": 0.25,
-  "replicates": 200,
+  "replicates": 700,
   "levels": [
     0.01,
     0.05,
@@ -16,19 +16,19 @@
   "nominal": 0.95,
   "results": {
     "level": {
-      "computed": 200,
+      "computed": 700,
       "rejection": {
-        "0.01": 0.005,
-        "0.05": 0.055,
-        "0.1": 0.085
+        "0.01": 0.011428571428571429,
+        "0.05": 0.05285714285714286,
+        "0.1": 0.09714285714285714
       },
-      "atom_at_one": 0.56
+      "atom_at_one": 0.5357142857142857
     },
     "coverage": {
-      "coverage": 0.93,
-      "computed": 200,
-      "median_estimate": 0.24375982382559253,
-      "at_a_bound": 0.085,
+      "coverage": 0.9442857142857143,
+      "computed": 700,
+      "median_estimate": 0.24335222583903376,
+      "at_a_bound": 0.06571428571428571,
       "truth": 0.25
     }
   },
