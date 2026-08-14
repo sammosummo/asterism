@@ -16,6 +16,7 @@ mod dense;
 mod kinship_classes;
 mod prepared;
 mod gxe;
+mod liability;
 mod relationship;
 mod spatial;
 
@@ -24,6 +25,7 @@ pub use components::{ComponentFit, ComponentModel};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
+pub use liability::{LiabilityFit, LiabilityModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
 pub use spatial::{SpatialFit, SpatialModel};
 
