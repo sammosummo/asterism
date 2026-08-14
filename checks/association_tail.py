@@ -176,32 +176,84 @@ def main() -> int:
         batches = list(pool.map(one, range(DRAWS), chunksize=1))
     took = time.perf_counter() - started
 
-    p_values = np.concatenate([np.array(b) for b in batches if b])
+    # **Per draw as well as pooled.** Markers in linkage disequilibrium are not
+    # independent tests, so the binomial band on the pooled count is too narrow
+    # and a small excess against it may be the band rather than the test. The
+    # spread of the count between draws says which: each draw is one
+    # independent realisation of the response, whatever the markers do among
+    # themselves.
+    per_draw = [np.array(b) for b in batches if b]
+    p_values = np.concatenate(per_draw)
     total = len(p_values)
     print(f"{total:,} null tests in {took / 60:.0f} minutes.\n")
-    print(f"{'threshold':>12}{'expected':>11}{'seen':>8}{'ratio':>8}{'binomial 95%':>22}")
+    # **The band is the measured scatter, not the binomial.** Thirty thousand
+    # markers on an array are nowhere near thirty thousand independent tests --
+    # they are in linkage disequilibrium -- so the binomial standard deviation
+    # of the pooled count is far too small, and a few per cent above it means
+    # nothing. Each draw, though, is one independent realisation of the
+    # response, whatever the markers do among themselves. So the count per draw
+    # is measured, its scatter across draws is measured, and the mean is judged
+    # against that. The binomial figure is printed beside it to show how far
+    # wrong it would have been.
+    draws = len(per_draw)
+    each = len(per_draw[0])
+    print(
+        f"{'threshold':>12}{'per draw':>10}{'expected':>10}{'measured sd':>13}"
+        f"{'binomial sd':>13}{'ratio':>7}{'  verdict':<22}"
+    )
 
     failures = []
     recorded = {}
+    dispersion = {}
     for threshold in THRESHOLDS:
-        expected = total * threshold
-        seen = int((p_values <= threshold).sum())
-        error = np.sqrt(total * threshold * (1 - threshold))
-        low, high = expected - 1.96 * error, expected + 1.96 * error
-        ratio = seen / expected if expected else float("nan")
-        recorded[str(threshold)] = {"expected": expected, "seen": seen, "ratio": ratio}
-        mark = ""
-        if expected < 5:
-            mark = "  too few to judge"
-        elif seen > high:
-            mark = "  OVER"
+        counts = np.array([(b <= threshold).sum() for b in per_draw])
+        expected = each * threshold
+        binomial = np.sqrt(each * threshold * (1 - threshold))
+        measured = counts.std(ddof=1)
+        seen = int(counts.sum())
+        recorded[str(threshold)] = {
+            "expected_total": expected * draws,
+            "seen_total": seen,
+            "ratio": seen / (expected * draws) if expected else float("nan"),
+        }
+        if counts.mean() < 3:
+            print(
+                f"{threshold:>12g}{counts.mean():>10.2f}{expected:>10.2f}"
+                f"{'--':>13}{binomial:>13.2f}{'--':>7}  too few to judge"
+            )
+            continue
+        dispersion[str(threshold)] = {
+            "mean_per_draw": float(counts.mean()),
+            "expected_per_draw": float(expected),
+            "measured_sd": float(measured),
+            "binomial_sd": float(binomial),
+            "dispersion_ratio": float(measured / binomial),
+        }
+        # The mean count per draw against what it should be, with the standard
+        # error of that mean from the scatter actually observed.
+        error = measured / np.sqrt(draws)
+        ceiling = expected + 1.96 * error
+        over = counts.mean() > ceiling
+        verdict = "OVER" if over else "ok"
+        if over:
             failures.append(
-                f"{seen} tests below {threshold:g} where at most {high:.0f} was expected"
+                f"{counts.mean():.1f} per draw below {threshold:g} where at most "
+                f"{ceiling:.1f} was expected"
             )
         print(
-            f"{threshold:>12g}{expected:>11.1f}{seen:>8}{ratio:>8.2f}"
-            f"   [{max(low, 0):.0f}, {high:.0f}]{mark}"
+            f"{threshold:>12g}{counts.mean():>10.2f}{expected:>10.2f}"
+            f"{measured:>13.2f}{binomial:>13.2f}"
+            f"{measured / binomial:>7.2f}  {verdict}"
         )
+
+    print(
+        f"\nThe measured scatter runs "
+        f"{min(d['dispersion_ratio'] for d in dispersion.values()):.1f} to "
+        f"{max(d['dispersion_ratio'] for d in dispersion.values()):.1f} times the "
+        f"binomial one.\nThat is the markers being in linkage disequilibrium, and "
+        f"it is why the binomial\nband is the wrong thing to judge against. It "
+        f"would have called a few per cent\nof excess a failure."
+    )
 
     reachable = [t for t in THRESHOLDS if total * t >= 5]
     print(
@@ -231,6 +283,13 @@ def main() -> int:
                 "heritability": HERITABILITY,
                 "variance_components": "held",
                 "thresholds": recorded,
+                "between_draw_dispersion": dispersion,
+                "criterion": (
+                    "the mean count per draw against its expectation, with the "
+                    "standard error taken from the scatter measured between draws "
+                    "rather than from a binomial that assumes the markers are "
+                    "independent, which they are not"
+                ),
                 "smallest_judged": min(reachable),
                 "note": (
                     "5e-08 is not reached: it would need of order ten billion null "

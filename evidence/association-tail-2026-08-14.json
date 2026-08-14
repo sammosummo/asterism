@@ -3,38 +3,62 @@
   "date": "2026-08-14",
   "pedigree": "the real GOBS pedigree; only responses simulated",
   "people": 1821,
-  "markers": 5000,
-  "draws": 4,
-  "null_tests": 20000,
+  "markers": 30000,
+  "draws": 120,
+  "null_tests": 3600000,
   "heritability": 0.5,
   "variance_components": "held",
   "thresholds": {
     "0.01": {
-      "expected": 200.0,
-      "seen": 165,
-      "ratio": 0.825
+      "expected_total": 36000.0,
+      "seen_total": 36868,
+      "ratio": 1.0241111111111112
     },
     "0.001": {
-      "expected": 20.0,
-      "seen": 9,
-      "ratio": 0.45
+      "expected_total": 3600.0,
+      "seen_total": 3745,
+      "ratio": 1.0402777777777779
     },
     "0.0001": {
-      "expected": 2.0,
-      "seen": 0,
-      "ratio": 0.0
+      "expected_total": 360.0,
+      "seen_total": 405,
+      "ratio": 1.125
     },
     "1e-05": {
-      "expected": 0.2,
-      "seen": 0,
-      "ratio": 0.0
+      "expected_total": 36.00000000000001,
+      "seen_total": 49,
+      "ratio": 1.361111111111111
     },
     "1e-06": {
-      "expected": 0.02,
-      "seen": 0,
-      "ratio": 0.0
+      "expected_total": 3.5999999999999996,
+      "seen_total": 2,
+      "ratio": 0.5555555555555556
     }
   },
-  "smallest_judged": 0.001,
+  "between_draw_dispersion": {
+    "0.01": {
+      "mean_per_draw": 307.23333333333335,
+      "expected_per_draw": 300.0,
+      "measured_sd": 51.75130142208553,
+      "binomial_sd": 17.233687939614086,
+      "dispersion_ratio": 3.002915081404474
+    },
+    "0.001": {
+      "mean_per_draw": 31.208333333333332,
+      "expected_per_draw": 30.0,
+      "measured_sd": 12.21921329994152,
+      "binomial_sd": 5.474486277268397,
+      "dispersion_ratio": 2.23202921353171
+    },
+    "0.0001": {
+      "mean_per_draw": 3.375,
+      "expected_per_draw": 3.0,
+      "measured_sd": 3.524374907326824,
+      "binomial_sd": 1.731964202863327,
+      "dispersion_ratio": 2.034900549041509
+    }
+  },
+  "criterion": "the mean count per draw against its expectation, with the standard error taken from the scatter measured between draws rather than from a binomial that assumes the markers are independent, which they are not",
+  "smallest_judged": 1e-05,
   "note": "5e-08 is not reached: it would need of order ten billion null tests. What is established is honesty down to the smallest threshold with enough expected crossings to judge"
 }
