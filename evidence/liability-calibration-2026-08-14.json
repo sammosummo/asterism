@@ -1,0 +1,36 @@
+{
+  "what": "level and coverage of the binary liability model",
+  "date": "2026-08-14",
+  "estimator": "ml",
+  "pedigree": "the real GOBS pedigree; only statuses simulated",
+  "people": 1910,
+  "largest_family": 180,
+  "prevalence": 0.254,
+  "true_heritability": 0.25,
+  "replicates": 200,
+  "levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "nominal": 0.95,
+  "results": {
+    "level": {
+      "computed": 200,
+      "rejection": {
+        "0.01": 0.005,
+        "0.05": 0.055,
+        "0.1": 0.085
+      },
+      "atom_at_one": 0.56
+    },
+    "coverage": {
+      "coverage": 0.93,
+      "computed": 200,
+      "median_estimate": 0.24375982382559253,
+      "at_a_bound": 0.085,
+      "truth": 0.25
+    }
+  },
+  "note": "the reference for the test is the even mixture of a point mass and chi-square on one degree of freedom, which is assumed from the Gaussian case rather than derived for a liability; this is the check that decides whether it holds"
+}
