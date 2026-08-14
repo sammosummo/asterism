@@ -130,6 +130,41 @@ class ComponentModel:
             "level": level,
         }
 
+    def equality_test(
+        self, y: Any, components: list[int] | None = None, reml: bool = True
+    ) -> dict[str, Any]:
+        """Test whether several components share one variance.
+
+        **This is the question a split matrix asks, and `test` is not it.**
+        Splitting a relationship matrix by class of parent–offspring tie gives
+        four classes, and every one carries variance if the trait is heritable
+        at all — so testing each against nought returns a p-value near nought
+        for anything heritable and answers nothing. Whether a mother resembles
+        her son by as much as a father resembles his daughter is the classes
+        being equal to *one another*.
+
+        The null pools the named components by adding their matrices, which is
+        exact: the pieces came from splitting a matrix, so their sum is that
+        matrix. Pool all of them and the null is the ordinary additive model.
+        Defaults to every structured component.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        if components is None:
+            components = list(range(len(self._matrices)))
+        statistic, p_value, rule, null_loglik = _core.component_equality_test(
+            self._matrices, self._x, y, [int(c) for c in components], reml
+        )
+        return {
+            "components": list(components),
+            "statistic": statistic,
+            "p_value": p_value,
+            # Chi-square on one fewer degree of freedom than components pooled;
+            # nothing sits on a bound under this null.
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "estimator": "reml" if reml else "ml",
+        }
+
     def test(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
         """Test one component against having no variance at all.
 

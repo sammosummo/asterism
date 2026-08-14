@@ -894,6 +894,26 @@ mod python {
         ))
     }
 
+    /// Test whether several components share one variance.
+    ///
+    /// `components` indexes the structured matrices. Pool every one of them and
+    /// the null is the ordinary single-component model.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, components, reml=true))]
+    pub fn component_equality_test(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        components: Vec<usize>,
+        reml: bool,
+    ) -> PyResult<(f64, f64, String, f64)> {
+        let model = build(&matrices, &design)?;
+        let test = model
+            .equality_test(&response(&y), &components, reml)
+            .map_err(PyValueError::new_err)?;
+        Ok((test.statistic, test.p_value, test.rule.to_owned(), test.null_loglik))
+    }
+
     /// Predict the random effects of one component.
     ///
     /// Returns one predicted effect per person and the standard error of each,
@@ -961,10 +981,190 @@ mod python {
 }
 
 #[cfg(feature = "python")]
-pub use python::{component_blup, component_fit, component_interval, component_test};
+pub use python::{
+    component_blup, component_equality_test, component_fit, component_interval,
+    component_test,
+};
+
+impl ComponentModel {
+    /// Test whether several components share one variance.
+    ///
+    /// **This is the question a split matrix is built to ask, and it is not
+    /// the same as asking whether each piece is nought.** Splitting the direct
+    /// parent-offspring cells of a relationship matrix by the sex of parent and
+    /// child gives four classes, and every one of them carries variance if the
+    /// trait is heritable at all -- so testing each against nought answers
+    /// nothing, and returns a p-value near nought for anything heritable. What
+    /// is wanted is whether a mother resembles her son by as much as a father
+    /// resembles his daughter, which is the classes being equal to one another.
+    ///
+    /// The null pools the named components by adding their matrices, which is
+    /// exact rather than approximate: the pieces were made by splitting a
+    /// matrix, so their sum is that matrix back. Pool every class together with
+    /// the remainder and the null is the ordinary additive model, and the test
+    /// says whether splitting it bought anything at all.
+    ///
+    /// # The reference distribution
+    ///
+    /// Pooling `k` components removes `k - 1` free variances, and under the
+    /// null the shared variance is positive rather than nought, so nothing sits
+    /// on a bound and the reference is an ordinary chi-square on `k - 1`
+    /// degrees of freedom. The alternative's variances are still bounded below,
+    /// and where such a bound binds the deviance is stochastically smaller,
+    /// which makes this conservative rather than optimistic.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where fewer than two distinct components are
+    /// named, an index is out of range, or either fit fails.
+    pub fn equality_test(
+        &self,
+        y: &DVector<f64>,
+        components: &[usize],
+        reml: bool,
+    ) -> Result<ComponentTest, &'static str> {
+        let structured = self.matrices.len();
+        if components.iter().any(|k| *k >= structured) {
+            return Err("COMPONENTS_INDEX_OUT_OF_RANGE");
+        }
+        let mut named: Vec<usize> = components.to_vec();
+        named.sort_unstable();
+        named.dedup();
+        if named.len() < 2 {
+            return Err("COMPONENTS_EQUALITY_NEEDS_TWO");
+        }
+
+        let mut pooled = self.matrices[named[0]].clone();
+        for &k in &named[1..] {
+            pooled += &self.matrices[k];
+        }
+        let mut reduced: Vec<DMatrix<f64>> = self
+            .matrices
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| !named.contains(k))
+            .map(|(_, m)| m.clone())
+            .collect();
+        reduced.push(pooled);
+
+        let free = self.fit(y, reml)?;
+        let null = Self::build(&reduced, &self.design)?.fit(y, reml)?;
+        let statistic = (2.0 * (free.loglik - null.loglik)).max(0.0);
+        let df = (named.len() - 1) as f64;
+        Ok(ComponentTest {
+            statistic,
+            p_value: chi2_upper_tail(statistic, df).clamp(0.0, 1.0),
+            rule: "chi2_k_minus_one",
+            null_loglik: null.loglik,
+        })
+    }
+}
+
+/// The upper tail of chi-square on `df` degrees of freedom, by the regularised
+/// upper incomplete gamma function.
+fn chi2_upper_tail(statistic: f64, df: f64) -> f64 {
+    if statistic <= 0.0 {
+        return 1.0;
+    }
+    statrs::function::gamma::gamma_ur(df / 2.0, statistic / 2.0)
+}
 
 #[cfg(test)]
 mod tests {
+
+    /// **Pooling every piece back together must reproduce the whole**, or the
+    /// null this test uses is not the model it claims to be. A relationship
+    /// matrix split by class and summed again is that matrix, so the pooled fit
+    /// has to match an ordinary one-component fit.
+    #[test]
+    fn pooling_every_split_piece_gives_the_unsplit_model_back() {
+        let (matrices, design, y) = split_by_class(0.0);
+        let whole = matrices.iter().skip(1).fold(matrices[0].clone(), |sum, m| sum + m);
+        let split = ComponentModel::build(&matrices, &design).expect("valid");
+        let together = ComponentModel::build(&[whole], &design).expect("valid");
+        let all: Vec<usize> = (0..matrices.len()).collect();
+        let test = split.equality_test(&y, &all, true).expect("tests");
+        let plain = together.fit(&y, true).expect("fits");
+        assert!(
+            (test.null_loglik - plain.loglik).abs() < 1e-8,
+            "the pooled null gives {} where the unsplit model gives {}",
+            test.null_loglik,
+            plain.loglik
+        );
+        // Only that it does not reject. A single draw from a true null is
+        // uniform, so p = 0.18 is an ordinary one and thresholding it any
+        // harder would be testing the seed rather than the model. Whether the
+        // level is held is a calibration question, not a unit test.
+        assert!(
+            test.p_value > 0.05,
+            "no class difference was simulated but p is {}",
+            test.p_value
+        );
+    }
+
+    /// A class that really does differ is found.
+    #[test]
+    fn a_class_that_differs_is_detected() {
+        let (matrices, design, y) = split_by_class(1.2);
+        let split = ComponentModel::build(&matrices, &design).expect("valid");
+        let all: Vec<usize> = (0..matrices.len()).collect();
+        let test = split.equality_test(&y, &all, true).expect("tests");
+        assert!(
+            test.p_value < 0.05,
+            "one class was simulated with far more variance but p is {}",
+            test.p_value
+        );
+    }
+
+    /// Fewer than two distinct components is a question with no content.
+    #[test]
+    fn equality_needs_two_distinct_components() {
+        let (matrices, design, y) = split_by_class(0.0);
+        let model = ComponentModel::build(&matrices, &design).expect("valid");
+        assert!(model.equality_test(&y, &[0], true).is_err());
+        assert!(model.equality_test(&y, &[1, 1], true).is_err());
+        assert!(model.equality_test(&y, &[0, 99], true).is_err());
+    }
+
+    /// A matrix split into a remainder and two classes of parent-child tie.
+    ///
+    /// `extra` is added to the first class's variance, so nought simulates no
+    /// class difference at all.
+    fn split_by_class(extra: f64) -> (Vec<DMatrix<f64>>, DMatrix<f64>, DVector<f64>) {
+        let families = 150;
+        let n = 3 * families;
+        let mut rest = DMatrix::<f64>::identity(n, n);
+        let mut first = DMatrix::<f64>::zeros(n, n);
+        let mut second = DMatrix::<f64>::zeros(n, n);
+        for family in 0..families {
+            let (parent, a, b) = (3 * family, 3 * family + 1, 3 * family + 2);
+            rest[(a, b)] = 0.5;
+            rest[(b, a)] = 0.5;
+            first[(parent, a)] = 0.5;
+            first[(a, parent)] = 0.5;
+            second[(parent, b)] = 0.5;
+            second[(b, parent)] = 0.5;
+        }
+        let covariance = (&rest + &first + &second) * 0.5
+            + &first * extra
+            + DMatrix::<f64>::identity(n, n) * 0.5;
+        let factor = covariance.cholesky().expect("positive definite").l();
+        let mut state = 20_260_814u64;
+        let draw = DVector::from_iterator(
+            n,
+            (0..n).map(|_| {
+                let mut total = 0.0;
+                for _ in 0..12 {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    total += (state >> 11) as f64 / (1u64 << 53) as f64;
+                }
+                total - 6.0
+            }),
+        );
+        (vec![rest, first, second], DMatrix::from_element(n, 1, 1.0), factor * draw)
+    }
     use super::ComponentModel;
     use nalgebra::{DMatrix, DVector};
 
