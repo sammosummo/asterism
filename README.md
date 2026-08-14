@@ -45,7 +45,7 @@ variance function the way the data does will bend its correlation instead: on a
 rank-one genetic surface with no reordering at all, the exponential form
 rejected the correlation null on 10.7 per cent of 2000 samples against a nominal
 5. Choose the surface before seeing the answer. Fitting both and reporting
-whichever rejects is not a procedure. Only the smooth surface can
+whichever rejects is not a procedure. Only the random-regression surface can
 represent a crossover, where a genotype that helps in one environment harms in
 another: the exponential kernel is positive at every rate, so it reports a
 correlation near nought where the truth is near minus one.
@@ -57,12 +57,20 @@ surface. The tests exist for this reason, and unlike the spatial model they need
 no bootstrap: at either null every remaining parameter is still identified, so a
 mixture of chi-squares is a real reference rather than a hopeful one.
 
+**A third surface takes the decay to a frozen power**, `exp(-λ|Δ|^κ)`, with κ
+chosen from 0.5, 1.0, 1.5 or 2.0 rather than fitted — at κ = 1 it is the
+recovered exponential exactly. It is chosen and not fitted because the shape is
+barely identified and strongly changes the answer: on one simulated set the four
+shapes spanned 0.31 in log likelihood, a deviance of 0.62, while the genetic
+correlation they reported ran from 0.92 to 0.45. A shape picked to suit the
+answer would be invisible in the fit. Say which one was used.
+
 **Report the G-by-E tests; treat the intervals as the caveat rather than the
 finding.** They cover — 0.953 to 0.983 against a nominal 0.95 over 300
 replicates, on both surfaces and all three quantities — but the genetic
 correlation's interval runs to a bound in 80 to 92 per cent of replicates, so it
 covers largely by being wide. And the point estimates are pulled towards no
-interaction by the same boundary: on the smooth surface a true correlation of
+interaction by the same boundary: on the random-regression surface a true correlation of
 0.053 came back with a median of 0.178, because the fits that find no
 reordering return exactly one and drag the middle up. The heritability at a
 single environment is likewise weakly identified when people are spread along a
@@ -71,11 +79,11 @@ continuous environment, reaching a bound in 13 to 64 per cent of replicates.
 **The two surfaces do not sit on the same kind of bound**, and only one of them
 gets the even mixture it is referred to. The exponential surface's null is
 `λ = 0`, a flat face of its parameter box, and its level comes out at 0.048
-against a nominal 0.05. The smooth surface's null is the curved boundary of the
+against a nominal 0.05. The random-regression surface's null is the curved boundary of the
 positive semidefinite cone, where the weights follow the local solid angle
 instead, so the even mixture is the wrong reference and errs the safe way — its
 tests are valid but conservative. That costs less than it sounds: compared
-fairly, each surface on an alternative from its own family, the smooth one finds
+fairly, each surface on an alternative from its own family, the random-regression one finds
 a reordering more often than the exponential does, 0.333 against 0.189.
 
 **The class-weighted kinship model needs no code of its own.** It multiplies the

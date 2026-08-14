@@ -23,7 +23,7 @@ the measurement; a genetic correlation below one cannot.
 **The two surfaces do not have the same "no reordering" null**, and this is the
 main thing this check is built to measure. Under no reordering the genetic
 covariance is `a(z_i) * a(z_j)` for some function `a`. The exponential surface
-can hold `a(z) = exp(alpha + gamma*z)` and nothing else; the smooth surface can
+can hold `a(z) = exp(alpha + gamma*z)` and nothing else; the random-regression surface can
 hold `a(z) = l00 + l10*z` and nothing else. Neither family contains the other.
 
 So a rank-one surface drawn from one family is *misspecified* for the other, and
@@ -57,7 +57,7 @@ that the rejection rate at each level does not exceed that level.
 **The two surfaces do not sit on the same kind of bound, and it shows here.**
 The exponential surface's null is `lambda = 0`, a flat face of its parameter
 box, which is the case the even mixture of chi-squares is derived for — and its
-level comes out very close to nominal. The smooth surface's null is
+level comes out very close to nominal. The random-regression surface's null is
 `q00*q11 - q01^2 = 0`, the *curved* boundary of the positive semidefinite cone,
 where the mixture weights follow the local solid angle instead of being even.
 The even mixture is therefore the wrong reference for it, erring the safe way:
@@ -128,7 +128,7 @@ SCENARIOS = {
     },
     "residual_tilt": {
         # The genetic covariance is flat, so both nulls hold for both surfaces.
-        # The residual variance is linear, which the smooth surface holds exactly
+        # The residual variance is linear, which the random-regression surface holds exactly
         # and the exponential only approximates -- deliberately, because on real
         # traits the residual will not be in either family, and residual misfit
         # leaking into a genetic test is the failure this scenario is for.
@@ -139,7 +139,7 @@ SCENARIOS = {
         "family": BOTH,
     },
     "rank_one_linear": {
-        # (0.6 + 0.4 z_i)(0.6 + 0.4 z_j): exactly the smooth surface's rank-one
+        # (0.6 + 0.4 z_i)(0.6 + 0.4 z_j): exactly the random-regression surface's rank-one
         # family, and outside the exponential's, whose variance function cannot
         # reach nought.
         "what": "same genes throughout, genetic standard deviation linear in z",
@@ -150,7 +150,7 @@ SCENARIOS = {
     },
     "rank_one_loglinear": {
         # sqrt(g(z_i) g(z_j)) with g(z) = exp(-0.7 + 0.6 z): exactly the
-        # exponential surface's rank-one family, and outside the smooth one's.
+        # exponential surface's rank-one family, and outside the random-regression one's.
         "what": "same genes throughout, genetic standard deviation log-linear in z",
         "genetic": lambda a, b: np.exp(-0.7 + 0.3 * (a + b)),
         "residual": lambda z: np.full_like(z, 0.5),
@@ -159,7 +159,7 @@ SCENARIOS = {
     },
     "reordering_quadratic": {
         # q00 q11 well above q01^2, so the correlation across the range falls
-        # properly below one. In the smooth surface's family.
+        # properly below one. In the random-regression surface's family.
         "what": "different genes at different environments, quadratic surface",
         "genetic": lambda a, b: 0.5 + 0.05 * (a + b) + 0.45 * a * b,
         "residual": lambda z: np.full_like(z, 0.5),

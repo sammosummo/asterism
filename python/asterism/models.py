@@ -392,14 +392,33 @@ class GxeModel:
       the environment, and genetic effects a distance apart in the environment
       correlate as ``exp(-λ|Δ|)``. Five parameters.
     - ``"random_regression"``: a smooth quadratic surface on each covariance,
-      held by its Cholesky factor so it stays a covariance. Six parameters.
+      held by loadings so it stays a covariance. Six parameters.
+    - ``"powered_exponential"``: the exponential with the decay taken to a
+      frozen power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
+      ``shape`` chosen from 0.5, 1.0, 1.5 or 2.0 — **chosen and not fitted**,
+      because a shape and a decay rate trade off against each other and a search
+      over both wanders. At ``shape=1.0`` it is the exponential surface exactly.
+
+    **The shape is barely identified and strongly changes the answer.** On one
+    simulated set the four shapes spanned 0.31 in log likelihood — a deviance of
+    0.62, which is nothing — while the genetic correlation they reported ran
+    from 0.92 to 0.45. A shape chosen to suit the answer would be invisible in
+    the fit, so choose it for a reason outside the data and report which one was
+    used beside the result.
+
+    Provenance differs between them and is worth knowing. The exponential form
+    is a *recovered* method — it reproduces the restored SOLAR covariance to
+    better than 1e-11, and the powered one reproduces the source at all four
+    shapes. Random regression is not recovered: the source-fidelity crate holds
+    it in a module whose own header says nothing in it is a recovered or
+    qualified method. It is a proposal, and this reproduces that proposal.
 
     Nothing is reported in either surface's own coordinates. What comes back is
     the heritability at each environment you ask about and the genetic
     correlation between each pair — quantities that mean the same thing whichever
     surface produced them.
 
-    **Only the smooth surface can represent a crossover** — a genotype that
+    **Only the random-regression surface can represent a crossover** — a genotype that
     helps in one environment and harms in another, so the genetic correlation
     falls below nought rather than merely below one. The exponential surface
     correlates two environments as ``exp(-λ|Δ|)``, which is positive at every
@@ -414,7 +433,7 @@ class GxeModel:
     bend its correlation instead. In calibration over 2000 samples with a linear rank-one genetic
     surface and no reordering at all, the exponential surface rejected
     ``test(y, "correlation")`` on 10.7 per cent of them against a nominal 5. The
-    smooth surface was conservative rather than anti-conservative in the mirror
+    random-regression surface was conservative rather than anti-conservative in the mirror
     case, which is why it is the default.
     Fitting both and reporting whichever rejects is not a defensible procedure.
 
@@ -425,15 +444,22 @@ class GxeModel:
     """
 
     def __init__(self, relationship: Any, environment: Any, design: Any,
-                 surface: str = "random_regression") -> None:
-        if surface not in ("exponential", "random_regression"):
+                 surface: str = "random_regression", shape: float = 1.0) -> None:
+        if surface not in ("exponential", "random_regression", "powered_exponential"):
             raise ValueError(
-                f"surface must be exponential or random_regression, not {surface!r}"
+                "surface must be exponential, random_regression or "
+                f"powered_exponential, not {surface!r}"
+            )
+        if surface == "powered_exponential" and float(shape) not in (0.5, 1.0, 1.5, 2.0):
+            raise ValueError(
+                f"shape must be one of 0.5, 1.0, 1.5, 2.0, not {shape!r}. It is "
+                "chosen rather than fitted."
             )
         self._relationship = _matrix(relationship, "relationship")
         self._environment = [float(v) for v in np.asarray(environment).ravel()]
         self._design = _matrix(design, "design")
         self._surface = surface
+        self._shape = float(shape)
 
     def fit(self, y: Any, grid: Any = (-1.0, 0.0, 1.0), reml: bool = True) -> dict[str, Any]:
         """Fit, and report the surface at the environments in ``grid``.
@@ -457,11 +483,12 @@ class GxeModel:
             correlations,
         ) = _core.gxe_fit(
             self._relationship, self._environment, self._design, y,
-            self._surface, grid, reml,
+            self._surface, grid, self._shape, reml,
         )
         width = len(grid)
         return {
             "surface": self._surface,
+            "shape": self._shape if self._surface == "powered_exponential" else None,
             # Kept so a fit can be reproduced and inspected. They are not the
             # answer and do not mean the same thing across surfaces.
             "parameters": list(parameters),
@@ -496,7 +523,7 @@ class GxeModel:
         - ``"variance"``: the genetic variance does not change with the
           environment. This is the recovered SOLAR model's own ``gamma_G = 0``
           null, and on the exponential surface it is one interior coordinate
-          referred to chi-square on one degree of freedom. On the smooth
+          referred to chi-square on one degree of freedom. On the random-regression
           surface it is not a separate test — a quadratic genetic variance is
           constant only when both its shape coordinates are nought, which is
           the interaction null — so it returns that instead of a differently
@@ -512,7 +539,7 @@ class GxeModel:
         y = np.ascontiguousarray(y, dtype=np.float64)
         statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxe_test(
             self._relationship, self._environment, self._design, y,
-            self._surface, null, reml,
+            self._surface, null, self._shape, reml,
         )
         return {
             "surface": self._surface,
@@ -556,7 +583,7 @@ class GxeModel:
         y = np.ascontiguousarray(y, dtype=np.float64)
         estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
             self._relationship, self._environment, self._design, y,
-            self._surface, quantity, float(first), float(second), reml,
+            self._surface, quantity, float(first), float(second), self._shape, reml,
         )
         return {
             "surface": self._surface,

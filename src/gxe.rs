@@ -25,7 +25,7 @@
 //! one exactly when the genes acting in them differ. That correlation is the
 //! interaction, and it is what these models exist to estimate.
 //!
-//! **The smooth surface has to stay a covariance, and that is not a box.** Its
+//! **The random-regression surface has to stay a covariance, and that is not a box.** Its
 //! `q01` is free to be negative while `[[q00, q01], [q01, q11]]` must remain
 //! positive semidefinite. The surface is therefore held by loadings rather than
 //! by its entries: with `q00 = l00^2`, `q01 = l00*l10` and `q11 = l10^2 + u`,
@@ -49,11 +49,11 @@
 //! calibration, which is the proof that the search was already finding the
 //! optimum.
 //!
-//! What actually makes the smooth surface's tests conservative is the shape of
+//! What actually makes the random-regression surface's tests conservative is the shape of
 //! the null, and the two surfaces differ in it. The exponential surface's null
 //! is `lambda = 0`, a flat face of its parameter box, which is the case the
 //! even mixture of chi-squares is derived for -- and there the level comes out
-//! at 0.048 against a nominal 0.05. The smooth surface's null is
+//! at 0.048 against a nominal 0.05. The random-regression surface's null is
 //! `q00*q11 - q01^2 = 0`, the *curved* boundary of the positive semidefinite
 //! cone. On a cone the mixture weights follow the local solid angle rather than
 //! being even, so the even mixture is the wrong reference. It errs the safe
@@ -62,11 +62,19 @@
 //! on 0.3 per cent at a nominal 5.
 //!
 //! That costs power in principle and less than expected in practice. On its own
-//! family the smooth surface still finds a reordering more often than the
+//! family the random-regression surface still finds a reordering more often than the
 //! exponential one finds a reordering on *its* own family -- 0.333 against
 //! 0.189 at a nominal 0.05. Where more power is wanted the reference would have
 //! to be bootstrapped rather than looked up.
 //!
+//!
+//! **The shape is barely identified and strongly changes the answer**, which is
+//! why the source froze it and why this package will not fit it. On one
+//! simulated set the four shapes spanned 0.31 in log likelihood -- a deviance of
+//! 0.62, which is nothing -- while the genetic correlation they reported ran
+//! from 0.92 to 0.45. A shape chosen to suit the answer would therefore be
+//! invisible in the fit. Choose it for a reason outside the data, and say which
+//! shape was used beside the result.
 //!
 //! The environment is the caller's to centre and scale. Where it is centred
 //! decides what the surface's intercept means, and that is a scientific choice
@@ -78,6 +86,44 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 
+/// The frozen shapes the powered-exponential kernel may take.
+///
+/// **This is an enumeration and not a number, on purpose.** The source froze
+/// four shapes at qualification rather than estimating one, because a shape and
+/// a decay rate are poorly separated by data: they trade off against each other
+/// and a search over both wanders. Making the grid a type means an off-grid
+/// shape cannot be asked for, and the shape is chosen rather than fitted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// A rougher kernel than the exponential, falling away faster near nought.
+    Half,
+    /// The recovered exponential itself.
+    One,
+    ThreeHalves,
+    /// The Gaussian kernel, smooth at nought and much flatter near it.
+    Two,
+}
+
+impl Shape {
+    #[must_use]
+    pub const fn value(self) -> f64 {
+        match self {
+            Self::Half => 0.5,
+            Self::One => 1.0,
+            Self::ThreeHalves => 1.5,
+            Self::Two => 2.0,
+        }
+    }
+
+    /// Parse one of the four frozen shapes, refusing anything else.
+    #[must_use]
+    pub fn from_value(value: f64) -> Option<Self> {
+        [Self::Half, Self::One, Self::ThreeHalves, Self::Two]
+            .into_iter()
+            .find(|shape| (shape.value() - value).abs() < 1e-9)
+    }
+}
+
 /// Which surface is put on the environment-by-environment covariance.
 ///
 /// This is the only thing that differs between the two cross-sectional forms,
@@ -87,7 +133,7 @@ use crate::dense::DenseFactor;
 ///
 /// A crossover -- a genotype that helps in one environment and harms in another,
 /// so the genetic correlation is below nought rather than merely below one -- is
-/// reachable by the smooth surface and not by the exponential one, whose kernel
+/// reachable by the random-regression surface and not by the exponential one, whose kernel
 /// is positive at every rate.
 ///
 /// And a surface that cannot bend its variance function the way the data does
@@ -105,14 +151,34 @@ pub enum Surface {
     /// factor. Six parameters: three loadings for the genetic block and three
     /// for the residual.
     RandomRegression,
+    /// The exponential surface with the decay taken to a frozen power:
+    /// `exp(-lambda |difference|^kappa)`. The same five free parameters, with
+    /// the shape chosen rather than fitted.
+    ///
+    /// At `Shape::One` this is the recovered exponential model exactly, which
+    /// is the source's own statement and is checked by a test.
+    PoweredExponential(Shape),
 }
 
 impl Surface {
+    /// The power the environmental distance is raised to inside the decay.
+    ///
+    /// One for the recovered exponential, and the frozen shape otherwise. Every
+    /// place the kernel is written reads it from here, so the two forms cannot
+    /// drift apart.
+    #[must_use]
+    pub const fn decay_exponent(self) -> f64 {
+        match self {
+            Self::PoweredExponential(shape) => shape.value(),
+            _ => 1.0,
+        }
+    }
+
     /// How many free parameters the surface carries.
     #[must_use]
     pub const fn parameters(self) -> usize {
         match self {
-            Self::Exponential => 5,
+            Self::Exponential | Self::PoweredExponential(_) => 5,
             Self::RandomRegression => 6,
         }
     }
@@ -123,9 +189,9 @@ impl Surface {
     ///
     /// **The two surfaces agree on where these sit**, which is convenient but
     /// not a coincidence to lean on silently. For the exponential form they are
-    /// the slope of the log genetic variance and the decay rate; for the smooth
-    /// form they are the two off-intercept loadings of the genetic Cholesky
-    /// factor. In both, setting them to nought leaves a genetic covariance that
+    /// the slope of the log genetic variance and the decay rate; for random
+    /// regression they are the two off-intercept loadings of the genetic
+    /// block. In both, setting them to nought leaves a genetic covariance that
     /// is one number times the relationship matrix -- an ordinary heritability
     /// model with no environment in it.
     ///
@@ -137,7 +203,7 @@ impl Surface {
     pub const fn genetic_shape(self) -> [usize; 2] {
         match self {
             // gamma_g, lambda
-            Self::Exponential => [1, 2],
+            Self::Exponential | Self::PoweredExponential(_) => [1, 2],
             // the genetic factor's l10 and l11
             Self::RandomRegression => [1, 2],
         }
@@ -151,7 +217,7 @@ impl Surface {
     pub fn bounds(self) -> (Vec<f64>, Vec<f64>) {
         match self {
             // alpha_g, gamma_g, lambda >= 0, alpha_e, gamma_e
-            Self::Exponential => (
+            Self::Exponential | Self::PoweredExponential(_) => (
                 vec![
                     f64::NEG_INFINITY,
                     f64::NEG_INFINITY,
@@ -174,7 +240,7 @@ impl Surface {
     ///
     /// The genetic variance may still change with the environment; what this
     /// rules out is a change in which genes matter. For the exponential form it
-    /// is the decay rate, for the smooth form the last loading of the genetic
+    /// is the decay rate, for the random-regression form the last loading of the genetic
     /// Cholesky factor, and in both it is bounded below at nought.
     #[must_use]
     pub const fn rank_one(self) -> usize {
@@ -222,10 +288,11 @@ impl GxeFit {
     pub fn genetic_covariance(&self, first: f64, second: f64) -> f64 {
         let theta = self.theta();
         let value = match self.surface {
-            Surface::Exponential => {
+            Surface::Exponential | Surface::PoweredExponential(_) => {
+                let gap = (first - second).abs().powf(self.surface.decay_exponent());
                 (0.5 * (theta[0] + theta[1] * first)).exp()
                     * (0.5 * (theta[0] + theta[1] * second)).exp()
-                    * (-theta[2] * (first - second).abs()).exp()
+                    * (-theta[2] * gap).exp()
             }
             Surface::RandomRegression => {
                 let g = block_from_loadings(theta[0], theta[1], theta[2]);
@@ -246,7 +313,9 @@ impl GxeFit {
     pub fn residual_variance_at(&self, z: f64) -> f64 {
         let theta = self.theta();
         let value = match self.surface {
-            Surface::Exponential => (theta[3] + theta[4] * z).exp(),
+            Surface::Exponential | Surface::PoweredExponential(_) => {
+                (theta[3] + theta[4] * z).exp()
+            }
             Surface::RandomRegression => {
                 let e = block_from_loadings(theta[3], theta[4], theta[5]);
                 e[0] + 2.0 * e[1] * z + e[2] * z * z
@@ -352,13 +421,14 @@ impl GxeModel {
     /// The genetic surface at two environments.
     fn genetic_surface(&self, theta: &[f64; PARAMETERS], zi: f64, zj: f64) -> f64 {
         match self.surface {
-            Surface::Exponential => {
+            Surface::Exponential | Surface::PoweredExponential(_) => {
                 let (alpha, gamma, lambda) = (theta[0], theta[1], theta[2]);
                 // The square root of each variance, times the decay in
-                // environmental distance.
+                // environmental distance raised to the frozen shape.
+                let gap = (zi - zj).abs().powf(self.surface.decay_exponent());
                 (0.5 * (alpha + gamma * zi)).exp()
                     * (0.5 * (alpha + gamma * zj)).exp()
-                    * (-lambda * (zi - zj).abs()).exp()
+                    * (-lambda * gap).exp()
             }
             Surface::RandomRegression => {
                 let g = block_from_loadings(theta[0], theta[1], theta[2]);
@@ -370,7 +440,9 @@ impl GxeModel {
     /// The residual variance at one environment.
     fn residual_surface(&self, theta: &[f64; PARAMETERS], zi: f64) -> f64 {
         match self.surface {
-            Surface::Exponential => (theta[3] + theta[4] * zi).exp(),
+            Surface::Exponential | Surface::PoweredExponential(_) => {
+                (theta[3] + theta[4] * zi).exp()
+            }
             Surface::RandomRegression => {
                 let e = block_from_loadings(theta[3], theta[4], theta[5]);
                 e[0] + 2.0 * e[1] * zi + e[2] * zi * zi
@@ -395,10 +467,10 @@ impl GxeModel {
 
     /// The derivative of one block's covariance with respect to one parameter.
     ///
-    /// For the exponential surface every derivative is the surface itself times
-    /// something simple, because the surface is an exponential. For the smooth
-    /// one the chain runs through the Cholesky factor, so each covariance entry
-    /// moves with more than one loading.
+    /// For the exponential surfaces every derivative is the surface itself
+    /// times something simple, because the surface is an exponential. For
+    /// random regression the chain runs through the loadings, so each
+    /// covariance entry moves with more than one of them.
     fn derivative(
         &self,
         block: &[usize],
@@ -410,13 +482,14 @@ impl GxeModel {
             let (a, b) = (block[i], block[j]);
             let (zi, zj) = (self.z[a], self.z[b]);
             match self.surface {
-                Surface::Exponential => {
+                Surface::Exponential | Surface::PoweredExponential(_) => {
                     let genetic = self.genetic_surface(theta, zi, zj);
                     let residual = self.residual_surface(theta, zi);
+                    let gap = (zi - zj).abs().powf(self.surface.decay_exponent());
                     let d_genetic = match parameter {
                         0 => genetic,                                   // alpha_g
                         1 => genetic * 0.5 * (zi + zj),                 // gamma_g
-                        2 => -genetic * (zi - zj).abs(),                // lambda_g
+                        2 => -genetic * gap,                            // lambda_g
                         _ => 0.0,
                     };
                     let d_residual = match parameter {
@@ -469,7 +542,7 @@ impl GxeModel {
             // Only the decay is constrained; the log-linear coefficients are
             // free because a variance written as an exponential is positive
             // whatever they are.
-            Surface::Exponential => {
+            Surface::Exponential | Surface::PoweredExponential(_) => {
                 if theta[2] < 0.0 {
                     return None;
                 }
@@ -611,7 +684,7 @@ impl GxeModel {
         let starts: Vec<Vec<f64>> = match self.surface {
             // Log variances near a half of the response's own, and decays
             // spanning "no interaction" to "a lot".
-            Surface::Exponential => vec![
+            Surface::Exponential | Surface::PoweredExponential(_) => vec![
                 vec![-0.7, 0.0, 0.01, -0.7, 0.0],
                 vec![-0.7, 0.3, 0.5, -0.7, 0.1],
                 vec![-0.7, -0.3, 0.1, -0.7, -0.1],
@@ -808,7 +881,7 @@ impl GxeModel {
     /// coordinate held at nought, referred to chi-square on one degree of
     /// freedom with no boundary and no mixture.
     ///
-    /// **On the smooth surface it is not a separate test**, and saying so is
+    /// **On the random-regression surface it is not a separate test**, and saying so is
     /// better than inventing one. There the genetic variance is
     /// `q00 + 2 q01 z + q11 z^2`, which is constant only when `q01` and `q11`
     /// are both nought, and that is the same pair of coordinates
@@ -827,7 +900,7 @@ impl GxeModel {
     pub fn variance_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
         match self.surface {
             Surface::RandomRegression => self.interaction_test(y, reml),
-            Surface::Exponential => {
+            Surface::Exponential | Surface::PoweredExponential(_) => {
                 let free = self.fit(y, reml)?;
                 let held = self.fit_holding(y, reml, &[self.surface.genetic_shape()[0]])?;
                 Ok(mixture(free.loglik, held.loglik, "chi2_1", chi2_one_df_upper_tail))
@@ -929,7 +1002,7 @@ impl GxeModel {
     ///
     /// **This returns a whole repaired vector rather than one coordinate to
     /// overwrite**, because the obvious per-coordinate solve is a trap. Holding
-    /// a heritability by solving the smooth surface's `u_e` gives
+    /// a heritability by solving the random-regression surface's `u_e` gives
     /// `u_e = (wanted - (l00_e + l10_e z)^2) / z^2`, which is negative over much
     /// of the search, and an infeasible point scores as no fit at all -- so the
     /// profile stops at the edge of the feasible region and reports it as a
@@ -966,7 +1039,9 @@ impl GxeModel {
                 let scale = wanted / have;
                 match self.surface {
                     // exp(alpha_e + gamma_e z) * scale
-                    Surface::Exponential => out[3] += scale.ln(),
+                    Surface::Exponential | Surface::PoweredExponential(_) => {
+                        out[3] += scale.ln();
+                    }
                     // Scaling a covariance block by s scales its loadings by
                     // sqrt(s), and u -- being already a square -- by s.
                     Surface::RandomRegression => {
@@ -988,11 +1063,11 @@ impl GxeModel {
                 match self.surface {
                     // exp(-lambda gap) = value; the kernel cannot be negative
                     // however large the rate.
-                    Surface::Exponential => {
+                    Surface::Exponential | Surface::PoweredExponential(_) => {
                         if !(value > 0.0 && value <= 1.0) {
                             return None;
                         }
-                        out[2] = -value.ln() / gap;
+                        out[2] = -value.ln() / gap.powf(self.surface.decay_exponent());
                         Some(out)
                     }
                     Surface::RandomRegression => {
@@ -1128,7 +1203,7 @@ impl GxeModel {
             Reported::Heritability { .. } => (1e-6, 1.0 - 1e-6),
             Reported::GeneticCorrelation { .. } => match self.surface {
                 // The exponential kernel is positive at every rate.
-                Surface::Exponential => (1e-6, 1.0),
+                Surface::Exponential | Surface::PoweredExponential(_) => (1e-6, 1.0),
                 Surface::RandomRegression => (-1.0, 1.0),
             },
         };
@@ -1193,10 +1268,16 @@ fn to_theta(values: &[f64]) -> [f64; PARAMETERS] {
 
 #[cfg(test)]
 mod tests {
-    use super::{GxeFit, GxeModel, Reported, Surface, block_from_loadings};
+    use super::{GxeFit, GxeModel, Reported, Shape, Surface, block_from_loadings};
     use nalgebra::{DMatrix, DVector};
 
-    const BOTH: [Surface; 2] = [Surface::Exponential, Surface::RandomRegression];
+    const BOTH: [Surface; 3] = [
+        Surface::Exponential,
+        Surface::RandomRegression,
+        // A shape away from one, so the powered kernel is exercised as
+        // something other than a second copy of the exponential.
+        Surface::PoweredExponential(Shape::Two),
+    ];
 
     /// Sibling pairs, each person carrying an environment.
     ///
@@ -1227,7 +1308,7 @@ mod tests {
         };
         let z: Vec<f64> = (0..n).map(|_| next()).collect();
 
-        // Simulated from the smooth surface, which both forms can represent
+        // Simulated from the random-regression surface, which both forms can represent
         // closely enough to be recovered from.
         let mut covariance = DMatrix::<f64>::zeros(n, n);
         for i in 0..n {
@@ -1248,7 +1329,7 @@ mod tests {
         (a, z.clone(), DMatrix::from_element(n, 1, 1.0), factor * draw)
     }
 
-    /// **The loadings exist to keep the smooth surface a
+    /// **The loadings exist to keep the random-regression surface a
     /// covariance**, and it must do so including where the off-diagonal loading
     /// is large and negative -- the case a non-negativity constraint would
     /// wrongly forbid and a careless parameterisation would wrongly allow.
@@ -1276,7 +1357,7 @@ mod tests {
 
     /// Both surfaces have their gradients checked against a central difference
     /// of the objective, in ML and REML. The exponential's derivatives run
-    /// through an exponential and the smooth one's through a Cholesky, and
+    /// through an exponential and the random-regression one's through a Cholesky, and
     /// neither is the kind of thing to take on trust.
     #[test]
     fn the_gradient_matches_a_central_difference() {
@@ -1284,7 +1365,7 @@ mod tests {
         for surface in BOTH {
             let model = GxeModel::build(surface, &a, &z, &design).expect("valid");
             let points: Vec<[f64; 6]> = match surface {
-                Surface::Exponential => vec![
+                Surface::Exponential | Surface::PoweredExponential(_) => vec![
                     [-0.7, 0.2, 0.3, -0.7, 0.1, 0.0],
                     [-0.5, -0.3, 0.8, -0.9, -0.2, 0.0],
                     [-0.7, 0.0, 0.05, -0.7, 0.0, 0.0],
@@ -1361,7 +1442,7 @@ mod tests {
     /// a genetic correlation across environments cannot exceed one, so under the
     /// null every departure runs downward and a single draw can sit far below one
     /// by chance. On forty null draws the exponential surface has its tenth
-    /// percentile at 0.25 and its smallest at nought, where the smooth surface
+    /// percentile at 0.25 and its smallest at nought, where the random-regression surface
     /// falls only to 0.74. The exponential decay saturates -- once the rate is
     /// large the likelihood is nearly flat in it, and noise carries the estimate a
     /// long way.
@@ -1409,11 +1490,11 @@ mod tests {
     /// not merely below one. The exponential surface correlates two
     /// environments as `exp(-lambda |difference|)`, which is positive whatever
     /// the rate, so it cannot reach one however strong the crossover in the
-    /// data. The smooth surface can, because its covariance is
+    /// data. The random-regression surface can, because its covariance is
     /// `(l00 + l10 z1)(l00 + l10 z2) + l11^2 z1 z2`, which changes sign when the
     /// two environments fall either side of `-l00 / l10`.
     #[test]
-    fn only_the_smooth_surface_can_cross_over() {
+    fn only_random_regression_can_cross_over() {
         let made = |surface: Surface, parameters: Vec<f64>| GxeFit {
             surface,
             parameters,
@@ -1426,11 +1507,11 @@ mod tests {
             variance_scale: 1.0,
         };
         // l00 = 0.5, l10 = 1.0, l11 = 0: the sign changes at z = -0.5.
-        let smooth = made(Surface::RandomRegression, vec![0.5, 1.0, 0.0, 0.7, 0.0, 0.0]);
-        let crossed = smooth.genetic_correlation(-1.5, 1.5);
+        let regression = made(Surface::RandomRegression, vec![0.5, 1.0, 0.0, 0.7, 0.0, 0.0]);
+        let crossed = regression.genetic_correlation(-1.5, 1.5);
         assert!(
             crossed < -0.9,
-            "the smooth surface should reach a crossover, and got {crossed}"
+            "the random-regression surface should reach a crossover, and got {crossed}"
         );
         // No rate, however large, takes the exponential surface below nought.
         for rate in [0.0, 0.5, 5.0, 50.0] {
@@ -1545,15 +1626,26 @@ pub mod python {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
 
-    use super::{GxeModel, Reported, Surface};
+    use super::{GxeModel, Reported, Shape, Surface};
     use nalgebra::{DMatrix, DVector};
 
-    fn surface_named(name: &str) -> PyResult<Surface> {
+    fn surface_named(name: &str, shape: f64) -> PyResult<Surface> {
         match name {
             "exponential" => Ok(Surface::Exponential),
             "random_regression" => Ok(Surface::RandomRegression),
+            "powered_exponential" => Shape::from_value(shape)
+                .map(Surface::PoweredExponential)
+                .ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "GXE_SHAPE_NOT_ON_THE_GRID: {shape}, wanted one of 0.5, 1.0, \
+                         1.5, 2.0. The shape is chosen and not fitted, because a \
+                         shape and a decay rate trade off against each other and a \
+                         search over both wanders."
+                    ))
+                }),
             other => Err(PyValueError::new_err(format!(
-                "GXE_UNKNOWN_SURFACE: {other}, wanted exponential or random_regression"
+                "GXE_UNKNOWN_SURFACE: {other}, wanted exponential, random_regression \
+                 or powered_exponential"
             ))),
         }
     }
@@ -1563,12 +1655,13 @@ pub mod python {
         environment: &[f64],
         design: &PyReadonlyArray2<'_, f64>,
         surface: &str,
+        shape: f64,
     ) -> PyResult<GxeModel> {
         let a = relationship.as_array();
         let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
         let x = design.as_array();
         let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
-        GxeModel::build(surface_named(surface)?, &a, environment, &x)
+        GxeModel::build(surface_named(surface, shape)?, &a, environment, &x)
             .map_err(PyValueError::new_err)
     }
 
@@ -1586,7 +1679,7 @@ pub mod python {
     /// parameters would have to know which surface it was holding. The genetic
     /// correlations come back as a flattened square, in the grid's own order.
     #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, grid, reml=true))]
+    #[pyo3(signature = (relationship, environment, design, y, surface, grid, shape=1.0, reml=true))]
     #[allow(clippy::type_complexity)]
     pub fn gxe_fit(
         relationship: PyReadonlyArray2<'_, f64>,
@@ -1595,6 +1688,7 @@ pub mod python {
         y: PyReadonlyArray1<'_, f64>,
         surface: &str,
         grid: Vec<f64>,
+        shape: f64,
         reml: bool,
     ) -> PyResult<(
         Vec<f64>,
@@ -1608,7 +1702,7 @@ pub mod python {
         Vec<f64>,
         Vec<f64>,
     )> {
-        let model = build(&relationship, &environment, &design, surface)?;
+        let model = build(&relationship, &environment, &design, surface, shape)?;
         let fit = model
             .fit(&response(&y), reml)
             .map_err(PyValueError::new_err)?;
@@ -1642,7 +1736,7 @@ pub mod python {
     /// variance may change but the genetic effects at any two environments are
     /// the same effects.
     #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, null, reml=true))]
+    #[pyo3(signature = (relationship, environment, design, y, surface, null, shape=1.0, reml=true))]
     pub fn gxe_test(
         relationship: PyReadonlyArray2<'_, f64>,
         environment: Vec<f64>,
@@ -1650,9 +1744,10 @@ pub mod python {
         y: PyReadonlyArray1<'_, f64>,
         surface: &str,
         null: &str,
+        shape: f64,
         reml: bool,
     ) -> PyResult<(f64, f64, String, f64, f64)> {
-        let model = build(&relationship, &environment, &design, surface)?;
+        let model = build(&relationship, &environment, &design, surface, shape)?;
         let y = response(&y);
         let test = match null {
             "interaction" => model.interaction_test(&y, reml),
@@ -1679,7 +1774,7 @@ pub mod python {
     /// `quantity` is `heritability`, which uses `first` as the environment, or
     /// `correlation`, which uses both.
     #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, quantity, first, second=0.0, reml=true))]
+    #[pyo3(signature = (relationship, environment, design, y, surface, quantity, first, second=0.0, shape=1.0, reml=true))]
     #[allow(clippy::too_many_arguments)]
     pub fn gxe_interval(
         relationship: PyReadonlyArray2<'_, f64>,
@@ -1690,9 +1785,10 @@ pub mod python {
         quantity: &str,
         first: f64,
         second: f64,
+        shape: f64,
         reml: bool,
     ) -> PyResult<(f64, f64, f64, bool, bool)> {
-        let model = build(&relationship, &environment, &design, surface)?;
+        let model = build(&relationship, &environment, &design, surface, shape)?;
         let wanted = match quantity {
             "heritability" => Reported::Heritability { at: first },
             "correlation" => Reported::GeneticCorrelation { first, second },
@@ -1717,7 +1813,116 @@ pub mod python {
 
 #[cfg(test)]
 mod against_the_source {
-    use super::{GxeFit, Surface};
+    use super::{GxeFit, Shape, Surface};
+
+    /// The powered-exponential surface, at all four frozen shapes, against the
+    /// source-fidelity crate's own numbers. **The shape one row is the same
+    /// covariance as the recovered exponential**, which is the source's
+    /// statement about its own model and is checked here rather than believed.
+    #[test]
+    fn the_powered_surface_reproduces_the_source_at_every_frozen_shape() {
+        let k = [
+            [1.0, 0.5, 0.25, 0.0],
+            [0.5, 1.0, 0.25, 0.0],
+            [0.25, 0.25, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let e = [-1.3, 0.4, 2.1, 0.9];
+        // Only the off-diagonal genetic cells move with the shape; the
+        // variances do not involve the kernel at all.
+        let source: [(Shape, [f64; 3]); 4] = [
+            (Shape::Half, [0.175_961_143_060, 0.105_193_442_188, 0.159_511_498_739]),
+            (Shape::One, [0.161_274_534_884, 0.074_698_567_695, 0.146_197_861_190]),
+            (Shape::ThreeHalves, [0.143_950_826_485, 0.039_734_390_297, 0.130_493_651_485]),
+            (Shape::Two, [0.124_127_355_425, 0.012_407_001_097, 0.112_523_368_251]),
+        ];
+        for (shape, wanted) in source {
+            let fit = GxeFit {
+                surface: Surface::PoweredExponential(shape),
+                parameters: vec![-0.6, 0.35, 0.22, -0.4, -0.15],
+                fixed_effects: vec![],
+                fixed_effect_errors: vec![],
+                loglik: 0.0,
+                converged: true,
+                scaled_gradient: 0.0,
+                estimator: "reml",
+                variance_scale: 1.0,
+            };
+            for (slot, &(i, j)) in [(0usize, 1usize), (0, 2), (1, 2)].iter().enumerate() {
+                let mine = k[i][j] * fit.genetic_covariance(e[i], e[j]);
+                assert!(
+                    (mine - wanted[slot]).abs() < 1e-11,
+                    "{shape:?} ({i}, {j}): this package gives {mine}, the source \
+                     gives {}",
+                    wanted[slot]
+                );
+            }
+        }
+    }
+
+    /// **The random-regression surface has a different provenance from the exponential
+    /// one, and it matters.** The exponential form is a *recovered* method: it
+    /// is in the source-fidelity crate as the restored SOLAR covariance. The
+    /// random-regression form is not recovered. What that crate holds is a *proposed*
+    /// longitudinal random regression, in a module whose own header says
+    /// nothing in it is a recovered or qualified method.
+    ///
+    /// Cross-sectionally the two coincide. The proposal is
+    /// `K_rs b(z_r)' Sigma_G b(z_s) + tau_P^2 J_rs + I_rs E(z_r)`, and with one
+    /// record per person the same-person indicator is the identity, so that
+    /// term is a constant absorbed by the residual. Setting it to nought should
+    /// leave exactly this surface, and this checks that it does.
+    ///
+    /// Its two-basis block is
+    /// `(intercept + linear l)(intercept + linear r) + orthogonal^2 l r`, which
+    /// is this package's block with `u = orthogonal^2` -- arrived at
+    /// independently here, for the unrelated reason that squaring the
+    /// coordinate away keeps the derivative from vanishing at the null.
+    #[test]
+    fn the_random_regression_surface_reproduces_the_proposed_one() {
+        let k = [
+            [1.0, 0.5, 0.25, 0.0],
+            [0.5, 1.0, 0.25, 0.0],
+            [0.25, 0.25, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let z = [-1.3, 0.4, 2.1, 0.9];
+        // Their loadings are (intercept, linear, orthogonal); ours carries the
+        // orthogonal one squared, so 0.5 becomes 0.25 and 0.3 becomes 0.09.
+        let fit = GxeFit {
+            surface: Surface::RandomRegression,
+            parameters: vec![0.8, -0.35, 0.25, 0.7, 0.2, 0.09],
+            fixed_effects: vec![],
+            fixed_effect_errors: vec![],
+            loglik: 0.0,
+            converged: true,
+            scaled_gradient: 0.0,
+            estimator: "reml",
+            variance_scale: 1.0,
+        };
+        // Printed by the source-fidelity crate with no permanent-person
+        // variance and no protocol adjustment.
+        let proposed = [
+            [2.343_225_0, 0.349_150_0, -0.150_231_25, 0.0],
+            [0.349_150_0, 1.098_400_0, 0.063_225_0, 0.0],
+            [-0.150_231_25, 0.063_225_0, 2.758_025_0, 0.0],
+            [0.0, 0.0, 0.0, 1.285_025_0],
+        ];
+        for i in 0..4 {
+            for j in 0..4 {
+                let mut mine = k[i][j] * fit.genetic_covariance(z[i], z[j]);
+                if i == j {
+                    mine += fit.residual_variance_at(z[i]);
+                }
+                assert!(
+                    (mine - proposed[i][j]).abs() < 1e-9,
+                    "({i}, {j}): this package gives {mine}, the proposed model \
+                     gives {}",
+                    proposed[i][j]
+                );
+            }
+        }
+    }
 
     /// **Is the exponential surface the recovered SOLAR model, or something
     /// like it?** The source-fidelity crate beside this one preserves the Tcl
