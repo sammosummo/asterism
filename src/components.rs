@@ -189,7 +189,37 @@ impl ComponentModel {
         reml: bool,
         want_gradient: bool,
     ) -> Option<Evaluation> {
-        if theta.iter().any(|v| !v.is_finite() || *v < 0.0) {
+        self.evaluate_with_signs(theta, y, reml, want_gradient, &[])
+    }
+
+    /// Evaluate, with some coordinates permitted to be negative.
+    ///
+    /// **A variance below nought is not a model and is refused.** A *deviation*
+    /// below nought is an ordinary thing to want, and refusing it here made the
+    /// signed fit inert: the search was free to ask for a negative deviation
+    /// and the likelihood answered "not a model" every time, so it could only
+    /// ever move one way. That is why the first contrast results came back with
+    /// forty estimates and not one negative among them.
+    ///
+    /// What still cannot happen is a covariance that is not one. Nothing checks
+    /// that here, and nothing needs to: the factorisation below fails on it and
+    /// the search reads the failure as somewhere not to go.
+    fn evaluate_with_signs(
+        &self,
+        theta: &[f64],
+        y: &DVector<f64>,
+        reml: bool,
+        want_gradient: bool,
+        signed: &[usize],
+    ) -> Option<Evaluation> {
+        if theta.iter().any(|v| !v.is_finite()) {
+            return None;
+        }
+        if theta
+            .iter()
+            .enumerate()
+            .any(|(k, v)| *v < 0.0 && !signed.contains(&k))
+        {
             return None;
         }
         // Everything at nought is not a covariance, and no amount of searching
@@ -388,7 +418,13 @@ impl ComponentModel {
             if k >= count {
                 return Err("COMPONENTS_SIGNED_INDEX_OUT_OF_RANGE");
             }
-            lower[k] = f64::NEG_INFINITY;
+            // **Finite, not negative infinity.** The bounded optimiser will not
+            // take an infinite bound, and silently declines every start when
+            // given one, which shows up as nothing converging rather than as an
+            // error. The response is scaled to unit variance before the search,
+            // so a deviation of a thousand is far outside anything meaningful
+            // and serves as no bound at all in practice.
+            lower[k] = -1.0e3;
         }
         for &(k, value) in pinned {
             if k >= count {
@@ -404,14 +440,34 @@ impl ComponentModel {
         // carrying most of the variance. A component that is genuinely zero is
         // found from any of them; one that is large is not always found from a
         // start that puts it near nought.
-        let mut starts: Vec<Vec<f64>> = vec![
+        //
+        // **A signed coordinate needs its own start and will not converge from
+        // these.** They put every coordinate at a positive share, which is
+        // right for a variance and wrong for a deviation: the matrix behind a
+        // signed coordinate is a difference of two others and is not positive
+        // semidefinite, so a positive start pushes the covariance somewhere it
+        // cannot go and the search stalls. Two fits of the same model reached
+        // log likelihoods fifteen apart before this was added. The natural
+        // start is every deviation at nought -- nothing differs -- with the
+        // unsigned coordinates carrying the variance.
+        let mut starts: Vec<Vec<f64>> = Vec::new();
+        if !signed.is_empty() {
+            let unsigned = count - signed.len();
+            let share = if unsigned > 0 { 1.0 / unsigned as f64 } else { 0.0 };
+            let mut start = vec![share; count];
+            for &k in signed {
+                start[k] = 0.0;
+            }
+            starts.push(start);
+        }
+        starts.extend(vec![
             vec![1.0 / count as f64; count],
             {
                 let mut s = vec![0.1 / count as f64; count];
                 s[count - 1] = 0.9;
                 s
             },
-        ];
+        ]);
         for component in 0..count - 1 {
             let mut s = vec![0.1 / count as f64; count];
             s[component] = 0.6;
@@ -422,11 +478,11 @@ impl ComponentModel {
         let mut best: Option<(f64, Vec<f64>, Vec<f64>, bool)> = None;
         for start in starts {
             let value_of = |candidate: &[f64]| -> f64 {
-                self.evaluate(candidate, &scaled, reml, false)
+                self.evaluate_with_signs(candidate, &scaled, reml, false, signed)
                     .map_or(1e30, |e| e.negative_loglik)
             };
             let gradient_of = |candidate: &[f64]| -> Vec<f64> {
-                self.evaluate(candidate, &scaled, reml, true)
+                self.evaluate_with_signs(candidate, &scaled, reml, true, signed)
                     .map_or_else(|| vec![0.0; count], |e| e.gradient)
             };
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
@@ -444,7 +500,8 @@ impl ComponentModel {
             else {
                 continue;
             };
-            let Some(at) = self.evaluate(&solution.par, &scaled, reml, true) else {
+            let Some(at) = self.evaluate_with_signs(&solution.par, &scaled, reml, true, signed)
+            else {
                 continue;
             };
             if !at.negative_loglik.is_finite() {
@@ -458,7 +515,16 @@ impl ComponentModel {
                 .gradient
                 .iter()
                 .enumerate()
-                .map(|(k, g)| if solution.par[k] <= 0.0 { g.min(0.0) } else { *g })
+                .map(|(k, g)| {
+                    if signed.contains(&k) {
+                        // No bound to rest on, so no projection.
+                        *g
+                    } else if solution.par[k] <= 0.0 {
+                        g.min(0.0)
+                    } else {
+                        *g
+                    }
+                })
                 .fold(0.0f64, |worst, g| worst.max(g.abs()));
             let scaled_gradient = projected / at.negative_loglik.abs().max(1.0);
             if best
@@ -476,7 +542,7 @@ impl ComponentModel {
 
         let (negative, par, beta, converged) = best.ok_or("COMPONENTS_NO_START_CONVERGED")?;
         let at = self
-            .evaluate(&par, &scaled, reml, true)
+            .evaluate_with_signs(&par, &scaled, reml, true, signed)
             .ok_or("COMPONENTS_OPTIMUM_NOT_EVALUABLE")?;
         let projected = at
             .gradient
@@ -558,7 +624,7 @@ pub struct Contrast {
 }
 
 impl ComponentModel {
-    /// Every class's difference from a shared baseline, with an interval each.
+    /// Every class's deviation from the average class, with an interval each.
     ///
     /// **This is what the omnibus and the pooled contrasts cannot give.** The
     /// omnibus says the classes are not all alike and stops. A pooled contrast
@@ -567,25 +633,37 @@ impl ComponentModel {
     /// lifting a single class in calibration made a second class reject half
     /// the time. Two findings, one effect.
     ///
-    /// Writing every class as `baseline + difference` removes that coupling.
-    /// The differences are free to take either sign, so a class carrying less
-    /// than the others is as reachable as one carrying more, and each comes
-    /// with an interval rather than only a p-value.
+    /// # The constraint, and why there has to be one
     ///
-    /// The model fitted is
+    /// Writing every class as `baseline + difference` is the obvious move and
+    /// it does not work: the baseline's matrix is the sum of the class
+    /// matrices, so adding a constant to the baseline and taking it off every
+    /// difference leaves the covariance identical. Five numbers for four
+    /// quantities, and the differences are only defined up to a common shift.
+    /// A first version of this shipped that way and produced forty estimates of
+    /// which not one was negative, which is what a redundant direction looks
+    /// like when the search drifts along it.
     ///
-    /// ```text
-    /// V = baseline * (sum of the class matrices) + sum_c difference_c * K_c
-    ///     + other components + residual
-    /// ```
+    /// The differences are therefore constrained to sum to nought, by fitting
+    /// on the differenced matrices `K_c - K_last`. The baseline is then the
+    /// *average* class variance and each difference is a deviation from it,
+    /// which is both identified and the quantity anybody actually wants: not
+    /// "class c against a floating reference" but "class c against the typical
+    /// class".
     ///
-    /// which is the same covariance as before, differently coordinated.
+    /// One fit gives every class but the omitted one, so the omitted one is
+    /// rotated and each class is read from a fit where it is explicit.
     ///
-    /// **`classes` must name only things that are classes of one split.**
-    /// Anything not named keeps its own variance and is left alone, which is
-    /// what should happen to a remainder component: pooling "everything that is
-    /// not a parent-child tie" into a baseline with the parent-child classes
-    /// compares siblings with parents and calls the difference a finding.
+    /// **With only two classes this says less than it appears to.** The two
+    /// deviations must sum to nought, so they are mirror images and "the first
+    /// is above average" is the same statement as "the second is below" -- one
+    /// degree of freedom, however it is written. Splitting into four is what
+    /// makes a single class stand out from the rest.
+    ///
+    /// `classes` must name only things that are classes of one split. Anything
+    /// not named keeps its own variance and is left alone, which is what should
+    /// happen to a remainder component: pooling "everything that is not a
+    /// parent-child tie" into the baseline would compare siblings with parents.
     ///
     /// # Errors
     ///
@@ -608,50 +686,68 @@ impl ComponentModel {
             return Err("COMPONENTS_CONTRASTS_NEED_TWO");
         }
 
-        // The baseline matrix is the classes summed, and each class then
-        // carries only its difference from it.
         let mut baseline = self.matrices[named[0]].clone();
         for &k in &named[1..] {
             baseline += &self.matrices[k];
         }
-        let mut matrices = vec![baseline];
-        for &k in &named {
-            matrices.push(self.matrices[k].clone());
-        }
-        for (k, matrix) in self.matrices.iter().enumerate() {
-            if !named.contains(&k) {
-                matrices.push(matrix.clone());
+        let others: Vec<DMatrix<f64>> = self
+            .matrices
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| !named.contains(k))
+            .map(|(_, m)| m.clone())
+            .collect();
+
+        let mut out: Vec<Option<Contrast>> = vec![None; named.len()];
+        for (omitted, &last) in named.iter().enumerate() {
+            // Everything but the omitted class, differenced against it.
+            let free: Vec<usize> = named
+                .iter()
+                .copied()
+                .filter(|k| *k != last)
+                .collect();
+            let mut matrices = vec![baseline.clone()];
+            for &k in &free {
+                matrices.push(&self.matrices[k] - &self.matrices[last]);
+            }
+            matrices.extend(others.iter().cloned());
+            let model = Self::build(&matrices, &self.design)?;
+            let signed: Vec<usize> = (1..=free.len()).collect();
+            let fit = model.fit_with_signs(y, reml, &signed)?;
+
+            for (slot, &k) in free.iter().enumerate() {
+                let position = named.iter().position(|n| *n == k).expect("named");
+                if out[position].is_some() {
+                    continue;
+                }
+                let coordinate = slot + 1;
+                let difference = fit.variances[coordinate];
+                let (lower, lower_limited, upper, upper_limited) =
+                    model.signed_interval(y, reml, coordinate, &signed, difference)?;
+                let held = model
+                    .fit_general(y, reml, &signed, &[(coordinate, 0.0)])?
+                    .loglik;
+                let statistic = (2.0 * (fit.loglik - held)).max(0.0);
+                out[position] = Some(Contrast {
+                    difference,
+                    lower,
+                    upper,
+                    lower_limited,
+                    upper_limited,
+                    // An interior null: the deviation is free to take either
+                    // sign, so there is no boundary and no mixture.
+                    p_value: chi2_one_df_upper_tail(statistic).clamp(0.0, 1.0),
+                    statistic,
+                });
+            }
+            let _ = omitted;
+            if out.iter().all(Option::is_some) {
+                break;
             }
         }
-        let model = Self::build(&matrices, &self.design)?;
-        // Coordinate 0 is the baseline; the differences follow it and are the
-        // ones allowed to go negative.
-        let signed: Vec<usize> = (1..=named.len()).collect();
-        let free = model.fit_with_signs(y, reml, &signed)?;
-
-        let mut out = Vec::with_capacity(named.len());
-        for (slot, _) in named.iter().enumerate() {
-            let coordinate = slot + 1;
-            let difference = free.variances[coordinate];
-            let (lower, lower_limited, upper, upper_limited) =
-                model.signed_interval(y, reml, coordinate, &signed, difference)?;
-            let held = model
-                .fit_general(y, reml, &signed, &[(coordinate, 0.0)])?
-                .loglik;
-            let statistic = (2.0 * (free.loglik - held)).max(0.0);
-            out.push(Contrast {
-                difference,
-                lower,
-                upper,
-                lower_limited,
-                upper_limited,
-                // An interior null: the difference is free to take either sign,
-                // so there is no boundary and no mixture.
-                p_value: chi2_one_df_upper_tail(statistic).clamp(0.0, 1.0),
-                statistic,
-            });
-        }
-        Ok(out)
+        out.into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or("COMPONENTS_CONTRASTS_INCOMPLETE")
     }
 
     /// A profile interval for one signed coordinate, walked outward and then
@@ -1360,12 +1456,59 @@ mod tests {
             got[0].difference,
             got[0].p_value
         );
+        // **With two classes the deviations are forced to be mirror images**,
+        // because they must sum to nought. "The first is above average" and
+        // "the second is below average" are then the same statement, and no
+        // parameterisation can separate them: with two numbers and one
+        // constraint there is one degree of freedom. That is arithmetic rather
+        // than a fault, and it is why the classes worth splitting are four.
         assert!(
-            got[1].p_value > 0.05,
-            "the untouched class came back at {} with p {}, which is the \
-             coupling this parameterisation exists to remove",
-            got[1].difference,
-            got[1].p_value
+            (got[0].difference + got[1].difference).abs() < 1e-6,
+            "the deviations are {} and {} and must sum to nought",
+            got[0].difference,
+            got[1].difference
+        );
+        assert!(
+            got[1].difference < 0.0,
+            "the untouched class should sit below the average once the other \
+             is lifted, and it is at {}",
+            got[1].difference
+        );
+    }
+
+    /// **The parameterisation must be identified, and this is the test that
+    /// was missing.** Writing every class as a free baseline plus a free
+    /// difference is rank deficient -- the baseline's matrix is the sum of the
+    /// class matrices, so a constant moved from the baseline into every
+    /// difference changes nothing. The first version shipped that way and
+    /// passed a recovery test, because a redundant model can still put extra
+    /// variance in the right place; it simply cannot say where nought is. What
+    /// it produced on real data was forty estimates without one negative among
+    /// them.
+    ///
+    /// Under the sum-to-zero constraint the deviations must sum to nought, and
+    /// with no class differing they must sit around nought rather than all on
+    /// one side.
+    #[test]
+    fn the_deviations_sum_to_nought_and_are_not_all_one_sided() {
+        let (matrices, design, y) = split_by_class(0.0);
+        let model = ComponentModel::build(&matrices, &design).expect("valid");
+        let got = model.contrasts(&y, &[1, 2], true).expect("contrasts");
+        let total: f64 = got.iter().map(|c| c.difference).sum();
+        let scale = got
+            .iter()
+            .map(|c| c.difference.abs())
+            .fold(0.0f64, f64::max)
+            .max(1e-6);
+        assert!(
+            total.abs() < 1e-3 * scale.max(1.0),
+            "the deviations sum to {total}, which they cannot do if the \
+             parameterisation is identified"
+        );
+        assert!(
+            got.iter().any(|c| c.difference < 0.0),
+            "every deviation is non-negative, which is what the rank-deficient \
+             version did"
         );
     }
 
@@ -1859,5 +2002,3 @@ mod tests {
         );
     }
 }
-
-
