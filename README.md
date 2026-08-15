@@ -143,6 +143,14 @@ fit = gxe.fit(y, grid=[low, middle, high])   # h2 and rho_G at those environment
 gxe.test(y, "correlation")            # the same genes throughout?
 gxe.test(y, "interaction")            # the environment in the genetics at all?
 
+# one trait whose genes may act differently in the two sexes
+sex = asterism.GxsModel(relationship, pedigree_sex, design)   # codes 1 and 2
+fit = sex.fit(y)                      # h2 in each sex, rho_G between them
+sex.test(y, "gene_by_sex")            # the headline: residual variances free
+sex.test(y, "correlation")            # the same genes in both sexes?
+sex.test(y, "genetic")                # the same genetic variance? a scale claim
+sex.test(y, "any_difference")         # ties the residuals too -- not gene-by-sex
+
 # one binary trait through a liability threshold
 liability = asterism.LiabilityModel(relationship, affected, design)
 liability.fit()["heritability"]       # of the liability, not of the status

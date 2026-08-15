@@ -719,9 +719,17 @@ class GxsModel:
     the genetic term, and a gene-by-sex test would then reject because of
     measurement rather than because of genes.
 
-    **Read the overall test first.** ``test(y, "overall")`` puts all three
-    constraints back at once against the ordinary polygenic model. It is what
-    stops three tests on one trait being read as three findings.
+    **Read the headline test first.** ``test(y, "gene_by_sex")`` puts the
+    genetic constraints back at once — same variance, same genes — while leaving
+    the two residual variances free. It is what stops several tests on one trait
+    being read as several findings.
+
+    **Do not use** ``test(y, "any_difference")`` **as the headline.** It is the
+    null the recovered code tested and it ties the residual variances too, so a
+    trait merely measured more noisily in one sex rejects it hard with nothing
+    genetic happening. In simulation on the GOBS pedigree a sex difference in
+    measurement error alone rejected it at p = 1e-34 while every genetic test
+    correctly reported nothing.
     """
 
     def __init__(self, relationship: Any, group: Any, design: Any) -> None:
@@ -766,13 +774,18 @@ class GxsModel:
             "estimator": "reml" if reml else "ml",
         }
 
-    def test(self, y: Any, null: str = "overall", reml: bool = True) -> dict[str, Any]:
-        """Test one of the four nulls.
+    def test(self, y: Any, null: str = "gene_by_sex", reml: bool = True) -> dict[str, Any]:
+        """Test one of the five nulls.
 
-        - ``"overall"``: no gene-by-sex effect of any kind, against the ordinary
-          polygenic model. Three constraints, one of which sits on a bound, so
-          the reference is an even mixture of chi-square on two and on three
+        - ``"gene_by_sex"``: no gene-by-sex effect of any kind — the same
+          variance and the same genes in both sexes — with the two residual
+          variances left free. Two constraints, one of which sits on a bound, so
+          the reference is an even mixture of chi-square on one and on two
           degrees of freedom. **Read this one first.**
+        - ``"any_difference"``: nothing differs between the sexes at all,
+          residual included. Three constraints on an even mixture of chi-square
+          on two and on three. This is the null the recovered code tested, and
+          it is **not** a gene-by-sex test: a noisier sex rejects it.
         - ``"correlation"``: the same genes act in both sexes. This is the
           gene-by-sex question proper. The null puts the correlation at the edge
           of what it may be, so the reference is the even mixture of a point
@@ -786,10 +799,12 @@ class GxsModel:
         ``rule`` names the reference distribution the p-value is a tail of, so a
         reader need not take it on trust.
         """
-        if null not in ("overall", "correlation", "genetic", "residual"):
+        allowed = (
+            "gene_by_sex", "any_difference", "correlation", "genetic", "residual"
+        )
+        if null not in allowed:
             raise ValueError(
-                "null must be overall, correlation, genetic or residual, "
-                f"not {null!r}"
+                f"null must be one of {', '.join(allowed)}, not {null!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
         statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxs_test(

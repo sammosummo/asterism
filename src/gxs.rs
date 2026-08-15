@@ -580,21 +580,65 @@ impl GxsModel {
         }))
     }
 
-    /// Is there any gene-by-sex effect at all?
+    /// Is there gene-by-sex at all?
     ///
-    /// The null is the ordinary polygenic model: one genetic standard
-    /// deviation, one residual standard deviation, and the same genes acting in
-    /// both sexes. Three constraints, of which one -- the correlation at one --
-    /// sits on a bound, so the reference is the even mixture of chi-square on
-    /// two and on three degrees of freedom.
+    /// **This is the headline test.** The null says the genes are the same in
+    /// both sexes and carry the same variance, while leaving the two residual
+    /// variances free. Two constraints, of which one -- the correlation at one
+    /// -- sits on a bound, so the reference is the even mixture of chi-square
+    /// on one and on two degrees of freedom.
     ///
-    /// **Read this before the others.** It is what stops three separate tests
-    /// on the same data being read as three findings.
+    /// Leaving the residuals free is the whole point. A trait measured more
+    /// noisily in one sex is not gene-by-sex, and a test that tied the
+    /// residuals would reject on exactly that. See
+    /// [`Self::any_difference_test`], which does tie them and is a different
+    /// question.
+    ///
+    /// Read this before the single-parameter tests. It is what stops three
+    /// tests on one trait being read as three findings.
     ///
     /// # Errors
     ///
     /// Returns a stable code where either fit failed.
-    pub fn overall_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxsTest, &'static str> {
+    pub fn gene_by_sex_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxsTest, &'static str> {
+        let free = self.fit(y, reml)?;
+        let null = self.fit_under(
+            y,
+            reml,
+            Constraint { genetic: Tie::Together, correlation: Some(1.0), ..Constraint::default() },
+        )?;
+        Ok(mixture(free.loglik, null.loglik, "mixture_chi2_1_chi2_2", |t| {
+            0.5 * chi2_upper_tail(t, 1.0) + 0.5 * chi2_upper_tail(t, 2.0)
+        }))
+    }
+
+    /// Does anything at all differ between the sexes?
+    ///
+    /// The null is the ordinary polygenic model: one genetic standard
+    /// deviation, one residual standard deviation, and the same genes acting in
+    /// both sexes. Three constraints, of which one sits on a bound, so the
+    /// reference is the even mixture of chi-square on two and on three degrees
+    /// of freedom. This is the null the recovered code tested.
+    ///
+    /// **It is not a gene-by-sex test and must not be reported as one.** It
+    /// ties the two residual variances, so a trait simply measured more noisily
+    /// in one sex rejects it, hard, with nothing genetic happening at all. In
+    /// simulation on the GOBS pedigree, a sex difference in measurement error
+    /// alone rejected this null at p = 1e-34 while every genetic test correctly
+    /// reported nothing.
+    ///
+    /// What it is good for is a first look at whether the sexes need modelling
+    /// separately in any respect. For the genetic question use
+    /// [`Self::gene_by_sex_test`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where either fit failed.
+    pub fn any_difference_test(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+    ) -> Result<GxsTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
@@ -975,9 +1019,9 @@ mod tests {
             "different genes were read as a scale difference at p = {}",
             scale.p_value
         );
-        let overall = model.overall_test(&y, true).expect("the test runs");
-        assert!(overall.p_value < 0.01, "the overall test missed it at p = {}", overall.p_value);
-        assert_eq!(overall.rule, "mixture_chi2_2_chi2_3");
+        let overall = model.gene_by_sex_test(&y, true).expect("the test runs");
+        assert!(overall.p_value < 0.01, "the headline test missed it at p = {}", overall.p_value);
+        assert_eq!(overall.rule, "mixture_chi2_1_chi2_2");
     }
 
     /// Nothing is invented where there is nothing to find.
@@ -998,7 +1042,7 @@ mod tests {
             if fit.correlation > 1.0 - 1e-6 {
                 on_the_bound += 1;
             }
-            let overall = model.overall_test(&y, true).expect("the test runs");
+            let overall = model.gene_by_sex_test(&y, true).expect("the test runs");
             if overall.p_value <= 0.05 {
                 rejected += 1;
             }
@@ -1037,6 +1081,22 @@ mod tests {
             scale.p_value > 0.05,
             "a noisier sex was read as a genetic scale difference at p = {}",
             scale.p_value
+        );
+        let headline = model.gene_by_sex_test(&y, true).expect("the test runs");
+        assert!(
+            headline.p_value > 0.05,
+            "a noisier sex was read as gene-by-sex at p = {}",
+            headline.p_value
+        );
+        // **And the trap this exists to avoid.** The recovered code's overall
+        // null ties the residuals, so it rejects here -- correctly, on its own
+        // terms, and misleadingly if read as gene-by-sex. Pinned so that nobody
+        // later promotes it back to being the headline.
+        let any = model.any_difference_test(&y, true).expect("the test runs");
+        assert!(
+            any.p_value < 1e-6,
+            "the any-difference null should reject on a noisier sex, at p = {}",
+            any.p_value
         );
     }
 
@@ -1215,9 +1275,12 @@ pub mod python {
     ///
     /// `which` selects it:
     ///
-    /// - `"overall"` -- any gene-by-sex effect at all, against the ordinary
-    ///   polygenic model. **Read this one first**; it is what stops the other
-    ///   three being read as separate findings.
+    /// - `"gene_by_sex"` -- gene-by-sex of any kind, with the two residual
+    ///   variances left free. **Read this one first**; it is what stops the
+    ///   others being read as separate findings.
+    /// - `"any_difference"` -- anything at all differing between the sexes,
+    ///   including the residual. Not a gene-by-sex test: a trait measured more
+    ///   noisily in one sex rejects it with nothing genetic happening.
     /// - `"correlation"` -- are the genes the same in both sexes? This is the
     ///   gene-by-sex question proper.
     /// - `"genetic"` -- is the genetic variance the same? A difference of scale,
@@ -1240,13 +1303,15 @@ pub mod python {
         let model = build(&relationship, &group, &design)?;
         let y = super::python::response(&response);
         let test = match which {
-            "overall" => model.overall_test(&y, reml),
+            "gene_by_sex" => model.gene_by_sex_test(&y, reml),
+            "any_difference" => model.any_difference_test(&y, reml),
             "correlation" => model.correlation_test(&y, reml),
             "genetic" => model.genetic_equality_test(&y, reml),
             "residual" => model.residual_equality_test(&y, reml),
             _ => {
                 return Err(PyValueError::new_err(
-                    "which must be one of overall, correlation, genetic, residual",
+                    "which must be one of gene_by_sex, any_difference, correlation, \
+                     genetic, residual",
                 ));
             }
         }
