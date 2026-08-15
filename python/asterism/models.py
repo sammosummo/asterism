@@ -682,6 +682,130 @@ class GxeModel:
         }
 
 
+class GxsModel:
+    """One trait whose genes may act differently in the two sexes.
+
+    This is the discrete case of genotype-by-environment, with sex as the
+    environment. Because the environment takes two values rather than a range,
+    nothing is smoothed and no surface has to be chosen: the model carries one
+    genetic standard deviation per sex, one residual standard deviation per sex,
+    and one genetic correlation between them.
+
+    ``group`` is one value per person, 1 or 2 and nothing else. **Use the
+    pedigree sex.** A missing or unknown sex is refused rather than swept into a
+    group, because a model that quietly puts the unknowns together is estimating
+    a correlation with a third group in it.
+
+    **Two findings live here and they are not the same.**
+
+    *The heritability differs between the sexes.* The genetic variance is larger
+    in one than the other. That is a difference of scale, and a difference of
+    scale can come from the measurement rather than the genetics — men are
+    larger, so a volume in millimetres varies more in men whether or not the
+    genes differ. ``test(y, "genetic")``.
+
+    *The genes differ between the sexes.* The genetic correlation across the
+    sexes is below one, so the genes that matter in men are not exactly those
+    that matter in women. No change of units can produce this, and it is usually
+    the interesting claim. ``test(y, "correlation")``.
+
+    Unlike the kernel surfaces in :class:`GxeModel`, the correlation here is a
+    parameter rather than a function of distance, so it is free to be negative:
+    a genotype raising a trait in one sex and lowering it in the other is
+    reachable.
+
+    **The two residual standard deviations are free, and they should be.** A
+    trait simply noisier in one sex would otherwise push its extra variance into
+    the genetic term, and a gene-by-sex test would then reject because of
+    measurement rather than because of genes.
+
+    **Read the overall test first.** ``test(y, "overall")`` puts all three
+    constraints back at once against the ordinary polygenic model. It is what
+    stops three tests on one trait being read as three findings.
+    """
+
+    def __init__(self, relationship: Any, group: Any, design: Any) -> None:
+        self._relationship = _matrix(relationship, "relationship")
+        self._group = np.ascontiguousarray(
+            np.asarray(group).ravel(), dtype=np.float64
+        )
+        self._design = _matrix(design, "design")
+
+    def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
+        """Fit, with everything free.
+
+        ``counts`` comes back with the answer because a correlation estimated
+        across a group of thirty is not the same claim as one across a thousand,
+        and the fit itself cannot tell you which you have.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        (
+            genetic,
+            residual,
+            heritability,
+            correlation,
+            effects,
+            errors,
+            loglik,
+            converged,
+            gradient,
+            counts,
+        ) = _core.gxs_fit(self._relationship, self._group, self._design, y, reml)
+        return {
+            "genetic_variance": list(genetic),
+            "residual_variance": list(residual),
+            "heritability": list(heritability),
+            "genetic_correlation": correlation,
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors)
+            ],
+            "loglik": loglik,
+            "scaled_gradient": gradient,
+            "converged": converged,
+            "counts": list(counts),
+            "estimator": "reml" if reml else "ml",
+        }
+
+    def test(self, y: Any, null: str = "overall", reml: bool = True) -> dict[str, Any]:
+        """Test one of the four nulls.
+
+        - ``"overall"``: no gene-by-sex effect of any kind, against the ordinary
+          polygenic model. Three constraints, one of which sits on a bound, so
+          the reference is an even mixture of chi-square on two and on three
+          degrees of freedom. **Read this one first.**
+        - ``"correlation"``: the same genes act in both sexes. This is the
+          gene-by-sex question proper. The null puts the correlation at the edge
+          of what it may be, so the reference is the even mixture of a point
+          mass at nought with chi-square on one degree of freedom. A plain
+          chi-square would roughly double the p-value.
+        - ``"genetic"``: the same genetic variance in both sexes. Interior, so
+          chi-square on one degree of freedom.
+        - ``"residual"``: the same residual variance in both sexes. Report it
+          beside the others as a measurement fact, not as a genetic finding.
+
+        ``rule`` names the reference distribution the p-value is a tail of, so a
+        reader need not take it on trust.
+        """
+        if null not in ("overall", "correlation", "genetic", "residual"):
+            raise ValueError(
+                "null must be overall, correlation, genetic or residual, "
+                f"not {null!r}"
+            )
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxs_test(
+            self._relationship, self._group, self._design, y, null, reml
+        )
+        return {
+            "null": null,
+            "statistic": statistic,
+            "p_value": p_value,
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
+            "estimator": "reml" if reml else "ml",
+        }
+
+
 class LiabilityModel:
     """One binary trait on a pedigree, through a liability threshold.
 

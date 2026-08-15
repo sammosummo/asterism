@@ -17,6 +17,7 @@ mod kinship_classes;
 mod prepared;
 mod association;
 mod gxe;
+mod gxs;
 mod liability;
 mod relationship;
 mod spatial;
@@ -26,6 +27,7 @@ pub use components::{ComponentFit, ComponentModel};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
+pub use gxs::{GxsFit, GxsModel};
 pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
 pub use liability::{LiabilityFit, LiabilityModel};
 pub use relationship::{relationship_matrix, PedigreeError, Person};
@@ -59,6 +61,8 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         association::python::association_sweep,
         module
     )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(gxs::python::gxs_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(gxs::python::gxs_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(liability::python::liability_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         liability::python::liability_interval,
