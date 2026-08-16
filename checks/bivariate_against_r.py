@@ -1,8 +1,8 @@
 """The two-trait REML fit against R's `regress`.
 
-`docs/adr/0006` puts REML's external comparison with R, and decision 29 requires
-it before two traits are a capability rather than a check. SOLAR covers the ML
-side; this covers REML, which SOLAR's `polygenic` does not do.
+This compares Asterism's two-trait REML fit with an equivalent construction in
+R `regress`. SOLAR covers the separate ML comparison because its `polygenic`
+command does not fit REML.
 
 **`regress` has no bivariate response, and does not need one.** The two-trait
 model is linear in six variance components — three for the genetic covariance
@@ -36,7 +36,11 @@ from asterism import _core
 
 # `regress` reports variance components; the comparison is on the quantities
 # anybody reports, which are the ratios.
-TOLERANCE = 1e-4
+# The two routes agree to about 2e-8 on this problem, so a tolerance of 1e-4
+# would pass through a regression four orders of magnitude larger than
+# anything ever seen here. This is set from the measured agreement with room
+# for optimiser drift, not from what looks safe.
+TOLERANCE = 1e-6
 
 R_SCRIPT = """
 suppressMessages(library(regress))
@@ -203,9 +207,8 @@ def main() -> int:
     print("\nAgreement within tolerance on every reported quantity.")
     print(f"Asterism scaled projected gradient: {ours['scaled_gradient']:.3e}.")
     print("Different parameterisation, different optimiser, same answer.")
-    print("This proves fidelity, not correctness (`docs/adr/0006`).")
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/bivariate-against-r-2026-08-11.json").write_text(
+    print("The independently implemented REML calculations agree.")
+    print(
         json.dumps(
             {
                 "seed": 31,
@@ -231,7 +234,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

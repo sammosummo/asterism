@@ -1,18 +1,21 @@
-"""Do the gene-by-sex tests hold their level, and can they find anything?
+"""Do the discrete gene-by-environment tests hold their level, and can they
+find anything?
 
-Five nulls are tested against one alternative here, and most of them can be made
-to reject by something that is not gene-by-sex at all. That is what this checks.
+Five nulls are tested against one alternative here, and most of them can be
+made to reject by something that is not genetic at all. That is what this
+checks. The environment is sex, which is the canonical binary environment and
+the one whose unbalanced reality the GOBS pedigree supplies.
 
 **The scenario that matters is `noisier`.** One sex measured with more error,
 identical genetics, nothing to find. A model holding a single residual variance
-would push that extra error into the genetic term and report a gene-by-sex
-effect. This model holds two, and the claim is that it therefore does not. A
-claim of that shape is worth nothing until it has been simulated against.
+would push that extra error into the genetic term and report a genetic
+difference. This model holds two, and the claim is that it therefore does not.
+A claim of that shape is worth nothing until it has been simulated against.
 
-`any_difference` is expected to reject there and is judged as power. It ties the
-two residual variances, so a noisier sex is a real departure from its null. It
-is in the table to show plainly that it is not a gene-by-sex test, which is why
-`gene_by_sex` exists beside it.
+`any_difference` is expected to reject there and is judged as power. It ties
+the two residual variances, so a noisier sex is a real departure from its null.
+It is in the table to show plainly that it is not a genetic test, which is why
+`gene_by_environment` exists beside it.
 
 **On the real pedigree, with the real sexes.** GOBS is not sex-balanced and its
 families are not of one shape, so a balanced simulation would say nothing about
@@ -25,7 +28,7 @@ level.
 
 Run with:
 
-    ASTERISM_REPLICATES=400 uv run --no-project python checks/gxs_calibration.py
+    ASTERISM_REPLICATES=400 uv run --no-project python checks/discrete_gxe_calibration.py
 
 It reads the GOBS pedigree, which is study material, and simulates every
 response it uses. No observed phenotype is read.
@@ -49,7 +52,7 @@ DATABASE = Path("~/MathiasLab/staging/studies/existing/safs/data/SAFS.db").expan
 REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "400"))
 WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
 LEVELS = (0.01, 0.05, 0.10)
-NULLS = ("gene_by_sex", "any_difference", "correlation", "genetic", "residual")
+NULLS = ("gene_by_environment", "any_difference", "correlation", "genetic", "residual")
 
 # The null: one genetic standard deviation, one residual, same genes in both
 # sexes. A heritability of 0.5, near what the real GOBS traits give.
@@ -60,7 +63,7 @@ CORRELATION = 1.0
 SCENARIOS = {
     # Nothing to find. Every test must hold its level.
     "null": (GENETIC, RESIDUAL, 1.0),
-    # The genes differ across the sexes: the gene-by-sex finding proper.
+    # The genes differ across the sexes: the genetic finding proper.
     "different genes": (GENETIC, RESIDUAL, 0.4),
     # The genetic variance differs: a difference of scale, not of genes.
     "different scale": ((0.95, 0.45), RESIDUAL, 1.0),
@@ -131,7 +134,7 @@ def one(job):
     n = len(group)
     y = factor @ np.random.default_rng(910_000 + index).standard_normal(n)
 
-    model = asterism.GxsModel(relationship, group, design)
+    model = asterism.DiscreteGxeModel(relationship, group, design)
     out = {"scenario": scenario, "p": {}}
     try:
         fit = model.fit(y)
@@ -159,7 +162,8 @@ def main() -> int:
         factors[name] = np.linalg.cholesky(v + 1e-9 * np.eye(n))
 
     print(
-        f"Gene-by-sex tests on the real GOBS pedigree, REML. {n} people, "
+        f"Discrete gene-by-environment tests on the real GOBS pedigree, with\n"
+        f"sex as the environment, REML. {n} people, "
         f"{counts[0]} of sex 1 and {counts[1]} of sex 2.\n"
         f"{REPLICATES} replicates per scenario; only the response is simulated.\n"
         f"Scenarios: " + ", ".join(SCENARIOS) + ".\n"
@@ -192,7 +196,7 @@ def main() -> int:
             # The headline test leaves the residuals free, so a noisier sex
             # gives it nothing to find and it is judged as a level there. That
             # is the single most important row in this table.
-            "gene_by_sex": genetic[0] == genetic[1] and correlation >= 1.0,
+            "gene_by_environment": genetic[0] == genetic[1] and correlation >= 1.0,
             # This one ties the residuals, so only the pure null leaves it
             # nothing to find.
             "any_difference": is_null,
@@ -262,12 +266,9 @@ def main() -> int:
         "the genetic tests under a sex difference in measurement error alone."
     )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/gxs-calibration-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and power of the five gene-by-sex tests",
-                "date": "2026-08-14",
                 "estimator": "reml",
                 "pedigree": "the real GOBS pedigree; only responses simulated",
                 "people": n,
@@ -291,7 +292,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

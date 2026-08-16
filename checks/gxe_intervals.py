@@ -37,7 +37,6 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 import numpy as np
 
@@ -193,12 +192,9 @@ def main() -> int:
     print("environment is weakly identified when people are spread along a continuous")
     print("environment, so an endpoint running to nought or one is the model saying so.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/gxe-intervals-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "coverage of the genotype-by-environment profile intervals",
-                "date": "2026-08-13",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": N,
@@ -217,7 +213,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

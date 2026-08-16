@@ -78,7 +78,6 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 import numpy as np
 
@@ -310,12 +309,9 @@ def main() -> int:
     print("surface can represent, including where the residual variance changes")
     print("with the environment and the genes do not.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/gxe-calibration-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and power of the two genotype-by-environment tests",
-                "date": "2026-08-13",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": N,
@@ -332,7 +328,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

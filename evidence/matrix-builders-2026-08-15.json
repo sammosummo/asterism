@@ -1,0 +1,23 @@
+{
+  "what": "variant-set and local-IBD relationship-matrix builders against independent NumPy calculations",
+  "date": "2026-08-15",
+  "synthetic_subjects": 3,
+  "synthetic_variants": 2,
+  "synthetic_lineage_draws": 2,
+  "tolerance": 1e-12,
+  "maximum_absolute_differences": {
+    "gene_linear": 0.0,
+    "gene_burden": 0.0,
+    "local_ibd": 0.0,
+    "local_ibd_posterior_mean": 0.0
+  },
+  "local_autozygous_diagonal": 2.0,
+  "subject_order_sha256": "9b41dd0840854e6efa2b2add4fc659bed4b1f786bafb4ab91c7618ea156ec0a8",
+  "matrix_sha256": {
+    "gene_linear": "8578a1cd1e5c45e96a8a28e072f8da9fa0ae158abd9e7a28927ea314764184dc",
+    "gene_burden": "7eb6630e29ada9da1e6980542de2ae75f648c6da782cdf4f22c2831911a748f1",
+    "local_ibd": "23c0d9cba4b49a2a286fc04a6de8bd09d36dd7de710ca71e96377fbd3d17c967",
+    "local_ibd_posterior_mean": "fd645a1d2c552934709ea359ede0d11929b19b8c914229a98d9288c9b75fee5d"
+  },
+  "interpretation": "Agreement establishes fidelity to ADR 0010's equations on synthetic inputs. It does not validate a real variant mask, callability decision, lineage constructor, linkage scan or inferential calibration."
+}

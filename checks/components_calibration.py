@@ -58,7 +58,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 
@@ -273,12 +272,9 @@ def main() -> int:
     print("an effect that is there. Calibration is a different question from the")
     print("agreement with SOLAR and R, which do not fit this model at all.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/components-calibration-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "one trait, three components: additive, household and residual",
-                "date": "2026-08-12",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": n,
@@ -310,7 +306,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

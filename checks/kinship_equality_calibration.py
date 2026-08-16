@@ -201,12 +201,9 @@ def main() -> int:
     print("\nThe omnibus and every contrast hold their level on the real pedigree,")
     print("with its real and badly unbalanced classes.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/kinship-equality-calibration-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and power of the kinship-class equality tests",
-                "date": "2026-08-14",
                 "estimator": "reml",
                 "pedigree": "the real GOBS pedigree; only responses simulated",
                 "people": n,
@@ -224,7 +221,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

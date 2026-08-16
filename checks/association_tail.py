@@ -269,12 +269,9 @@ def main() -> int:
         return 1
     print("\nThe test is honest everywhere this can see.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/association-tail-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "type I error of the association test in the tail",
-                "date": "2026-08-14",
                 "pedigree": "the real GOBS pedigree; only responses simulated",
                 "people": n,
                 "markers": m,
@@ -299,7 +296,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

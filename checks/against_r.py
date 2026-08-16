@@ -1,11 +1,8 @@
 """Compare Asterism's REML fit against R's `regress`.
 
-`docs/adr/0006` puts correctness in external comparisons with a fixed division of
-labour — SOLAR for ML, R `regress` for REML — because agreement between two
-implementations of the same mathematics proves fidelity and never correctness.
-`regress` is the REML side of that. It was written by other people, from the
-same published algebra, with a different optimiser, so where it agrees the
-agreement means something.
+R `regress` independently implements the same published REML algebra with a
+different optimiser. This check compares estimates and the identifiable
+log-likelihood offset between the two implementations.
 
 Run with:
 
@@ -28,9 +25,9 @@ import numpy as np
 
 import asterism
 
-# Tolerances from `docs/adr/0006`. The estimates are optimiser-bounded, so 1e-6
-# relative; the log-likelihood is compared as a difference rather than a level,
-# for the reason given below.
+# The estimates are optimiser-bounded, so the tolerance is 1e-6 relative. The
+# log-likelihood is compared as a difference rather than a level for the reason
+# given below.
 ESTIMATE_TOLERANCE = 1e-6
 LOGLIK_DIFFERENCE_TOLERANCE = 1e-8
 
@@ -152,7 +149,8 @@ def main() -> int:
     for h2, seed in cases:
         y = simulate(k, x, beta, h2, seed)
         ours = model.fit(y, "reml")
-        theirs = fit_in_r(Path(tempfile.mkdtemp()), k, x, y)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            theirs = fit_in_r(Path(temporary_directory), k, x, y)
 
         their_total = theirs["sigma_k"] + theirs["sigma_e"]
         their_h2 = theirs["sigma_k"] / their_total
@@ -224,8 +222,7 @@ def main() -> int:
             f"{unexplained:.3e} is unaccounted for"
         )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/against-r-2026-08-11.json").write_text(
+    print(
         json.dumps(
             {
                 "results": results,
@@ -236,7 +233,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
 
     if failures:
@@ -245,7 +241,7 @@ def main() -> int:
             print(f"  {failure}")
         return 1
     print("\nAgreement within tolerance on every quantity.")
-    print("This proves fidelity, not correctness (`docs/adr/0006`).")
+    print("The independent REML implementations agree on this comparison.")
     return 0
 
 

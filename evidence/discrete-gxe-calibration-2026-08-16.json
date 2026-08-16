@@ -1,0 +1,262 @@
+{
+  "what": "level and power of the five discrete gene-by-environment tests",
+  "date": "2026-08-16",
+  "estimator": "reml",
+  "pedigree": "the real GOBS pedigree; only responses simulated",
+  "people": 1910,
+  "counts": [
+    758,
+    1152
+  ],
+  "replicates": 500,
+  "levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "scenarios": {
+    "null": {
+      "genetic_sd": [
+        0.707,
+        0.707
+      ],
+      "residual_sd": [
+        0.707,
+        0.707
+      ],
+      "correlation": 1.0
+    },
+    "different genes": {
+      "genetic_sd": [
+        0.707,
+        0.707
+      ],
+      "residual_sd": [
+        0.707,
+        0.707
+      ],
+      "correlation": 0.4
+    },
+    "different scale": {
+      "genetic_sd": [
+        0.95,
+        0.45
+      ],
+      "residual_sd": [
+        0.707,
+        0.707
+      ],
+      "correlation": 1.0
+    },
+    "noisier": {
+      "genetic_sd": [
+        0.707,
+        0.707
+      ],
+      "residual_sd": [
+        0.5,
+        1.0
+      ],
+      "correlation": 1.0
+    }
+  },
+  "results": {
+    "null": {
+      "gene_by_environment": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.006,
+          "0.05": 0.042,
+          "0.1": 0.092
+        }
+      },
+      "any_difference": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.004,
+          "0.05": 0.04,
+          "0.1": 0.082
+        }
+      },
+      "correlation": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.008,
+          "0.05": 0.044,
+          "0.1": 0.092
+        }
+      },
+      "genetic": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.004,
+          "0.05": 0.048,
+          "0.1": 0.088
+        }
+      },
+      "residual": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.008,
+          "0.05": 0.036,
+          "0.1": 0.076
+        }
+      },
+      "correlation_at_bound": 0.528,
+      "median_correlation": 1.0
+    },
+    "different genes": {
+      "gene_by_environment": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 0.934,
+          "0.05": 0.974,
+          "0.1": 0.994
+        }
+      },
+      "any_difference": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 0.914,
+          "0.05": 0.972,
+          "0.1": 0.986
+        }
+      },
+      "correlation": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 0.934,
+          "0.05": 0.99,
+          "0.1": 0.998
+        }
+      },
+      "genetic": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.006,
+          "0.05": 0.062,
+          "0.1": 0.102
+        }
+      },
+      "residual": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.006,
+          "0.05": 0.038,
+          "0.1": 0.092
+        }
+      },
+      "correlation_at_bound": 0.0,
+      "median_correlation": 0.3992585132113678
+    },
+    "different scale": {
+      "gene_by_environment": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 0.99,
+          "0.05": 0.998,
+          "0.1": 0.998
+        }
+      },
+      "any_difference": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 1.0,
+          "0.05": 1.0,
+          "0.1": 1.0
+        }
+      },
+      "correlation": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.01,
+          "0.05": 0.042,
+          "0.1": 0.084
+        }
+      },
+      "genetic": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 0.99,
+          "0.05": 0.998,
+          "0.1": 1.0
+        }
+      },
+      "residual": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.006,
+          "0.05": 0.04,
+          "0.1": 0.074
+        }
+      },
+      "correlation_at_bound": 0.532,
+      "median_correlation": 1.0
+    },
+    "noisier": {
+      "gene_by_environment": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.008,
+          "0.05": 0.046,
+          "0.1": 0.088
+        }
+      },
+      "any_difference": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 1.0,
+          "0.05": 1.0,
+          "0.1": 1.0
+        }
+      },
+      "correlation": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.008,
+          "0.05": 0.04,
+          "0.1": 0.088
+        }
+      },
+      "genetic": {
+        "computed": 500,
+        "judged_as": "level",
+        "rejection": {
+          "0.01": 0.01,
+          "0.05": 0.04,
+          "0.1": 0.086
+        }
+      },
+      "residual": {
+        "computed": 500,
+        "judged_as": "power",
+        "rejection": {
+          "0.01": 1.0,
+          "0.05": 1.0,
+          "0.1": 1.0
+        }
+      },
+      "correlation_at_bound": 0.53,
+      "median_correlation": 1.0
+    }
+  },
+  "note": "a test is judged as a level wherever the scenario gives it nothing to find, which is why the genetic tests under 'noisier' are level checks and not power ones"
+}

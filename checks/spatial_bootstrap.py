@@ -50,7 +50,6 @@ import json
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 import os
 
@@ -179,7 +178,7 @@ def main() -> int:
     # only where it applies.** A likelihood ratio against no spatial variance
     # cannot go below nought, and in a good fraction of null data sets it is
     # exactly nought: the spatial variance fits to nothing and there is no
-    # evidence of anything. Every one of those gets a p-value of exactly one,
+    # positive spatial variance. Every one gets a p-value of exactly one,
     # because no simulated statistic can fail to reach nought.
     #
     # That is a point mass at one, and it is correct. It cannot affect the lower
@@ -235,12 +234,9 @@ def main() -> int:
     print("spatial variance available: with the decay rate unidentified under that")
     print("null, no closed-form reference exists to compare it against.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path(f"evidence/spatial-bootstrap-{MODE}-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "the parametric bootstrap for no spatial variance, and whether it holds its level",
-                "date": "2026-08-12",
                 "estimator": "reml",
                 "decay_rate": MODE,
                 "pairs": PAIRS,
@@ -272,7 +268,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

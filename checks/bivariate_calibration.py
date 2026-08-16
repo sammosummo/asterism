@@ -1,11 +1,8 @@
 """Are the two-trait intervals and tests calibrated?
 
-`docs/adr/0006` separates two questions that are easy to run together. The
-comparisons against SOLAR and R ask whether Asterism computes the same numbers as
-software that is already trusted — fidelity. This asks something they cannot:
-whether the uncertainty around those numbers means what it says. Agreement with
-SOLAR to seven figures says nothing about whether a 95 per cent interval contains
-the truth 95 per cent of the time.
+The comparisons against SOLAR and R ask whether Asterism computes the same
+numbers. This simulation asks whether a 95 per cent interval contains the truth
+at its stated rate and whether each test rejects at its stated level.
 
 Three things are measured, all by simulating data whose answer is known.
 
@@ -44,7 +41,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 from scipy import stats
@@ -136,8 +132,8 @@ def coverage(k: np.ndarray) -> dict:
                     k, observed, design, y, quantity, True
                 )
             except Exception:
-                # An interval that will not compute is not evidence about
-                # coverage. It is counted out rather than counted as a miss.
+                # An interval that will not compute does not contribute to the
+                # measured coverage. It is counted out rather than as a miss.
                 whole = False
                 continue
             attempted[quantity] += 1
@@ -193,8 +189,8 @@ def boundary(k: np.ndarray) -> dict:
 
     Against zero the correlation is interior and a plain chi-squared applies.
     Against plus or minus one it sits on a bound, and the Self-Liang 50:50
-    mixture applies instead (`docs/adr/0001` decision 29). That is a different
-    code path and it needs its own calibration.
+    mixture applies instead. That is a different approximation and is measured
+    separately here.
 
     Simulating with the genetic correlation exactly one makes the genetic
     covariance singular -- rank one, the two traits sharing a single genetic
@@ -429,10 +425,9 @@ def main() -> int:
     print("\nIntervals cover and the test holds its level.")
     print("This is calibration, which is a different question from the agreement")
     print("with SOLAR and R — those say the numbers match, this says the")
-    print("uncertainty around them means what it claims (`docs/adr/0006`).")
+    print("interval coverage and rejection rates match their stated levels.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/bivariate-calibration-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
                 "families": FAMILIES,
@@ -484,7 +479,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 
