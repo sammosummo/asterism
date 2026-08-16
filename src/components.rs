@@ -1031,12 +1031,14 @@ impl ComponentModel {
                 .loglik
         };
 
-        let statistic = (2.0 * (fit.loglik - null_loglik)).max(0.0);
-        let p_value = if statistic <= 0.0 {
-            1.0
-        } else {
-            0.5 * chi2_one_df_upper_tail(statistic)
-        };
+        let statistic = crate::deviance::deviance(fit.loglik, null_loglik);
+        // The settling tolerance matters here and an exact test for nought does
+        // not: two searches never land on identically the same number, so a fit
+        // resting on the boundary arrives as a statistic of about 1e-10 and was
+        // being reported at p = 0.5 rather than p = 1. Under these nulls that is
+        // often half the fits, and in a scan it puts the atom in the wrong place
+        // for a quantile plot or an inflation factor.
+        let p_value = crate::deviance::p_value(statistic, |t| 0.5 * chi2_one_df_upper_tail(t));
         Ok(ComponentTest {
             statistic,
             p_value,
