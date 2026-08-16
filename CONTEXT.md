@@ -74,7 +74,8 @@ biomarkers and the auditory traits, with association follow-up on anything that
 comes up. `AssociationModel` already does the follow-up.
 
 **Linkage was considered on the same day and dropped, on measured power rather
-than on taste.** The local-IBD builders were removed with it. Simulated at 900
+than on taste.** This is separate from the gene and pathway scans, which stay.
+ The local-IBD builders were removed with it. Simulated at 900
 people with a rare variant of large effect, and comparing each method at the
 threshold a real scan demands — about 5e-5 for linkage against 5e-8 genome-wide
 or 2.5e-6 gene-based — linkage lost in every case tried. For a variant private
@@ -89,10 +90,13 @@ cannot be observed — a repeat expansion, a structural variant, an unmappable
 region — the answer is a caller built for that kind of variant, not a method
 that ignores the question, because linkage has no power there either.
 
-The latent mediation model arrived on 15 August 2026 and has not left the list:
-no analysis has been named for it. That is recorded here rather than tidied
-away, because the rule exists to stop this project growing faster than it can
-be checked.
+The latent mediation model left the list on 16 August 2026, named by the
+mediation grant, which is the analysis it was built for.
+
+The variant-set kernels stay for the same effort, and Asterism will grow the
+test that belongs with them. Using SKAT through R would mean treating the
+method as a black box; the point of having it here is to be able to change it
+for traits and designs that the published form does not cover.
 
 **SOLAR**:
 A comparator, never the definition of correct. Differences between Asterism and

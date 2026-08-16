@@ -35,6 +35,7 @@ import numpy as np
 from ._core import PreparedModel, __version__
 from ._core import gene_burden_matrix as _gene_burden_matrix
 from ._core import gene_linear_matrix as _gene_linear_matrix
+from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from ._core import relationship as _relationship
 from .latent_mediation import LatentMediationModel
 from .models import (
@@ -53,6 +54,7 @@ __all__ = [
     "prepare",
     "gene_linear_matrix",
     "gene_burden_matrix",
+    "weighted_chi2_upper_tail",
     "relationship_matrix",
     "ComponentModel",
     "BivariateModel",
@@ -314,6 +316,27 @@ def prepare(x: Any, k: Any) -> PreparedModel:
     if k.ndim != 2:
         raise ValueError("PREPARE_K_NOT_TWO_DIMENSIONAL")
     return PreparedModel(x, k)
+
+
+def weighted_chi2_upper_tail(q: float, weights: Any) -> dict[str, Any]:
+    """The upper tail of a weighted sum of chi-squares on one degree of freedom.
+
+    ``P(sum_j weights_j * chisq_1 > q)``, which is what a variance-component
+    score test reads. ``weights`` are the eigenvalues of the tested matrix
+    after projection, so they are nonnegative.
+
+    A gene scan reads this at around 1e-6, where an approximation calibrated at
+    0.05 is worthless, so the result carries its own diagnostics. ``method``
+    says which recipe answered: a single weight, or weights that are all equal,
+    have exact chi-square answers and are taken directly rather than
+    integrated. ``settled_to`` is the size of the last term kept as a share of
+    the answer. ``trustworthy`` is false where the probability is small enough
+    that cancellation has eaten the digits, because the tail is recovered as
+    ``1/2 + integral`` and a small answer is a difference of two nearly equal
+    numbers.
+    """
+    values = [float(v) for v in np.asarray(weights, dtype=np.float64).ravel()]
+    return dict(_weighted_chi2_upper_tail(float(q), values))
 
 
 def relationship_matrix(

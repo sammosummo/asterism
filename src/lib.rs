@@ -17,6 +17,7 @@ mod kinship_classes;
 mod latent_mediation;
 mod liability;
 mod matrix_builders;
+mod mixture_tail;
 mod prepared;
 mod relationship;
 mod spatial;
@@ -33,6 +34,7 @@ pub use latent_mediation::{
 };
 pub use liability::{LiabilityFit, LiabilityModel};
 pub use matrix_builders::{MatrixBuildError, gene_burden_matrix, gene_linear_matrix};
+pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
@@ -50,6 +52,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         matrix_builders::python::build_gene_burden_matrix,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixture_tail::python::py_weighted_chi2_upper_tail,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;

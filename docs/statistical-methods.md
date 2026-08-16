@@ -308,6 +308,41 @@ which in a sweep means a gene nobody in the sample carries. A scan should catch
 that code and record the gene as untestable. Nothing is lost by doing so: a
 zero matrix carries no variance, and `ComponentModel` returns `p = 1` for it.
 
+## The tail of a weighted sum of chi-squares
+
+A score test for one variance component gives a statistic distributed as
+
+```text
+Q = sum_j lambda_j chi-square(1)
+```
+
+where the weights are the eigenvalues of the tested matrix after projection.
+There is no closed form in general. A gene scan reads this at around `1e-6`, so
+an approximation that behaves at 0.05 is worthless.
+
+Asterism computes it by Gil-Pelaez inversion,
+
+```text
+P(Q > q) = 1/2 + (1/pi) Int_0^inf sin(theta(t)) / (t rho(t)) dt
+theta(t) = (1/2) sum_j atan(2 lambda_j t) - q t
+rho(t)   = exp( (1/4) sum_j log(1 + 4 lambda_j^2 t^2) )
+```
+
+cutting the integral at every zero of `sin(theta)` so that successive pieces
+alternate in sign and shrink. Truncating there costs about one piece rather
+than the whole remaining envelope, which converges far faster.
+
+Two cases have exact answers and are taken directly rather than integrated: a
+single weight, and weights that are all equal. The first is what a burden
+kernel produces, and it is the case the published inversion handles worst.
+
+**The probability is recovered as `1/2` plus an integral, so a small tail is a
+difference of two nearly equal numbers.** About six digits are lost by the time
+the tail reaches `1e-6`. That leaves enough in binary64 for a gene scan and not
+enough for a genome-wide single-variant threshold, so the result carries the
+size of the last term kept and a flag saying whether cancellation has left the
+value readable.
+
 ## Latent mediation with mixed observation types
 
 `LatentMediationModel(families, qmc_points=...)` fits the structural model

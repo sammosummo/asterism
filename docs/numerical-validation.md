@@ -153,6 +153,29 @@ genome-wide `5e-8` calibration, which would require vastly more null tests.
   This compares score statistics, not SKAT's unexposed full matrix, and an
   intercept-only null cannot distinguish raw from column-centred genotypes.
 
+## The weighted chi-square tail
+
+Checked against Ruben's series expansion, which writes the statistic as a
+mixture of ordinary chi-squares and shares no machinery with
+characteristic-function inversion.
+
+- Where an exact answer exists -- one weight, or equal weights -- it is taken
+  exactly, agreeing with the chi-square tail to `1e-19`.
+- Across 83 cases where the series provably converged, the worst relative
+  difference was `1.8e-3`, at a tail of `4.9e-8`.
+
+**Every published route fails somewhere, and the failures were measured rather
+than assumed.** Davies' inversion refuses to run at tight accuracy settings and
+returns nought at its own default where the answer is `5.7e-7` -- which is the
+case a burden kernel produces. Ruben's series stops early when the weights span
+a wide range: on eighteen weights spanning eighty to one it returned `1.3e-9`
+where a Monte Carlo of eight million draws gives `1.54e-4 +/- 8.6e-6` and
+Asterism gives `1.60e-4`.
+
+The series has an exact convergence test, because its coefficients sum to one,
+so the check drops it as a reference wherever that mass falls short rather than
+comparing against a number that has quietly stopped early.
+
 ## Latent mediation model
 
 Low-dimensional family log likelihoods are independently reconstructed from
@@ -212,6 +235,7 @@ cargo test --release
 uv run --no-project pytest tests/ -q
 uv run --locked --no-sync python checks/matrix_builders.py
 uv run --no-project python checks/against_latent_mediation.py
+uv run --no-project python checks/against_mixture_tail.py
 uv run --no-project python checks/bivariate_reference.py
 uv run --no-project python checks/bivariate_intervals_against_reference.py
 ```
