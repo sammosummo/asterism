@@ -39,6 +39,12 @@ _Avoid_: fast path, lane, backend
 A second implementation of the same calculation. Agreement between the two
 proves fidelity and never correctness; disagreement is the informative outcome.
 Any capability added to Asterism arrives with one.
+
+A check that cannot run is not one. The matrix builders arrived with checks
+against R's `SKAT` and `rres`, neither of which was installed, so their stated
+agreement could not be reproduced by anyone. Both packages were installed and
+both checks run and pass; the lesson kept is that a check is only evidence once
+somebody has run it on the machine that makes the claim.
 _Avoid_: oracle, reference lane
 
 **The coverage check**:
@@ -61,6 +67,13 @@ with an order is a roadmap.
 Liability and threshold models, gene-by-environment, spatial, BLUP and
 association have each left this list by an amendment naming the analysis that
 needed them.
+
+Two capabilities arrived on 15 August 2026 without doing so: the latent
+mediation model and the variant-set and local-IBD matrix builders. No analysis
+was named for either. That is recorded here rather than tidied away, because
+the rule exists to stop this project growing faster than it can be checked, and
+reading the rule beside the two exceptions is the only way the next decision
+gets made with that in view.
 
 **SOLAR**:
 A comparator, never the definition of correct. Differences between Asterism and

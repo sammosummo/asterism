@@ -3,7 +3,28 @@
 **Extends ADR 0001 under decision 20. Amends nothing. Departs from the recovered
 code in one place, recorded below under ADR 0006.**
 
-**Status:** accepted 14 August 2026.
+**Status:** accepted 14 August 2026. **Renamed 16 August 2026**, decision
+unchanged.
+
+> **What this record calls things, and what they are called now.** The model
+> was renamed to say what it is: a gene-by-environment model whose environment
+> is discrete, rather than one about sex. Sex is now the worked example, not
+> the concept, and any binary label serves — an exposure, a cohort, a
+> diagnosis. This restores the name the recovered code used, below:
+> `discrete_gxe_covariance`.
+>
+> | this record | now |
+> | --- | --- |
+> | `GxsModel` | `DiscreteGxeModel` |
+> | `src/gxs.rs` | `src/discrete_gxe.rs` |
+> | `checks/gxs_calibration.py` | `checks/discrete_gxe_calibration.py` |
+> | the `gene_by_sex` null | the `gene_by_environment` null |
+>
+> Nothing about the five nulls, their reference distributions or the reasoning
+> below changed. The model additionally now accepts any two distinct finite
+> labels rather than only 1 and 2. The calibration this record cites was rerun
+> on 16 August 2026 at 500 replicates per scenario; see
+> `evidence/discrete-gxe-calibration-2026-08-16.json`.
 
 ## What was asked for
 
