@@ -342,12 +342,23 @@ the available information the markers have kept, and power follows it.
 
 ### Two ways to get a wrong answer
 
-**Lineage labels are compared for equality and nothing else.** A missing or
-unknown lineage encoded as a label — `0` is the usual choice — makes everyone
-carrying it appear to share descent. Two such people come out at `K = 2`, which
-is more related than monozygotic twins, and each appears autozygous. In a scan
-this produces peaks exactly where the genotyping is poorest. Resolve or remove
-unknown lineages before building.
+**Lineage labels are compared for equality and nothing else**, so a missing
+lineage must not be encoded as one. Everyone carrying an "unknown" label would
+appear to share descent: a pair reaches `K = 2`, past monozygotic twins, and
+each reads as autozygous, putting a peak exactly where the genotyping is
+poorest.
+
+Labels must therefore be **positive**. Nought and negatives are refused with
+`LOCAL_IBD_LINEAGE_NOT_POSITIVE`, on both the Rust and Python surfaces and in
+every posterior draw including any the weights would discard, because they are
+the missing codes in every pedigree format.
+
+That closes the ordinary case but cannot close every one: a sentinel such as
+`999` is a legal label and will build. It betrays itself on the diagonal, since
+everyone carrying it becomes autozygous. **Count `(numpy.diag(k) == 2).sum()`
+before scanning.** Genuine local autozygosity is real — the reviewed SAFS
+pedigree has inbred individuals — so this is a number to judge against the
+consanguinity you expect, not a value to refuse.
 
 **A variant set with no carriers is refused rather than returned as zero.**
 `gene_linear_matrix` and `gene_burden_matrix` raise

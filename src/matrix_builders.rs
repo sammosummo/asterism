@@ -26,7 +26,7 @@ pub enum MatrixBuildError {
     DrawWeightsAllZero,
     DrawWeightSumNotFinite,
     LineageWrongShape,
-    LineageNegative,
+    LineageNotPositive,
 }
 
 impl MatrixBuildError {
@@ -52,9 +52,20 @@ impl MatrixBuildError {
             Self::DrawWeightsAllZero => "LOCAL_IBD_WEIGHTS_ALL_ZERO",
             Self::DrawWeightSumNotFinite => "LOCAL_IBD_WEIGHT_SUM_NOT_FINITE",
             Self::LineageWrongShape => "LOCAL_IBD_LINEAGE_WRONG_SHAPE",
-            Self::LineageNegative => "LOCAL_IBD_LINEAGE_NEGATIVE",
+            Self::LineageNotPositive => "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
         }
     }
+}
+
+/// Refuse a lineage label of nought, the conventional missing code.
+fn refuse_missing_lineages(lineages: &[[u64; 2]]) -> Result<(), MatrixBuildError> {
+    if lineages
+        .iter()
+        .any(|pair| pair.iter().any(|label| *label == 0))
+    {
+        return Err(MatrixBuildError::LineageNotPositive);
+    }
+    Ok(())
 }
 
 fn checked_output(values: DMatrix<f64>) -> Result<DMatrix<f64>, MatrixBuildError> {
@@ -173,12 +184,22 @@ fn matching_lineage_pairs(first: [u64; 2], second: [u64; 2]) -> f64 {
 ///
 /// # Errors
 ///
-/// Refuses no subjects. Missing lineage labels have no representation in this
-/// interface and must not be encoded as an ordinary integer.
+/// Refuses no subjects, and refuses a label of nought.
+///
+/// **A missing lineage has no representation here and must not be smuggled in
+/// as a label.** Labels are compared for equality and nothing else, so any
+/// value standing for "unknown" makes every person carrying it appear to
+/// descend from one founder: a pair of them reaches `K = 2`, which is beyond
+/// monozygotic twins, and each reads as autozygous. In a scan that puts a peak
+/// exactly where the genotyping is worst. Nought is refused because it is the
+/// missing code in every pedigree format; any other sentinel cannot be
+/// detected here, and shows up instead as an implausible number of autozygous
+/// diagonals.
 pub fn local_ibd_matrix(lineages: &[[u64; 2]]) -> Result<DMatrix<f64>, MatrixBuildError> {
     if lineages.is_empty() {
         return Err(MatrixBuildError::NoSubjects);
     }
+    refuse_missing_lineages(lineages)?;
     let rows = lineages.len();
     let mut values = DMatrix::<f64>::zeros(rows, rows);
     for i in 0..rows {
@@ -198,8 +219,8 @@ pub fn local_ibd_matrix(lineages: &[[u64; 2]]) -> Result<DMatrix<f64>, MatrixBui
 ///
 /// # Errors
 ///
-/// Refuses no draws, no subjects, a draw with the wrong number of subjects, or
-/// malformed draw weights.
+/// Refuses no draws, no subjects, a draw with the wrong number of subjects,
+/// malformed draw weights, or a label of nought in any draw.
 pub fn posterior_local_ibd_matrix(
     lineage_draws: &[Vec<[u64; 2]>],
     draw_weights: Option<&DVector<f64>>,
@@ -212,6 +233,11 @@ pub fn posterior_local_ibd_matrix(
     }
     if lineage_draws.iter().any(|draw| draw.len() != first.len()) {
         return Err(MatrixBuildError::LineageDrawSizeMismatch);
+    }
+    // Every draw is checked, including any whose weight is nought, so that
+    // validity does not depend on the weights.
+    for draw in lineage_draws {
+        refuse_missing_lineages(draw)?;
     }
     let weights = draw_weights
         .cloned()
@@ -261,8 +287,35 @@ mod tests {
     use nalgebra::{DMatrix, DVector};
 
     use super::{
-        gene_burden_matrix, gene_linear_matrix, local_ibd_matrix, posterior_local_ibd_matrix,
+        MatrixBuildError, gene_burden_matrix, gene_linear_matrix, local_ibd_matrix,
+        posterior_local_ibd_matrix,
     };
+
+    /// A missing lineage smuggled in as nought would make everyone carrying it
+    /// appear to descend from one founder. Two such people reach K = 2, past
+    /// monozygotic twins, and each reads as autozygous, so a scan would peak
+    /// exactly where the genotyping is worst. It is refused instead.
+    #[test]
+    fn a_missing_lineage_encoded_as_nought_is_refused() {
+        assert_eq!(
+            local_ibd_matrix(&[[1, 2], [0, 0]]),
+            Err(MatrixBuildError::LineageNotPositive)
+        );
+        assert_eq!(
+            local_ibd_matrix(&[[1, 2], [3, 0]]),
+            Err(MatrixBuildError::LineageNotPositive)
+        );
+        // Every draw is checked, including one the weights would discard, so
+        // that validity does not depend on the weights.
+        let draws = vec![vec![[1_u64, 2], [3, 4]], vec![[1_u64, 2], [0, 0]]];
+        let weights = DVector::from_vec(vec![1.0, 0.0]);
+        assert_eq!(
+            posterior_local_ibd_matrix(&draws, Some(&weights)),
+            Err(MatrixBuildError::LineageNotPositive)
+        );
+        // Ordinary labels still build.
+        assert!(local_ibd_matrix(&[[1, 2], [1, 3]]).is_ok());
+    }
 
     #[test]
     fn weighted_linear_gene_values_follow_the_recorded_equation() {

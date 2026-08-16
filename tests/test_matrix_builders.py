@@ -250,7 +250,30 @@ def test_the_full_uint64_domain_is_available_for_opaque_lineage_labels():
             lambda: asterism.local_ibd_matrix(
                 np.array([[1, -1], [2, 3]], dtype=np.int64)
             ),
-            "LOCAL_IBD_LINEAGE_NEGATIVE",
+            "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
+        ),
+        (
+            # Nought is the missing code in every pedigree format, and two
+            # people carrying it would otherwise read as fully identical by
+            # descent and individually autozygous.
+            lambda: asterism.local_ibd_matrix(
+                np.array([[1, 2], [0, 0]], dtype=np.int64)
+            ),
+            "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
+        ),
+        (
+            lambda: asterism.local_ibd_matrix(
+                np.array([[1, 2], [3, 0]], dtype=np.uint64)
+            ),
+            "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
+        ),
+        (
+            # Checked in every draw, including one the weights would discard.
+            lambda: asterism.posterior_local_ibd_matrix(
+                np.array([[[1, 2], [3, 4]], [[1, 2], [0, 0]]], dtype=np.int64),
+                draw_weights=[1.0, 0.0],
+            ),
+            "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
         ),
         (
             lambda: asterism.local_ibd_matrix(
