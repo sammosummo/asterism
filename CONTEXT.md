@@ -68,13 +68,26 @@ Liability and threshold models, gene-by-environment, spatial, BLUP and
 association have each left this list by an amendment naming the analysis that
 needed them.
 
-The variant-set and local-IBD matrix builders left the list on 16 August 2026,
-named by the gene and variant finding effort: linkage scans and gene and
-pathway scans on the neuroimaging traits, the biomarkers and the auditory
-traits, with association follow-up on anything that comes up. Linkage uses the
-local-IBD builders against the polygenic matrix; the gene and pathway scans use
-the variant-set kernels the same way. `AssociationModel` already does the
-follow-up.
+The variant-set builders left the list on 16 August 2026, named by the gene and
+variant finding effort: gene and pathway scans on the neuroimaging traits, the
+biomarkers and the auditory traits, with association follow-up on anything that
+comes up. `AssociationModel` already does the follow-up.
+
+**Linkage was considered on the same day and dropped, on measured power rather
+than on taste.** The local-IBD builders were removed with it. Simulated at 900
+people with a rare variant of large effect, and comparing each method at the
+threshold a real scan demands — about 5e-5 for linkage against 5e-8 genome-wide
+or 2.5e-6 gene-based — linkage lost in every case tried. For a variant private
+to one family, where its indifference to the kind of variant would have been
+worth something, its power was nought while a gene-based test reached 0.568.
+Where linkage finally worked, at a three standard deviation effect shared
+across fifteen families, association was already certain to find it.
+
+Two things follow. Whole-genome sequencing removes most of the reason to infer
+descent at all, since the variants can simply be observed. And where a variant
+cannot be observed — a repeat expansion, a structural variant, an unmappable
+region — the answer is a caller built for that kind of variant, not a method
+that ignores the question, because linkage has no power there either.
 
 The latent mediation model arrived on 15 August 2026 and has not left the list:
 no analysis has been named for it. That is recorded here rather than tidied

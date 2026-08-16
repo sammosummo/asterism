@@ -35,8 +35,6 @@ import numpy as np
 from ._core import PreparedModel, __version__
 from ._core import gene_burden_matrix as _gene_burden_matrix
 from ._core import gene_linear_matrix as _gene_linear_matrix
-from ._core import local_ibd_matrix as _local_ibd_matrix
-from ._core import posterior_local_ibd_matrix as _posterior_local_ibd_matrix
 from ._core import relationship as _relationship
 from .latent_mediation import LatentMediationModel
 from .models import (
@@ -55,8 +53,6 @@ __all__ = [
     "prepare",
     "gene_linear_matrix",
     "gene_burden_matrix",
-    "local_ibd_matrix",
-    "posterior_local_ibd_matrix",
     "relationship_matrix",
     "ComponentModel",
     "BivariateModel",
@@ -216,30 +212,6 @@ def _real_float_array(
         raise ValueError(not_real_code) from error
 
 
-def _lineage_array(values: Any, *, dimensions: int) -> np.ndarray:
-    if _contains_effective_mask(values):
-        raise ValueError("LOCAL_IBD_LINEAGE_MASKED")
-    try:
-        converted_input = np.asanyarray(values)
-    except ValueError as error:
-        raise ValueError("LOCAL_IBD_LINEAGE_WRONG_SHAPE") from error
-    if _contains_effective_mask(converted_input):
-        raise ValueError("LOCAL_IBD_LINEAGE_MASKED")
-    array = np.ndarray.view(converted_input, np.ndarray).copy()
-    if array.ndim != dimensions or array.shape[-1] != 2:
-        raise ValueError("LOCAL_IBD_LINEAGE_WRONG_SHAPE")
-    if array.dtype.kind not in "iu":
-        raise ValueError("LOCAL_IBD_LINEAGE_NOT_INTEGER")
-    # Nought and negatives are the missing codes in every pedigree format. A
-    # label standing for "unknown" is refused rather than swept into the matrix,
-    # because labels are compared for equality: everyone carrying it would
-    # appear to descend from one founder, reaching K = 2 in a pair and reading
-    # as autozygous individually.
-    if np.any(array == 0) or (array.dtype.kind == "i" and np.any(array < 0)):
-        raise ValueError("LOCAL_IBD_LINEAGE_NOT_POSITIVE")
-    return np.ascontiguousarray(array, dtype=np.uint64)
-
-
 def gene_linear_matrix(
     genotypes: Any,
     *,
@@ -311,58 +283,6 @@ def gene_burden_matrix(
         )
     )
     return _gene_burden_matrix(genotypes, weights)
-
-
-def local_ibd_matrix(lineages: Any) -> np.ndarray:
-    """Build the local additive relationship matrix from two lineage labels.
-
-    ``lineages`` has one row per subject and exactly two **positive** integer
-    founder-haplotype labels per row. Labels are opaque equality tokens. IBD0,
-    IBD1 and IBD2 are 0, 0.5 and 1 off the diagonal; a locally autozygous
-    subject retains a diagonal of 2. Masked labels are refused.
-
-    **A missing lineage has no label.** Because labels are compared only for
-    equality, any value standing for "unknown" makes everyone carrying it
-    appear to descend from one founder: a pair of them reaches ``K = 2``, past
-    monozygotic twins, and each reads as autozygous. In a scan that puts a peak
-    exactly where the genotyping is worst. Nought and negatives are therefore
-    refused, being the missing codes in every pedigree format. Any other
-    sentinel cannot be detected here and shows up instead as an implausible
-    number of ``2`` values on the diagonal, which is worth counting before a
-    scan: ``(np.diag(k) == 2).sum()``.
-    """
-    lineages = _lineage_array(lineages, dimensions=2)
-    return _local_ibd_matrix(lineages)
-
-
-def posterior_local_ibd_matrix(
-    lineage_draws: Any,
-    *,
-    draw_weights: Any | None = None,
-) -> np.ndarray:
-    """Average local additive relationship matrices over lineage draws.
-
-    ``lineage_draws`` has shape ``draws × subjects × 2``, with positive labels
-    as in :func:`local_ibd_matrix`; every draw is checked, including any whose
-    weight is nought. Explicit nonnegative weights are normalised; omitting them assigns equal weight to every draw.
-    No malformed draw is silently omitted. The result is the posterior-mean
-    plug-in matrix, not propagation of lineage uncertainty through a trait
-    likelihood. Masked or non-exact binary64 weights are refused.
-    """
-    lineage_draws = _lineage_array(lineage_draws, dimensions=3)
-    weights = (
-        None
-        if draw_weights is None
-        else _real_float_array(
-            draw_weights,
-            dimensions=1,
-            masked_code="LOCAL_IBD_WEIGHT_MASKED",
-            not_exact_code="LOCAL_IBD_WEIGHT_NOT_EXACT_FLOAT64",
-            not_real_code="LOCAL_IBD_WEIGHT_NOT_REAL",
-            wrong_shape_code="LOCAL_IBD_WEIGHT_WRONG_SHAPE",
-        )
-    )
-    return _posterior_local_ibd_matrix(lineage_draws, weights)
 
 
 def prepare(x: Any, k: Any) -> PreparedModel:

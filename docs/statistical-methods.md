@@ -280,7 +280,7 @@ refitted p below your threshold while its held p sits above it. Ten times the
 threshold is ample for a gap that never exceeded a factor of 1.1 in the cases
 studied.
 
-## Gene and local-IBD matrix construction
+## Variant-set matrix construction
 
 For genotype matrix `G` and nonnegative column multipliers `w`, the weighted
 linear and burden matrices are
@@ -292,81 +292,21 @@ b_i  = sum_j G_ij w_j           K_burden = b b'.
 
 Thus `w_j^2` is the linear-kernel variance weight. The builders do not centre,
 standardise, impute, or normalise. Dosages must be finite and in `[0,2]`.
+Both return dense arrays and cost memory quadratic in the number of people.
 
-For two founder-lineage labels per person, let `H_il` count copies carrying
-lineage `l`. The local additive relationship matrix is
-
-```text
-K_local = H H' / 2.
-```
-
-Off-diagonal IBD0, IBD1, and IBD2 are 0, 0.5, and 1. A locally autozygous
-person has diagonal 2. For lineage draws `d`, the posterior builder returns the
-nonnegative weighted mean `sum_d p_d K_d`. This is a plug-in expected matrix;
-it does not integrate lineage uncertainty inside the phenotype likelihood.
-
-All four builders return ordinary dense arrays and require complete numerical
-inputs. Their memory cost is quadratic in the number of people, and posterior
-local-IBD construction takes one quadratic pass per draw.
-
-### Using these matrices to scan
+### Using these matrices
 
 A builder produces one covariance basis. The test comes from putting it in a
-`ComponentModel` beside the genome-wide additive matrix and testing it against
-zero. For linkage that is
-
-```text
-y = X beta + local + polygenic + e
-```
-
-with `local` scaling the local-IBD matrix at one position. Nothing here
-corrects for testing many positions or many genes.
-
-**The local and polygenic matrices are separable because the first averages to
-the second.** Among full sibs, IBD at a locus is 0, 0.5 or 1 in the ratio
-1:2:1, whose mean is the polygenic 0.5. All the linkage information is in the
-variation around that mean.
-
-**An estimated IBD matrix costs power, not validity.** Real IBD is a posterior,
-and a posterior mean is shrunk towards the polygenic matrix, which takes the
-variation with it. In simulation the test held its level at every resolution
-studied and grew conservative as resolution fell, while power against a locus
-explaining a quarter of the variance fell from 0.89 to 0.10. A shrunken matrix
-cannot manufacture a signal; it can only fail to find one, and it does so
-silently.
-
-The quantity to compute before scanning is therefore the **standard deviation
-of the local IBD values among relatives**. With full sib information and IBD
-known exactly it is `sqrt(0.125) = 0.354`. Divided by that, it says how much of
-the available information the markers have kept, and power follows it.
-
-### Two ways to get a wrong answer
-
-**Lineage labels are compared for equality and nothing else**, so a missing
-lineage must not be encoded as one. Everyone carrying an "unknown" label would
-appear to share descent: a pair reaches `K = 2`, past monozygotic twins, and
-each reads as autozygous, putting a peak exactly where the genotyping is
-poorest.
-
-Labels must therefore be **positive**. Nought and negatives are refused with
-`LOCAL_IBD_LINEAGE_NOT_POSITIVE`, on both the Rust and Python surfaces and in
-every posterior draw including any the weights would discard, because they are
-the missing codes in every pedigree format.
-
-That closes the ordinary case but cannot close every one: a sentinel such as
-`999` is a legal label and will build. It betrays itself on the diagonal, since
-everyone carrying it becomes autozygous. **Count `(numpy.diag(k) == 2).sum()`
-before scanning.** Genuine local autozygosity is real — the reviewed SAFS
-pedigree has inbred individuals — so this is a number to judge against the
-consanguinity you expect, not a value to refuse.
+`ComponentModel` beside the genome-wide relationship matrix and testing it
+against zero, which is a variance-component test for the whole variant set.
+Nothing here corrects for testing many genes.
 
 **A variant set with no carriers is refused rather than returned as zero.**
 `gene_linear_matrix` and `gene_burden_matrix` raise
 `GENE_MATRIX_WEIGHTED_VALUES_ALL_ZERO` when every weighted dosage is zero,
-which in a gene-based sweep means a gene nobody in the sample carries. A scan
-should catch that code and record the gene as untestable. Nothing is lost by
-doing so: a zero matrix carries no variance, and `ComponentModel` returns
-`p = 1` for it.
+which in a sweep means a gene nobody in the sample carries. A scan should catch
+that code and record the gene as untestable. Nothing is lost by doing so: a
+zero matrix carries no variance, and `ComponentModel` returns `p = 1` for it.
 
 ## Latent mediation with mixed observation types
 

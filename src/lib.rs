@@ -32,10 +32,7 @@ pub use latent_mediation::{
     LatentMediationFit, LatentMediationModel, LatentMediationParameters,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
-pub use matrix_builders::{
-    MatrixBuildError, gene_burden_matrix, gene_linear_matrix, local_ibd_matrix,
-    posterior_local_ibd_matrix,
-};
+pub use matrix_builders::{MatrixBuildError, gene_burden_matrix, gene_linear_matrix};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
@@ -53,14 +50,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         matrix_builders::python::build_gene_burden_matrix,
-        module
-    )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(
-        matrix_builders::python::build_local_ibd_matrix,
-        module
-    )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(
-        matrix_builders::python::build_posterior_local_ibd_matrix,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;

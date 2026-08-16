@@ -18,15 +18,6 @@ pub enum MatrixBuildError {
     WeightNegative,
     WeightsAllZero,
     WeightedValuesAllZero,
-    NoLineageDraws,
-    LineageDrawSizeMismatch,
-    DrawWeightCountMismatch,
-    DrawWeightNotFinite,
-    DrawWeightNegative,
-    DrawWeightsAllZero,
-    DrawWeightSumNotFinite,
-    LineageWrongShape,
-    LineageNotPositive,
 }
 
 impl MatrixBuildError {
@@ -44,29 +35,10 @@ impl MatrixBuildError {
             Self::WeightNegative => "GENE_MATRIX_WEIGHT_NEGATIVE",
             Self::WeightsAllZero => "GENE_MATRIX_WEIGHTS_ALL_ZERO",
             Self::WeightedValuesAllZero => "GENE_MATRIX_WEIGHTED_VALUES_ALL_ZERO",
-            Self::NoLineageDraws => "LOCAL_IBD_NO_DRAWS",
-            Self::LineageDrawSizeMismatch => "LOCAL_IBD_DRAW_SIZE_MISMATCH",
-            Self::DrawWeightCountMismatch => "LOCAL_IBD_WEIGHT_COUNT_MISMATCH",
-            Self::DrawWeightNotFinite => "LOCAL_IBD_WEIGHT_NOT_FINITE",
-            Self::DrawWeightNegative => "LOCAL_IBD_WEIGHT_NEGATIVE",
-            Self::DrawWeightsAllZero => "LOCAL_IBD_WEIGHTS_ALL_ZERO",
-            Self::DrawWeightSumNotFinite => "LOCAL_IBD_WEIGHT_SUM_NOT_FINITE",
-            Self::LineageWrongShape => "LOCAL_IBD_LINEAGE_WRONG_SHAPE",
-            Self::LineageNotPositive => "LOCAL_IBD_LINEAGE_NOT_POSITIVE",
         }
     }
 }
 
-/// Refuse a lineage label of nought, the conventional missing code.
-fn refuse_missing_lineages(lineages: &[[u64; 2]]) -> Result<(), MatrixBuildError> {
-    if lineages
-        .iter()
-        .any(|pair| pair.iter().any(|label| *label == 0))
-    {
-        return Err(MatrixBuildError::LineageNotPositive);
-    }
-    Ok(())
-}
 
 fn checked_output(values: DMatrix<f64>) -> Result<DMatrix<f64>, MatrixBuildError> {
     if values.iter().any(|value| !value.is_finite()) {
@@ -163,121 +135,8 @@ pub fn gene_burden_matrix(
     checked_output(values)
 }
 
-fn matching_lineage_pairs(first: [u64; 2], second: [u64; 2]) -> f64 {
-    let mut matches = 0_u8;
-    for one in first {
-        for two in second {
-            if one == two {
-                matches += 1;
-            }
-        }
-    }
-    f64::from(matches) / 2.0
-}
 
-/// Build the local additive relationship matrix from two founder-haplotype
-/// labels per subject.
-///
-/// Labels are opaque equality tokens. The result is `H H' / 2`: IBD0, IBD1
-/// and IBD2 are 0, 0.5 and 1 off the diagonal, while local autozygosity is
-/// retained as a diagonal of 2.
-///
-/// # Errors
-///
-/// Refuses no subjects, and refuses a label of nought.
-///
-/// **A missing lineage has no representation here and must not be smuggled in
-/// as a label.** Labels are compared for equality and nothing else, so any
-/// value standing for "unknown" makes every person carrying it appear to
-/// descend from one founder: a pair of them reaches `K = 2`, which is beyond
-/// monozygotic twins, and each reads as autozygous. In a scan that puts a peak
-/// exactly where the genotyping is worst. Nought is refused because it is the
-/// missing code in every pedigree format; any other sentinel cannot be
-/// detected here, and shows up instead as an implausible number of autozygous
-/// diagonals.
-pub fn local_ibd_matrix(lineages: &[[u64; 2]]) -> Result<DMatrix<f64>, MatrixBuildError> {
-    if lineages.is_empty() {
-        return Err(MatrixBuildError::NoSubjects);
-    }
-    refuse_missing_lineages(lineages)?;
-    let rows = lineages.len();
-    let mut values = DMatrix::<f64>::zeros(rows, rows);
-    for i in 0..rows {
-        for j in 0..=i {
-            let value = matching_lineage_pairs(lineages[i], lineages[j]);
-            values[(i, j)] = value;
-            values[(j, i)] = value;
-        }
-    }
-    checked_output(values)
-}
 
-/// Average additive local-IBD matrices over posterior lineage draws.
-///
-/// `draw_weights` are normalised to sum to one. Omitting them assigns equal
-/// weight to every draw. No malformed draw is dropped.
-///
-/// # Errors
-///
-/// Refuses no draws, no subjects, a draw with the wrong number of subjects,
-/// malformed draw weights, or a label of nought in any draw.
-pub fn posterior_local_ibd_matrix(
-    lineage_draws: &[Vec<[u64; 2]>],
-    draw_weights: Option<&DVector<f64>>,
-) -> Result<DMatrix<f64>, MatrixBuildError> {
-    let first = lineage_draws
-        .first()
-        .ok_or(MatrixBuildError::NoLineageDraws)?;
-    if first.is_empty() {
-        return Err(MatrixBuildError::NoSubjects);
-    }
-    if lineage_draws.iter().any(|draw| draw.len() != first.len()) {
-        return Err(MatrixBuildError::LineageDrawSizeMismatch);
-    }
-    // Every draw is checked, including any whose weight is nought, so that
-    // validity does not depend on the weights.
-    for draw in lineage_draws {
-        refuse_missing_lineages(draw)?;
-    }
-    let weights = draw_weights
-        .cloned()
-        .unwrap_or_else(|| DVector::from_element(lineage_draws.len(), 1.0));
-    if weights.len() != lineage_draws.len() {
-        return Err(MatrixBuildError::DrawWeightCountMismatch);
-    }
-    if weights.iter().any(|value| !value.is_finite()) {
-        return Err(MatrixBuildError::DrawWeightNotFinite);
-    }
-    if weights.iter().any(|value| *value < 0.0) {
-        return Err(MatrixBuildError::DrawWeightNegative);
-    }
-    let weight_sum: f64 = weights.iter().sum();
-    if !weight_sum.is_finite() {
-        return Err(MatrixBuildError::DrawWeightSumNotFinite);
-    }
-    if weight_sum == 0.0 {
-        return Err(MatrixBuildError::DrawWeightsAllZero);
-    }
-
-    let rows = first.len();
-    let mut values = DMatrix::<f64>::zeros(rows, rows);
-    for (draw, weight) in lineage_draws.iter().zip(weights.iter()) {
-        let probability = *weight / weight_sum;
-        if probability == 0.0 {
-            continue;
-        }
-        for i in 0..rows {
-            for j in 0..=i {
-                let value = probability * matching_lineage_pairs(draw[i], draw[j]);
-                values[(i, j)] += value;
-                if i != j {
-                    values[(j, i)] += value;
-                }
-            }
-        }
-    }
-    checked_output(values)
-}
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -286,36 +145,8 @@ pub mod python;
 mod tests {
     use nalgebra::{DMatrix, DVector};
 
-    use super::{
-        MatrixBuildError, gene_burden_matrix, gene_linear_matrix, local_ibd_matrix,
-        posterior_local_ibd_matrix,
-    };
+    use super::{gene_burden_matrix, gene_linear_matrix};
 
-    /// A missing lineage smuggled in as nought would make everyone carrying it
-    /// appear to descend from one founder. Two such people reach K = 2, past
-    /// monozygotic twins, and each reads as autozygous, so a scan would peak
-    /// exactly where the genotyping is worst. It is refused instead.
-    #[test]
-    fn a_missing_lineage_encoded_as_nought_is_refused() {
-        assert_eq!(
-            local_ibd_matrix(&[[1, 2], [0, 0]]),
-            Err(MatrixBuildError::LineageNotPositive)
-        );
-        assert_eq!(
-            local_ibd_matrix(&[[1, 2], [3, 0]]),
-            Err(MatrixBuildError::LineageNotPositive)
-        );
-        // Every draw is checked, including one the weights would discard, so
-        // that validity does not depend on the weights.
-        let draws = vec![vec![[1_u64, 2], [3, 4]], vec![[1_u64, 2], [0, 0]]];
-        let weights = DVector::from_vec(vec![1.0, 0.0]);
-        assert_eq!(
-            posterior_local_ibd_matrix(&draws, Some(&weights)),
-            Err(MatrixBuildError::LineageNotPositive)
-        );
-        // Ordinary labels still build.
-        assert!(local_ibd_matrix(&[[1, 2], [1, 3]]).is_ok());
-    }
 
     #[test]
     fn weighted_linear_gene_values_follow_the_recorded_equation() {
@@ -343,30 +174,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hard_lineages_make_additive_local_ibd_and_keep_autozygosity() {
-        let lineages = [[1, 2], [1, 3], [4, 4]];
 
-        let built = local_ibd_matrix(&lineages).expect("valid");
-
-        assert_eq!(
-            built,
-            DMatrix::from_row_slice(3, 3, &[1.0, 0.5, 0.0, 0.5, 1.0, 0.0, 0.0, 0.0, 2.0,],)
-        );
-    }
-
-    #[test]
-    fn posterior_lineages_make_the_explicitly_weighted_mean() {
-        let draws = vec![vec![[1, 2], [1, 3], [4, 4]], vec![[1, 2], [3, 4], [4, 4]]];
-        let weights = DVector::from_vec(vec![1.0, 3.0]);
-
-        let built = posterior_local_ibd_matrix(&draws, Some(&weights)).expect("valid");
-
-        assert_eq!(
-            built,
-            DMatrix::from_row_slice(3, 3, &[1.0, 0.125, 0.0, 0.125, 1.0, 0.75, 0.0, 0.75, 2.0,],)
-        );
-    }
 
     #[test]
     fn finite_inputs_that_overflow_are_refused() {

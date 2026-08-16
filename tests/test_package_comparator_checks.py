@@ -13,7 +13,6 @@ import pytest
 
 PROJECT = Path(__file__).resolve().parents[1]
 SKAT_CHECK = PROJECT / "checks" / "against_skat_builders.py"
-RRES_CHECK = PROJECT / "checks" / "against_rres.py"
 
 FAKE_RSCRIPT = r'''#!/usr/bin/env python3
 import json
@@ -21,7 +20,7 @@ import os
 import sys
 
 mode = os.environ["ASTERISM_FAKE_R_MODE"]
-package = "SKAT" if mode.startswith("skat") else "rres"
+package = "SKAT"
 if mode.endswith("missing"):
     print(f"ASTERISM_REQUIRED_R_PACKAGE_MISSING:{package}", file=sys.stderr)
     raise SystemExit(86)
@@ -70,16 +69,6 @@ else:
         ],
         "normalised_draw_weights": [0.25, 0.75],
     }
-    if mode == "rres_disagreement":
-        result["hard_matrices"][0][1] = 0.25
-    if mode == "rres_wrong_version":
-        result["package_version"] = "9.9.9"
-    if mode == "rres_wrong_dimensions":
-        result["hard_matrices"] = [[1.0, 0.5]]
-    if mode == "rres_nonfinite":
-        result["hard_matrices"][0][0] = float("nan")
-    if mode == "rres_posterior_disagreement":
-        result["posterior_matrix"][1] = 0.375
 
 print("ASTERISM_JSON:" + json.dumps(result, separators=(",", ":")))
 '''
@@ -117,7 +106,6 @@ def run_check(
     ("script", "mode", "package", "rerun"),
     [
         (SKAT_CHECK, "skat_missing", "SKAT", "checks/against_skat_builders.py"),
-        (RRES_CHECK, "rres_missing", "rres", "checks/against_rres.py"),
     ],
 )
 def test_missing_r_package_fails_clearly(
@@ -138,7 +126,7 @@ def test_missing_r_package_fails_clearly(
 
 @pytest.mark.parametrize(
     ("script", "name"),
-    [(SKAT_CHECK, "SKAT"), (RRES_CHECK, "rres")],
+    [(SKAT_CHECK, "SKAT")],
 )
 def test_missing_rscript_fails_clearly(script: Path, name: str, tmp_path: Path):
     empty_path = tmp_path / "empty-path"
@@ -228,7 +216,6 @@ def test_skat_rejects_malformed_nonfinite_or_wrong_shape_results(
     ("script", "mode", "package", "version"),
     [
         (SKAT_CHECK, "skat_wrong_version", "SKAT", "2.2.5"),
-        (RRES_CHECK, "rres_wrong_version", "rres", "1.1"),
     ],
 )
 def test_unpinned_r_package_version_fails_clearly(
@@ -246,71 +233,3 @@ def test_unpinned_r_package_version_fails_clearly(
     assert f"adapter is pinned to {version}" in finished.stderr
 
 
-def test_rres_check_compares_every_hard_cell_and_weighted_posterior(
-    tmp_path: Path,
-    fake_rscript: Path,
-):
-    finished = run_check(RRES_CHECK, tmp_path, fake_rscript, "rres_agreement")
-
-    assert finished.returncode == 0, finished.stderr
-    report = json.loads(finished.stdout)
-    assert report["status"] == "agreement"
-    assert report["package"] == {"name": "rres", "version": "1.1"}
-    hard = report["comparisons"]["hard_local_ibd"]
-    posterior = report["comparisons"]["posterior_local_ibd"]
-    assert hard["draws_compared"] == 2
-    assert hard["cells_compared"] == 18
-    assert hard["autozygous_diagonal_values"] == [2.0, 2.0]
-    assert hard["maximum_absolute_difference"] < report["tolerance"]
-    assert posterior["normalised_draw_weights"] == [0.25, 0.75]
-    assert posterior["cells_compared"] == 9
-    assert posterior["maximum_absolute_difference"] < report["tolerance"]
-
-
-def test_rres_hard_or_posterior_disagreement_is_a_failure(
-    tmp_path: Path,
-    fake_rscript: Path,
-):
-    hard_finished = run_check(
-        RRES_CHECK, tmp_path, fake_rscript, "rres_disagreement"
-    )
-    posterior_finished = run_check(
-        RRES_CHECK, tmp_path, fake_rscript, "rres_posterior_disagreement"
-    )
-
-    assert hard_finished.returncode == 1
-    hard_report = json.loads(hard_finished.stdout)
-    assert hard_report["status"] == "disagreement"
-    assert hard_report["comparisons"]["hard_local_ibd"][
-        "maximum_absolute_difference"
-    ] == 0.25
-    assert posterior_finished.returncode == 1
-    posterior_report = json.loads(posterior_finished.stdout)
-    assert posterior_report["status"] == "disagreement"
-    assert posterior_report["comparisons"]["hard_local_ibd"][
-        "maximum_absolute_difference"
-    ] == 0.0
-    assert posterior_report["comparisons"]["posterior_local_ibd"][
-        "maximum_absolute_difference"
-    ] == 0.25
-
-
-@pytest.mark.parametrize(
-    ("mode", "message"),
-    [
-        ("rres_malformed", "returned malformed JSON"),
-        ("rres_wrong_dimensions", "wrong matrix dimensions"),
-        ("rres_nonfinite", "non-finite relationship value"),
-    ],
-)
-def test_rres_rejects_malformed_nonfinite_or_wrong_shape_results(
-    mode: str,
-    message: str,
-    tmp_path: Path,
-    fake_rscript: Path,
-):
-    finished = run_check(RRES_CHECK, tmp_path, fake_rscript, mode)
-
-    assert finished.returncode != 0
-    assert message in finished.stderr
-    assert not finished.stdout

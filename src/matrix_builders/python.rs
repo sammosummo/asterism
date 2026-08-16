@@ -4,14 +4,11 @@
 //! mathematics and this file is the translation to and from Python.
 
 use nalgebra::{DMatrix, DVector};
-use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use super::{
-    MatrixBuildError, gene_burden_matrix, gene_linear_matrix, local_ibd_matrix,
-    posterior_local_ibd_matrix,
-};
+use super::{gene_burden_matrix, gene_linear_matrix};
 
 fn matrix_from_array(array: &PyReadonlyArray2<'_, f64>) -> DMatrix<f64> {
     let view = array.as_array();
@@ -61,51 +58,4 @@ pub fn build_gene_burden_matrix(
     matrix_to_array(py, &values)
 }
 
-#[pyfunction(name = "local_ibd_matrix")]
-pub fn build_local_ibd_matrix(
-    py: Python<'_>,
-    lineages: PyReadonlyArray2<'_, u64>,
-) -> PyResult<Py<PyArray2<f64>>> {
-    let view = lineages.as_array();
-    if view.ncols() != 2 {
-        return Err(PyValueError::new_err(
-            MatrixBuildError::LineageWrongShape.code(),
-        ));
-    }
-    let mut pairs = Vec::with_capacity(view.nrows());
-    for row in view.rows() {
-        pairs.push([row[0], row[1]]);
-    }
-    let values =
-        local_ibd_matrix(&pairs).map_err(|error| PyValueError::new_err(error.code()))?;
-    matrix_to_array(py, &values)
-}
 
-#[pyfunction(name = "posterior_local_ibd_matrix")]
-#[pyo3(signature = (lineage_draws, draw_weights=None))]
-pub fn build_posterior_local_ibd_matrix(
-    py: Python<'_>,
-    lineage_draws: PyReadonlyArray3<'_, u64>,
-    draw_weights: Option<PyReadonlyArray1<'_, f64>>,
-) -> PyResult<Py<PyArray2<f64>>> {
-    let view = lineage_draws.as_array();
-    if view.shape()[2] != 2 {
-        return Err(PyValueError::new_err(
-            MatrixBuildError::LineageWrongShape.code(),
-        ));
-    }
-    let mut draws = Vec::with_capacity(view.shape()[0]);
-    for draw_index in 0..view.shape()[0] {
-        let mut draw = Vec::with_capacity(view.shape()[1]);
-        for row in 0..view.shape()[1] {
-            let first = view[(draw_index, row, 0)];
-            let second = view[(draw_index, row, 1)];
-            draw.push([first, second]);
-        }
-        draws.push(draw);
-    }
-    let draw_weights = draw_weights.as_ref().map(vector_from_array);
-    let values = posterior_local_ibd_matrix(&draws, draw_weights.as_ref())
-        .map_err(|error| PyValueError::new_err(error.code()))?;
-    matrix_to_array(py, &values)
-}

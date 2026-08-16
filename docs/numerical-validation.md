@@ -144,36 +144,14 @@ responses, observed/expected tail-count ratios were 1.024 at 0.01, 1.040 at
 used because linked markers are not independent. The experiment did not reach
 genome-wide `5e-8` calibration, which would require vastly more null tests.
 
-## Matrix builders
+## Variant-set matrix builders
 
-- Independent NumPy calculations agree exactly on worked weighted-linear,
-  burden, hard local-IBD, and posterior-mean matrices, including a local
-  autozygous diagonal of 2.
+- Independent NumPy calculations agree exactly on the worked weighted-linear
+  and burden matrices.
 - With SKAT 2.2.5, the public linear and burden score statistics agree within
   `1e-10` when evaluated from Asterism's matrices and SKAT's null residuals.
-  This compares score statistics, not SKAT's unexposed full matrix.
-- With R `rres` 1.1, every hard local-relatedness cell and the weighted
-  posterior mean agree within `1e-12`, including the autozygous diagonal.
-
-The matrices are also checked in the model they exist for. A variance-component
-linkage scan on 480 people in 120 sibships, 400 replicates per scenario, put
-the local-IBD matrix beside the polygenic one and tested it against zero.
-
-| IBD resolution | spread of sib IBD | of full | level at 0.05 | power at 0.05 |
-| --- | --- | --- | --- | --- |
-| known exactly | 0.356 | 1.01 | 0.060 | 0.890 |
-| estimated | 0.147 | 0.42 | 0.021 | 0.686 |
-| estimated | 0.085 | 0.24 | 0.000 | 0.104 |
-
-Level is measured with no locus and power against one explaining a quarter of
-the variance. IBD states among sibs came out 185 : 355 : 180, the expected
-1 : 2 : 1, with mean 0.4965 against the polygenic 0.5.
-
-**An estimated IBD matrix costs power and not validity.** The test held its
-level everywhere and grew conservative as resolution fell, because a posterior
-mean shrinks towards the polygenic matrix and cannot manufacture a signal. It
-can only fail to find one, silently, which is why the spread of the local
-matrix among relatives is worth computing before a scan rather than after it.
+  This compares score statistics, not SKAT's unexposed full matrix, and an
+  intercept-only null cannot distinguish raw from column-centred genotypes.
 
 ## Latent mediation model
 
@@ -239,7 +217,7 @@ uv run --no-project python checks/bivariate_intervals_against_reference.py
 ```
 
 Comparisons against another package. These need native SOLAR, or R with
-`regress`, `SKAT` 2.2.5 or `rres` 1.1, and fail rather than skip when it is
+`regress` or `SKAT` 2.2.5, and fail rather than skip when it is
 absent:
 
 ```sh
@@ -250,7 +228,6 @@ uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
 uv run --locked --no-sync python checks/against_skat_builders.py
-uv run --locked --no-sync python checks/against_rres.py
 ```
 
 Simulation. These take minutes to hours, and several read the GOBS pedigree:
@@ -266,7 +243,6 @@ uv run --no-project python checks/spatial_intervals.py
 uv run --no-project python checks/gxe_calibration.py
 uv run --no-project python checks/gxe_intervals.py
 uv run --no-project python checks/discrete_gxe_calibration.py
-uv run --no-project python checks/linkage_calibration.py
 uv run --no-project python checks/liability_calibration.py
 uv run --no-project python checks/association_tail.py
 ```

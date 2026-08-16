@@ -183,7 +183,7 @@ marker effects. Selective refitting is usually the useful compromise. The
 marker remains inside the relationship matrix; Asterism does not perform a
 leave-one-chromosome-out analysis or multiple-testing correction.
 
-## Gene and local-IBD matrices
+## Variant-set matrices
 
 ```python
 linear = asterism.gene_linear_matrix(
@@ -194,19 +194,12 @@ burden = asterism.gene_burden_matrix(
     dosages,
     variant_weights=column_multipliers,
 )
-
-local = asterism.local_ibd_matrix(founder_lineages)
-posterior = asterism.posterior_local_ibd_matrix(
-    lineage_draws,
-    draw_weights=draw_weights,
-)
 ```
 
 The weighted linear matrix is `(G W)(G W)'`; the burden matrix is `b b'` with
-`b = G w`. The local-IBD matrix is `H H' / 2`, and the posterior form is a
-weighted mean across lineage draws. All return ordinary dense NumPy arrays.
-They do not centre, impute, normalise, infer lineages, or estimate variant
-weights.
+`b = G w`. Both return ordinary dense NumPy arrays. They do not centre, impute,
+normalise, or estimate variant weights. Hand the result to `ComponentModel`
+beside the relationship matrix to test a gene or a pathway.
 
 ## Latent mediation with continuous and threshold observations
 
