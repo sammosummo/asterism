@@ -1,10 +1,8 @@
 //! One binary trait on a pedigree, through a liability threshold.
 //!
-//! **This is deliberately a special case and not part of the general model.**
-//! Decision 16 of the estimator record keeps the Gaussian design Gaussian, and
-//! this module is what that decision leaves room for rather than something it
-//! forbids. Nothing here is folded into `ComponentModel`, and nothing here
-//! shares its machinery beyond the family blocks.
+//! **This is a special case rather than part of the Gaussian general model.**
+//! Nothing here is folded into `ComponentModel`, and nothing here shares its
+//! machinery beyond the family blocks.
 //!
 //! # The model
 //!
@@ -66,6 +64,7 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::blocks::family_blocks;
+use crate::deviance::chi2_one_df_upper_tail;
 
 /// Sixteen-point Gauss-Legendre nodes and weights on [-1, 1].
 const GAUSS_LEGENDRE_16: [(f64, f64); 16] = [
@@ -263,8 +262,7 @@ impl LiabilityModel {
         let mut correlation = DMatrix::<f64>::identity(size, size);
         for row in 0..size {
             for column in (row + 1)..size {
-                let scale =
-                    (covariance[(row, row)] * covariance[(column, column)]).sqrt();
+                let scale = (covariance[(row, row)] * covariance[(column, column)]).sqrt();
                 let value = sign[row] * sign[column] * covariance[(row, column)] / scale;
                 if !value.is_finite() {
                     return None;
@@ -353,9 +351,8 @@ impl LiabilityModel {
             })
             .collect();
 
-        let value_of = |theta: &[f64]| -> f64 {
-            self.loglik(theta[0], &theta[1..]).map_or(1e30, |v| -v)
-        };
+        let value_of =
+            |theta: &[f64]| -> f64 { self.loglik(theta[0], &theta[1..]).map_or(1e30, |v| -v) };
         // The region probability has no closed-form derivative worth having, so
         // the gradient is a central difference of an objective that is itself
         // cheap: no factorisation is repeated, only the sequential update.
@@ -540,7 +537,10 @@ mod tests {
         for &(a, b) in &[(0.0, 0.0), (1.0, -0.5), (-1.3, 2.0)] {
             let product = normal.cdf(a) * normal.cdf(b);
             let got = bivariate_normal_cdf(a, b, 0.0, &normal);
-            assert!((got - product).abs() < 1e-9, "independence: {got} against {product}");
+            assert!(
+                (got - product).abs() < 1e-9,
+                "independence: {got} against {product}"
+            );
         }
         // **The quadrature is excellent where it is used and poor outside
         // it**, and the two are worth separating. Measured over a grid of
@@ -582,8 +582,11 @@ mod tests {
     /// Sibling pairs with a known liability heritability, and the status the
     /// threshold implies. Returns the relationship matrix, the statuses and the
     /// design.
-    fn simulate(heritability: f64, prevalence: f64, seed: u64)
-        -> (DMatrix<f64>, Vec<f64>, DMatrix<f64>) {
+    fn simulate(
+        heritability: f64,
+        prevalence: f64,
+        seed: u64,
+    ) -> (DMatrix<f64>, Vec<f64>, DMatrix<f64>) {
         let families = 700;
         let n = 2 * families;
         let mut relationship = DMatrix::<f64>::identity(n, n);
@@ -623,7 +626,11 @@ mod tests {
         let (relationship, status, design) = simulate(0.6, 0.25, 20_260_814);
         let model = LiabilityModel::build(&relationship, &status, &design).expect("valid");
         let fit = model.fit().expect("fits");
-        assert!(fit.converged, "did not converge, |g| = {}", fit.scaled_gradient);
+        assert!(
+            fit.converged,
+            "did not converge, |g| = {}",
+            fit.scaled_gradient
+        );
         assert!(
             (fit.heritability - 0.6).abs() < 0.15,
             "simulated at 0.6 and recovered {}",
@@ -792,14 +799,11 @@ const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
 impl LiabilityModel {
     /// Test the liability heritability against nought.
     ///
-    /// **The reference is assumed and not yet earned.** A heritability of
+    /// A heritability of
     /// nought sits on a bound, so the even mixture of a point mass and
     /// chi-square on one degree of freedom is the natural reference, and it is
-    /// what a Gaussian variance component gets. Decision 16 of the estimator
-    /// record warned that the boundary geometry changes for a liability model,
-    /// and whether it changes this is a question for `checks/liability.py`
-    /// rather than for a doc comment. Until that check has run, read this
-    /// p-value as provisional.
+    /// what a Gaussian variance component gets. Its finite-sample behaviour is
+    /// evaluated by `checks/liability_calibration.py`.
     ///
     /// # Errors
     ///
@@ -860,14 +864,6 @@ impl LiabilityModel {
     }
 }
 
-/// The upper tail of chi-square on one degree of freedom, through the
-/// complementary error function.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::erf::erfc((statistic / 2.0).sqrt())
-}
 
 /// Bisect between a point outside the interval and one inside it.
 fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
@@ -886,87 +882,4 @@ fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 
 }
 
 #[cfg(feature = "python")]
-pub mod python {
-    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
-    use pyo3::exceptions::PyValueError;
-    use pyo3::prelude::*;
-
-    use super::LiabilityModel;
-    use nalgebra::DMatrix;
-
-    fn build(
-        relationship: &PyReadonlyArray2<'_, f64>,
-        status: &PyReadonlyArray1<'_, f64>,
-        design: &PyReadonlyArray2<'_, f64>,
-    ) -> PyResult<LiabilityModel> {
-        let a = relationship.as_array();
-        let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
-        let x = design.as_array();
-        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
-        let status: Vec<f64> = status.as_array().iter().copied().collect();
-        LiabilityModel::build(&a, &status, &x).map_err(PyValueError::new_err)
-    }
-
-    /// Fit one binary trait through a liability threshold.
-    ///
-    /// Returns the liability heritability, the fixed effects, the log
-    /// likelihood, whether the search converged, its scaled gradient, the
-    /// prevalence and the largest family the region probability had to cover.
-    #[pyfunction]
-    #[allow(clippy::type_complexity)]
-    pub fn liability_fit(
-        relationship: PyReadonlyArray2<'_, f64>,
-        status: PyReadonlyArray1<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-    ) -> PyResult<(f64, Vec<f64>, f64, bool, f64, f64, usize)> {
-        let fit = build(&relationship, &status, &design)?
-            .fit()
-            .map_err(PyValueError::new_err)?;
-        Ok((
-            fit.heritability,
-            fit.fixed_effects,
-            fit.loglik,
-            fit.converged,
-            fit.scaled_gradient,
-            fit.prevalence,
-            fit.largest_family,
-        ))
-    }
-
-    /// A 95 per cent profile interval for the liability heritability.
-    #[pyfunction]
-    pub fn liability_interval(
-        relationship: PyReadonlyArray2<'_, f64>,
-        status: PyReadonlyArray1<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-    ) -> PyResult<(f64, f64, f64, bool, bool)> {
-        let got = build(&relationship, &status, &design)?
-            .heritability_interval()
-            .map_err(PyValueError::new_err)?;
-        Ok((
-            got.estimate,
-            got.lower,
-            got.upper,
-            got.lower_at_bound,
-            got.upper_at_bound,
-        ))
-    }
-
-    /// Test the liability heritability against nought.
-    #[pyfunction]
-    pub fn liability_test(
-        relationship: PyReadonlyArray2<'_, f64>,
-        status: PyReadonlyArray1<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-    ) -> PyResult<(f64, f64, String, f64)> {
-        let test = build(&relationship, &status, &design)?
-            .heritability_test()
-            .map_err(PyValueError::new_err)?;
-        Ok((
-            test.statistic,
-            test.p_value,
-            test.rule.to_owned(),
-            test.null_loglik,
-        ))
-    }
-}
+pub mod python;

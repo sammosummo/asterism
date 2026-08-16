@@ -57,6 +57,7 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::deviance::chi2_one_df_upper_tail;
 
 /// How the variance components are treated while markers are swept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,8 +412,14 @@ impl AssociationModel {
             Variance::Refitted => residual / self.rows as f64,
         };
         let effect = beta[columns - 1];
-        let error = (scale * inverse[(columns - 1, columns - 1)]).max(0.0).sqrt();
-        let wald = if error > 0.0 { (effect / error).powi(2) } else { 0.0 };
+        let error = (scale * inverse[(columns - 1, columns - 1)])
+            .max(0.0)
+            .sqrt();
+        let wald = if error > 0.0 {
+            (effect / error).powi(2)
+        } else {
+            0.0
+        };
 
         let likelihood_ratio = match variance {
             Variance::Held => {
@@ -431,10 +438,9 @@ impl AssociationModel {
                     alternative_loglik
                 } else {
                     let variance_estimate = residual / observations;
-                    -0.5
-                        * (observations
-                            * (1.0 + (2.0 * std::f64::consts::PI * variance_estimate).ln())
-                            + logdet)
+                    -0.5 * (observations
+                        * (1.0 + (2.0 * std::f64::consts::PI * variance_estimate).ln())
+                        + logdet)
                 };
                 (2.0 * (alternative - self.null_loglik)).max(0.0)
             }
@@ -523,9 +529,7 @@ impl AssociationModel {
                 match refit_below {
                     // Already refitted, or not interesting enough to be worth
                     // refitting.
-                    Some(threshold)
-                        if variance == Variance::Held && first.p_value <= threshold =>
-                    {
+                    Some(threshold) if variance == Variance::Held && first.p_value <= threshold => {
                         self.test_marker(&marker, Variance::Refitted)
                     }
                     _ => Ok(first),
@@ -591,14 +595,6 @@ impl AssociationModel {
     }
 }
 
-/// The upper tail of chi-square on one degree of freedom, through the
-/// complementary error function.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::erf::erfc((statistic / 2.0).sqrt())
-}
 
 #[cfg(test)]
 mod tests {
@@ -646,10 +642,7 @@ mod tests {
         }
         let covariance =
             heritability * k.clone() + (1.0 - heritability) * DMatrix::<f64>::identity(n, n);
-        let factor = covariance
-            .cholesky()
-            .expect("positive definite")
-            .l();
+        let factor = covariance.cholesky().expect("positive definite").l();
         let noise = factor * DVector::from_iterator(n, (0..n).map(|_| draw()));
         let y = &design * DVector::from_vec(vec![1.0, 0.3, -0.2]) + &marker * effect + noise;
         (k, design, y, marker)
@@ -664,7 +657,8 @@ mod tests {
     #[test]
     fn held_variance_makes_wald_and_the_likelihood_ratio_identical() {
         for effect in [0.0_f64, 0.15, 0.4] {
-            let (k, design, y, marker) = simulate(200, 0.5, effect, 4_242 + (effect * 100.0) as u64);
+            let (k, design, y, marker) =
+                simulate(200, 0.5, effect, 4_242 + (effect * 100.0) as u64);
             let model = AssociationModel::build(&k, &design, &y).expect("valid");
             let got = model.test_marker(&marker, Variance::Held).expect("tests");
             assert!(
@@ -683,7 +677,9 @@ mod tests {
         let (k, design, y, marker) = simulate(200, 0.5, 0.35, 77);
         let model = AssociationModel::build(&k, &design, &y).expect("valid");
         let held = model.test_marker(&marker, Variance::Held).expect("tests");
-        let refitted = model.test_marker(&marker, Variance::Refitted).expect("tests");
+        let refitted = model
+            .test_marker(&marker, Variance::Refitted)
+            .expect("tests");
         // Same model, so the two should agree on roughly where the effect is.
         assert!(
             (held.effect - refitted.effect).abs() < 0.1 * held.effect.abs().max(0.1),
@@ -778,13 +774,19 @@ mod tests {
                 staged[index].as_ref().unwrap(),
             );
             if h.p_value <= 0.01 {
-                assert!(s.refitted, "marker {index} passed the screen and was not refitted");
+                assert!(
+                    s.refitted,
+                    "marker {index} passed the screen and was not refitted"
+                );
                 assert!(
                     (s.p_value - r.p_value).abs() < 1e-12,
                     "marker {index} was refitted but does not match a full refit"
                 );
             } else {
-                assert!(!s.refitted, "marker {index} failed the screen and was refitted");
+                assert!(
+                    !s.refitted,
+                    "marker {index} failed the screen and was refitted"
+                );
                 assert!(
                     (s.p_value - h.p_value).abs() < 1e-12,
                     "marker {index} was left alone but does not match the held sweep"
@@ -809,7 +811,9 @@ mod tests {
             let (k, design, y, marker) = simulate(250, 0.5, 0.25, seed);
             let model = AssociationModel::build(&k, &design, &y).expect("valid");
             let held = model.test_marker(&marker, Variance::Held).expect("tests");
-            let refitted = model.test_marker(&marker, Variance::Refitted).expect("tests");
+            let refitted = model
+                .test_marker(&marker, Variance::Refitted)
+                .expect("tests");
             assert!(
                 held.p_value >= refitted.p_value * (1.0 - 1e-9),
                 "held gave {} against refitted {}, which would let the fast mode \
@@ -873,98 +877,4 @@ mod tests {
 }
 
 #[cfg(feature = "python")]
-pub mod python {
-    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
-    use pyo3::exceptions::PyValueError;
-    use pyo3::prelude::*;
-
-    use super::{AssociationModel, Variance};
-    use nalgebra::{DMatrix, DVector};
-
-    fn variance_named(name: &str) -> PyResult<Variance> {
-        match name {
-            "held" => Ok(Variance::Held),
-            "refitted" => Ok(Variance::Refitted),
-            other => Err(PyValueError::new_err(format!(
-                "ASSOCIATION_UNKNOWN_VARIANCE: {other}, wanted held or refitted"
-            ))),
-        }
-    }
-
-    /// Sweep many markers through a polygenic model.
-    ///
-    /// Returns the null heritability, the null log likelihood, and one row per
-    /// marker of effect, standard error, Wald statistic, likelihood ratio and
-    /// p-value. A marker that could not be tested comes back with a stable code
-    /// in place of its numbers rather than stopping the sweep.
-    ///
-    /// **Wald and the likelihood ratio are the same number under `held`.** Both
-    /// are returned because both were asked for; they differ only under
-    /// `refitted`, which refits the variance components for every marker and is
-    /// far slower.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, design, y, markers, variance="held", refit_below=None))]
-    #[allow(clippy::type_complexity)]
-    pub fn association_sweep(
-        relationship: PyReadonlyArray2<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        y: PyReadonlyArray1<'_, f64>,
-        markers: PyReadonlyArray2<'_, f64>,
-        variance: &str,
-        refit_below: Option<f64>,
-    ) -> PyResult<(
-        f64,
-        f64,
-        Vec<(f64, f64, f64, f64, f64, bool, String)>,
-        Vec<(f64, f64, f64)>,
-    )> {
-        let a = relationship.as_array();
-        let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
-        let x = design.as_array();
-        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
-        let response = y.as_array();
-        let response = DVector::from_iterator(response.len(), response.iter().copied());
-        let m = markers.as_array();
-        let m = DMatrix::from_fn(m.shape()[0], m.shape()[1], |i, j| m[(i, j)]);
-
-        let model =
-            AssociationModel::build(&a, &x, &response).map_err(PyValueError::new_err)?;
-        let results = model
-            .sweep_refitting_below(&m, variance_named(variance)?, refit_below)
-            .map_err(PyValueError::new_err)?;
-        let covariates = model
-            .covariate_effects()
-            .map_err(PyValueError::new_err)?
-            .into_iter()
-            .map(|c| (c.estimate, c.standard_error, c.p_value))
-            .collect();
-        Ok((
-            model.heritability(),
-            model.null_loglik(),
-            results
-                .into_iter()
-                .map(|one| match one {
-                    Ok(test) => (
-                        test.effect,
-                        test.standard_error,
-                        test.wald,
-                        test.likelihood_ratio,
-                        test.p_value,
-                        test.refitted,
-                        String::new(),
-                    ),
-                    Err(code) => (
-                        f64::NAN,
-                        f64::NAN,
-                        f64::NAN,
-                        f64::NAN,
-                        f64::NAN,
-                        false,
-                        code.to_owned(),
-                    ),
-                })
-                .collect(),
-            covariates,
-        ))
-    }
-}
+pub mod python;

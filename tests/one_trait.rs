@@ -1,9 +1,8 @@
 //! One-trait fits against simulated data whose heritability is known.
 //!
-//! These are not agreement tests. Agreement with another implementation proves
-//! fidelity and never correctness (`docs/adr/0006`), so what is checked here is
-//! recovery of a truth the simulation controls, plus the behaviour the decision
-//! record requires at the boundary.
+//! Agreement with another implementation cannot establish correctness, so
+//! these tests check recovery of a truth the simulation controls and numerical
+//! behaviour at the boundary.
 //!
 //! The design throughout is sibling pairs, which is the least informative
 //! pedigree in common use and therefore the honest one to set tolerances
@@ -77,7 +76,7 @@ fn intercept(n: usize) -> DMatrix<f64> {
 fn prepare(pairs: usize) -> PreparedModel {
     let k = sibling_relationship(pairs);
     let x = intercept(2 * pairs);
-    PreparedModel::build(&x, &k, None).expect("a sibling design is valid")
+    PreparedModel::build(&x, &k).expect("a sibling design is valid")
 }
 
 #[test]
@@ -105,7 +104,11 @@ fn a_moderate_heritability_is_recovered_by_reml() {
     );
     // The grand mean is estimated far more precisely than the variance ratio.
     assert!((fit.beta[0] - 3.0).abs() < 0.1, "mean = {}", fit.beta[0]);
-    assert!((fit.total_variance - 1.0).abs() < 0.15, "sigma2 = {}", fit.total_variance);
+    assert!(
+        (fit.total_variance - 1.0).abs() < 0.15,
+        "sigma2 = {}",
+        fit.total_variance
+    );
     assert!(fit.loglik.is_finite());
 }
 
@@ -187,7 +190,7 @@ fn a_fit_on_the_lower_bound_reports_state_and_withholds_the_standard_error() {
 
     if fit.boundary == Boundary::Lower {
         assert_eq!(fit.h2, 0.0);
-        // Absent, never NaN and never zero (`docs/adr/0005`).
+        // Absent, never NaN and never zero.
         assert!(fit.standard_error.is_none());
         // The interval keeps the shape it always has.
         assert_eq!(fit.interval.lower, 0.0);
@@ -228,13 +231,13 @@ fn validation_refuses_what_it_should() {
     let mut asymmetric = good_k.clone();
     asymmetric[(0, 1)] = 0.4;
     assert_eq!(
-        PreparedModel::build(&good_x, &asymmetric, None).err().unwrap(),
+        PreparedModel::build(&good_x, &asymmetric).err().unwrap(),
         "PREPARE_K_ASYMMETRIC"
     );
 
     let wrong_shape = sibling_relationship(4);
     assert_eq!(
-        PreparedModel::build(&good_x, &wrong_shape, None).err().unwrap(),
+        PreparedModel::build(&good_x, &wrong_shape).err().unwrap(),
         "PREPARE_SHAPE_MISMATCH"
     );
 
@@ -244,14 +247,14 @@ fn validation_refuses_what_it_should() {
         duplicated[(i, 1)] = 1.0;
     }
     assert_eq!(
-        PreparedModel::build(&duplicated, &good_k, None).err().unwrap(),
+        PreparedModel::build(&duplicated, &good_k).err().unwrap(),
         "PREPARE_X_RANK_DEFICIENT"
     );
 
     let mut not_finite = good_x.clone();
     not_finite[(0, 0)] = f64::NAN;
     assert_eq!(
-        PreparedModel::build(&not_finite, &good_k, None).err().unwrap(),
+        PreparedModel::build(&not_finite, &good_k).err().unwrap(),
         "PREPARE_X_NOT_FINITE"
     );
 
@@ -259,7 +262,7 @@ fn validation_refuses_what_it_should() {
     not_psd[(0, 1)] = 2.0;
     not_psd[(1, 0)] = 2.0;
     assert_eq!(
-        PreparedModel::build(&good_x, &not_psd, None).err().unwrap(),
+        PreparedModel::build(&good_x, &not_psd).err().unwrap(),
         "PREPARE_K_NOT_PSD"
     );
 }

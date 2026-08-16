@@ -1,42 +1,43 @@
-//! One trait whose genes may act differently in the two sexes.
+//! One trait whose genes may act differently in two environments.
 //!
-//! This is the discrete-environment gene-by-environment model, recovered from
-//! the SOLAR procedures, with sex as the environment. The environment has two
-//! values rather than a range, so nothing is smoothed and nothing is
-//! approximated: the model has one genetic standard deviation per sex, one
-//! residual standard deviation per sex, and one genetic correlation between
-//! them.
+//! This is the discrete case of gene-by-environment: the environment is a
+//! binary label — sex is the canonical example — rather than a measured
+//! range, so nothing is smoothed and no surface has to be chosen. The model
+//! has one genetic standard deviation per environment, one residual standard
+//! deviation per environment, and one genetic correlation between them.
 //!
 //! ```text
 //! V_ij = A_ij s_i s_j c_ij + d_ij e_i^2
 //! ```
 //!
-//! where `s_i` and `e_i` are the standard deviations for that person's sex, and
-//! `c_ij` is one when two people share a sex and `rho_g` when they do not.
+//! where `s_i` and `e_i` are the standard deviations for that person's
+//! environment, and `c_ij` is one when two people share an environment and
+//! `rho_g` when they do not.
 //!
 //! # What it can find, and they are different findings
 //!
-//! **The heritability differs between the sexes.** The genetic variance is
-//! larger in one than the other. That is a change of scale, and it can follow
-//! from a change of scale in the measurement — men are larger, so a volume
-//! measured in millimetres varies more in men whether or not the genetics
-//! differ.
+//! **The heritability differs between the environments.** The genetic
+//! variance is larger in one than the other. That is a change of scale, and it
+//! can follow from a change of scale in the measurement — men are larger, so
+//! a volume measured in millimetres varies more in men whether or not the
+//! genetics differ.
 //!
-//! **The genes differ between the sexes.** The genetic correlation across sexes
-//! is below one, so the genes that matter in men are not exactly the genes that
-//! matter in women. This cannot be produced by a change of scale, and it is
-//! usually the interesting claim.
+//! **The genes differ between the environments.** The genetic correlation
+//! across environments is below one, so the genes that matter in one are not
+//! exactly the genes that matter in the other. This cannot be produced by a
+//! change of scale, and it is usually the interesting claim.
 //!
 //! Unlike the exponential surface in [`crate::gxe`], the correlation here is a
 //! parameter rather than a kernel, so it is free to be negative: a genotype
-//! that raises a trait in one sex and lowers it in the other is reachable.
+//! that raises a trait in one environment and lowers it in the other is
+//! reachable.
 //!
-//! # The residual differs too, and that is not a gene-by-sex finding
+//! # The residual differs too, and that is not a genetic finding
 //!
 //! The two residual standard deviations are free, and they should be. A trait
-//! that is simply noisier in one sex would otherwise push its extra variance
-//! into the genetic term, and a test for gene-by-sex would reject because of
-//! measurement rather than because of genes. The residual carrying its own two
+//! that is simply noisier in one environment would otherwise push its extra
+//! variance into the genetic term, and the genetic tests would reject because
+//! of measurement rather than because of genes. The residual carrying its own two
 //! parameters is what keeps the genetic tests answering the question they are
 //! asked.
 
@@ -44,6 +45,7 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::deviance::chi2_upper_tail;
 use crate::dense::DenseFactor;
 
 /// The five parameters, in the order the search holds them.
@@ -54,9 +56,12 @@ const RESIDUAL_FIRST: usize = 2;
 const RESIDUAL_SECOND: usize = 3;
 const CORRELATION: usize = 4;
 
-/// A fitted gene-by-sex model.
+/// A fitted discrete gene-by-environment model.
 #[derive(Clone, Debug)]
-pub struct GxsFit {
+pub struct DiscreteGxeFit {
+    /// The two environment labels, smaller first. The first group everywhere
+    /// in this record is the people carrying the smaller label.
+    pub levels: [f64; 2],
     /// Genetic variance in the first group, then the second.
     pub genetic_variance: [f64; 2],
     /// Residual variance in the first group, then the second.
@@ -75,21 +80,27 @@ pub struct GxsFit {
     pub counts: [usize; 2],
 }
 
-impl GxsFit {
+impl DiscreteGxeFit {
     /// The heritability within one group.
     #[must_use]
     pub fn heritability(&self, group: usize) -> f64 {
         let genetic = self.genetic_variance[group];
         let total = genetic + self.residual_variance[group];
-        if total > 0.0 { genetic / total } else { f64::NAN }
+        if total > 0.0 {
+            genetic / total
+        } else {
+            f64::NAN
+        }
     }
 }
 
-/// One trait, one relationship matrix, and a grouping into two.
-pub struct GxsModel {
+/// One trait, one relationship matrix, and a binary environment.
+pub struct DiscreteGxeModel {
     relationship: DMatrix<f64>,
     design: DMatrix<f64>,
-    /// True where the person is in the first group.
+    /// The two environment labels, smaller first.
+    levels: [f64; 2],
+    /// True where the person carries the smaller label.
     first: Vec<bool>,
     blocks: Vec<Vec<usize>>,
     rows: usize,
@@ -103,66 +114,83 @@ struct Evaluation {
     fixed_covariance: Option<DMatrix<f64>>,
 }
 
-impl GxsModel {
+impl DiscreteGxeModel {
     /// Validate and prepare.
     ///
-    /// `group` is one value per person: anything equal to one puts them in the
-    /// first group and anything equal to two in the second. **Nothing else is
-    /// accepted**, and in particular a missing or unknown sex is refused rather
-    /// than swept into a group, because a model that quietly puts the unknowns
-    /// together is estimating a correlation with a third group in it.
+    /// `environment` is one label per person and must take exactly two
+    /// distinct finite values — sex coded 1 and 2, an exposure coded 0 and 1,
+    /// or any other binary labelling. Labels are compared exactly, the people
+    /// carrying the smaller label form the first group, and **a missing or
+    /// unknown label must be resolved or removed before building**, because a
+    /// model that quietly puts the unknowns together is estimating a
+    /// correlation with a third group in it.
     ///
     /// # Errors
     ///
     /// Returns a stable code where the inputs do not describe a model.
     pub fn build(
         relationship: &DMatrix<f64>,
-        group: &[f64],
+        environment: &[f64],
         design: &DMatrix<f64>,
     ) -> Result<Self, &'static str> {
-        let rows = group.len();
+        let rows = environment.len();
         if rows == 0 {
-            return Err("GXS_NO_ROWS");
+            return Err("DISCRETE_GXE_NO_ROWS");
         }
         if relationship.nrows() != rows || relationship.ncols() != rows {
-            return Err("GXS_RELATIONSHIP_WRONG_SHAPE");
+            return Err("DISCRETE_GXE_RELATIONSHIP_WRONG_SHAPE");
         }
         if design.nrows() != rows {
-            return Err("GXS_DESIGN_WRONG_SHAPE");
+            return Err("DISCRETE_GXE_DESIGN_WRONG_SHAPE");
         }
         if design.ncols() == 0 {
-            return Err("GXS_DESIGN_HAS_NO_COLUMNS");
+            return Err("DISCRETE_GXE_DESIGN_HAS_NO_COLUMNS");
         }
         if !relationship.iter().all(|v| v.is_finite()) || !design.iter().all(|v| v.is_finite()) {
-            return Err("GXS_NOT_FINITE");
+            return Err("DISCRETE_GXE_NOT_FINITE");
         }
-        let mut first = Vec::with_capacity(rows);
-        for value in group {
-            if (value - 1.0).abs() < 1e-12 {
-                first.push(true);
-            } else if (value - 2.0).abs() < 1e-12 {
-                first.push(false);
-            } else {
-                return Err("GXS_GROUP_NOT_ONE_OR_TWO");
+        let mut levels: Vec<f64> = Vec::with_capacity(2);
+        for value in environment {
+            if !value.is_finite() {
+                return Err("DISCRETE_GXE_ENVIRONMENT_NOT_FINITE");
+            }
+            if !levels.contains(value) {
+                levels.push(*value);
+            }
+            if levels.len() > 2 {
+                return Err("DISCRETE_GXE_ENVIRONMENT_NOT_TWO_LEVELS");
             }
         }
+        if levels.len() != 2 {
+            return Err("DISCRETE_GXE_ENVIRONMENT_NOT_TWO_LEVELS");
+        }
+        levels.sort_by(|left, right| left.partial_cmp(right).expect("finite labels"));
+        let levels = [levels[0], levels[1]];
+        let first: Vec<bool> = environment.iter().map(|value| *value == levels[0]).collect();
         let counted = first.iter().filter(|f| **f).count();
         // A group of one has no within-group pair, so its genetic standard
         // deviation rests on nothing and the correlation is unidentified.
         if counted < 2 || rows - counted < 2 {
-            return Err("GXS_A_GROUP_IS_TOO_SMALL");
+            return Err("DISCRETE_GXE_A_GROUP_IS_TOO_SMALL");
         }
         let xtx = design.transpose() * design;
-        let chol = xtx.cholesky().ok_or("GXS_DESIGN_RANK_DEFICIENT")?;
+        let chol = xtx.cholesky().ok_or("DISCRETE_GXE_DESIGN_RANK_DEFICIENT")?;
         let logdet_xtx = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
         Ok(Self {
             relationship: relationship.clone(),
             design: design.clone(),
+            levels,
             first,
             blocks: family_blocks(relationship),
             rows,
             logdet_xtx,
         })
+    }
+
+    /// The two environment labels, smaller first.
+    #[must_use]
+    pub fn levels(&self) -> [f64; 2] {
+        self.levels
     }
 
     /// How many people are in each group.
@@ -177,16 +205,28 @@ impl GxsModel {
         let size = block.len();
         DMatrix::from_fn(size, size, |i, j| {
             let (a, b) = (block[i], block[j]);
-            let genetic_a =
-                if self.first[a] { theta[GENETIC_FIRST] } else { theta[GENETIC_SECOND] };
-            let genetic_b =
-                if self.first[b] { theta[GENETIC_FIRST] } else { theta[GENETIC_SECOND] };
-            let correlation =
-                if self.first[a] == self.first[b] { 1.0 } else { theta[CORRELATION] };
+            let genetic_a = if self.first[a] {
+                theta[GENETIC_FIRST]
+            } else {
+                theta[GENETIC_SECOND]
+            };
+            let genetic_b = if self.first[b] {
+                theta[GENETIC_FIRST]
+            } else {
+                theta[GENETIC_SECOND]
+            };
+            let correlation = if self.first[a] == self.first[b] {
+                1.0
+            } else {
+                theta[CORRELATION]
+            };
             let mut value = self.relationship[(a, b)] * genetic_a * genetic_b * correlation;
             if a == b {
-                let residual =
-                    if self.first[a] { theta[RESIDUAL_FIRST] } else { theta[RESIDUAL_SECOND] };
+                let residual = if self.first[a] {
+                    theta[RESIDUAL_FIRST]
+                } else {
+                    theta[RESIDUAL_SECOND]
+                };
                 value += residual * residual;
             }
             value
@@ -206,8 +246,16 @@ impl GxsModel {
             let (first_a, first_b) = (self.first[a], self.first[b]);
             let same = first_a == first_b;
             let correlation = if same { 1.0 } else { theta[CORRELATION] };
-            let genetic_a = if first_a { theta[GENETIC_FIRST] } else { theta[GENETIC_SECOND] };
-            let genetic_b = if first_b { theta[GENETIC_FIRST] } else { theta[GENETIC_SECOND] };
+            let genetic_a = if first_a {
+                theta[GENETIC_FIRST]
+            } else {
+                theta[GENETIC_SECOND]
+            };
+            let genetic_b = if first_b {
+                theta[GENETIC_FIRST]
+            } else {
+                theta[GENETIC_SECOND]
+            };
             let kinship = self.relationship[(a, b)];
             match parameter {
                 GENETIC_FIRST | GENETIC_SECOND => {
@@ -348,7 +396,7 @@ impl GxsModel {
     /// # Errors
     ///
     /// Returns a stable code where no start reached a usable optimum.
-    pub fn fit(&self, y: &DVector<f64>, reml: bool) -> Result<GxsFit, &'static str> {
+    pub fn fit(&self, y: &DVector<f64>, reml: bool) -> Result<DiscreteGxeFit, &'static str> {
         self.fit_under(y, reml, Constraint::default())
     }
 
@@ -363,14 +411,14 @@ impl GxsModel {
         y: &DVector<f64>,
         reml: bool,
         constraint: Constraint,
-    ) -> Result<GxsFit, &'static str> {
+    ) -> Result<DiscreteGxeFit, &'static str> {
         if y.len() != self.rows {
-            return Err("GXS_RESPONSE_WRONG_LENGTH");
+            return Err("DISCRETE_GXE_RESPONSE_WRONG_LENGTH");
         }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
-            return Err("GXS_RESPONSE_CONSTANT");
+            return Err("DISCRETE_GXE_RESPONSE_CONSTANT");
         }
         let scale = variance.sqrt();
         let scaled = y / scale;
@@ -435,7 +483,9 @@ impl GxsModel {
                 continue;
             };
             if at.negative_loglik.is_finite()
-                && best.as_ref().is_none_or(|(value, _, _, _)| at.negative_loglik < *value)
+                && best
+                    .as_ref()
+                    .is_none_or(|(value, _, _, _)| at.negative_loglik < *value)
             {
                 best = Some((
                     at.negative_loglik,
@@ -445,12 +495,12 @@ impl GxsModel {
                 ));
             }
         }
-        let (negative, reduced, beta, covariance) = best.ok_or("GXS_NO_START_CONVERGED")?;
+        let (negative, reduced, beta, covariance) = best.ok_or("DISCRETE_GXE_NO_START_CONVERGED")?;
 
         let par = constraint.expand(&reduced);
         let at = self
             .evaluate(&par, &scaled, reml, true)
-            .ok_or("GXS_OPTIMUM_NOT_EVALUABLE")?;
+            .ok_or("DISCRETE_GXE_OPTIMUM_NOT_EVALUABLE")?;
         // Judge convergence in the space the search actually moved in, and only
         // in the direction it was free to move: a gradient pushing outward
         // through a bound is resolved by the bound, not left unconverged.
@@ -475,7 +525,8 @@ impl GxsModel {
         } else {
             self.rows as f64
         };
-        Ok(GxsFit {
+        Ok(DiscreteGxeFit {
+            levels: self.levels,
             genetic_variance: [
                 par[GENETIC_FIRST].powi(2) * variance,
                 par[GENETIC_SECOND].powi(2) * variance,
@@ -488,7 +539,11 @@ impl GxsModel {
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
             fixed_effect_errors: covariance
                 .as_ref()
-                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .map(|c| {
+                    (0..c.nrows())
+                        .map(|i| c[(i, i)].max(0.0).sqrt() * scale)
+                        .collect()
+                })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
@@ -498,12 +553,12 @@ impl GxsModel {
         })
     }
 
-    /// Do the two sexes carry the same genetic standard deviation?
+    /// Do the two environments carry the same genetic standard deviation?
     ///
     /// This is a difference of **scale**, and a scale difference is the thing
     /// most easily produced by something other than genetics: a trait measured
-    /// in units that run larger in one sex varies more in that sex whatever the
-    /// genes do. Read it as a scale finding, not as a gene-by-sex one.
+    /// in units that run larger in one environment varies more there whatever
+    /// the genes do. Read it as a scale finding, not as a genetic one.
     ///
     /// Both standard deviations stay strictly inside their bound under this
     /// null -- nothing is being pushed to nought -- so the reference is an
@@ -516,20 +571,26 @@ impl GxsModel {
         &self,
         y: &DVector<f64>,
         reml: bool,
-    ) -> Result<GxsTest, &'static str> {
+    ) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
             reml,
-            Constraint { genetic: Tie::Together, ..Constraint::default() },
+            Constraint {
+                genetic: Tie::Together,
+                ..Constraint::default()
+            },
         )?;
-        Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| chi2_upper_tail(t, 1.0)))
+        Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| {
+            chi2_upper_tail(t, 1.0)
+        }))
     }
 
-    /// Do the two sexes carry the same residual standard deviation?
+    /// Do the two environments carry the same residual standard deviation?
     ///
-    /// This is here to be *reported alongside* the genetic tests rather than as
-    /// a finding of its own. A trait noisier in one sex is a measurement fact.
+    /// This is here to be *reported alongside* the genetic tests rather than
+    /// as a finding of its own. A trait noisier in one environment is a
+    /// measurement fact.
     /// What matters is that the model held it separately while testing the
     /// genes, so the genetic tests were not answering this question by
     /// accident.
@@ -541,22 +602,27 @@ impl GxsModel {
         &self,
         y: &DVector<f64>,
         reml: bool,
-    ) -> Result<GxsTest, &'static str> {
+    ) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
             reml,
-            Constraint { residual: Tie::Together, ..Constraint::default() },
+            Constraint {
+                residual: Tie::Together,
+                ..Constraint::default()
+            },
         )?;
-        Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| chi2_upper_tail(t, 1.0)))
+        Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| {
+            chi2_upper_tail(t, 1.0)
+        }))
     }
 
-    /// Do the same genes act in both sexes?
+    /// Do the same genes act in both environments?
     ///
-    /// **This is the gene-by-sex question.** A correlation below one says the
-    /// genetic effects are not the same in the two sexes, and unlike the
-    /// variance tests it cannot be produced by a difference of scale or of
-    /// measurement units.
+    /// **This is the gene-by-environment question proper.** A correlation
+    /// below one says the genetic effects are not the same in the two
+    /// environments, and unlike the variance tests it cannot be produced by a
+    /// difference of scale or of measurement units.
     ///
     /// The null puts the correlation at one, which is the edge of what it may
     /// be, so half the null fits land exactly on it and the deviance carries a
@@ -567,30 +633,32 @@ impl GxsModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit failed.
-    pub fn correlation_test(
-        &self,
-        y: &DVector<f64>,
-        reml: bool,
-    ) -> Result<GxsTest, &'static str> {
+    pub fn correlation_test(&self, y: &DVector<f64>, reml: bool) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
-        let null =
-            self.fit_under(y, reml, Constraint { correlation: Some(1.0), ..Constraint::default() })?;
+        let null = self.fit_under(
+            y,
+            reml,
+            Constraint {
+                correlation: Some(1.0),
+                ..Constraint::default()
+            },
+        )?;
         Ok(mixture(free.loglik, null.loglik, "mixture_50_50", |t| {
             0.5 * chi2_upper_tail(t, 1.0)
         }))
     }
 
-    /// Is there gene-by-sex at all?
+    /// Is there gene-by-environment at all?
     ///
     /// **This is the headline test.** The null says the genes are the same in
-    /// both sexes and carry the same variance, while leaving the two residual
-    /// variances free. Two constraints, of which one -- the correlation at one
+    /// both environments and carry the same variance, while leaving the two
+    /// residual variances free. Two constraints, of which one -- the correlation at one
     /// -- sits on a bound, so the reference is the even mixture of chi-square
     /// on one and on two degrees of freedom.
     ///
     /// Leaving the residuals free is the whole point. A trait measured more
-    /// noisily in one sex is not gene-by-sex, and a test that tied the
-    /// residuals would reject on exactly that. See
+    /// noisily in one environment is not a genetic finding, and a test that
+    /// tied the residuals would reject on exactly that. See
     /// [`Self::any_difference_test`], which does tie them and is a different
     /// question.
     ///
@@ -600,36 +668,43 @@ impl GxsModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit failed.
-    pub fn gene_by_sex_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxsTest, &'static str> {
+    pub fn gene_by_environment_test(&self, y: &DVector<f64>, reml: bool) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
             reml,
-            Constraint { genetic: Tie::Together, correlation: Some(1.0), ..Constraint::default() },
+            Constraint {
+                genetic: Tie::Together,
+                correlation: Some(1.0),
+                ..Constraint::default()
+            },
         )?;
-        Ok(mixture(free.loglik, null.loglik, "mixture_chi2_1_chi2_2", |t| {
-            0.5 * chi2_upper_tail(t, 1.0) + 0.5 * chi2_upper_tail(t, 2.0)
-        }))
+        Ok(mixture(
+            free.loglik,
+            null.loglik,
+            "mixture_chi2_1_chi2_2",
+            |t| 0.5 * chi2_upper_tail(t, 1.0) + 0.5 * chi2_upper_tail(t, 2.0),
+        ))
     }
 
-    /// Does anything at all differ between the sexes?
+    /// Does anything at all differ between the environments?
     ///
     /// The null is the ordinary polygenic model: one genetic standard
-    /// deviation, one residual standard deviation, and the same genes acting in
-    /// both sexes. Three constraints, of which one sits on a bound, so the
+    /// deviation, one residual standard deviation, and the same genes acting
+    /// in both environments. Three constraints, of which one sits on a bound, so the
     /// reference is the even mixture of chi-square on two and on three degrees
     /// of freedom. This is the null the recovered code tested.
     ///
-    /// **It is not a gene-by-sex test and must not be reported as one.** It
-    /// ties the two residual variances, so a trait simply measured more noisily
-    /// in one sex rejects it, hard, with nothing genetic happening at all. In
-    /// simulation on the GOBS pedigree, a sex difference in measurement error
-    /// alone rejected this null at p = 1e-34 while every genetic test correctly
-    /// reported nothing.
+    /// **It is not a genetic test and must not be reported as one.** It ties
+    /// the two residual variances, so a trait simply measured more noisily in
+    /// one environment rejects it, hard, with nothing genetic happening at
+    /// all. In simulation on the GOBS pedigree, a sex difference in
+    /// measurement error alone rejected this null at p = 1e-34 while every
+    /// genetic test correctly reported nothing.
     ///
-    /// What it is good for is a first look at whether the sexes need modelling
-    /// separately in any respect. For the genetic question use
-    /// [`Self::gene_by_sex_test`].
+    /// What it is good for is a first look at whether the environments need
+    /// modelling separately in any respect. For the genetic question use
+    /// [`Self::gene_by_environment_test`].
     ///
     /// # Errors
     ///
@@ -638,16 +713,23 @@ impl GxsModel {
         &self,
         y: &DVector<f64>,
         reml: bool,
-    ) -> Result<GxsTest, &'static str> {
+    ) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
             reml,
-            Constraint { genetic: Tie::Together, residual: Tie::Together, correlation: Some(1.0) },
+            Constraint {
+                genetic: Tie::Together,
+                residual: Tie::Together,
+                correlation: Some(1.0),
+            },
         )?;
-        Ok(mixture(free.loglik, null.loglik, "mixture_chi2_2_chi2_3", |t| {
-            0.5 * chi2_upper_tail(t, 2.0) + 0.5 * chi2_upper_tail(t, 3.0)
-        }))
+        Ok(mixture(
+            free.loglik,
+            null.loglik,
+            "mixture_chi2_2_chi2_3",
+            |t| 0.5 * chi2_upper_tail(t, 2.0) + 0.5 * chi2_upper_tail(t, 3.0),
+        ))
     }
 }
 
@@ -678,9 +760,7 @@ impl Constraint {
     }
 
     fn dimension(&self) -> usize {
-        self.genetic_slots()
-            + self.residual_slots()
-            + usize::from(self.correlation.is_none())
+        self.genetic_slots() + self.residual_slots() + usize::from(self.correlation.is_none())
     }
 
     /// Widen what the search moves into the five the model is written in.
@@ -755,9 +835,9 @@ impl Constraint {
     }
 }
 
-/// The result of one gene-by-sex test.
+/// The result of one discrete gene-by-environment test.
 #[derive(Clone, Debug)]
-pub struct GxsTest {
+pub struct DiscreteGxeTest {
     /// Twice the difference in log likelihood, never below nought.
     pub statistic: f64,
     pub p_value: f64,
@@ -768,52 +848,30 @@ pub struct GxsTest {
     pub alternative_loglik: f64,
 }
 
+/// Assemble a test from two log likelihoods and a reference tail.
+///
+/// The clamped statistic and the point mass at nought both live in
+/// [`crate::deviance`], which explains why each is needed.
 fn mixture(
     alternative: f64,
     null: f64,
     rule: &'static str,
     tail: impl Fn(f64) -> f64,
-) -> GxsTest {
-    // A null fitted to a better likelihood than the alternative it sits inside
-    // means a search fell short, not evidence against the null.
-    let statistic = (2.0 * (alternative - null)).max(0.0);
-    // At a statistic of nought a mixture carrying a point mass has tail one,
-    // not a half. Written as a tail of chi-square alone the formula misses
-    // that, and a fit sitting exactly on its bound would be reported at p = 0.5
-    // rather than p = 1.
-    let p_value = if statistic < 1e-6 { 1.0 } else { tail(statistic) };
-    GxsTest {
+) -> DiscreteGxeTest {
+    let statistic = crate::deviance::deviance(alternative, null);
+    DiscreteGxeTest {
         statistic,
-        p_value: p_value.clamp(0.0, 1.0),
+        p_value: crate::deviance::p_value(statistic, tail),
         rule,
         null_loglik: null,
         alternative_loglik: alternative,
     }
 }
 
-/// The upper tail of chi-square on one, two or three degrees of freedom. Each
-/// is written out rather than taken from a general incomplete gamma, because
-/// these three are the only ones this module asks for and each has a closed
-/// form that is exact.
-fn chi2_upper_tail(statistic: f64, degrees: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    let root = (statistic / 2.0).sqrt();
-    if (degrees - 1.0).abs() < 1e-12 {
-        statrs::function::erf::erfc(root)
-    } else if (degrees - 2.0).abs() < 1e-12 {
-        (-statistic / 2.0).exp()
-    } else {
-        // Chi-square on three: the one-degree tail plus the density term.
-        statrs::function::erf::erfc(root)
-            + (2.0 * statistic / std::f64::consts::PI).sqrt() * (-statistic / 2.0).exp()
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::{Constraint, GxsModel, Tie};
+    use super::{Constraint, DiscreteGxeModel, Tie};
     use nalgebra::{DMatrix, DVector};
 
     /// A stream of standard normals. Box-Muller rather than a sum of uniforms:
@@ -826,7 +884,10 @@ mod tests {
 
     impl Normals {
         fn new(seed: u64) -> Self {
-            Self { state: seed.wrapping_mul(2_862_933_555_777_941_757).wrapping_add(1), spare: None }
+            Self {
+                state: seed.wrapping_mul(2_862_933_555_777_941_757).wrapping_add(1),
+                spare: None,
+            }
         }
 
         fn uniform(&mut self) -> f64 {
@@ -886,7 +947,11 @@ mod tests {
                 let (p, q) = (4 * family + i, 4 * family + j);
                 let first = |k: usize| group[k] == 1.0;
                 let sd = |k: usize| if first(k) { genetic[0] } else { genetic[1] };
-                let across = if first(p) == first(q) { 1.0 } else { correlation };
+                let across = if first(p) == first(q) {
+                    1.0
+                } else {
+                    correlation
+                };
                 let mut value = a[(p, q)] * sd(p) * sd(q) * across;
                 if i == j {
                     let e = if first(p) { residual[0] } else { residual[1] };
@@ -913,7 +978,7 @@ mod tests {
     #[test]
     fn the_gradient_matches_a_central_difference() {
         let (a, group, design, y) = sibships(60, [0.9, 0.6], [0.7, 0.8], 0.6, 11);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let theta = [0.85, 0.55, 0.72, 0.83, 0.55];
         for reml in [false, true] {
             let at = model.evaluate(&theta, &y, reml, true).expect("evaluable");
@@ -923,8 +988,14 @@ mod tests {
                 let mut down = theta;
                 up[parameter] += step;
                 down[parameter] -= step;
-                let high = model.evaluate(&up, &y, reml, false).expect("evaluable").negative_loglik;
-                let low = model.evaluate(&down, &y, reml, false).expect("evaluable").negative_loglik;
+                let high = model
+                    .evaluate(&up, &y, reml, false)
+                    .expect("evaluable")
+                    .negative_loglik;
+                let low = model
+                    .evaluate(&down, &y, reml, false)
+                    .expect("evaluable")
+                    .negative_loglik;
                 let numerical = (high - low) / (2.0 * step);
                 assert!(
                     (at.gradient[parameter] - numerical).abs() < 1e-5 * numerical.abs().max(1.0),
@@ -942,9 +1013,12 @@ mod tests {
     #[test]
     fn a_tied_gradient_is_the_sum_of_the_two_it_ties() {
         let (a, group, design, y) = sibships(60, [0.9, 0.6], [0.7, 0.8], 0.6, 12);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
-        let constraint =
-            Constraint { genetic: Tie::Together, residual: Tie::Together, correlation: Some(1.0) };
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
+        let constraint = Constraint {
+            genetic: Tie::Together,
+            residual: Tie::Together,
+            correlation: Some(1.0),
+        };
         let reduced = vec![0.8, 0.75];
         let theta = constraint.expand(&reduced);
         assert_eq!(theta, [0.8, 0.8, 0.75, 0.75, 1.0]);
@@ -979,7 +1053,7 @@ mod tests {
     #[test]
     fn a_genetic_variance_difference_between_the_sexes_is_recovered() {
         let (a, group, design, y) = sibships(250, [1.1, 0.45], [0.7, 0.7], 1.0, 21);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let fit = model.fit(&y, true).expect("the free model fits");
         assert!(fit.converged, "scaled gradient {}", fit.scaled_gradient);
         assert!(
@@ -988,8 +1062,14 @@ mod tests {
             fit.heritability(0),
             fit.heritability(1)
         );
-        let scale = model.genetic_equality_test(&y, true).expect("the test runs");
-        assert!(scale.p_value < 0.01, "scale difference missed at p = {}", scale.p_value);
+        let scale = model
+            .genetic_equality_test(&y, true)
+            .expect("the test runs");
+        assert!(
+            scale.p_value < 0.01,
+            "scale difference missed at p = {}",
+            scale.p_value
+        );
         assert_eq!(scale.rule, "chi2_1");
         // The genes are the same in both sexes here, and the model must not
         // say otherwise merely because the variances differ.
@@ -1001,26 +1081,40 @@ mod tests {
         );
     }
 
-    /// The gene-by-sex finding proper: the same variance in both sexes but not
-    /// the same genes.
+    /// The gene-by-environment finding proper: the same variance in both
+    /// groups, but not the same genes.
     #[test]
     fn a_correlation_below_one_is_recovered() {
         let (a, group, design, y) = sibships(250, [1.0, 1.0], [0.7, 0.7], 0.25, 31);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let fit = model.fit(&y, true).expect("the free model fits");
-        assert!(fit.correlation < 0.75, "correlation came back at {}", fit.correlation);
+        assert!(
+            fit.correlation < 0.75,
+            "correlation came back at {}",
+            fit.correlation
+        );
         let genes = model.correlation_test(&y, true).expect("the test runs");
-        assert!(genes.p_value < 0.01, "different genes missed at p = {}", genes.p_value);
+        assert!(
+            genes.p_value < 0.01,
+            "different genes missed at p = {}",
+            genes.p_value
+        );
         assert_eq!(genes.rule, "mixture_50_50");
         // The variances are equal here and must be reported as equal.
-        let scale = model.genetic_equality_test(&y, true).expect("the test runs");
+        let scale = model
+            .genetic_equality_test(&y, true)
+            .expect("the test runs");
         assert!(
             scale.p_value > 0.05,
             "different genes were read as a scale difference at p = {}",
             scale.p_value
         );
-        let overall = model.gene_by_sex_test(&y, true).expect("the test runs");
-        assert!(overall.p_value < 0.01, "the headline test missed it at p = {}", overall.p_value);
+        let overall = model.gene_by_environment_test(&y, true).expect("the test runs");
+        assert!(
+            overall.p_value < 0.01,
+            "the headline test missed it at p = {}",
+            overall.p_value
+        );
         assert_eq!(overall.rule, "mixture_chi2_1_chi2_2");
     }
 
@@ -1037,12 +1131,12 @@ mod tests {
         let seeds = 12;
         for seed in 0..seeds {
             let (a, group, design, y) = sibships(150, [0.9, 0.9], [0.7, 0.7], 1.0, 400 + seed);
-            let model = GxsModel::build(&a, &group, &design).expect("the model builds");
+            let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
             let fit = model.fit(&y, true).expect("the free model fits");
             if fit.correlation > 1.0 - 1e-6 {
                 on_the_bound += 1;
             }
-            let overall = model.gene_by_sex_test(&y, true).expect("the test runs");
+            let overall = model.gene_by_environment_test(&y, true).expect("the test runs");
             if overall.p_value <= 0.05 {
                 rejected += 1;
             }
@@ -1050,7 +1144,10 @@ mod tests {
         // At a true level of 0.05, four or more rejections in twelve happens
         // about twice in a thousand runs. This is a level check, not a
         // uniformity one.
-        assert!(rejected <= 3, "{rejected} of {seeds} null draws rejected at 0.05");
+        assert!(
+            rejected <= 3,
+            "{rejected} of {seeds} null draws rejected at 0.05"
+        );
         // Under this null the correlation is at its bound, so a good share of
         // fits should sit exactly on it. None doing so would mean the search
         // never reaches the bound, and the even mixture would then be the wrong
@@ -1063,34 +1160,42 @@ mod tests {
 
     /// **The residual standard deviations being free is what makes the genetic
     /// tests mean anything.** One sex measured twice as noisily, with identical
-    /// genetics, must not come out as gene-by-sex.
+    /// genetics, must not come out as a genetic difference.
     #[test]
-    fn a_noisier_sex_is_not_read_as_gene_by_sex() {
+    fn a_noisier_group_is_not_read_as_a_genetic_difference() {
         let (a, group, design, y) = sibships(250, [0.9, 0.9], [0.5, 1.2], 1.0, 41);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
-        let noise = model.residual_equality_test(&y, true).expect("the test runs");
-        assert!(noise.p_value < 0.01, "the noise difference was missed at p = {}", noise.p_value);
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
+        let noise = model
+            .residual_equality_test(&y, true)
+            .expect("the test runs");
+        assert!(
+            noise.p_value < 0.01,
+            "the noise difference was missed at p = {}",
+            noise.p_value
+        );
         let genes = model.correlation_test(&y, true).expect("the test runs");
         assert!(
             genes.p_value > 0.05,
             "a noisier sex was read as different genes at p = {}",
             genes.p_value
         );
-        let scale = model.genetic_equality_test(&y, true).expect("the test runs");
+        let scale = model
+            .genetic_equality_test(&y, true)
+            .expect("the test runs");
         assert!(
             scale.p_value > 0.05,
             "a noisier sex was read as a genetic scale difference at p = {}",
             scale.p_value
         );
-        let headline = model.gene_by_sex_test(&y, true).expect("the test runs");
+        let headline = model.gene_by_environment_test(&y, true).expect("the test runs");
         assert!(
             headline.p_value > 0.05,
-            "a noisier sex was read as gene-by-sex at p = {}",
+            "a noisier group was read as gene-by-environment at p = {}",
             headline.p_value
         );
         // **And the trap this exists to avoid.** The recovered code's overall
         // null ties the residuals, so it rejects here -- correctly, on its own
-        // terms, and misleadingly if read as gene-by-sex. Pinned so that nobody
+        // terms, and misleadingly if read as gene-by-environment. Pinned so that nobody
         // later promotes it back to being the headline.
         let any = model.any_difference_test(&y, true).expect("the test runs");
         assert!(
@@ -1110,7 +1215,7 @@ mod tests {
     #[test]
     fn the_covariance_is_the_recovered_one() {
         let (a, group, design, _) = sibships(25, [0.9, 0.6], [0.7, 0.8], 0.4, 61);
-        let model = GxsModel::build(&a, &group, &design).expect("the model builds");
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let n = group.len();
         for theta in [
             [0.9, 0.6, 0.7, 0.8, 0.4],
@@ -1123,12 +1228,20 @@ mod tests {
         ] {
             // The recovered construction, written out.
             let in_x: Vec<bool> = group.iter().map(|g| *g == 1.0).collect();
-            let genetic_sd: Vec<f64> =
-                in_x.iter().map(|x| if *x { theta[0] } else { theta[1] }).collect();
-            let residual_sd: Vec<f64> =
-                in_x.iter().map(|x| if *x { theta[2] } else { theta[3] }).collect();
+            let genetic_sd: Vec<f64> = in_x
+                .iter()
+                .map(|x| if *x { theta[0] } else { theta[1] })
+                .collect();
+            let residual_sd: Vec<f64> = in_x
+                .iter()
+                .map(|x| if *x { theta[2] } else { theta[3] })
+                .collect();
             let mut expected = DMatrix::from_fn(n, n, |row, column| {
-                let correlation = if in_x[row] == in_x[column] { 1.0 } else { theta[4] };
+                let correlation = if in_x[row] == in_x[column] {
+                    1.0
+                } else {
+                    theta[4]
+                };
                 a[(row, column)] * genetic_sd[row] * genetic_sd[column] * correlation
             });
             for index in 0..n {
@@ -1149,27 +1262,45 @@ mod tests {
         }
     }
 
-    /// A sex that is missing or coded as anything but the two groups is refused
-    /// rather than swept into one of them.
+    /// Exactly two distinct finite labels are accepted, whatever they are; a
+    /// third label or a non-finite one is refused rather than swept into a
+    /// group.
     #[test]
     fn only_two_groups_are_accepted() {
         let (a, group, design, y) = sibships(10, [0.9, 0.9], [0.7, 0.7], 1.0, 51);
-        assert!(GxsModel::build(&a, &group, &design).is_ok());
-        for bad in [0.0, 3.0, -1.0, f64::NAN] {
+        assert!(DiscreteGxeModel::build(&a, &group, &design).is_ok());
+        for bad in [0.0, 3.0, -1.0] {
             let mut spoiled = group.clone();
             spoiled[7] = bad;
             assert_eq!(
-                GxsModel::build(&a, &spoiled, &design).err(),
-                Some("GXS_GROUP_NOT_ONE_OR_TWO"),
-                "a group code of {bad} was accepted"
+                DiscreteGxeModel::build(&a, &spoiled, &design).err(),
+                Some("DISCRETE_GXE_ENVIRONMENT_NOT_TWO_LEVELS"),
+                "a third label of {bad} was accepted"
             );
         }
+        let mut not_finite = group.clone();
+        not_finite[7] = f64::NAN;
+        assert_eq!(
+            DiscreteGxeModel::build(&a, &not_finite, &design).err(),
+            Some("DISCRETE_GXE_ENVIRONMENT_NOT_FINITE")
+        );
+        // Any two distinct labels name the two environments; the smaller label
+        // is the first group. A 0/1 exposure works exactly like sex coded 1/2.
+        let recoded: Vec<f64> = group.iter().map(|v| if *v == 1.0 { 0.0 } else { 1.0 }).collect();
+        let relabelled = DiscreteGxeModel::build(&a, &recoded, &design).expect("binary labels build");
+        assert_eq!(relabelled.levels(), [0.0, 1.0]);
+        assert_eq!(
+            relabelled.counts(),
+            DiscreteGxeModel::build(&a, &group, &design).expect("builds").counts()
+        );
         // A group of one has no within-group pair, so its genetic standard
         // deviation rests on nothing.
-        let lonely: Vec<f64> = (0..group.len()).map(|i| if i == 0 { 1.0 } else { 2.0 }).collect();
+        let lonely: Vec<f64> = (0..group.len())
+            .map(|i| if i == 0 { 1.0 } else { 2.0 })
+            .collect();
         assert_eq!(
-            GxsModel::build(&a, &lonely, &design).err(),
-            Some("GXS_A_GROUP_IS_TOO_SMALL")
+            DiscreteGxeModel::build(&a, &lonely, &design).err(),
+            Some("DISCRETE_GXE_A_GROUP_IS_TOO_SMALL")
         );
         assert!(model_rejects_short_response(&a, &group, &design, &y));
     }
@@ -1180,142 +1311,11 @@ mod tests {
         design: &DMatrix<f64>,
         y: &DVector<f64>,
     ) -> bool {
-        let model = GxsModel::build(a, group, design).expect("the model builds");
+        let model = DiscreteGxeModel::build(a, group, design).expect("the model builds");
         let short = DVector::from_iterator(y.len() - 1, y.iter().take(y.len() - 1).copied());
-        model.fit(&short, true).err() == Some("GXS_RESPONSE_WRONG_LENGTH")
+        model.fit(&short, true).err() == Some("DISCRETE_GXE_RESPONSE_WRONG_LENGTH")
     }
 }
 
 #[cfg(feature = "python")]
-pub mod python {
-    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
-    use pyo3::exceptions::PyValueError;
-    use pyo3::prelude::*;
-
-    use super::{GxsModel, GxsTest};
-    use nalgebra::{DMatrix, DVector};
-
-    fn build(
-        relationship: &PyReadonlyArray2<'_, f64>,
-        group: &PyReadonlyArray1<'_, f64>,
-        design: &PyReadonlyArray2<'_, f64>,
-    ) -> PyResult<GxsModel> {
-        let a = relationship.as_array();
-        let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
-        let x = design.as_array();
-        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
-        let group: Vec<f64> = group.as_array().iter().copied().collect();
-        GxsModel::build(&a, &group, &x).map_err(PyValueError::new_err)
-    }
-
-    fn response(y: &PyReadonlyArray1<'_, f64>) -> DVector<f64> {
-        DVector::from_iterator(y.as_array().len(), y.as_array().iter().copied())
-    }
-
-    fn unpack(test: &GxsTest) -> (f64, f64, String, f64, f64) {
-        (
-            test.statistic,
-            test.p_value,
-            test.rule.to_string(),
-            test.null_loglik,
-            test.alternative_loglik,
-        )
-    }
-
-    /// Fit one trait with the genes allowed to act differently in the two sexes.
-    ///
-    /// `group` is one value per person: 1 or 2, and nothing else. Use the
-    /// pedigree sex.
-    ///
-    /// Returns the two genetic variances, the two residual variances, the two
-    /// heritabilities, the genetic correlation across the sexes, the fixed
-    /// effects and their standard errors, the log likelihood, whether the
-    /// search converged, its scaled gradient, and how many people fell in each
-    /// group.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, group, design, response, reml=true))]
-    #[allow(clippy::type_complexity)]
-    pub fn gxs_fit(
-        relationship: PyReadonlyArray2<'_, f64>,
-        group: PyReadonlyArray1<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        response: PyReadonlyArray1<'_, f64>,
-        reml: bool,
-    ) -> PyResult<(
-        [f64; 2],
-        [f64; 2],
-        [f64; 2],
-        f64,
-        Vec<f64>,
-        Vec<f64>,
-        f64,
-        bool,
-        f64,
-        [usize; 2],
-    )> {
-        let model = build(&relationship, &group, &design)?;
-        let fit = model
-            .fit(&super::python::response(&response), reml)
-            .map_err(PyValueError::new_err)?;
-        Ok((
-            fit.genetic_variance,
-            fit.residual_variance,
-            [fit.heritability(0), fit.heritability(1)],
-            fit.correlation,
-            fit.fixed_effects,
-            fit.fixed_effect_errors,
-            fit.loglik,
-            fit.converged,
-            fit.scaled_gradient,
-            fit.counts,
-        ))
-    }
-
-    /// One gene-by-sex test.
-    ///
-    /// `which` selects it:
-    ///
-    /// - `"gene_by_sex"` -- gene-by-sex of any kind, with the two residual
-    ///   variances left free. **Read this one first**; it is what stops the
-    ///   others being read as separate findings.
-    /// - `"any_difference"` -- anything at all differing between the sexes,
-    ///   including the residual. Not a gene-by-sex test: a trait measured more
-    ///   noisily in one sex rejects it with nothing genetic happening.
-    /// - `"correlation"` -- are the genes the same in both sexes? This is the
-    ///   gene-by-sex question proper.
-    /// - `"genetic"` -- is the genetic variance the same? A difference of scale,
-    ///   which a difference of measurement units can produce.
-    /// - `"residual"` -- is the residual variance the same? Report it beside the
-    ///   others; it is a measurement fact, not a genetic finding.
-    ///
-    /// Returns the statistic, the p-value, the reference distribution it is a
-    /// tail of, and the two log likelihoods.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, group, design, response, which, reml=true))]
-    pub fn gxs_test(
-        relationship: PyReadonlyArray2<'_, f64>,
-        group: PyReadonlyArray1<'_, f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        response: PyReadonlyArray1<'_, f64>,
-        which: &str,
-        reml: bool,
-    ) -> PyResult<(f64, f64, String, f64, f64)> {
-        let model = build(&relationship, &group, &design)?;
-        let y = super::python::response(&response);
-        let test = match which {
-            "gene_by_sex" => model.gene_by_sex_test(&y, reml),
-            "any_difference" => model.any_difference_test(&y, reml),
-            "correlation" => model.correlation_test(&y, reml),
-            "genetic" => model.genetic_equality_test(&y, reml),
-            "residual" => model.residual_equality_test(&y, reml),
-            _ => {
-                return Err(PyValueError::new_err(
-                    "which must be one of gene_by_sex, any_difference, correlation, \
-                     genetic, residual",
-                ));
-            }
-        }
-        .map_err(PyValueError::new_err)?;
-        Ok(unpack(&test))
-    }
-}
+pub mod python;

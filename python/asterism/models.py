@@ -1,8 +1,9 @@
 """The models beyond one trait with one component.
 
 Each is a small object holding the matrices, with `fit`, `interval` and a test.
-Building one validates; fitting returns a dictionary with named fields rather
-than a tuple whose meaning has to be remembered.
+The compiled calculation validates the numerical model before fitting and
+returns a dictionary with named fields rather than a tuple whose meaning has to
+be remembered.
 
 **This layer exists because the compiled bindings are positional.**
 `_core.component_fit` returns eight values in a fixed order and
@@ -34,50 +35,85 @@ def _matrix(value: Any, name: str) -> np.ndarray:
     return array
 
 
+def _owned_matrix(value: Any, name: str) -> np.ndarray:
+    """Return a stable, read-only ComponentModel-owned binary64 matrix."""
+    array = _matrix(value, name).copy(order="C")
+    array.setflags(write=False)
+    return array
+
+
 class ComponentModel:
     """One trait with any number of variance components.
 
     The residual is added for you and is always last, so a model built with a
-    relationship matrix and a household matrix reports three shares: additive,
-    household, residual.
+    relationship matrix and a household matrix reports three raw coefficient
+    proportions: additive, household, residual. When every structured matrix
+    has a positive finite mean diagonal, the fit also reports each coefficient
+    times its matrix's mean diagonal. These mean-diagonal contributions and
+    their proportions do not change if a matrix is multiplied by a positive
+    constant and its fitted coefficient changes reciprocally.
 
     Parameters
     ----------
     matrices
-        The structured components, in the order you want them reported.
+        The structured components, in the order you want them reported. Each
+        is copied at construction, so later caller mutation cannot change the
+        fitted model. Row alignment is positional and is the caller's
+        responsibility.
     x
         The fixed-effect design, one row per person, including its own
-        intercept column if one is wanted.
+        intercept column if one is wanted. Its values are copied at
+        construction.
     """
 
-    def __init__(self, matrices: list[Any], x: Any) -> None:
+    def __init__(
+        self,
+        matrices: list[Any],
+        x: Any,
+    ) -> None:
         if not matrices:
             raise ValueError("COMPONENTS_NONE_GIVEN")
-        self._matrices = [_matrix(m, f"matrix_{i}") for i, m in enumerate(matrices)]
-        self._x = _matrix(x, "design")
+        converted = [
+            _owned_matrix(matrix, f"matrix_{i}")
+            for i, matrix in enumerate(matrices)
+        ]
+        self._matrices = converted
+        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in converted]
+        self._structured_mean_diagonals = (
+            mean_diagonals
+            if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
+            else None
+        )
+        self._x = _owned_matrix(x, "design")
         self.components = len(self._matrices) + 1
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
-        """Fit, and return the variances and their shares.
+        """Fit, and return variance coefficients and their proportions.
 
-        The share is what gets reported: the first share of a
-        relationship-plus-residual model is the heritability.
+        ``raw_coefficient_proportions`` depend on matrix scale. They are useful
+        for inspecting the optimiser parameterisation but are not generic
+        variance shares. When all structured matrices have positive finite mean
+        diagonals, ``mean_diagonal_proportions`` reports the corresponding
+        scale-invariant marginal contributions.
+
+        Matrix, design, and response alignment is positional and is the
+        caller's responsibility.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
         (
             variances,
-            shares,
-            total,
+            proportions,
+            raw_coefficient_total,
             loglik,
             gradient,
             converged,
             effects,
             errors,
         ) = _core.component_fit(self._matrices, self._x, y, reml)
-        return {
+        record = {
             "variances": list(variances),
-            "shares": list(shares),
-            "total_variance": total,
+            "raw_coefficient_proportions": list(proportions),
+            "raw_coefficient_total": raw_coefficient_total,
             # The generalised least squares estimates: the best linear unbiased
             # estimator of the fixed effects at the fitted variances, with the
             # standard errors from the diagonal of (X' V^-1 X)^-1.
@@ -90,6 +126,24 @@ class ComponentModel:
             "converged": converged,
             "estimator": "reml" if reml else "ml",
         }
+        if self._structured_mean_diagonals is not None:
+            mean_diagonal_contributions = [
+                variance * mean_diagonal
+                for variance, mean_diagonal in zip(
+                    variances[:-1], self._structured_mean_diagonals
+                )
+            ]
+            mean_diagonal_contributions.append(variances[-1])
+            mean_diagonal_total = sum(mean_diagonal_contributions)
+            record["mean_diagonal_component_contributions"] = (
+                mean_diagonal_contributions
+            )
+            record["mean_diagonal_total"] = mean_diagonal_total
+            record["mean_diagonal_proportions"] = [
+                contribution / mean_diagonal_total
+                for contribution in mean_diagonal_contributions
+            ]
+        return record
 
     def predict(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
         """Predict the random effects of one component.
@@ -117,12 +171,13 @@ class ComponentModel:
         }
 
     def interval(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
-        """A 95 per cent profile interval for one component's share."""
+        """A 95 per cent profile interval for one raw coefficient proportion."""
         y = np.ascontiguousarray(y, dtype=np.float64)
         lower, upper, at_lower, at_upper, level = _core.component_interval(
             self._matrices, self._x, y, component, reml
         )
         return {
+            "quantity": "raw_coefficient_proportion",
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
@@ -322,24 +377,44 @@ class SpatialModel:
 
     The kernel is ``exp(-λd)`` with distances in kilometres. Any fixed
     components — a relationship matrix, a household matrix — are passed
-    alongside and are reported before the spatial share, which is followed by
-    the residual.
+    alongside and are reported before the spatial component, which is followed
+    by the residual. ``raw_coefficient_proportions`` divide their fitted
+    covariance coefficients by their sum, so they depend on fixed-component
+    matrix scaling. When every fixed component has a positive finite mean
+    diagonal, ``mean_diagonal_proportions`` reports scale-invariant marginal
+    covariance contributions instead.
 
     **Two cautions that the numbers do not carry themselves.** The range is
     barely estimated: its interval reaches a bound in 98 per cent of calibration
     replicates, so report it as a point estimate or use ``integrated=True`` and
-    be rid of it. And an interval for the spatial share reaching nought is not a
-    test of whether there is a spatial effect — under that null the range is
-    unidentified, which is why the test is a bootstrap.
+    be rid of it. And an interval for the spatial raw coefficient proportion
+    reaching nought is not a test of whether there is a spatial effect — under
+    that null the range is unidentified, which is why the test is a bootstrap.
     """
 
     def __init__(self, fixed: list[Any], distance: Any, design: Any) -> None:
-        self._fixed = [_matrix(m, f"matrix_{i}") for i, m in enumerate(fixed)]
-        self._distance = _matrix(distance, "distance")
-        self._design = _matrix(design, "design")
+        self._fixed = [
+            _owned_matrix(matrix, f"matrix_{i}")
+            for i, matrix in enumerate(fixed)
+        ]
+        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in self._fixed]
+        self._fixed_mean_diagonals = (
+            mean_diagonals
+            if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
+            else None
+        )
+        self._distance = _owned_matrix(distance, "distance")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self, y: Any, reml: bool = True, integrated: bool = False) -> dict[str, Any]:
         """Fit, taking the range as a free parameter or integrating it out.
+
+        ``raw_coefficient_proportions`` and ``raw_coefficient_total`` depend
+        on fixed-component matrix scaling. When the fixed component diagonals
+        are positive and finite, ``mean_diagonal_component_contributions`` and
+        ``mean_diagonal_proportions`` instead report the scale-invariant
+        marginal covariance decomposition. The spatial kernel and residual
+        identity both have unit diagonals.
 
         With ``integrated=True`` the range is averaged over rather than
         maximised over, and comes back as ``None``: there is nothing estimated
@@ -348,8 +423,8 @@ class SpatialModel:
         y = np.ascontiguousarray(y, dtype=np.float64)
         (
             variances,
-            shares,
-            total,
+            raw_coefficient_proportions,
+            raw_coefficient_total,
             lam,
             half,
             loglik,
@@ -358,10 +433,10 @@ class SpatialModel:
             effects,
             errors,
         ) = _core.spatial_fit(self._fixed, self._distance, self._design, y, reml, integrated)
-        return {
+        record = {
             "variances": list(variances),
-            "shares": list(shares),
-            "total_variance": total,
+            "raw_coefficient_proportions": list(raw_coefficient_proportions),
+            "raw_coefficient_total": raw_coefficient_total,
             # With the range integrated out these carry the extra uncertainty of
             # not knowing it: the standard errors are the average of the
             # within-range ones plus the spread of the estimates across ranges.
@@ -377,6 +452,24 @@ class SpatialModel:
             "estimator": "reml" if reml else "ml",
             "range_treatment": "integrated" if integrated else "profile",
         }
+        if self._fixed_mean_diagonals is not None:
+            mean_diagonal_contributions = [
+                variance * mean_diagonal
+                for variance, mean_diagonal in zip(
+                    variances[: len(self._fixed)], self._fixed_mean_diagonals
+                )
+            ]
+            mean_diagonal_contributions.extend(variances[len(self._fixed) :])
+            mean_diagonal_total = sum(mean_diagonal_contributions)
+            record["mean_diagonal_component_contributions"] = (
+                mean_diagonal_contributions
+            )
+            record["mean_diagonal_total"] = mean_diagonal_total
+            record["mean_diagonal_proportions"] = [
+                contribution / mean_diagonal_total
+                for contribution in mean_diagonal_contributions
+            ]
+        return record
 
     def predict(
         self, y: Any, component: int, reml: bool = True, integrated: bool = False
@@ -397,7 +490,7 @@ class SpatialModel:
     def interval(
         self, y: Any, quantity: str, reml: bool = True, integrated: bool = False
     ) -> dict[str, Any]:
-        """An interval for a component's share, or for the range.
+        """An interval for a raw coefficient proportion, or for the range.
 
         ``quantity`` is a component index as a string, or ``"lambda"``. Asking
         for the range when it has been integrated out is refused rather than
@@ -408,6 +501,11 @@ class SpatialModel:
             self._fixed, self._distance, self._design, y, quantity, reml, integrated
         )
         return {
+            "quantity": (
+                "decay_per_km"
+                if quantity == "lambda"
+                else "raw_coefficient_proportion"
+            ),
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
@@ -477,7 +575,7 @@ class GxeModel:
     - ``"random_regression"``: a smooth quadratic surface on each covariance,
       held by loadings so it stays a covariance. Six parameters.
     - ``"powered_exponential"``: the exponential with the decay taken to a
-      frozen power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
+      fixed power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
       ``shape`` chosen from 0.5, 1.0, 1.5 or 2.0 — **chosen and not fitted**,
       because a shape and a decay rate trade off against each other and a search
       over both wanders. At ``shape=1.0`` it is the exponential surface exactly.
@@ -488,13 +586,6 @@ class GxeModel:
     from 0.92 to 0.45. A shape chosen to suit the answer would be invisible in
     the fit, so choose it for a reason outside the data and report which one was
     used beside the result.
-
-    Provenance differs between them and is worth knowing. The exponential form
-    is a *recovered* method — it reproduces the restored SOLAR covariance to
-    better than 1e-11, and the powered one reproduces the source at all four
-    shapes. Random regression is not recovered: the source-fidelity crate holds
-    it in a module whose own header says nothing in it is a recovered or
-    qualified method. It is a proposal, and this reproduces that proposal.
 
     Nothing is reported in either surface's own coordinates. What comes back is
     the heritability at each environment you ask about and the genetic
@@ -682,60 +773,63 @@ class GxeModel:
         }
 
 
-class GxsModel:
-    """One trait whose genes may act differently in the two sexes.
+class DiscreteGxeModel:
+    """One trait whose genes may act differently in two environments.
 
-    This is the discrete case of genotype-by-environment, with sex as the
-    environment. Because the environment takes two values rather than a range,
-    nothing is smoothed and no surface has to be chosen: the model carries one
-    genetic standard deviation per sex, one residual standard deviation per sex,
-    and one genetic correlation between them.
+    This is the discrete case of genotype-by-environment: the environment is a
+    binary label rather than a measured range, so nothing is smoothed and no
+    surface has to be chosen. The model carries one genetic standard deviation
+    per environment, one residual standard deviation per environment, and one
+    genetic correlation between them. Sex is the canonical environment; any
+    other binary label — an exposure, a cohort, a diagnosis — works the same
+    way.
 
-    ``group`` is one value per person, 1 or 2 and nothing else. **Use the
-    pedigree sex.** A missing or unknown sex is refused rather than swept into a
-    group, because a model that quietly puts the unknowns together is estimating
-    a correlation with a third group in it.
+    ``environment`` is one label per person and must take exactly two distinct
+    finite values, compared exactly. The people carrying the smaller label form
+    the first group everywhere in the results. **A missing or unknown label
+    must be resolved or removed before building**, because a model that quietly
+    puts the unknowns together is estimating a correlation with a third group
+    in it.
 
     **Two findings live here and they are not the same.**
 
-    *The heritability differs between the sexes.* The genetic variance is larger
-    in one than the other. That is a difference of scale, and a difference of
-    scale can come from the measurement rather than the genetics — men are
-    larger, so a volume in millimetres varies more in men whether or not the
-    genes differ. ``test(y, "genetic")``.
+    *The heritability differs between the environments.* The genetic variance
+    is larger in one than the other. That is a difference of scale, and a
+    difference of scale can come from the measurement rather than the genetics
+    — men are larger, so a volume in millimetres varies more in men whether or
+    not the genes differ. ``test(y, "genetic")``.
 
-    *The genes differ between the sexes.* The genetic correlation across the
-    sexes is below one, so the genes that matter in men are not exactly those
-    that matter in women. No change of units can produce this, and it is usually
-    the interesting claim. ``test(y, "correlation")``.
+    *The genes differ between the environments.* The genetic correlation across
+    the environments is below one, so the genes that matter in one are not
+    exactly those that matter in the other. No change of units can produce
+    this, and it is usually the interesting claim. ``test(y, "correlation")``.
 
     Unlike the kernel surfaces in :class:`GxeModel`, the correlation here is a
     parameter rather than a function of distance, so it is free to be negative:
-    a genotype raising a trait in one sex and lowering it in the other is
-    reachable.
+    a genotype raising a trait in one environment and lowering it in the other
+    is reachable.
 
     **The two residual standard deviations are free, and they should be.** A
-    trait simply noisier in one sex would otherwise push its extra variance into
-    the genetic term, and a gene-by-sex test would then reject because of
-    measurement rather than because of genes.
+    trait simply noisier in one environment would otherwise push its extra
+    variance into the genetic term, and the genetic tests would then reject
+    because of measurement rather than because of genes.
 
-    **Read the headline test first.** ``test(y, "gene_by_sex")`` puts the
-    genetic constraints back at once — same variance, same genes — while leaving
-    the two residual variances free. It is what stops several tests on one trait
-    being read as several findings.
+    **Read the headline test first.** ``test(y, "gene_by_environment")`` puts
+    the genetic constraints back at once — same variance, same genes — while
+    leaving the two residual variances free. It is what stops several tests on
+    one trait being read as several findings.
 
-    **Do not use** ``test(y, "any_difference")`` **as the headline.** It is the
-    null the recovered code tested and it ties the residual variances too, so a
-    trait merely measured more noisily in one sex rejects it hard with nothing
-    genetic happening. In simulation on the GOBS pedigree a sex difference in
-    measurement error alone rejected it at p = 1e-34 while every genetic test
-    correctly reported nothing.
+    **Do not use** ``test(y, "any_difference")`` **as the headline.** It ties
+    the residual variances too, so a trait merely measured more noisily in one
+    environment rejects it hard with nothing genetic happening. In simulation
+    on the GOBS pedigree a sex difference in measurement error alone rejected
+    it at p = 1e-34 while every genetic test correctly reported nothing.
     """
 
-    def __init__(self, relationship: Any, group: Any, design: Any) -> None:
+    def __init__(self, relationship: Any, environment: Any, design: Any) -> None:
         self._relationship = _matrix(relationship, "relationship")
-        self._group = np.ascontiguousarray(
-            np.asarray(group).ravel(), dtype=np.float64
+        self._environment = np.ascontiguousarray(
+            np.asarray(environment).ravel(), dtype=np.float64
         )
         self._design = _matrix(design, "design")
 
@@ -758,8 +852,12 @@ class GxsModel:
             converged,
             gradient,
             counts,
-        ) = _core.gxs_fit(self._relationship, self._group, self._design, y, reml)
+            levels,
+        ) = _core.discrete_gxe_fit(
+            self._relationship, self._environment, self._design, y, reml
+        )
         return {
+            "levels": list(levels),
             "genetic_variance": list(genetic),
             "residual_variance": list(residual),
             "heritability": list(heritability),
@@ -774,41 +872,48 @@ class GxsModel:
             "estimator": "reml" if reml else "ml",
         }
 
-    def test(self, y: Any, null: str = "gene_by_sex", reml: bool = True) -> dict[str, Any]:
+    def test(
+        self, y: Any, null: str = "gene_by_environment", reml: bool = True
+    ) -> dict[str, Any]:
         """Test one of the five nulls.
 
-        - ``"gene_by_sex"``: no gene-by-sex effect of any kind — the same
-          variance and the same genes in both sexes — with the two residual
-          variances left free. Two constraints, one of which sits on a bound, so
-          the reference is an even mixture of chi-square on one and on two
-          degrees of freedom. **Read this one first.**
-        - ``"any_difference"``: nothing differs between the sexes at all,
-          residual included. Three constraints on an even mixture of chi-square
-          on two and on three. This is the null the recovered code tested, and
-          it is **not** a gene-by-sex test: a noisier sex rejects it.
-        - ``"correlation"``: the same genes act in both sexes. This is the
-          gene-by-sex question proper. The null puts the correlation at the edge
-          of what it may be, so the reference is the even mixture of a point
-          mass at nought with chi-square on one degree of freedom. A plain
-          chi-square would roughly double the p-value.
-        - ``"genetic"``: the same genetic variance in both sexes. Interior, so
-          chi-square on one degree of freedom.
-        - ``"residual"``: the same residual variance in both sexes. Report it
-          beside the others as a measurement fact, not as a genetic finding.
+        - ``"gene_by_environment"``: no genetic difference of any kind — the
+          same variance and the same genes in both environments — with the two
+          residual variances left free. Two constraints, one of which sits on a
+          bound, so the reference is an even mixture of chi-square on one and
+          on two degrees of freedom. **Read this one first.**
+        - ``"any_difference"``: nothing differs between the environments at
+          all, residual included. Three constraints on an even mixture of
+          chi-square on two and on three. It is **not** a genetic test: a
+          noisier environment rejects it.
+        - ``"correlation"``: the same genes act in both environments. This is
+          the gene-by-environment question proper. The null puts the
+          correlation at the edge of what it may be, so the reference is the
+          even mixture of a point mass at nought with chi-square on one degree
+          of freedom. A plain chi-square would roughly double the p-value.
+        - ``"genetic"``: the same genetic variance in both environments.
+          Interior, so chi-square on one degree of freedom.
+        - ``"residual"``: the same residual variance in both environments.
+          Report it beside the others as a measurement fact, not as a genetic
+          finding.
 
         ``rule`` names the reference distribution the p-value is a tail of, so a
         reader need not take it on trust.
         """
         allowed = (
-            "gene_by_sex", "any_difference", "correlation", "genetic", "residual"
+            "gene_by_environment",
+            "any_difference",
+            "correlation",
+            "genetic",
+            "residual",
         )
         if null not in allowed:
             raise ValueError(
                 f"null must be one of {', '.join(allowed)}, not {null!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
-        statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxs_test(
-            self._relationship, self._group, self._design, y, null, reml
+        statistic, p_value, rule, null_loglik, alternative_loglik = _core.discrete_gxe_test(
+            self._relationship, self._environment, self._design, y, null, reml
         )
         return {
             "null": null,
@@ -1022,13 +1127,15 @@ def kinship_classes(
     father–daughter — with the order their rows are in, the class names, and how
     many pairs fell in each class.
 
-    Hand ``matrices`` to `ComponentModel` and report each class as a **share**.
-    A weight, being a ratio of two estimated variances, comes back near three
-    when the truth is one on a design of this size; the shares are unbiased.
+    Hand ``matrices`` to `ComponentModel` and report the fitted covariance
+    coefficients, the omnibus equality test, and class contrasts. The class
+    matrices have zero diagonals, so neither raw coefficient proportions nor
+    mean-diagonal proportions are interpretable as shares of phenotypic
+    variance.
 
     The pair counts are worth reading before the answer is. They are rarely
-    balanced, and a class with few pairs is a class whose share is least
-    determined.
+    balanced, and a class with few pairs has the least precise coefficient and
+    contrasts involving it.
     """
     matrices, order, names, pairs = _core.kinship_classes(
         ids, father, mother, sex, list(keep or [])

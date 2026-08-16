@@ -123,8 +123,8 @@ mod tests {
             let reference = v.clone().cholesky().expect("positive definite");
 
             assert!(
-                (chosen.logdet() - 2.0
-                    * reference.l().diagonal().iter().map(|d| d.ln()).sum::<f64>())
+                (chosen.logdet()
+                    - 2.0 * reference.l().diagonal().iter().map(|d| d.ln()).sum::<f64>())
                 .abs()
                     < 1e-9,
                 "log determinant differs at n = {n}"
@@ -151,7 +151,10 @@ mod tests {
         for n in [4usize, FAER_FROM + 5] {
             let mut v = DMatrix::<f64>::identity(n, n);
             v[(0, 0)] = -1.0;
-            assert!(DenseFactor::new(&v).is_none(), "accepted a negative pivot at n = {n}");
+            assert!(
+                DenseFactor::new(&v).is_none(),
+                "accepted a negative pivot at n = {n}"
+            );
         }
     }
 }

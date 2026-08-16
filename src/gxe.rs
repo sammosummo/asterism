@@ -33,21 +33,10 @@
 //! the determinant is `l00^2 * u`. The awkward constraint becomes a box the
 //! optimiser already handles.
 //!
-//! **The third coordinate is `u` and not a Cholesky `l11`**, which is a
-//! departure from the source this model was recovered from. It buys clarity
-//! rather than anything statistical: written this way the determinant is
-//! `l00^2 * u`, so what keeps the surface a covariance can be read off.
-//!
-//! It was first made for a reason that turned out to be wrong, and the wrong
-//! reason is worth keeping written down because it is an easy one to have
-//! again. Written as `l11` the derivative `dq11/dl11 = 2*l11` vanishes at
-//! exactly the point both tests hold it at, which looked like an optimiser
-//! stalling where it could not move. It is not: **a likelihood ratio is
-//! invariant to reparameterisation**, since both fits maximise the same
-//! likelihood over the same set of covariances, so a change of coordinates
-//! cannot change the deviance. Changing it altered not one digit of the
-//! calibration, which is the proof that the search was already finding the
-//! optimum.
+//! **The third coordinate is `u` and not a Cholesky `l11`.** Written this way
+//! the determinant is `l00^2 * u`, so the positive-semidefinite constraint is
+//! explicit. This is only a reparameterisation: both coordinates describe the
+//! same covariance set and therefore give the same maximised likelihood ratio.
 //!
 //! What actually makes the random-regression surface's tests conservative is the shape of
 //! the null, and the two surfaces differ in it. The exponential surface's null
@@ -69,7 +58,7 @@
 //!
 //!
 //! **The shape is barely identified and strongly changes the answer**, which is
-//! why the source froze it and why this package will not fit it. On one
+//! why this package treats it as fixed rather than fitted. On one
 //! simulated set the four shapes spanned 0.31 in log likelihood -- a deviance of
 //! 0.62, which is nothing -- while the genetic correlation they reported ran
 //! from 0.92 to 0.45. A shape chosen to suit the answer would therefore be
@@ -84,20 +73,20 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
 use crate::dense::DenseFactor;
 
-/// The frozen shapes the powered-exponential kernel may take.
+/// The fixed shapes the powered-exponential kernel may take.
 ///
-/// **This is an enumeration and not a number, on purpose.** The source froze
-/// four shapes at qualification rather than estimating one, because a shape and
-/// a decay rate are poorly separated by data: they trade off against each other
-/// and a search over both wanders. Making the grid a type means an off-grid
-/// shape cannot be asked for, and the shape is chosen rather than fitted.
+/// **This is an enumeration and not a number, on purpose.** Shape and decay
+/// rate are poorly separated by data: they trade off against each other and a
+/// search over both wanders. Making the grid a type means an off-grid shape
+/// cannot be asked for, and the shape is chosen rather than fitted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shape {
     /// A rougher kernel than the exponential, falling away faster near nought.
     Half,
-    /// The recovered exponential itself.
+    /// The exponential kernel itself.
     One,
     ThreeHalves,
     /// The Gaussian kernel, smooth at nought and much flatter near it.
@@ -115,7 +104,7 @@ impl Shape {
         }
     }
 
-    /// Parse one of the four frozen shapes, refusing anything else.
+    /// Parse one of the four fixed shapes, refusing anything else.
     #[must_use]
     pub fn from_value(value: f64) -> Option<Self> {
         [Self::Half, Self::One, Self::ThreeHalves, Self::Two]
@@ -151,7 +140,7 @@ pub enum Surface {
     /// factor. Six parameters: three loadings for the genetic block and three
     /// for the residual.
     RandomRegression,
-    /// The exponential surface with the decay taken to a frozen power:
+    /// The exponential surface with the decay taken to a fixed power:
     /// `exp(-lambda |difference|^kappa)`. The same five free parameters, with
     /// the shape chosen rather than fitted.
     ///
@@ -163,7 +152,7 @@ pub enum Surface {
 impl Surface {
     /// The power the environmental distance is raised to inside the decay.
     ///
-    /// One for the recovered exponential, and the frozen shape otherwise. Every
+    /// One for the exponential, and the fixed shape otherwise. Every
     /// place the kernel is written reads it from here, so the two forms cannot
     /// drift apart.
     #[must_use]
@@ -244,7 +233,14 @@ impl Surface {
                     f64::NEG_INFINITY,
                     f64::NEG_INFINITY,
                 ],
-                vec![15.0, f64::INFINITY, f64::INFINITY, 15.0, f64::INFINITY, f64::INFINITY],
+                vec![
+                    15.0,
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    15.0,
+                    f64::INFINITY,
+                    f64::INFINITY,
+                ],
             ),
         }
     }
@@ -347,7 +343,11 @@ impl GxeFit {
     pub fn heritability_at(&self, z: f64) -> f64 {
         let genetic = self.genetic_variance_at(z);
         let total = genetic + self.residual_variance_at(z);
-        if total > 0.0 { genetic / total } else { f64::NAN }
+        if total > 0.0 {
+            genetic / total
+        } else {
+            f64::NAN
+        }
     }
 
     /// The genetic correlation between two environments.
@@ -358,9 +358,12 @@ impl GxeFit {
     #[must_use]
     pub fn genetic_correlation(&self, first: f64, second: f64) -> f64 {
         let covariance = self.genetic_covariance(first, second);
-        let spread =
-            (self.genetic_variance_at(first) * self.genetic_variance_at(second)).sqrt();
-        if spread > 0.0 { (covariance / spread).clamp(-1.0, 1.0) } else { f64::NAN }
+        let spread = (self.genetic_variance_at(first) * self.genetic_variance_at(second)).sqrt();
+        if spread > 0.0 {
+            (covariance / spread).clamp(-1.0, 1.0)
+        } else {
+            f64::NAN
+        }
     }
 }
 
@@ -422,9 +425,7 @@ impl GxeModel {
             return Err("GXE_ENVIRONMENT_NOT_FINITE");
         }
         let xtx = design.transpose() * design;
-        let chol = xtx
-            .cholesky()
-            .ok_or("GXE_DESIGN_RANK_DEFICIENT")?;
+        let chol = xtx.cholesky().ok_or("GXE_DESIGN_RANK_DEFICIENT")?;
         let logdet_xtx = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
         Ok(Self {
             surface,
@@ -443,7 +444,7 @@ impl GxeModel {
             Surface::Exponential | Surface::PoweredExponential(_) => {
                 let (alpha, gamma, lambda) = (theta[0], theta[1], theta[2]);
                 // The square root of each variance, times the decay in
-                // environmental distance raised to the frozen shape.
+                // environmental distance raised to the fixed shape.
                 let gap = (zi - zj).abs().powf(self.surface.decay_exponent());
                 (0.5 * (alpha + gamma * zi)).exp()
                     * (0.5 * (alpha + gamma * zj)).exp()
@@ -506,14 +507,14 @@ impl GxeModel {
                     let residual = self.residual_surface(theta, zi);
                     let gap = (zi - zj).abs().powf(self.surface.decay_exponent());
                     let d_genetic = match parameter {
-                        0 => genetic,                                   // alpha_g
-                        1 => genetic * 0.5 * (zi + zj),                 // gamma_g
-                        2 => -genetic * gap,                            // lambda_g
+                        0 => genetic,                   // alpha_g
+                        1 => genetic * 0.5 * (zi + zj), // gamma_g
+                        2 => -genetic * gap,            // lambda_g
                         _ => 0.0,
                     };
                     let d_residual = match parameter {
-                        3 => residual,                                  // alpha_e
-                        4 => residual * zi,                             // gamma_e
+                        3 => residual,      // alpha_e
+                        4 => residual * zi, // gamma_e
                         _ => 0.0,
                     };
                     let value = self.relationship[(a, b)] * d_genetic;
@@ -616,10 +617,8 @@ impl GxeModel {
         let mut gradient = [0.0; PARAMETERS];
         if want_gradient {
             let xvx_inverse = xvx_chol.inverse();
-            let residuals: Vec<DVector<f64>> = kept
-                .iter()
-                .map(|(_, _, vy, vx)| vy - vx * &beta)
-                .collect();
+            let residuals: Vec<DVector<f64>> =
+                kept.iter().map(|(_, _, vy, vx)| vy - vx * &beta).collect();
             for parameter in 0..PARAMETERS {
                 let mut trace = 0.0;
                 let mut quadratic_term = 0.0;
@@ -708,14 +707,9 @@ impl GxeModel {
                 vec![-0.7, -0.3, 0.1, -0.7, -0.1],
                 vec![-0.7, 0.0, 2.0, -0.7, 0.0],
             ],
-            // **The five frozen starts from the original's own multistart
-            // audit**, in its `(g_l10, g_l11)` coordinates, plus a flat one.
-            // That audit exists because this model is start-sensitive: it
-            // tested whether the single embedded start reached the same
-            // likelihood as these five, and its receipt records
-            // `promotion_pass: false` with empirical execution never
-            // authorised. Four starts of my own choosing were not evidence of
-            // anything; these are what the problem was actually found to need.
+            // Multiple fixed starts are used because this surface is
+            // start-sensitive. They cover both slope directions and a flat
+            // surface in the `(g_l10, g_l11)` coordinates.
             //
             // ln(0.7) is about -0.36, which puts half the response's own
             // variance in each block -- a heritability of a half.
@@ -790,15 +784,13 @@ impl GxeModel {
             }
         }
 
-        let (negative, par, beta, covariance) =
-            best.ok_or("GXE_NO_START_CONVERGED")?;
+        let (negative, par, beta, covariance) = best.ok_or("GXE_NO_START_CONVERGED")?;
         let mut theta = [0.0; PARAMETERS];
         theta[..par.len()].copy_from_slice(&par);
         let at = self
             .evaluate(&theta, &scaled, reml, true)
             .ok_or("GXE_OPTIMUM_NOT_EVALUABLE")?;
-        let projected = at
-            .gradient[..count]
+        let projected = at.gradient[..count]
             .iter()
             .enumerate()
             .map(|(k, g)| {
@@ -825,7 +817,11 @@ impl GxeModel {
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
             fixed_effect_errors: covariance
                 .as_ref()
-                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .map(|c| {
+                    (0..c.nrows())
+                        .map(|i| c[(i, i)].max(0.0).sqrt() * scale)
+                        .collect()
+                })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
@@ -848,23 +844,7 @@ pub struct GxeTest {
     pub alternative_loglik: f64,
 }
 
-/// The upper tail of chi-square on one degree of freedom, through the
-/// complementary error function rather than one minus a distribution function,
-/// which loses its digits exactly where a p-value needs them.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::erf::erfc((statistic / 2.0).sqrt())
-}
 
-/// The upper tail of chi-square on two degrees of freedom, which is exact.
-fn chi2_two_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    (-statistic / 2.0).exp()
-}
 
 impl GxeModel {
     /// Test for any genotype-by-environment interaction at all.
@@ -889,11 +869,7 @@ impl GxeModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit fails.
-    pub fn interaction_test(
-        &self,
-        y: &DVector<f64>,
-        reml: bool,
-    ) -> Result<GxeTest, &'static str> {
+    pub fn interaction_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let held = self.fit_holding(y, reml, &self.surface.genetic_shape())?;
         Ok(mixture(
@@ -935,7 +911,12 @@ impl GxeModel {
             Surface::Exponential | Surface::PoweredExponential(_) => {
                 let free = self.fit(y, reml)?;
                 let held = self.fit_holding(y, reml, &[self.surface.genetic_shape()[0]])?;
-                Ok(mixture(free.loglik, held.loglik, "chi2_1", chi2_one_df_upper_tail))
+                Ok(mixture(
+                    free.loglik,
+                    held.loglik,
+                    "chi2_1",
+                    chi2_one_df_upper_tail,
+                ))
             }
         }
     }
@@ -957,42 +938,27 @@ impl GxeModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit fails.
-    pub fn correlation_test(
-        &self,
-        y: &DVector<f64>,
-        reml: bool,
-    ) -> Result<GxeTest, &'static str> {
+    pub fn correlation_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let held = self.fit_holding(y, reml, &[self.surface.rank_one()])?;
-        Ok(mixture(free.loglik, held.loglik, "mixture_50_50", |statistic| {
-            0.5 * chi2_one_df_upper_tail(statistic)
-        }))
+        Ok(mixture(
+            free.loglik,
+            held.loglik,
+            "mixture_50_50",
+            |statistic| 0.5 * chi2_one_df_upper_tail(statistic),
+        ))
     }
 }
 
 /// Assemble a test from two log likelihoods and a reference tail.
-fn mixture(
-    alternative: f64,
-    null: f64,
-    rule: &'static str,
-    tail: impl Fn(f64) -> f64,
-) -> GxeTest {
-    // A null fitted to a better likelihood than the alternative it sits inside
-    // means a search fell short, not evidence against the null. Clamping at
-    // nought reports no evidence, which is the honest reading of a failed
-    // search in the direction that cannot happen.
-    let statistic = (2.0 * (alternative - null)).max(0.0);
-    // At a statistic of nought the chi-bar-squared tail is one, not a half: the
-    // point mass at nought contributes its whole weight. Written as a tail of
-    // chi-square alone the formula misses that, and a fit sitting exactly on its
-    // bound -- which under these nulls is about half of them -- would be
-    // reported at p = 0.5 rather than p = 1. The tolerance is there because two
-    // separate searches never land on identically the same number, and a
-    // deviance of a millionth is not evidence of anything.
-    let p_value = if statistic < 1e-6 { 1.0 } else { tail(statistic) };
+///
+/// The clamped statistic and the point mass at nought both live in
+/// [`crate::deviance`], which explains why each is needed.
+fn mixture(alternative: f64, null: f64, rule: &'static str, tail: impl Fn(f64) -> f64) -> GxeTest {
+    let statistic = crate::deviance::deviance(alternative, null);
     GxeTest {
         statistic,
-        p_value: p_value.clamp(0.0, 1.0),
+        p_value: crate::deviance::p_value(statistic, tail),
         rule,
         null_loglik: null,
         alternative_loglik: alternative,
@@ -1107,12 +1073,10 @@ impl GxeModel {
                         // With A = l00 + l10 z1 and B = l00 + l10 z2, holding
                         // r^2 q11 q22 = q12^2 is a plain quadratic in u.
                         let (intercept, linear) = (theta[0].exp(), theta[1]);
-                        let (a, b) =
-                            (intercept + linear * first, intercept + linear * second);
+                        let (a, b) = (intercept + linear * first, intercept + linear * second);
                         let (r2, z1, z2) = (value * value, first, second);
                         let qa = z1 * z1 * z2 * z2 * (r2 - 1.0);
-                        let qb =
-                            r2 * (a * a * z2 * z2 + b * b * z1 * z1) - 2.0 * a * b * z1 * z2;
+                        let qb = r2 * (a * a * z2 * z2 + b * b * z1 * z1) - 2.0 * a * b * z1 * z2;
                         let qc = a * a * b * b * (r2 - 1.0);
                         let u = solve_quadratic(qa, qb, qc)?
                             .into_iter()
@@ -1193,8 +1157,12 @@ impl GxeModel {
         control.factr = 1.0e3;
         control.pgtol = 1e-8;
         control.lmm = count;
-        let best = optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
-            .map_or_else(|_| value_of(&start), |s| value_of(&s.par).min(value_of(&start)));
+        let best =
+            optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                .map_or_else(
+                    |_| value_of(&start),
+                    |s| value_of(&s.par).min(value_of(&start)),
+                );
         best.is_finite().then_some(-best)
     }
 
@@ -1362,7 +1330,12 @@ mod tests {
             .expect("the simulating covariance is positive definite")
             .l();
         let draw = DVector::from_iterator(n, (0..n).map(|_| next()));
-        (a, z.clone(), DMatrix::from_element(n, 1, 1.0), factor * draw)
+        (
+            a,
+            z.clone(),
+            DMatrix::from_element(n, 1, 1.0),
+            factor * draw,
+        )
     }
 
     /// **The loadings exist to keep the random-regression surface a
@@ -1425,7 +1398,10 @@ mod tests {
                             .evaluate(&up, &y, reml, false)
                             .unwrap()
                             .negative_loglik
-                            - model.evaluate(&down, &y, reml, false).unwrap().negative_loglik)
+                            - model
+                                .evaluate(&down, &y, reml, false)
+                                .unwrap()
+                                .negative_loglik)
                             / (2.0 * step);
                         let scale = at.gradient[k].abs().max(1.0);
                         assert!(
@@ -1457,7 +1433,10 @@ mod tests {
             );
             let low = fit.heritability_at(-1.0);
             let high = fit.heritability_at(1.0);
-            assert!(low.is_finite() && high.is_finite(), "{surface:?}: no heritability");
+            assert!(
+                low.is_finite() && high.is_finite(),
+                "{surface:?}: no heritability"
+            );
             assert!(
                 high > low,
                 "{surface:?}: the genetic variance was simulated to grow with the \
@@ -1543,8 +1522,10 @@ mod tests {
             variance_scale: 1.0,
         };
         // intercept 0.5, linear 1.0, orthogonal 0: the sign changes at z = -0.5.
-        let regression =
-            made(Surface::RandomRegression, vec![0.5_f64.ln(), 1.0, 0.0, 0.7_f64.ln(), 0.0, 0.0]);
+        let regression = made(
+            Surface::RandomRegression,
+            vec![0.5_f64.ln(), 1.0, 0.0, 0.7_f64.ln(), 0.0, 0.0],
+        );
         let crossed = regression.genetic_correlation(-1.5, 1.5);
         assert!(
             crossed < -0.9,
@@ -1611,7 +1592,10 @@ mod tests {
             for quantity in [
                 Reported::Heritability { at: 0.0 },
                 Reported::Heritability { at: 1.0 },
-                Reported::GeneticCorrelation { first: -1.0, second: 1.0 },
+                Reported::GeneticCorrelation {
+                    first: -1.0,
+                    second: 1.0,
+                },
             ] {
                 let got = model
                     .profile_interval(&y, true, quantity)
@@ -1656,208 +1640,19 @@ mod tests {
     }
 }
 
-
 #[cfg(feature = "python")]
-pub mod python {
-    use numpy::{PyReadonlyArray1, PyReadonlyArray2};
-    use pyo3::exceptions::PyValueError;
-    use pyo3::prelude::*;
-
-    use super::{GxeModel, Reported, Shape, Surface};
-    use nalgebra::{DMatrix, DVector};
-
-    fn surface_named(name: &str, shape: f64) -> PyResult<Surface> {
-        match name {
-            "exponential" => Ok(Surface::Exponential),
-            "random_regression" => Ok(Surface::RandomRegression),
-            "powered_exponential" => Shape::from_value(shape)
-                .map(Surface::PoweredExponential)
-                .ok_or_else(|| {
-                    PyValueError::new_err(format!(
-                        "GXE_SHAPE_NOT_ON_THE_GRID: {shape}, wanted one of 0.5, 1.0, \
-                         1.5, 2.0. The shape is chosen and not fitted, because a \
-                         shape and a decay rate trade off against each other and a \
-                         search over both wanders."
-                    ))
-                }),
-            other => Err(PyValueError::new_err(format!(
-                "GXE_UNKNOWN_SURFACE: {other}, wanted exponential, random_regression \
-                 or powered_exponential"
-            ))),
-        }
-    }
-
-    fn build(
-        relationship: &PyReadonlyArray2<'_, f64>,
-        environment: &[f64],
-        design: &PyReadonlyArray2<'_, f64>,
-        surface: &str,
-        shape: f64,
-    ) -> PyResult<GxeModel> {
-        let a = relationship.as_array();
-        let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
-        let x = design.as_array();
-        let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
-        GxeModel::build(surface_named(surface, shape)?, &a, environment, &x)
-            .map_err(PyValueError::new_err)
-    }
-
-    fn response(y: &PyReadonlyArray1<'_, f64>) -> DVector<f64> {
-        let y = y.as_array();
-        DVector::from_iterator(y.len(), y.iter().copied())
-    }
-
-    /// Fit one trait with a genotype-by-environment surface.
-    ///
-    /// **The reported quantities come back evaluated on `grid`**, rather than as
-    /// surface coefficients for the caller to expand. The two surfaces mean the
-    /// same things by heritability and by genetic correlation but say them in
-    /// quite different coordinates, and a caller that rebuilt either from the
-    /// parameters would have to know which surface it was holding. The genetic
-    /// correlations come back as a flattened square, in the grid's own order.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, grid, shape=1.0, reml=true))]
-    #[allow(clippy::type_complexity)]
-    pub fn gxe_fit(
-        relationship: PyReadonlyArray2<'_, f64>,
-        environment: Vec<f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        y: PyReadonlyArray1<'_, f64>,
-        surface: &str,
-        grid: Vec<f64>,
-        shape: f64,
-        reml: bool,
-    ) -> PyResult<(
-        Vec<f64>,
-        f64,
-        bool,
-        f64,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-    )> {
-        let model = build(&relationship, &environment, &design, surface, shape)?;
-        let fit = model
-            .fit(&response(&y), reml)
-            .map_err(PyValueError::new_err)?;
-        let genetic: Vec<f64> = grid.iter().map(|&z| fit.genetic_variance_at(z)).collect();
-        let residual: Vec<f64> = grid.iter().map(|&z| fit.residual_variance_at(z)).collect();
-        let heritability: Vec<f64> = grid.iter().map(|&z| fit.heritability_at(z)).collect();
-        let mut correlations = Vec::with_capacity(grid.len() * grid.len());
-        for &first in &grid {
-            for &second in &grid {
-                correlations.push(fit.genetic_correlation(first, second));
-            }
-        }
-        Ok((
-            fit.parameters,
-            fit.loglik,
-            fit.converged,
-            fit.scaled_gradient,
-            fit.fixed_effects,
-            fit.fixed_effect_errors,
-            genetic,
-            residual,
-            heritability,
-            correlations,
-        ))
-    }
-
-    /// Test a genotype-by-environment null.
-    ///
-    /// `null` is `interaction` for a genetic covariance that does not involve
-    /// the environment at all, or `correlation` for one where the genetic
-    /// variance may change but the genetic effects at any two environments are
-    /// the same effects.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, null, shape=1.0, reml=true))]
-    pub fn gxe_test(
-        relationship: PyReadonlyArray2<'_, f64>,
-        environment: Vec<f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        y: PyReadonlyArray1<'_, f64>,
-        surface: &str,
-        null: &str,
-        shape: f64,
-        reml: bool,
-    ) -> PyResult<(f64, f64, String, f64, f64)> {
-        let model = build(&relationship, &environment, &design, surface, shape)?;
-        let y = response(&y);
-        let test = match null {
-            "interaction" => model.interaction_test(&y, reml),
-            "correlation" => model.correlation_test(&y, reml),
-            "variance" => model.variance_test(&y, reml),
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "GXE_UNKNOWN_NULL: {other}, wanted interaction, correlation or variance"
-                )));
-            }
-        }
-        .map_err(PyValueError::new_err)?;
-        Ok((
-            test.statistic,
-            test.p_value,
-            test.rule.to_owned(),
-            test.null_loglik,
-            test.alternative_loglik,
-        ))
-    }
-
-    /// A 95 per cent profile-likelihood interval for one reported quantity.
-    ///
-    /// `quantity` is `heritability`, which uses `first` as the environment, or
-    /// `correlation`, which uses both.
-    #[pyfunction]
-    #[pyo3(signature = (relationship, environment, design, y, surface, quantity, first, second=0.0, shape=1.0, reml=true))]
-    #[allow(clippy::too_many_arguments)]
-    pub fn gxe_interval(
-        relationship: PyReadonlyArray2<'_, f64>,
-        environment: Vec<f64>,
-        design: PyReadonlyArray2<'_, f64>,
-        y: PyReadonlyArray1<'_, f64>,
-        surface: &str,
-        quantity: &str,
-        first: f64,
-        second: f64,
-        shape: f64,
-        reml: bool,
-    ) -> PyResult<(f64, f64, f64, bool, bool)> {
-        let model = build(&relationship, &environment, &design, surface, shape)?;
-        let wanted = match quantity {
-            "heritability" => Reported::Heritability { at: first },
-            "correlation" => Reported::GeneticCorrelation { first, second },
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "GXE_UNKNOWN_QUANTITY: {other}, wanted heritability or correlation"
-                )));
-            }
-        };
-        let got = model
-            .profile_interval(&response(&y), reml, wanted)
-            .map_err(PyValueError::new_err)?;
-        Ok((
-            got.estimate,
-            got.lower,
-            got.upper,
-            got.lower_at_bound,
-            got.upper_at_bound,
-        ))
-    }
-}
+pub mod python;
 
 #[cfg(test)]
 mod against_the_source {
     use super::{GxeFit, Shape, Surface};
 
-    /// The powered-exponential surface, at all four frozen shapes, against the
+    /// The powered-exponential surface, at all four fixed shapes, against the
     /// source-fidelity crate's own numbers. **The shape one row is the same
     /// covariance as the recovered exponential**, which is the source's
     /// statement about its own model and is checked here rather than believed.
     #[test]
-    fn the_powered_surface_reproduces_the_source_at_every_frozen_shape() {
+    fn the_powered_surface_matches_the_equation_at_every_fixed_shape() {
         let k = [
             [1.0, 0.5, 0.25, 0.0],
             [0.5, 1.0, 0.25, 0.0],
@@ -1868,10 +1663,22 @@ mod against_the_source {
         // Only the off-diagonal genetic cells move with the shape; the
         // variances do not involve the kernel at all.
         let source: [(Shape, [f64; 3]); 4] = [
-            (Shape::Half, [0.175_961_143_060, 0.105_193_442_188, 0.159_511_498_739]),
-            (Shape::One, [0.161_274_534_884, 0.074_698_567_695, 0.146_197_861_190]),
-            (Shape::ThreeHalves, [0.143_950_826_485, 0.039_734_390_297, 0.130_493_651_485]),
-            (Shape::Two, [0.124_127_355_425, 0.012_407_001_097, 0.112_523_368_251]),
+            (
+                Shape::Half,
+                [0.175_961_143_060, 0.105_193_442_188, 0.159_511_498_739],
+            ),
+            (
+                Shape::One,
+                [0.161_274_534_884, 0.074_698_567_695, 0.146_197_861_190],
+            ),
+            (
+                Shape::ThreeHalves,
+                [0.143_950_826_485, 0.039_734_390_297, 0.130_493_651_485],
+            ),
+            (
+                Shape::Two,
+                [0.124_127_355_425, 0.012_407_001_097, 0.112_523_368_251],
+            ),
         ];
         for (shape, wanted) in source {
             let fit = GxeFit {
@@ -1897,18 +1704,12 @@ mod against_the_source {
         }
     }
 
-    /// **The random-regression surface has a different provenance from the exponential
-    /// one, and it matters.** The exponential form is a *recovered* method: it
-    /// is in the source-fidelity crate as the restored SOLAR covariance. The
-    /// random-regression form is not recovered. What that crate holds is a *proposed*
-    /// longitudinal random regression, in a module whose own header says
-    /// nothing in it is a recovered or qualified method.
-    ///
-    /// Cross-sectionally the two coincide. The proposal is
+    /// Cross-sectionally this surface is the one-record-per-person reduction of
+    /// the longitudinal random-regression covariance
     /// `K_rs b(z_r)' Sigma_G b(z_s) + tau_P^2 J_rs + I_rs E(z_r)`, and with one
     /// record per person the same-person indicator is the identity, so that
     /// term is a constant absorbed by the residual. Setting it to nought should
-    /// leave exactly this surface, and this checks that it does.
+    /// leave exactly this surface, and this test checks that algebra.
     ///
     /// Its two-basis block is
     /// `(intercept + linear l)(intercept + linear r) + orthogonal^2 l r`, which
@@ -2011,5 +1812,4 @@ mod against_the_source {
             }
         }
     }
-
 }
