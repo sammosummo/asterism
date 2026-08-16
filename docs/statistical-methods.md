@@ -309,6 +309,54 @@ All four builders return ordinary dense arrays and require complete numerical
 inputs. Their memory cost is quadratic in the number of people, and posterior
 local-IBD construction takes one quadratic pass per draw.
 
+### Using these matrices to scan
+
+A builder produces one covariance basis. The test comes from putting it in a
+`ComponentModel` beside the genome-wide additive matrix and testing it against
+zero. For linkage that is
+
+```text
+y = X beta + local + polygenic + e
+```
+
+with `local` scaling the local-IBD matrix at one position. Nothing here
+corrects for testing many positions or many genes.
+
+**The local and polygenic matrices are separable because the first averages to
+the second.** Among full sibs, IBD at a locus is 0, 0.5 or 1 in the ratio
+1:2:1, whose mean is the polygenic 0.5. All the linkage information is in the
+variation around that mean.
+
+**An estimated IBD matrix costs power, not validity.** Real IBD is a posterior,
+and a posterior mean is shrunk towards the polygenic matrix, which takes the
+variation with it. In simulation the test held its level at every resolution
+studied and grew conservative as resolution fell, while power against a locus
+explaining a quarter of the variance fell from 0.89 to 0.10. A shrunken matrix
+cannot manufacture a signal; it can only fail to find one, and it does so
+silently.
+
+The quantity to compute before scanning is therefore the **standard deviation
+of the local IBD values among relatives**. With full sib information and IBD
+known exactly it is `sqrt(0.125) = 0.354`. Divided by that, it says how much of
+the available information the markers have kept, and power follows it.
+
+### Two ways to get a wrong answer
+
+**Lineage labels are compared for equality and nothing else.** A missing or
+unknown lineage encoded as a label — `0` is the usual choice — makes everyone
+carrying it appear to share descent. Two such people come out at `K = 2`, which
+is more related than monozygotic twins, and each appears autozygous. In a scan
+this produces peaks exactly where the genotyping is poorest. Resolve or remove
+unknown lineages before building.
+
+**A variant set with no carriers is refused rather than returned as zero.**
+`gene_linear_matrix` and `gene_burden_matrix` raise
+`GENE_MATRIX_WEIGHTED_VALUES_ALL_ZERO` when every weighted dosage is zero,
+which in a gene-based sweep means a gene nobody in the sample carries. A scan
+should catch that code and record the gene as untestable. Nothing is lost by
+doing so: a zero matrix carries no variance, and `ComponentModel` returns
+`p = 1` for it.
+
 ## Latent mediation with mixed observation types
 
 `LatentMediationModel(families, qmc_points=...)` fits the structural model

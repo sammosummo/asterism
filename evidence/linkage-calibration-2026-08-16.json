@@ -1,0 +1,83 @@
+{
+  "what": "level and power of a variance-component linkage scan",
+  "date": "2026-08-16",
+  "people": 480,
+  "families": 120,
+  "sibs_per_family": 4,
+  "replicates": 400,
+  "posterior_draws": 20,
+  "ibd_states_among_sibs": {
+    "0.0": 185,
+    "0.5": 355,
+    "1.0": 180
+  },
+  "full_information_spread": 0.3535533905932738,
+  "levels": [
+    0.01,
+    0.05,
+    0.1
+  ],
+  "results": {
+    "share 0.0, resolution 1.0": {
+      "judged_as": "level",
+      "computed": 400,
+      "informativeness": 1.0068726028011712,
+      "rejection": {
+        "0.01": 0.01,
+        "0.05": 0.06,
+        "0.1": 0.1275
+      }
+    },
+    "share 0.0, resolution 0.6": {
+      "judged_as": "level",
+      "computed": 374,
+      "informativeness": 0.41629608520325495,
+      "rejection": {
+        "0.01": 0.00267379679144385,
+        "0.05": 0.0213903743315508,
+        "0.1": 0.06149732620320856
+      }
+    },
+    "share 0.0, resolution 0.3": {
+      "judged_as": "level",
+      "computed": 333,
+      "informativeness": 0.23903740134930182,
+      "rejection": {
+        "0.01": 0.0,
+        "0.05": 0.0,
+        "0.1": 0.006006006006006006
+      }
+    },
+    "share 0.25, resolution 1.0": {
+      "judged_as": "power",
+      "computed": 399,
+      "informativeness": 1.0068726028011712,
+      "rejection": {
+        "0.01": 0.6716791979949874,
+        "0.05": 0.8897243107769424,
+        "0.1": 0.9473684210526315
+      }
+    },
+    "share 0.25, resolution 0.6": {
+      "judged_as": "power",
+      "computed": 287,
+      "informativeness": 0.41629608520325495,
+      "rejection": {
+        "0.01": 0.37282229965156793,
+        "0.05": 0.686411149825784,
+        "0.1": 0.8083623693379791
+      }
+    },
+    "share 0.25, resolution 0.3": {
+      "judged_as": "power",
+      "computed": 298,
+      "informativeness": 0.23903740134930182,
+      "rejection": {
+        "0.01": 0.006711409395973154,
+        "0.05": 0.1040268456375839,
+        "0.1": 0.23825503355704697
+      }
+    }
+  },
+  "note": "resolution is the chance a person's lineage is pinned down by the markers; the remainder is averaged over draws"
+}

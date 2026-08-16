@@ -68,12 +68,18 @@ Liability and threshold models, gene-by-environment, spatial, BLUP and
 association have each left this list by an amendment naming the analysis that
 needed them.
 
-Two capabilities arrived on 15 August 2026 without doing so: the latent
-mediation model and the variant-set and local-IBD matrix builders. No analysis
-was named for either. That is recorded here rather than tidied away, because
-the rule exists to stop this project growing faster than it can be checked, and
-reading the rule beside the two exceptions is the only way the next decision
-gets made with that in view.
+The variant-set and local-IBD matrix builders left the list on 16 August 2026,
+named by the gene and variant finding effort: linkage scans and gene and
+pathway scans on the neuroimaging traits, the biomarkers and the auditory
+traits, with association follow-up on anything that comes up. Linkage uses the
+local-IBD builders against the polygenic matrix; the gene and pathway scans use
+the variant-set kernels the same way. `AssociationModel` already does the
+follow-up.
+
+The latent mediation model arrived on 15 August 2026 and has not left the list:
+no analysis has been named for it. That is recorded here rather than tidied
+away, because the rule exists to stop this project growing faster than it can
+be checked.
 
 **SOLAR**:
 A comparator, never the definition of correct. Differences between Asterism and

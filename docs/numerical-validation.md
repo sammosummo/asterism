@@ -155,6 +155,26 @@ genome-wide `5e-8` calibration, which would require vastly more null tests.
 - With R `rres` 1.1, every hard local-relatedness cell and the weighted
   posterior mean agree within `1e-12`, including the autozygous diagonal.
 
+The matrices are also checked in the model they exist for. A variance-component
+linkage scan on 480 people in 120 sibships, 400 replicates per scenario, put
+the local-IBD matrix beside the polygenic one and tested it against zero.
+
+| IBD resolution | spread of sib IBD | of full | level at 0.05 | power at 0.05 |
+| --- | --- | --- | --- | --- |
+| known exactly | 0.356 | 1.01 | 0.060 | 0.890 |
+| estimated | 0.147 | 0.42 | 0.021 | 0.686 |
+| estimated | 0.085 | 0.24 | 0.000 | 0.104 |
+
+Level is measured with no locus and power against one explaining a quarter of
+the variance. IBD states among sibs came out 185 : 355 : 180, the expected
+1 : 2 : 1, with mean 0.4965 against the polygenic 0.5.
+
+**An estimated IBD matrix costs power and not validity.** The test held its
+level everywhere and grew conservative as resolution fell, because a posterior
+mean shrinks towards the polygenic matrix and cannot manufacture a signal. It
+can only fail to find one, silently, which is why the spread of the local
+matrix among relatives is worth computing before a scan rather than after it.
+
 ## Latent mediation model
 
 Low-dimensional family log likelihoods are independently reconstructed from
@@ -246,6 +266,7 @@ uv run --no-project python checks/spatial_intervals.py
 uv run --no-project python checks/gxe_calibration.py
 uv run --no-project python checks/gxe_intervals.py
 uv run --no-project python checks/discrete_gxe_calibration.py
+uv run --no-project python checks/linkage_calibration.py
 uv run --no-project python checks/liability_calibration.py
 uv run --no-project python checks/association_tail.py
 ```
