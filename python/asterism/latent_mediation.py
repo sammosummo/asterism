@@ -154,6 +154,8 @@ class LatentMediationModel:
         mediator_proxy_specificities: list[list[Any]] = []
         ascertainments: list[str] = []
         proband_indices: list[Any] = []
+        mediator_designs: list[list[list[Any]]] = []
+        outcome_designs: list[list[list[Any]]] = []
 
         for family in families:
             if not isinstance(family, Mapping):
@@ -172,6 +174,23 @@ class LatentMediationModel:
             ]
             relationships.append(relationship)
             size = len(relationship)
+            for name, into in (
+                ("mediator_design", mediator_designs),
+                ("outcome_design", outcome_designs),
+            ):
+                rows = _field(family, name, default=[])
+                into.append(
+                    [
+                        _sequence(
+                            row,
+                            "LATENT_MEDIATION_DESIGN_ROW_NOT_A_SEQUENCE",
+                            numeric=True,
+                        )
+                        for row in _sequence(
+                            rows, "LATENT_MEDIATION_DESIGN_NOT_A_SEQUENCE"
+                        )
+                    ]
+                )
             latent_means.append(
                 _sequence(
                     _field(family, "latent_mean", default=[0.0] * (2 * size)),
@@ -246,6 +265,8 @@ class LatentMediationModel:
             ascertainments,
             proband_indices,
             qmc_points,
+            mediator_designs,
+            outcome_designs,
         )
 
     def evaluate(
@@ -322,6 +343,10 @@ def simulate(
     observe_outcome: bool | Sequence[bool] = True,
     ascertainment: str = "population_unconditioned",
     proband_index: int | None = None,
+    mediator_design: Sequence[Sequence[float]] | None = None,
+    mediator_coefficients: Sequence[float] | None = None,
+    outcome_design: Sequence[Sequence[float]] | None = None,
+    outcome_coefficients: Sequence[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Draw families from the model, for calibration, coverage and power work.
 
@@ -379,6 +404,10 @@ def simulate(
     return list(
         _simulate(
             [list(map(float, row)) for row in relationship],
+            [list(map(float, row)) for row in (mediator_design or [])],
+            [float(v) for v in (mediator_coefficients or [])],
+            [list(map(float, row)) for row in (outcome_design or [])],
+            [float(v) for v in (outcome_coefficients or [])],
             [float(v) for v in spread(mediator_threshold)],
             [float(v) for v in spread(outcome_threshold)],
             [None if v is None else float(v) for v in spread(measurement_error_variance)],

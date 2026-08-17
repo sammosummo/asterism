@@ -65,6 +65,14 @@ pub struct LatentMediationParameters {
 pub struct LatentMediationFamilyInput {
     pub relationship: Vec<Vec<f64>>,
     pub latent_mean: Vec<f64>,
+    /// Covariates acting on the latent mediator, one row per person. Empty for
+    /// none. Every family must offer the same columns in the same order,
+    /// because their coefficients are one set estimated across all of them.
+    pub mediator_design: Vec<Vec<f64>>,
+    /// Covariates acting on the latent outcome, one row per person. Separate
+    /// from the mediator's because the two rarely want the same terms -- age
+    /// belongs on dementia risk whether or not it belongs on hearing.
+    pub outcome_design: Vec<Vec<f64>>,
     pub mediator_measurement: Vec<Option<f64>>,
     pub mediator_measurement_error_variance: Vec<Option<f64>>,
     pub mediator_proxy_status: Vec<Option<i8>>,
@@ -81,6 +89,11 @@ pub struct LatentMediationFamilyInput {
 struct LatentMediationFamily {
     relationship: DMatrix<f64>,
     latent_mean: DVector<f64>,
+    /// The two designs stacked to match the latent vector: mediator covariates
+    /// in the first `n` rows and their own columns, outcome covariates in the
+    /// last `n` rows and theirs. One matrix, so the mean a set of coefficients
+    /// implies is one multiplication.
+    design: DMatrix<f64>,
     observed_mediator_measurement_indices: Vec<usize>,
     observed_mediator_measurement_values: Vec<f64>,
     observed_mediator_measurement_error_variances: Vec<f64>,
@@ -135,6 +148,10 @@ type TransformedPoint = Vec<f64>;
 #[derive(Clone, Debug)]
 pub struct LatentMediationFit {
     pub parameters: LatentMediationParameters,
+    /// The estimated covariate coefficients: the mediator's terms first, then
+    /// the outcome's, in the order the designs gave them. Empty where there
+    /// are no covariates, which is the ordinary case.
+    pub coefficients: Vec<f64>,
     pub log_likelihood: f64,
     pub scaled_gradient: f64,
     pub boundary_parameters: Vec<&'static str>,
@@ -225,6 +242,30 @@ impl LatentMediationModel {
         &self,
         parameters: LatentMediationParameters,
     ) -> Result<LatentMediationEvaluation, &'static str> {
+        // **Refused rather than defaulted where covariates exist.** Nought is a
+        // real claim about a covariate's effect, not an absence of one, and a
+        // likelihood evaluated at a claim nobody made is the kind of number
+        // that gets quoted.
+        if self.coefficient_count() != 0 {
+            return Err("LATENT_MEDIATION_COEFFICIENTS_REQUIRED");
+        }
+        self.evaluate_at(parameters, &[])
+    }
+
+    /// The likelihood at both the structural parameters and the covariate
+    /// coefficients: the mediator's terms first, then the outcome's, in the
+    /// order the designs give them.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code, as [`Self::evaluate`] does,
+    /// and one more where the number of coefficients is not the number of
+    /// columns the designs offer.
+    pub fn evaluate_at(
+        &self,
+        parameters: LatentMediationParameters,
+        coefficients: &[f64],
+    ) -> Result<LatentMediationEvaluation, &'static str> {
         validate_parameters(parameters)?;
         let mut total = 0.0;
         let mut ordinary_scale_representable = true;
@@ -233,7 +274,7 @@ impl LatentMediationModel {
         let mut family_records = Vec::with_capacity(self.families.len());
         for family in &self.families {
             let covariance = directional_covariance(&family.relationship, parameters)?;
-            let record = family.evaluate(&covariance, self.qmc_points)?;
+            let record = family.evaluate(&covariance, self.qmc_points, coefficients)?;
             total += record.log_likelihood;
             ordinary_scale_representable &= record.ordinary_scale_representable;
             maximum_qmc_log_batch_range =
@@ -282,9 +323,18 @@ impl LatentMediationModel {
     /// supplies a design, at which point the optimiser's point grows by that
     /// many plain, unbounded coordinates.
     fn coefficient_count(&self) -> usize {
-        0
+        self.families
+            .first()
+            .map_or(0, |family| family.design.ncols())
     }
 
+    /// Fit with some structural coordinates held at nought.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where the coordinate does not
+    /// exist, no start converges, or the likelihood at the best of them cannot
+    /// be evaluated.
     pub fn fit_holding(&self, held: &[usize]) -> Result<LatentMediationFit, &'static str> {
         if held.iter().any(|index| *index >= FIT_DIMENSION) {
             return Err("LATENT_MEDIATION_HELD_COORDINATE_INVALID");
@@ -340,7 +390,7 @@ impl LatentMediationModel {
             control.parscale = vec![1.0; dimension];
 
             let Ok(solution) = optim_lbfgsb_with_gradient(
-                start.to_vec(),
+                start.clone(),
                 bounds.clone(),
                 value_of,
                 gradient_of,
@@ -425,6 +475,7 @@ impl LatentMediationModel {
         }
         Ok(LatentMediationFit {
             parameters,
+            coefficients: best.transformed[FIT_DIMENSION..].to_vec(),
             log_likelihood: best.integration.log_likelihood,
             scaled_gradient: best.scaled_gradient,
             boundary_parameters,
@@ -480,7 +531,10 @@ impl LatentMediationModel {
         transformed: &[f64],
         mediator_scale_squared: f64,
     ) -> Result<LatentMediationEvaluation, &'static str> {
-        self.evaluate(transformed_parameters(transformed, mediator_scale_squared)?)
+        self.evaluate_at(
+            transformed_parameters(transformed, mediator_scale_squared)?,
+            &transformed[FIT_DIMENSION..],
+        )
     }
 
     fn transformed_objective(
@@ -563,7 +617,9 @@ fn transformed_parameters(
     transformed: &[f64],
     mediator_scale_squared: f64,
 ) -> Result<LatentMediationParameters, &'static str> {
-    if transformed.len() != FIT_DIMENSION
+    // The structural five, and however many coefficients follow them. Only the
+    // five are transformed; the rest are read off where they lie.
+    if transformed.len() < FIT_DIMENSION
         || transformed.iter().any(|value| !value.is_finite())
         || !mediator_scale_squared.is_finite()
         || mediator_scale_squared <= 0.0
@@ -620,13 +676,15 @@ fn bound_aware_gradient<F>(
 where
     F: Fn(&[f64]) -> Option<f64>,
 {
-    if point.len() != FIT_DIMENSION
-        || lower.len() != FIT_DIMENSION
-        || upper.len() != FIT_DIMENSION
+    // The point is the structural five and however many coefficients follow;
+    // the stencil walks whatever it is given rather than a fixed five.
+    if point.len() < FIT_DIMENSION
+        || lower.len() != point.len()
+        || upper.len() != point.len()
         || !step_multiplier.is_finite()
         || step_multiplier <= 0.0
         || point.iter().any(|value| !value.is_finite())
-        || (0..FIT_DIMENSION).any(|index| {
+        || (0..point.len()).any(|index| {
             point[index] < lower[index]
                 || point[index] > upper[index]
                 || lower[index].is_nan()
@@ -638,8 +696,8 @@ where
     let Some(base) = objective(point).filter(|value| value.is_finite()) else {
         return Err("LATENT_MEDIATION_GRADIENT_STENCIL_UNRESOLVED");
     };
-    let mut gradient = Vec::with_capacity(FIT_DIMENSION);
-    for index in 0..FIT_DIMENSION {
+    let mut gradient = Vec::with_capacity(point.len());
+    for index in 0..point.len() {
         // A coordinate whose bounds have closed onto each other is held, not
         // free. It has no derivative to find -- every step off it is outside
         // the feasible set -- and asking for one would fail the stencil.
@@ -952,9 +1010,22 @@ impl LatentMediationFamily {
             .chain(observed_outcome.iter().map(|(index, _)| size + *index))
             .collect();
 
+        let mediator_terms = design_width(&input.mediator_design, size)?;
+        let outcome_terms = design_width(&input.outcome_design, size)?;
+        let mut design = DMatrix::zeros(2 * size, mediator_terms + outcome_terms);
+        for person in 0..size {
+            for term in 0..mediator_terms {
+                design[(person, term)] = input.mediator_design[person][term];
+            }
+            for term in 0..outcome_terms {
+                design[(size + person, mediator_terms + term)] = input.outcome_design[person][term];
+            }
+        }
+
         Ok(Self {
             relationship,
             latent_mean: DVector::from_vec(input.latent_mean),
+            design,
             observed_mediator_measurement_indices,
             observed_mediator_measurement_values,
             observed_mediator_measurement_error_variances,
@@ -969,18 +1040,32 @@ impl LatentMediationFamily {
         })
     }
 
+    /// The latent mean a set of coefficients implies: what was supplied,
+    /// plus the covariates' contribution.
+    fn mean_under(&self, coefficients: &[f64]) -> Result<DVector<f64>, &'static str> {
+        if coefficients.len() != self.design.ncols() {
+            return Err("LATENT_MEDIATION_COEFFICIENT_COUNT_WRONG");
+        }
+        if coefficients.is_empty() {
+            return Ok(self.latent_mean.clone());
+        }
+        Ok(&self.latent_mean + &self.design * DVector::from_column_slice(coefficients))
+    }
+
     fn evaluate(
         &self,
         covariance: &DMatrix<f64>,
         qmc_points: usize,
+        coefficients: &[f64],
     ) -> Result<LatentMediationFamilyEvaluation, &'static str> {
+        let latent_mean = self.mean_under(coefficients)?;
         let size = self.relationship.nrows();
         let conditional = condition_on_mediator_measurements(
             &self.discrete_target_indices,
             &self.observed_mediator_measurement_indices,
             &self.observed_mediator_measurement_values,
             &self.observed_mediator_measurement_error_variances,
-            &self.latent_mean,
+            &latent_mean,
             covariance,
         )?;
 
@@ -1057,9 +1142,8 @@ impl LatentMediationFamily {
                 if !(variance > 0.0 && variance.is_finite()) {
                     return Err("LATENT_MEDIATION_ASCERTAINMENT_VARIANCE_INVALID");
                 }
-                let standardised = (self.outcome_threshold[proband]
-                    - self.latent_mean[latent_index])
-                    / variance.sqrt();
+                let standardised =
+                    (self.outcome_threshold[proband] - latent_mean[latent_index]) / variance.sqrt();
                 (normal_sf(standardised)?, "condition_on_named_proband_case")
             }
         };
@@ -1133,6 +1217,30 @@ fn validate_parameters(parameters: LatentMediationParameters) -> Result<(), &'st
         return Err("LATENT_MEDIATION_SIGMA_M2_NOT_POSITIVE");
     }
     Ok(())
+}
+
+/// How many columns a design offers, refusing a ragged one.
+///
+/// An empty design is nought terms, which is the ordinary case: most families
+/// carry no covariates and the model is what it was.
+fn design_width(design: &[Vec<f64>], size: usize) -> Result<usize, &'static str> {
+    if design.is_empty() {
+        return Ok(0);
+    }
+    if design.len() != size {
+        return Err("LATENT_MEDIATION_DESIGN_ROWS_WRONG");
+    }
+    let terms = design[0].len();
+    if terms == 0 || design.iter().any(|row| row.len() != terms) {
+        return Err("LATENT_MEDIATION_DESIGN_RAGGED");
+    }
+    if design
+        .iter()
+        .any(|row| row.iter().any(|value| !value.is_finite()))
+    {
+        return Err("LATENT_MEDIATION_DESIGN_NOT_FINITE");
+    }
+    Ok(terms)
 }
 
 fn directional_covariance(
@@ -2189,6 +2297,13 @@ impl Stream {
 #[derive(Clone, Debug)]
 pub struct LatentMediationDesign {
     pub relationship: Vec<Vec<f64>>,
+    /// Covariates acting on the latent mediator, one row per person, and the
+    /// coefficients to draw them with. Empty for none.
+    pub mediator_design: Vec<Vec<f64>>,
+    pub mediator_coefficients: Vec<f64>,
+    /// The same for the latent outcome.
+    pub outcome_design: Vec<Vec<f64>>,
+    pub outcome_coefficients: Vec<f64>,
     pub mediator_threshold: Vec<f64>,
     pub outcome_threshold: Vec<f64>,
     /// The known error variance where the mediator is measured, and `None`
@@ -2275,6 +2390,25 @@ pub fn simulate(
         .ok_or("LATENT_MEDIATION_COVARIANCE_NOT_POSITIVE_DEFINITE")?
         .l();
 
+    let mediator_terms = design_width(&design.mediator_design, size)?;
+    let outcome_terms = design_width(&design.outcome_design, size)?;
+    if mediator_terms != design.mediator_coefficients.len()
+        || outcome_terms != design.outcome_coefficients.len()
+    {
+        return Err("LATENT_MEDIATION_COEFFICIENT_COUNT_WRONG");
+    }
+    // The mean each person's covariates put them at, in the same stacked order
+    // as the latent vector.
+    let mut shift = vec![0.0; 2 * size];
+    for person in 0..size {
+        for (term, weight) in design.mediator_coefficients.iter().enumerate() {
+            shift[person] += design.mediator_design[person][term] * weight;
+        }
+        for (term, weight) in design.outcome_coefficients.iter().enumerate() {
+            shift[size + person] += design.outcome_design[person][term] * weight;
+        }
+    }
+
     let mut stream = Stream(seed);
     let mut drawn = Vec::with_capacity(families);
     for _ in 0..families {
@@ -2286,7 +2420,7 @@ pub fn simulate(
             }
             // Process-major, mediator block first, as the covariance is built.
             let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
-            let latent = &factor * draw;
+            let latent = &factor * draw + DVector::from_column_slice(&shift);
             let case = |person: usize| latent[size + person] > design.outcome_threshold[person];
             if let Some(proband) = conditioned
                 && !case(proband)
@@ -2317,6 +2451,8 @@ pub fn simulate(
             break LatentMediationFamilyInput {
                 relationship: design.relationship.clone(),
                 latent_mean: vec![0.0; 2 * size],
+                mediator_design: design.mediator_design.clone(),
+                outcome_design: design.outcome_design.clone(),
                 mediator_measurement: measurement,
                 mediator_measurement_error_variance: design
                     .mediator_measurement_error_variance
@@ -2439,6 +2575,97 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A covariate the model can estimate rather than one somebody had to
+    /// remove beforehand. Regressing age out of hearing first treats an
+    /// estimated mean as a known one, and the variance components inherit the
+    /// error; fitting it jointly does not.
+    #[test]
+    fn a_covariate_effect_is_recovered() {
+        let parameters = LatentMediationParameters {
+            a: 0.6,
+            b: 0.4,
+            c_prime: 0.2,
+            d: 0.7,
+            sigma_m2: 0.5,
+        };
+        // One covariate on each process, taking a different value for each
+        // person so it is not confounded with the family mean.
+        let design = LatentMediationDesign {
+            mediator_design: vec![vec![-1.0], vec![1.0]],
+            mediator_coefficients: vec![0.8],
+            outcome_design: vec![vec![-1.0], vec![1.0]],
+            outcome_coefficients: vec![-0.5],
+            relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+            mediator_threshold: vec![0.0, 0.0],
+            outcome_threshold: vec![0.0, 0.0],
+            mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+            observe_mediator_proxy: vec![false, false],
+            mediator_proxy_sensitivity: vec![0.8, 0.8],
+            mediator_proxy_specificity: vec![0.85, 0.85],
+            observe_outcome: vec![true, true],
+            ascertainment: "population_unconditioned".to_owned(),
+            proband_index: None,
+        };
+        let families = simulate(&design, parameters, 1_500, 20_260_817).expect("draws");
+        let model = LatentMediationModel::build(families, 256).expect("model");
+        let fit = model.fit().expect("fit");
+
+        assert_eq!(fit.coefficients.len(), 2);
+        let (mediator, outcome) = (fit.coefficients[0], fit.coefficients[1]);
+        // The mediator's coefficient is pinned by the continuous measurement,
+        // so it should come back close.
+        assert!(
+            (mediator - 0.8).abs() < 0.1,
+            "mediator coefficient {mediator} against 0.8"
+        );
+        // The outcome's is read through a threshold and is looser, but it must
+        // at least have the right sign and order.
+        assert!(
+            outcome < 0.0 && (outcome - -0.5).abs() < 0.4,
+            "outcome coefficient {outcome} against -0.5"
+        );
+    }
+
+    /// A likelihood evaluated at coefficients nobody supplied is a number that
+    /// gets quoted, so it is refused rather than defaulted to nought.
+    #[test]
+    fn a_model_with_covariates_refuses_to_be_evaluated_without_them() {
+        let design = LatentMediationDesign {
+            mediator_design: vec![vec![1.0], vec![-1.0]],
+            mediator_coefficients: vec![0.3],
+            outcome_design: Vec::new(),
+            outcome_coefficients: Vec::new(),
+            relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+            mediator_threshold: vec![0.0, 0.0],
+            outcome_threshold: vec![0.0, 0.0],
+            mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+            observe_mediator_proxy: vec![false, false],
+            mediator_proxy_sensitivity: vec![0.8, 0.8],
+            mediator_proxy_specificity: vec![0.85, 0.85],
+            observe_outcome: vec![true, true],
+            ascertainment: "population_unconditioned".to_owned(),
+            proband_index: None,
+        };
+        let parameters = LatentMediationParameters {
+            a: 0.6,
+            b: 0.4,
+            c_prime: 0.2,
+            d: 0.7,
+            sigma_m2: 0.5,
+        };
+        let families = simulate(&design, parameters, 20, 5).expect("draws");
+        let model = LatentMediationModel::build(families, 256).expect("model");
+        assert_eq!(
+            model.evaluate(parameters).err(),
+            Some("LATENT_MEDIATION_COEFFICIENTS_REQUIRED")
+        );
+        assert!(model.evaluate_at(parameters, &[0.3]).is_ok());
+        assert_eq!(
+            model.evaluate_at(parameters, &[]).err(),
+            Some("LATENT_MEDIATION_COEFFICIENT_COUNT_WRONG")
+        );
+    }
+
     /// A simulator that does not draw from the model it is meant to check is
     /// worse than none: a calibration built on it would measure the gap between
     /// two constructions and call it a rejection rate. So the draws are held to
@@ -2457,6 +2684,10 @@ mod tests {
         // The mediator measured almost exactly, so the measurements stand in
         // for the latent mediator itself.
         let design = LatentMediationDesign {
+            mediator_design: Vec::new(),
+            mediator_coefficients: Vec::new(),
+            outcome_design: Vec::new(),
+            outcome_coefficients: Vec::new(),
             relationship: relationship.clone(),
             mediator_threshold: vec![0.0, 0.0],
             outcome_threshold: vec![0.3, 0.3],
@@ -2527,6 +2758,10 @@ mod tests {
     #[test]
     fn conditioning_on_a_proband_draws_families_that_have_one() {
         let design = LatentMediationDesign {
+            mediator_design: Vec::new(),
+            mediator_coefficients: Vec::new(),
+            outcome_design: Vec::new(),
+            outcome_coefficients: Vec::new(),
             relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
             mediator_threshold: vec![0.0, 0.0],
             outcome_threshold: vec![1.5, 1.5],
@@ -2781,6 +3016,8 @@ mod tests {
         LatentMediationFamilyInput {
             relationship: vec![vec![1.0]],
             latent_mean: vec![0.0, 0.0],
+            mediator_design: Vec::new(),
+            outcome_design: Vec::new(),
             mediator_measurement: vec![mediator_measurement],
             mediator_measurement_error_variance: vec![mediator_measurement.map(|_| 0.15)],
             mediator_proxy_status: vec![None],
@@ -2798,6 +3035,8 @@ mod tests {
         LatentMediationFamilyInput {
             relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
             latent_mean: vec![0.0; 4],
+            mediator_design: Vec::new(),
+            outcome_design: Vec::new(),
             mediator_measurement: vec![None; 2],
             mediator_measurement_error_variance: vec![None; 2],
             mediator_proxy_status: vec![None; 2],
@@ -2830,6 +3069,8 @@ mod tests {
                 |(mediator_measurement, status)| LatentMediationFamilyInput {
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
+                    mediator_design: Vec::new(),
+                    outcome_design: Vec::new(),
                     mediator_measurement: mediator_measurement
                         .into_iter()
                         .map(|value| Some(unit_scale * value))
@@ -2910,6 +3151,8 @@ mod tests {
                 |(first, second, first_status, second_status)| LatentMediationFamilyInput {
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
+                    mediator_design: Vec::new(),
+                    outcome_design: Vec::new(),
                     mediator_measurement: vec![Some(first), Some(second)],
                     mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
                     mediator_proxy_status: vec![None, None],

@@ -85,7 +85,9 @@ impl PyLatentMediationCore {
         mediator_proxy_specificities,
         ascertainments,
         proband_indices,
-        qmc_points
+        qmc_points,
+        mediator_designs,
+        outcome_designs
     ))]
     #[allow(clippy::too_many_arguments)]
     fn _build(
@@ -102,6 +104,8 @@ impl PyLatentMediationCore {
         ascertainments: Vec<String>,
         proband_indices: &Bound<'_, PyAny>,
         qmc_points: &Bound<'_, PyAny>,
+        mediator_designs: &Bound<'_, PyAny>,
+        outcome_designs: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         for value in [
             relationships,
@@ -113,6 +117,8 @@ impl PyLatentMediationCore {
             mediator_proxy_sensitivities,
             mediator_proxy_specificities,
             qmc_points,
+            mediator_designs,
+            outcome_designs,
         ] {
             reject_boolean_tree(value, "LATENT_MEDIATION_NUMERIC_BOOLEAN")?;
         }
@@ -122,6 +128,8 @@ impl PyLatentMediationCore {
         reject_boolean_tree(proband_indices, "LATENT_MEDIATION_PROBAND_BOOLEAN")?;
 
         let relationships: Vec<Vec<Vec<f64>>> = relationships.extract()?;
+        let mediator_designs: Vec<Vec<Vec<f64>>> = mediator_designs.extract()?;
+        let outcome_designs: Vec<Vec<Vec<f64>>> = outcome_designs.extract()?;
         let latent_means: Vec<Vec<f64>> = latent_means.extract()?;
         let mediator_measurements: Vec<Vec<Option<f64>>> = mediator_measurements.extract()?;
         let mediator_measurement_error_variances: Vec<Vec<Option<f64>>> =
@@ -155,6 +163,8 @@ impl PyLatentMediationCore {
         for index in 0..family_count {
             inputs.push(LatentMediationFamilyInput {
                 relationship: relationships[index].clone(),
+                mediator_design: mediator_designs[index].clone(),
+                outcome_design: outcome_designs[index].clone(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
                 mediator_measurement_error_variance: mediator_measurement_error_variances[index]
@@ -377,6 +387,7 @@ fn fit_dict<'py>(
     output.set_item("scaled_gradient", fit.scaled_gradient)?;
     output.set_item("gradient_tolerance", FIT_GRADIENT_TOLERANCE)?;
     output.set_item("boundary_parameters", fit.boundary_parameters.clone())?;
+    output.set_item("coefficients", fit.coefficients.clone())?;
     output.set_item("horizontal_identified", fit.horizontal_identified)?;
 
     let fixed = PyDict::new(py);
@@ -422,6 +433,10 @@ fn fit_dict<'py>(
 #[pyfunction]
 #[pyo3(signature = (
     relationship,
+    mediator_design,
+    mediator_coefficients,
+    outcome_design,
+    outcome_coefficients,
     mediator_threshold,
     outcome_threshold,
     mediator_measurement_error_variance,
@@ -442,6 +457,10 @@ fn fit_dict<'py>(
 pub fn latent_mediation_simulate<'py>(
     py: Python<'py>,
     relationship: Vec<Vec<f64>>,
+    mediator_design: Vec<Vec<f64>>,
+    mediator_coefficients: Vec<f64>,
+    outcome_design: Vec<Vec<f64>>,
+    outcome_coefficients: Vec<f64>,
     mediator_threshold: Vec<f64>,
     outcome_threshold: Vec<f64>,
     mediator_measurement_error_variance: Vec<Option<f64>>,
@@ -461,6 +480,10 @@ pub fn latent_mediation_simulate<'py>(
 ) -> PyResult<Bound<'py, PyList>> {
     let design = LatentMediationDesign {
         relationship,
+        mediator_design,
+        mediator_coefficients,
+        outcome_design,
+        outcome_coefficients,
         mediator_threshold,
         outcome_threshold,
         mediator_measurement_error_variance,
@@ -485,6 +508,8 @@ pub fn latent_mediation_simulate<'py>(
         let item = PyDict::new(py);
         item.set_item("relationship", family.relationship)?;
         item.set_item("latent_mean", family.latent_mean)?;
+        item.set_item("mediator_design", family.mediator_design)?;
+        item.set_item("outcome_design", family.outcome_design)?;
         item.set_item("mediator_measurement", family.mediator_measurement)?;
         item.set_item(
             "mediator_measurement_error_variance",
