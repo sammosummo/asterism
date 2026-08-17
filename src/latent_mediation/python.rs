@@ -205,7 +205,7 @@ impl PyLatentMediationCore {
             record.ordinary_scale_representable,
         )?;
         output.set_item("integration_methods", record.integration_methods.clone())?;
-        output.set_item("maximum_qmc_batch_range", record.maximum_qmc_batch_range)?;
+        output.set_item("maximum_qmc_log_batch_range", record.maximum_qmc_log_batch_range)?;
         let uses_qmc = record
             .integration_methods
             .iter()
@@ -235,7 +235,7 @@ impl PyLatentMediationCore {
                 family.ordinary_scale_representable,
             )?;
             item.set_item("integration_methods", family.integration_methods)?;
-            item.set_item("maximum_qmc_batch_range", family.maximum_qmc_batch_range)?;
+            item.set_item("maximum_qmc_log_batch_range", family.maximum_qmc_log_batch_range)?;
             item.set_item("family_size", family.family_size)?;
             item.set_item(
                 "mediator_proxy_truth_configurations",
@@ -298,7 +298,7 @@ fn family_diagnostics<'py>(
         let item = PyDict::new(py);
         item.set_item("family_index", index)?;
         item.set_item("integration_methods", family.integration_methods.clone())?;
-        item.set_item("maximum_qmc_batch_range", family.maximum_qmc_batch_range)?;
+        item.set_item("maximum_qmc_log_batch_range", family.maximum_qmc_log_batch_range)?;
         item.set_item("ascertainment", family.ascertainment)?;
         item.set_item("family_size", family.family_size)?;
         item.set_item(
@@ -330,8 +330,8 @@ fn integration_diagnostics<'py>(
         evaluation.integration_methods.clone(),
     )?;
     output.set_item(
-        "maximum_qmc_batch_range",
-        evaluation.maximum_qmc_batch_range,
+        "maximum_qmc_log_batch_range",
+        evaluation.maximum_qmc_log_batch_range,
     )?;
     output.set_item(
         "family_diagnostics",

@@ -453,7 +453,10 @@ fn bivariate_normal_cdf(a: f64, b: f64, rho: f64, normal: &Normal) -> f64 {
     }
     let half_width = 0.5 * (upper - lower);
     let centre = 0.5 * (upper + lower);
-    let conditional_sd = (1.0 - rho * rho).sqrt();
+    // Factored rather than `(1 - rho^2)`, which cancels as the correlation
+    // approaches one and loses most of the significand exactly where the
+    // conditional distribution is narrowest.
+    let conditional_sd = ((1.0 - rho) * (1.0 + rho)).sqrt();
     GAUSS_LEGENDRE_16
         .iter()
         .map(|(node, weight)| {

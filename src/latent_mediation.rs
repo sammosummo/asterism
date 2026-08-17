@@ -15,6 +15,7 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::{ContinuousCDF, Normal};
 
 const LOG_TWO_PI: f64 = 1.837_877_066_409_345_3;
+const LOG_HALF: f64 = -std::f64::consts::LN_2;
 const TOLERANCE: f64 = 1.0e-10;
 const RELATIONSHIP_PSD_FLOOR: f64 = -1.0e-9;
 const MAXIMUM_OBSERVED_MEDIATOR_PROXY: usize = 12;
@@ -108,7 +109,7 @@ pub struct LatentMediationFamilyEvaluation {
     pub log_ascertainment_denominator: f64,
     pub ordinary_scale_representable: bool,
     pub integration_methods: Vec<String>,
-    pub maximum_qmc_batch_range: f64,
+    pub maximum_qmc_log_batch_range: f64,
     pub family_size: usize,
     pub mediator_proxy_truth_configurations: usize,
     pub ascertainment: &'static str,
@@ -120,7 +121,7 @@ pub struct LatentMediationEvaluation {
     pub log_likelihood: f64,
     pub ordinary_scale_representable: bool,
     pub integration_methods: Vec<String>,
-    pub maximum_qmc_batch_range: f64,
+    pub maximum_qmc_log_batch_range: f64,
     pub families: Vec<LatentMediationFamilyEvaluation>,
 }
 
@@ -224,14 +225,14 @@ impl LatentMediationModel {
         let mut total = 0.0;
         let mut ordinary_scale_representable = true;
         let mut methods = BTreeSet::new();
-        let mut maximum_qmc_batch_range: f64 = 0.0;
+        let mut maximum_qmc_log_batch_range: f64 = 0.0;
         let mut family_records = Vec::with_capacity(self.families.len());
         for family in &self.families {
             let covariance = directional_covariance(&family.relationship, parameters)?;
             let record = family.evaluate(&covariance, self.qmc_points)?;
             total += record.log_likelihood;
             ordinary_scale_representable &= record.ordinary_scale_representable;
-            maximum_qmc_batch_range = maximum_qmc_batch_range.max(record.maximum_qmc_batch_range);
+            maximum_qmc_log_batch_range = maximum_qmc_log_batch_range.max(record.maximum_qmc_log_batch_range);
             methods.extend(record.integration_methods.iter().cloned());
             family_records.push(record);
         }
@@ -244,7 +245,7 @@ impl LatentMediationModel {
             log_likelihood: total,
             ordinary_scale_representable,
             integration_methods: methods.into_iter().collect(),
-            maximum_qmc_batch_range,
+            maximum_qmc_log_batch_range,
             families: family_records,
         })
     }
@@ -947,7 +948,7 @@ impl LatentMediationFamily {
         // smallest double, so adding them as ordinary numbers loses the whole
         // sum to underflow however carefully each was computed.
         let mut log_terms: Vec<f64> = Vec::with_capacity(truth_configurations);
-        let mut maximum_qmc_batch_range: f64 = 0.0;
+        let mut maximum_qmc_log_batch_range: f64 = 0.0;
         let mut methods = BTreeSet::new();
         for configuration in 0..truth_configurations {
             // **Summed as logs, not multiplied.** Each factor is a
@@ -983,7 +984,7 @@ impl LatentMediationFamily {
             let rectangle = if lower.is_empty() {
                 RectangleProbability {
                     log_probability: 0.0,
-                    batch_range: 0.0,
+                    log_batch_range: 0.0,
                     method: "no_discrete_observation",
                 }
             } else {
@@ -996,7 +997,7 @@ impl LatentMediationFamily {
                 )?
             };
             log_terms.push(log_measurement_weight + rectangle.log_probability);
-            maximum_qmc_batch_range = maximum_qmc_batch_range.max(rectangle.batch_range);
+            maximum_qmc_log_batch_range = maximum_qmc_log_batch_range.max(rectangle.log_batch_range);
             methods.insert(rectangle.method.to_owned());
         }
         let log_discrete_probability = log_sum_exp(&log_terms);
@@ -1030,9 +1031,13 @@ impl LatentMediationFamily {
         let continuous = conditional.log_continuous_density.exp();
         let numerator = log_numerator.exp();
         let likelihood = log_likelihood.exp();
+        // A subnormal is greater than nought and finite while having lost
+        // most of its significand, so testing for those two alone called a
+        // number carrying two digits representable. The smallest normal is the
+        // real boundary.
         let ordinary_scale_representable = [continuous, numerator, likelihood]
             .iter()
-            .all(|value| *value > 0.0 && value.is_finite());
+            .all(|value| *value >= f64::MIN_POSITIVE && value.is_finite());
 
         Ok(LatentMediationFamilyEvaluation {
             log_likelihood,
@@ -1041,7 +1046,7 @@ impl LatentMediationFamily {
             log_ascertainment_denominator: log_denominator,
             ordinary_scale_representable,
             integration_methods: methods.into_iter().collect(),
-            maximum_qmc_batch_range,
+            maximum_qmc_log_batch_range,
             family_size: size,
             mediator_proxy_truth_configurations: truth_configurations,
             ascertainment: ascertainment_name,
@@ -1240,7 +1245,7 @@ struct RectangleProbability {
     /// -744.44, which is `ln(5e-324)` and a property of binary64 rather than of
     /// the integral.
     log_probability: f64,
-    batch_range: f64,
+    log_batch_range: f64,
     method: &'static str,
 }
 
@@ -1270,7 +1275,7 @@ fn rectangle_probability(
     {
         return Ok(RectangleProbability {
             log_probability: f64::NEG_INFINITY,
-            batch_range: 0.0,
+            log_batch_range: 0.0,
             method: "empty_rectangle",
         });
     }
@@ -1284,7 +1289,7 @@ fn rectangle_probability(
             log_interval_probability((lower[0] - mean[0]) / sd, (upper[0] - mean[0]) / sd)?;
         return Ok(RectangleProbability {
             log_probability,
-            batch_range: 0.0,
+            log_batch_range: 0.0,
             method: "univariate_exact",
         });
     }
@@ -1292,7 +1297,7 @@ fn rectangle_probability(
         let rectangle = bivariate_rectangle(lower, upper, mean, covariance)?;
         return Ok(RectangleProbability {
             log_probability: rectangle.log_probability,
-            batch_range: 0.0,
+            log_batch_range: 0.0,
             method: rectangle.method,
         });
     }
@@ -1303,24 +1308,32 @@ fn rectangle_probability(
     // blocks of it share that bias, so their spread understates the error.
     // Shifting decorrelates the copies: their mean sheds most of the shared
     // bias and their spread is an honest stability statistic.
-    let mut replicate_estimates = [0.0; QMC_REPLICATES];
+    // **The separation-of-variables weight is a product of one interval
+    // probability per member, so it underflows long before any single one
+    // does.** Accumulated on the ordinary scale, a family of four ordinary
+    // members each contributing 1e-80 came back as nought, and the model that
+    // works in logarithms everywhere else had a floor at 1e-308 hidden in its
+    // third dimension and above. The weights are summed on the log scale
+    // instead, which puts the quasi-Monte Carlo path on the same footing as
+    // the one- and two-member cases.
+    let mut replicate_estimates = [f64::NEG_INFINITY; QMC_REPLICATES];
     let per_replicate = qmc_points / QMC_REPLICATES;
     for (replicate, estimate) in replicate_estimates.iter_mut().enumerate() {
-        let mut sum = 0.0;
+        let mut largest = f64::NEG_INFINITY;
+        let mut rescaled_sum = 0.0;
         for sample_index in 0..per_replicate {
             let sequence_index = sample_index / 2 + 1;
             let antithetic = sample_index % 2 == 1;
             let mut latent = vec![0.0; dimension];
-            let mut weight = 1.0;
+            let mut log_weight = 0.0;
             for row in 0..dimension {
                 let preceding = (0..row)
                     .map(|column| factor[(row, column)] * latent[column])
                     .sum::<f64>();
                 let standardised_lower = (lower[row] - mean[row] - preceding) / factor[(row, row)];
                 let standardised_upper = (upper[row] - mean[row] - preceding) / factor[(row, row)];
-                let width = interval_probability(standardised_lower, standardised_upper)?;
-                weight *= width;
-                if weight == 0.0 {
+                log_weight += log_interval_probability(standardised_lower, standardised_upper)?;
+                if log_weight == f64::NEG_INFINITY {
                     break;
                 }
                 if row < dimension - 1 {
@@ -1337,18 +1350,44 @@ fn rectangle_probability(
                     )?;
                 }
             }
-            sum += weight;
+            if log_weight == f64::NEG_INFINITY {
+                continue;
+            }
+            if log_weight > largest {
+                rescaled_sum = rescaled_sum * (largest - log_weight).exp() + 1.0;
+                largest = log_weight;
+            } else {
+                rescaled_sum += (log_weight - largest).exp();
+            }
         }
-        *estimate = sum / per_replicate as f64;
+        *estimate = if largest == f64::NEG_INFINITY {
+            f64::NEG_INFINITY
+        } else {
+            largest + rescaled_sum.ln() - (per_replicate as f64).ln()
+        };
     }
-    let estimate = replicate_estimates.iter().sum::<f64>() / QMC_REPLICATES as f64;
+    let log_estimate = log_sum_exp(&replicate_estimates) - (QMC_REPLICATES as f64).ln();
+    let highest = replicate_estimates
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let lowest = replicate_estimates
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
     Ok(RectangleProbability {
-        log_probability: estimate.clamp(0.0, 1.0).ln(),
-        batch_range: replicate_estimates
-            .iter()
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max)
-            - replicate_estimates.iter().copied().fold(f64::INFINITY, f64::min),
+        log_probability: log_estimate.min(0.0),
+        // A difference of logarithms, so the spread is read relative to the
+        // estimate itself. Reported as an absolute ordinary-scale width it
+        // said nothing at all beside a log probability: the same shakiness
+        // showed as 1e-3 at one depth and 1e-200 at another.
+        log_batch_range: if highest.is_finite() && lowest.is_finite() {
+            highest - lowest
+        } else if highest == lowest {
+            0.0
+        } else {
+            f64::INFINITY
+        },
         method: "deterministic_genz_halton",
     })
 }
@@ -1422,26 +1461,97 @@ fn normal_sf(value: f64) -> Result<f64, &'static str> {
     }
 }
 
+/// The point whose upper tail is `target`, for `target` at most `log 0.5`.
+///
+/// The forward function has no closed inverse, so this starts from the
+/// asymptote `log sf(x) = -x^2/2 - log(2 pi)/2 - log x` -- which can be turned
+/// round by repeated substitution -- and finishes with Newton steps on
+/// `log sf`, whose slope is `-exp(log phi(x) - log sf(x))` and so costs
+/// nothing extra. Working on the logarithm throughout means the routine
+/// reaches wherever `log_normal_sf` reaches, rather than stopping at the
+/// 1e-308 where an ordinary-scale quantile has to give up.
+fn inverse_log_normal_sf(target: f64) -> Result<f64, &'static str> {
+    if target.is_nan() {
+        return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
+    }
+    if target == f64::NEG_INFINITY {
+        return Ok(f64::INFINITY);
+    }
+    if target > LOG_HALF {
+        return Err("LATENT_MEDIATION_INVERSE_TAIL_OUT_OF_RANGE");
+    }
+    let mut point = if target > -700.0 {
+        // The ordinary scale still carries the tail here, so `statrs` supplies
+        // a starting point directly; the Newton steps below repair its own
+        // error rather than inheriting it.
+        -normal()?.inverse_cdf(target.exp())
+    } else {
+        let mut guess = (-2.0 * target - LOG_TWO_PI).max(1.0).sqrt();
+        for _ in 0..60 {
+            let next = (-2.0 * (target + 0.5 * LOG_TWO_PI + guess.ln()))
+                .max(1.0)
+                .sqrt();
+            let settled = (next - guess).abs() <= 1.0e-15 * guess;
+            guess = next;
+            if settled {
+                break;
+            }
+        }
+        guess
+    };
+    for _ in 0..60 {
+        let value = log_normal_sf(point)? - target;
+        let slope = -(-0.5 * point * point - 0.5 * LOG_TWO_PI - log_normal_sf(point)?).exp();
+        if !(slope < 0.0) || !slope.is_finite() {
+            break;
+        }
+        let step = value / slope;
+        if !step.is_finite() {
+            break;
+        }
+        let next = (point - step).max(0.0);
+        let settled = (next - point).abs() <= 1.0e-15 * point.max(1.0);
+        point = next;
+        if settled {
+            break;
+        }
+    }
+    Ok(point)
+}
+
 fn truncated_standard_normal(lower: f64, upper: f64, unit: f64) -> Result<f64, &'static str> {
     if !(0.0 < unit && unit < 1.0) {
         return Err("LATENT_MEDIATION_QMC_COORDINATE_INVALID");
+    }
+    if !(lower < upper) || lower.is_nan() || upper.is_nan() {
+        return Err("LATENT_MEDIATION_TRUNCATION_INTERVAL_EMPTY");
+    }
+    // **An interval wholly in a tail is placed on the log scale.** Taking its
+    // width on the ordinary scale first put a floor under the whole quasi-Monte
+    // Carlo path at about 1e-308: an interval further out than that came back
+    // as empty and the evaluation was refused, though nothing about it is
+    // empty and the model above it works in logarithms throughout. Reflecting
+    // the lower tail onto the upper one leaves a single case to write down.
+    if upper <= 0.0 {
+        return Ok(-truncated_standard_normal(-upper, -lower, 1.0 - unit)?);
+    }
+    if lower >= 0.0 {
+        let at_lower = log_normal_sf(lower)?;
+        let at_upper = if upper == f64::INFINITY {
+            f64::NEG_INFINITY
+        } else {
+            log_normal_sf(upper)?
+        };
+        // The share of the lower tail that the interval takes up, held away
+        // from cancellation at both ends.
+        let share = -(at_upper - at_lower).exp_m1();
+        return inverse_log_normal_sf(at_lower + (-unit * share).ln_1p());
     }
     let width = interval_probability(lower, upper)?;
     if width <= 0.0 {
         return Err("LATENT_MEDIATION_TRUNCATION_INTERVAL_EMPTY");
     }
     let distribution = normal()?;
-    if lower >= 0.0 {
-        let lower_survival = normal_sf(lower)?;
-        let upper_survival = if upper == f64::INFINITY {
-            0.0
-        } else {
-            normal_sf(upper)?
-        };
-        let survival = (lower_survival - unit * (lower_survival - upper_survival))
-            .clamp(1.0e-300, 1.0 - 1.0e-16);
-        return Ok(-distribution.inverse_cdf(survival));
-    }
     let lower_cumulative = if lower == f64::NEG_INFINITY {
         0.0
     } else {
@@ -1491,9 +1601,11 @@ fn bivariate_rectangle(
     // difference is quadrature residue.  Everything the differences cannot
     // resolve is recomputed on the log scale by conditional quadrature, which
     // has no cancellation and needs no lower cut-off.
-    let geometry_bound =
-        bivariate_geometry_upper_bound(&standardised_lower, &standardised_upper, correlation)?;
-    if geometry_bound > BIVARIATE_TAIL_CROSSOVER {
+    let log_geometry_bound =
+        log_bivariate_geometry_upper_bound(&standardised_lower, &standardised_upper, correlation)?;
+    if log_geometry_bound > BIVARIATE_TAIL_CROSSOVER.ln() {
+        // Ordinary scale is safe on this branch: the bound is above 1e-9.
+        let geometry_bound = log_geometry_bound.exp();
         let cdf = |first: f64, second: f64| bivariate_normal_cdf(first, second, correlation);
         let corners = [
             cdf(standardised_upper[0], standardised_upper[1]),
@@ -1529,11 +1641,15 @@ fn bivariate_rectangle(
     }
     let log_probability =
         log_bivariate_rectangle(&standardised_lower, &standardised_upper, correlation)?;
-    if log_probability > (geometry_bound.ln() + 1.0e-8).max(f64::MIN) && geometry_bound > 0.0 {
+    // A relative slack of 1e-8 on the probability, which is an absolute slack
+    // on its logarithm and so holds equally at every depth.
+    if log_probability > log_geometry_bound + 1.0e-8 {
         return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
     }
     Ok(BivariateRectangle {
-        log_probability,
+        // A probability cannot exceed one, so its logarithm cannot exceed
+        // nought; the ordinary-scale branch clamps for the same reason.
+        log_probability: log_probability.min(0.0),
         method: "bivariate_tail_quadrature",
     })
 }
@@ -1619,7 +1735,10 @@ fn log_bivariate_rectangle(
     } else {
         (([lower[0], upper[0]]), ([lower[1], upper[1]]))
     };
-    let conditional_sd = (1.0 - correlation * correlation).sqrt();
+    // Factored rather than `(1 - rho^2)`: the squared form cancels as the
+    // correlation approaches one, and the conditional distribution is
+    // narrowest there, so the divisor most needs its digits.
+    let conditional_sd = ((1.0 - correlation) * (1.0 + correlation)).sqrt();
     if !(conditional_sd > 0.0) {
         return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
     }
@@ -1763,30 +1882,41 @@ fn log_bivariate_rectangle(
     Ok(log_peak + quadrature.value.ln())
 }
 
-fn bivariate_geometry_upper_bound(
+/// An upper bound on a standardised rectangle's probability, on the log scale.
+///
+/// **On the log scale because the bound is used to check the tail answer, and
+/// an ordinary-scale bound underflows before the answers it is meant to
+/// check.** Past about 38 deviations the bound arrives as nought, the guard
+/// reads `bound > 0` and steps aside, and the deep tail -- the one place the
+/// conditional quadrature is the only recipe available and so the one place a
+/// check is worth having -- went unchecked.
+fn log_bivariate_geometry_upper_bound(
     lower: &[f64; 2],
     upper: &[f64; 2],
     correlation: f64,
 ) -> Result<f64, &'static str> {
-    let marginal_bound =
-        interval_probability(lower[0], upper[0])?.min(interval_probability(lower[1], upper[1])?);
+    if correlation.abs() >= 1.0 || !correlation.is_finite() {
+        return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
+    }
+    let marginal_bound = log_interval_probability(lower[0], upper[0])?
+        .min(log_interval_probability(lower[1], upper[1])?);
 
     // For standardised X and Y, S=X+Y and D=X-Y are independent Gaussian
     // variables.  Every point in the rectangle lies in both induced
     // intervals, hence P(rectangle) <= P(S interval) P(D interval).
     let sum_sd = (2.0 * (1.0 + correlation)).sqrt();
     let difference_sd = (2.0 * (1.0 - correlation)).sqrt();
-    let sum_probability = interval_probability(
+    let sum_probability = log_interval_probability(
         (lower[0] + lower[1]) / sum_sd,
         (upper[0] + upper[1]) / sum_sd,
     )?;
-    let difference_probability = interval_probability(
+    let difference_probability = log_interval_probability(
         (lower[0] - upper[1]) / difference_sd,
         (upper[0] - lower[1]) / difference_sd,
     )?;
     Ok(marginal_bound
-        .min(sum_probability * difference_probability)
-        .clamp(0.0, 1.0))
+        .min(sum_probability + difference_probability)
+        .min(0.0))
 }
 
 fn bivariate_normal_cdf(first: f64, second: f64, correlation: f64) -> Result<f64, &'static str> {
@@ -1808,11 +1938,12 @@ fn bivariate_normal_cdf(first: f64, second: f64, correlation: f64) -> Result<f64
     if !first.is_finite() || !second.is_finite() {
         return Err("LATENT_MEDIATION_BIVARIATE_THRESHOLD_INVALID");
     }
-    let geometry_bound = bivariate_geometry_upper_bound(
+    let geometry_bound = log_bivariate_geometry_upper_bound(
         &[f64::NEG_INFINITY, f64::NEG_INFINITY],
         &[first, second],
         correlation,
-    )?;
+    )?
+    .exp();
     if geometry_bound <= BIVARIATE_ABSOLUTE_TOLERANCE {
         return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED");
     }
@@ -2032,6 +2163,76 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The inverse of the log upper tail must undo it, wherever the tail is.
+    #[test]
+    fn the_inverse_log_tail_undoes_the_log_tail() {
+        for point in [0.0_f64, 0.5, 1.0, 3.0, 6.0, 12.0, 40.0, 150.0, 800.0] {
+            let target = log_normal_sf(point).expect("tail");
+            let recovered = inverse_log_normal_sf(target).expect("inverse");
+            assert!(
+                (recovered - point).abs() <= 1.0e-12 * point.max(1.0),
+                "{point} came back as {recovered} through {target}"
+            );
+        }
+    }
+
+    /// Placing a quantile inside an interval that sits far out in a tail: the
+    /// share of the interval below the returned point must be the share asked
+    /// for. Taken on the ordinary scale this had a floor at 1e-308 and the
+    /// evaluation was refused instead.
+    #[test]
+    fn a_truncated_draw_lands_at_the_right_share_of_a_distant_interval() {
+        for (lower, upper) in [
+            (0.5_f64, 2.0_f64),
+            (6.0, 9.0),
+            (40.0, 45.0),
+            (60.0, f64::INFINITY),
+            (-45.0, -40.0),
+        ] {
+            for unit in [0.05_f64, 0.25, 0.5, 0.75, 0.95] {
+                let point = truncated_standard_normal(lower, upper, unit).expect("draw");
+                assert!(lower <= point && point <= upper, "{point} outside {lower}..{upper}");
+                let whole = log_interval_probability(lower, upper).expect("whole");
+                let below = log_interval_probability(lower, point).expect("below");
+                let share = (below - whole).exp();
+                assert!(
+                    (share - unit).abs() < 1.0e-9,
+                    "{lower}..{upper} at {unit}: point {point} takes {share}"
+                );
+            }
+        }
+    }
+
+    /// With independent coordinates the rectangle is the product of its
+    /// marginals, so the quasi-Monte Carlo path can be held to an exact
+    /// answer -- including where that answer is far below anything the
+    /// ordinary scale carries.
+    #[test]
+    fn the_qmc_path_reaches_the_deep_tail() {
+        for thresholds in [
+            [1.0_f64, 1.5, 2.0, 2.5],
+            [8.0, 9.0, 10.0, 11.0],
+            [40.0, 45.0, 50.0, 55.0],
+        ] {
+            let dimension = thresholds.len();
+            let lower: Vec<f64> = thresholds.to_vec();
+            let upper = vec![f64::INFINITY; dimension];
+            let mean = DVector::zeros(dimension);
+            let covariance = DMatrix::identity(dimension, dimension);
+            let truth: f64 = thresholds
+                .iter()
+                .map(|&threshold| log_normal_sf(threshold).expect("tail"))
+                .sum();
+            let estimate = rectangle_probability(&lower, &upper, &mean, &covariance, 8_192)
+                .expect("rectangle");
+            assert!(
+                (estimate.log_probability - truth).abs() < 1.0e-3,
+                "{thresholds:?}: {} against {truth}",
+                estimate.log_probability
+            );
+        }
+    }
+
 
     /// A growing region cannot hold less probability, however far out its
     /// edge is pushed. The conditional integrand used to be searched over a

@@ -453,9 +453,9 @@ probabilities are summed across truth configurations by log-sum-exp rather than
 added as ordinary numbers. A family deep in the tail has every configuration
 below the smallest double, so adding them plainly would lose the sum to
 underflow however carefully each part was computed. Checked against an
-independent high-order quadrature, family log likelihoods agree to `5e-10` down
-to `-12600`, which is roughly `e^-12600` and some seventeen thousand orders
-below what an ordinary number can hold.
+independently written evaluation of the same equations, a family log likelihood
+of `-4546.421139077654` is reproduced exactly, to the last bit. That is about
+`1e-1974`, some 1,650 orders below the smallest number a double can hold.
 
 The likelihood first conditions the latent Gaussian vector on all continuous
 mediator measurements. For every observed mediator proxy, it sums over the

@@ -284,11 +284,24 @@ independently derived trivariate value the 8,192-point estimate agrees within
 measured error against scipy was `7e-5` at dimension four, `5e-4` at eight and
 `3e-3` at twelve.
 
-`maximum_qmc_batch_range` is the spread across those eight shifted copies. It
+This path is on the log scale too, which it was not before. Each sample's
+weight is a product of one interval probability per member, so it underflowed
+long before any single member's did, and the quantile that places each latent
+draw took its interval's width on the ordinary scale and refused anything
+beyond about `1e-308` as empty. Both are now carried as logarithms — the
+quantile by inverting `log sf` directly, from its asymptote and then by Newton
+steps. With independent coordinates the rectangle is exactly the product of its
+marginals, and at thresholds of 40, 45, 50 and 55 deviations, a log probability
+near `-4600`, the estimate matches that product to `1e-3`.
+
+`maximum_qmc_log_batch_range` is the spread across those eight shifted copies,
+as a difference of logarithms and so read relative to the estimate itself. It
 is a stability statistic and not an error bound, but shifting is what makes it
 informative at all: contiguous blocks of one unshifted sequence share their
 bias, so their spread understated the true error by three to four orders of
-magnitude at dimension twelve.
+magnitude at dimension twelve. Reported as an absolute ordinary-scale width, as
+it was, it said nothing beside a log probability: the same shakiness read as
+`1e-3` at one depth and `1e-200` at another.
 
 The test of `a b = 0` was exercised on 36 people in 12 families of three, with
 binary outcomes, across a real mediation and three nulls. Every p-value fell
