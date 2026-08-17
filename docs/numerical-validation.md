@@ -81,6 +81,40 @@ the dense kernel, SOLAR returns its within-pedigree answer bit for bit, while
 the two implementations then differ by 0.28 and 0.35 in a variance. The check
 asserts this rather than describing it, so the limit stays measured.
 
+**Against a published analysis of real data.** Stopher et al. (2012, *Evolution*
+66:2411) fitted animal models to four traits of wild red deer and then added a
+matrix of home range overlap, and it deposits that matrix along with its
+pedigree and phenotypes (Dryad `doi:10.5061/dryad.jf04r362`). Refitting all
+four in `checks/against_red_deer.py` reproduces its Table 2: spring home range
+heritability of 44.02% against a published 43.67, falling to 0.29% against 0.28
+once overlap is in the model, and the rut's 31.29% against 31.31 falling to
+0.00% against 0.11. No variance component differs by more than 0.006, and the
+likelihood ratios for adding overlap come to 1300.4 and 771.3 against 1313.2
+and 785.8. This is the only external check the component family has against
+matrices it did not build, on covariance that crosses families throughout —
+which is exactly what the SOLAR comparison above cannot reach.
+
+The check verifies its own two undocumented steps. The deposited overlap
+matrices carry no identifier file; reading their indices as the pedigree's row
+order yields exactly the 948 spring and 766 rut females the paper reports. And
+1,520 of the 4,051 deer have a known mother and no father, so each unknown
+father is given its own founder identity — a construction that agrees with a
+longhand tabular recursion to `0.000e+00` and recovers 339 inbred animals.
+
+**The reported convergence flag is not trustworthy on an ill-conditioned
+problem, and that comparison is how we know.** Three of its eight fits report
+`converged: false` while landing within 0.006 of the published values. The
+cause is that two different criteria are in play: the search stops on `factr`,
+a relative change in the objective, while the flag is decided afterwards on the
+projected gradient scaled by the log-likelihood against a fixed `1e-7`. In a
+long flat valley the objective settles long before the gradient does, so the
+estimate is right and the flag is wrong. It is not a size effect — the largest
+problem of the eight, spring home range at 4,945 records, converges at
+`1.43e-08` in one of its two models. The failures run `1.16e-07`, `4.62e-07`
+and `1.45e-06`; the five successes run `2.41e-09` to `1.50e-08`, so the two
+groups are cleanly separated rather than straddling the threshold. Until this
+is reconciled, read `scaled_gradient` rather than `converged`.
+
 For additive, household, and residual covariance at `n=400`, 95% coverage of
 the additive and household mean-diagonal proportions was 0.945 and 0.955. A
 zero-household test rejected 0.051 at nominal 0.05, and power for a household
@@ -402,6 +436,13 @@ uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
 uv run --locked --no-sync python checks/against_famskat.py
+```
+
+Against a published table rather than another package. This one needs no
+outside software, only the Dryad deposit, and takes about an hour:
+
+```sh
+.venv/bin/python checks/against_red_deer.py --evidence
 ```
 
 Simulation. These take minutes to hours, and several read the GOBS pedigree:
