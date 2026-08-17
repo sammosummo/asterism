@@ -15,12 +15,22 @@ fn build(
     environment: &PyReadonlyArray1<'_, f64>,
     design: &PyReadonlyArray2<'_, f64>,
 ) -> PyResult<DiscreteGxeModel> {
+    build_expecting(relationship, environment, design, None)
+}
+
+fn build_expecting(
+    relationship: &PyReadonlyArray2<'_, f64>,
+    environment: &PyReadonlyArray1<'_, f64>,
+    design: &PyReadonlyArray2<'_, f64>,
+    expected: Option<[f64; 2]>,
+) -> PyResult<DiscreteGxeModel> {
     let a = relationship.as_array();
     let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
     let x = design.as_array();
     let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
     let environment: Vec<f64> = environment.as_array().iter().copied().collect();
-    DiscreteGxeModel::build(&a, &environment, &x).map_err(PyValueError::new_err)
+    DiscreteGxeModel::build_expecting(&a, &environment, &x, expected)
+        .map_err(PyValueError::new_err)
 }
 
 fn response(y: &PyReadonlyArray1<'_, f64>) -> DVector<f64> {
@@ -50,7 +60,7 @@ fn unpack(test: &DiscreteGxeTest) -> (f64, f64, String, f64, f64) {
 /// the search converged, its scaled gradient, how many people fell in each
 /// group, and the two environment labels.
 #[pyfunction]
-#[pyo3(signature = (relationship, environment, design, response, reml=true))]
+#[pyo3(signature = (relationship, environment, design, response, reml=true, levels=None))]
 #[allow(clippy::type_complexity)]
 pub fn discrete_gxe_fit(
     relationship: PyReadonlyArray2<'_, f64>,
@@ -58,6 +68,7 @@ pub fn discrete_gxe_fit(
     design: PyReadonlyArray2<'_, f64>,
     response: PyReadonlyArray1<'_, f64>,
     reml: bool,
+    levels: Option<[f64; 2]>,
 ) -> PyResult<(
     [f64; 2],
     [f64; 2],
@@ -71,7 +82,7 @@ pub fn discrete_gxe_fit(
     [usize; 2],
     [f64; 2],
 )> {
-    let model = build(&relationship, &environment, &design)?;
+    let model = build_expecting(&relationship, &environment, &design, levels)?;
     let fit = model
         .fit(&super::python::response(&response), reml)
         .map_err(PyValueError::new_err)?;
@@ -111,7 +122,7 @@ pub fn discrete_gxe_fit(
 /// Returns the statistic, the p-value, the reference distribution it is a
 /// tail of, and the two log likelihoods.
 #[pyfunction]
-#[pyo3(signature = (relationship, environment, design, response, which, reml=true))]
+#[pyo3(signature = (relationship, environment, design, response, which, reml=true, levels=None))]
 pub fn discrete_gxe_test(
     relationship: PyReadonlyArray2<'_, f64>,
     environment: PyReadonlyArray1<'_, f64>,
@@ -119,8 +130,9 @@ pub fn discrete_gxe_test(
     response: PyReadonlyArray1<'_, f64>,
     which: &str,
     reml: bool,
+    levels: Option<[f64; 2]>,
 ) -> PyResult<(f64, f64, String, f64, f64)> {
-    let model = build(&relationship, &environment, &design)?;
+    let model = build_expecting(&relationship, &environment, &design, levels)?;
     let y = super::python::response(&response);
     let test = match which {
         "gene_by_environment" => model.gene_by_environment_test(&y, reml),
@@ -146,15 +158,16 @@ pub fn discrete_gxe_test(
 /// the edge of what a correlation may be rather than where the likelihood fell
 /// away.
 #[pyfunction]
-#[pyo3(signature = (relationship, environment, design, response, reml=true))]
+#[pyo3(signature = (relationship, environment, design, response, reml=true, levels=None))]
 pub fn discrete_gxe_correlation_interval(
     relationship: PyReadonlyArray2<'_, f64>,
     environment: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
     response: PyReadonlyArray1<'_, f64>,
     reml: bool,
+    levels: Option<[f64; 2]>,
 ) -> PyResult<(f64, f64, f64, bool, bool)> {
-    let model = build(&relationship, &environment, &design)?;
+    let model = build_expecting(&relationship, &environment, &design, levels)?;
     let y = super::python::response(&response);
     let interval = model
         .correlation_interval(&y, reml)

@@ -58,10 +58,11 @@ proportions. Report class coefficients, an omnibus equality test, and contrasts
 among classes—not shares.
 
 A class *weight* — the ratio of two estimated variances — is badly biased on
-the designs studied here. On the GOBS pedigree the weights come back near 3
-when the truth is 1, while the shares themselves are unbiased. Report shares
-and contrasts; do not report a ratio of two estimated variances as though it
-were a parameter.
+the designs studied here. Simulated on the GOBS pedigree at 200 replicates with
+every true weight 1.0, the four class weights came back at 2.34, 2.38, 2.44 and
+2.59, while the coefficient proportions were unbiased to within 0.007 and
+covered at 0.925 to 0.945. Report proportions and contrasts; do not report a
+ratio of two estimated variances as though it were a parameter.
 
 The several matrices must be distinguishable in the observed design. For an
 additive, household, and residual model, for example, `A`, `H`, and `I` must be

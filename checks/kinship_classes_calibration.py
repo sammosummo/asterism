@@ -101,11 +101,24 @@ TRUE_PROPORTIONS = [v / sum(TRUE_COEFFICIENTS) for v in TRUE_COEFFICIENTS]
 
 def one(index: int) -> dict | None:
     y = FACTOR @ np.random.default_rng(620_000 + index).standard_normal(N)
+    # `component_fit` returns eight values, and unpacking six of them raised on
+    # every replicate. A bare `except` then turned each into a dropped result,
+    # so the coverage and bias figures below were computed from an empty list
+    # while the check exited nought. The failure is now named and no longer
+    # swallowed: a genuinely unfittable replicate is still dropped, but a
+    # mistake in this file is not.
     try:
-        variances, proportions, total, loglik, gradient, converged = _core.component_fit(
-            MATRICES, DESIGN, y, True
-        )
-    except Exception:
+        (
+            variances,
+            proportions,
+            _total,
+            _loglik,
+            _gradient,
+            _converged,
+            _fixed_effects,
+            _fixed_effect_errors,
+        ) = _core.component_fit(MATRICES, DESIGN, y, True)
+    except ValueError:
         return None
     if variances[0] <= 0:
         return None
@@ -138,6 +151,16 @@ def main() -> int:
     started = time.perf_counter()
     with ProcessPoolExecutor(WORKERS) as pool:
         results = [r for r in pool.map(one, range(REPLICATES)) if r]
+    # **A calibration computed from nothing is not a calibration.** Dropping a
+    # replicate that genuinely could not be fitted is reasonable; dropping every
+    # one of them and reporting coverage anyway is how this file passed for
+    # weeks with an unpacking mistake in it.
+    if len(results) < REPLICATES // 2:
+        print(
+            f"NOT CALIBRATED: only {len(results)} of {REPLICATES} replicates "
+            "were fitted, which is too few to report anything from."
+        )
+        return 1
     print(f"{len(results)} of {REPLICATES} replicates in "
           f"{(time.perf_counter() - started) / 60:.0f} minutes.\n")
 

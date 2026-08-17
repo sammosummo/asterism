@@ -38,7 +38,14 @@ def _matrix(value: Any, name: str) -> np.ndarray:
 
 
 def _owned_matrix(value: Any, name: str) -> np.ndarray:
-    """Return a stable, read-only ComponentModel-owned binary64 matrix."""
+    """Take a private, read-only copy of a caller's matrix.
+
+    `np.ascontiguousarray` returns the caller's own object when it is already
+    C-contiguous binary64, so storing that would leave the model holding a live
+    view of an array the caller can still change. A model that answered
+    differently after a later, unrelated write would break the record's claim to
+    be reproducible from what it reports, and would do it silently.
+    """
     array = _matrix(value, name).copy(order="C")
     array.setflags(write=False)
     return array
@@ -310,9 +317,9 @@ class BivariateModel:
     QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
 
     def __init__(self, k: Any, observed: Any, design: Any) -> None:
-        self._k = _matrix(k, "relationship")
+        self._k = _owned_matrix(k, "relationship")
         self._observed = [[bool(a), bool(b)] for a, b in observed]
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, and return both heritabilities and all three correlations.
@@ -631,9 +638,9 @@ class GxeModel:
                 f"shape must be one of 0.5, 1.0, 1.5, 2.0, not {shape!r}. It is "
                 "chosen rather than fitted."
             )
-        self._relationship = _matrix(relationship, "relationship")
+        self._relationship = _owned_matrix(relationship, "relationship")
         self._environment = [float(v) for v in np.asarray(environment).ravel()]
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
         self._surface = surface
         self._shape = float(shape)
 
@@ -787,7 +794,13 @@ class DiscreteGxeModel:
     way.
 
     ``environment`` is one label per person and must take exactly two distinct
-    finite values, compared exactly. The people carrying the smaller label form
+    finite values, compared exactly. **Name them through ``levels`` if you can**
+    — the column is then checked against what you expected, so a third value or
+    a missing code where a group should be is refused rather than fitted. Left
+    unnamed the two are inferred, and a negative one is refused, because ``-9``
+    is the missing code in every pedigree format and far likelier a sentinel
+    than a group. Nought is left alone, since a 0/1 exposure is ordinary; a
+    caller who genuinely means -1 and +1 says so through ``levels``. The people carrying the smaller label form
     the first group everywhere in the results. **A missing or unknown label
     must be resolved or removed before building**, because a model that quietly
     puts the unknowns together is estimating a correlation with a third group
@@ -828,12 +841,19 @@ class DiscreteGxeModel:
     it at p = 1e-34 while every genetic test correctly reported nothing.
     """
 
-    def __init__(self, relationship: Any, environment: Any, design: Any) -> None:
-        self._relationship = _matrix(relationship, "relationship")
+    def __init__(
+        self,
+        relationship: Any,
+        environment: Any,
+        design: Any,
+        levels: tuple[float, float] | None = None,
+    ) -> None:
+        self._relationship = _owned_matrix(relationship, "relationship")
         self._environment = np.ascontiguousarray(
             np.asarray(environment).ravel(), dtype=np.float64
         )
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
+        self._levels = None if levels is None else (float(levels[0]), float(levels[1]))
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, with everything free.
@@ -856,7 +876,7 @@ class DiscreteGxeModel:
             counts,
             levels,
         ) = _core.discrete_gxe_fit(
-            self._relationship, self._environment, self._design, y, reml
+            self._relationship, self._environment, self._design, y, reml, self._levels
         )
         return {
             "levels": list(levels),
@@ -915,7 +935,7 @@ class DiscreteGxeModel:
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
         statistic, p_value, rule, null_loglik, alternative_loglik = _core.discrete_gxe_test(
-            self._relationship, self._environment, self._design, y, null, reml
+            self._relationship, self._environment, self._design, y, null, reml, self._levels
         )
         return {
             "null": null,
@@ -949,7 +969,8 @@ class DiscreteGxeModel:
         y = np.ascontiguousarray(y, dtype=np.float64)
         estimate, lower, upper, lower_limited, upper_limited = (
             _core.discrete_gxe_correlation_interval(
-                self._relationship, self._environment, self._design, y, reml
+                self._relationship, self._environment, self._design, y, reml,
+                self._levels,
             )
         )
         return {
@@ -1005,8 +1026,8 @@ class VariantSetModel:
         y: Any,
         reml: bool = True,
     ) -> None:
-        self._backgrounds = [_matrix(b, "background") for b in backgrounds]
-        self._design = _matrix(design, "design")
+        self._backgrounds = [_owned_matrix(b, "background") for b in backgrounds]
+        self._design = _owned_matrix(design, "design")
         self._y = np.ascontiguousarray(y, dtype=np.float64)
         self._reml = bool(reml)
 
@@ -1114,11 +1135,11 @@ class LiabilityModel:
     """
 
     def __init__(self, relationship: Any, status: Any, design: Any) -> None:
-        self._relationship = _matrix(relationship, "relationship")
+        self._relationship = _owned_matrix(relationship, "relationship")
         self._status = np.ascontiguousarray(
             np.asarray(status, dtype=np.float64).ravel()
         )
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self) -> dict[str, Any]:
         """Fit, by maximum likelihood because nothing else is available."""
@@ -1208,8 +1229,8 @@ class AssociationModel:
     """
 
     def __init__(self, relationship: Any, design: Any, y: Any) -> None:
-        self._relationship = _matrix(relationship, "relationship")
-        self._design = _matrix(design, "design")
+        self._relationship = _owned_matrix(relationship, "relationship")
+        self._design = _owned_matrix(design, "design")
         self._y = np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel())
 
     def sweep(

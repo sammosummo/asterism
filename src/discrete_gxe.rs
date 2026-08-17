@@ -133,6 +133,27 @@ impl DiscreteGxeModel {
         environment: &[f64],
         design: &DMatrix<f64>,
     ) -> Result<Self, &'static str> {
+        Self::build_expecting(relationship, environment, design, None)
+    }
+
+    /// Validate and prepare, naming the two labels the environment must take.
+    ///
+    /// Naming them is the way to be certain: the two values are checked against
+    /// what was asked for, so a column carrying a third value, or a missing
+    /// code where a group was expected, is refused rather than fitted. Without
+    /// them the levels are inferred, and a negative one is refused on the
+    /// grounds that it is far more likely a sentinel than a group.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the inputs do not describe a model, or the
+    /// environment does not take exactly the two named levels.
+    pub fn build_expecting(
+        relationship: &DMatrix<f64>,
+        environment: &[f64],
+        design: &DMatrix<f64>,
+        expected: Option<[f64; 2]>,
+    ) -> Result<Self, &'static str> {
         let rows = environment.len();
         if rows == 0 {
             return Err("DISCRETE_GXE_NO_ROWS");
@@ -149,23 +170,50 @@ impl DiscreteGxeModel {
         if !relationship.iter().all(|v| v.is_finite()) || !design.iter().all(|v| v.is_finite()) {
             return Err("DISCRETE_GXE_NOT_FINITE");
         }
-        let mut levels: Vec<f64> = Vec::with_capacity(2);
+        let mut found: Vec<f64> = Vec::with_capacity(2);
         for value in environment {
             if !value.is_finite() {
                 return Err("DISCRETE_GXE_ENVIRONMENT_NOT_FINITE");
             }
-            if !levels.contains(value) {
-                levels.push(*value);
+            if !found.contains(value) {
+                found.push(*value);
             }
-            if levels.len() > 2 {
+            if found.len() > 2 {
                 return Err("DISCRETE_GXE_ENVIRONMENT_NOT_TWO_LEVELS");
             }
         }
-        if levels.len() != 2 {
+        if found.len() != 2 {
             return Err("DISCRETE_GXE_ENVIRONMENT_NOT_TWO_LEVELS");
         }
-        levels.sort_by(|left, right| left.partial_cmp(right).expect("finite labels"));
-        let levels = [levels[0], levels[1]];
+        found.sort_by(|left, right| left.partial_cmp(right).expect("finite labels"));
+        let levels = [found[0], found[1]];
+        match expected {
+            Some(named) => {
+                let mut named = named;
+                named.sort_by(|l, r| l.partial_cmp(r).expect("finite labels"));
+                if named[0] == named[1] {
+                    return Err("DISCRETE_GXE_ENVIRONMENT_LEVELS_NOT_DISTINCT");
+                }
+                if levels != named {
+                    return Err("DISCRETE_GXE_ENVIRONMENT_LEVELS_UNEXPECTED");
+                }
+            }
+            None => {
+                // **A negative label is refused unless the caller names it.**
+                // Generalising from "exactly 1 and 2" to "any two distinct
+                // values" made room for a missing-data sentinel to arrive as a
+                // group: -9 is the missing code in every pedigree format, and a
+                // sex column read straight from a `.fam` file with an
+                // unlabelled sub-cohort would otherwise be fitted as a genuine
+                // environment, and a genetic correlation reported between real
+                // people and unknowns. Nought is left alone, because a 0/1
+                // exposure is an ordinary and intended coding, and a caller who
+                // really means -1 and +1 can say so through `expected`.
+                if levels[0] < 0.0 {
+                    return Err("DISCRETE_GXE_ENVIRONMENT_NEGATIVE_LEVEL");
+                }
+            }
+        }
         let first: Vec<bool> = environment.iter().map(|value| *value == levels[0]).collect();
         let counted = first.iter().filter(|f| **f).count();
         // A group of one has no within-group pair, so its genetic standard

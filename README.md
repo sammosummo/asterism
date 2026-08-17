@@ -15,7 +15,7 @@ Python 3.13, Rust, and `uv` are required.
 
 ```sh
 uv venv --python 3.13
-uv pip install 'maturin>=1.10,<2' numpy pytest
+uv pip install 'maturin>=1.10,<2' numpy pytest 'scipy>=1.15'
 uv run --no-project maturin develop --release
 ```
 
@@ -33,16 +33,20 @@ k, order = asterism.relationship_matrix(
 
 # Align x and y to `order`; alignment is positional.
 model = asterism.prepare(x, k)
-fit = model.fit(y)              # REML by default
-interval = model.interval(y)    # profile interval for h2
-test = model.test(y)            # h2 = 0
+fit = model.fit(y)                     # REML by default
+fit["h2"], fit["interval"], fit["test"]
+
+ml = model.fit(y, estimator="ml")
 ```
 
 `x` is the fixed-effect design and must include its own intercept column when
 one is wanted. `prepare` checks the matrix and design, diagonalises the
 relationship matrix, and stores everything independent of the response. Reuse
-one prepared model for multiple responses with the same rows and design. Pass
-`reml=False` to use ML.
+one prepared model for multiple responses with the same rows and design.
+
+One fit returns everything about that fit: `interval` is the profile interval
+for the heritability and `test` is the test against nought, both already inside
+the record rather than separate calls that would refit.
 
 The relationship builder returns twice the kinship coefficient. `prepare`
 also accepts any finite, symmetric, positive-semidefinite matrix with the right
