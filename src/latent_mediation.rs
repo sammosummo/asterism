@@ -1446,12 +1446,13 @@ fn normal_cdf(value: f64) -> Result<f64, &'static str> {
 /// subdivided to its depth limit and refused rectangles as ordinary as
 /// [6, 40] x [5, inf) at a correlation of 0.7.
 ///
-/// `libm`'s is the FDLIBM routine and agrees with a sixty-digit evaluation to
-/// between 1e-15 and 5e-14 across the range used here, while running about
-/// four times faster than routing the same quantity through the regularised
-/// incomplete gamma -- which is equally accurate but pays for generality this
-/// does not need. Below nought the argument is negative and the result lies
-/// between one and two, so there is no cancellation to avoid.
+/// `libm`'s is the FDLIBM routine. Against a sixty-digit evaluation it is right
+/// to an ulp for ordinary arguments and never worse than 4e-14 out to 36
+/// deviations -- three orders better than `statrs` at its best -- while running
+/// about four times faster than routing the same quantity through the
+/// regularised incomplete gamma, which is equally accurate but pays for a
+/// generality this does not need. Below nought the argument is negative and the
+/// result lies between one and two, so there is no cancellation to avoid.
 fn normal_sf(value: f64) -> Result<f64, &'static str> {
     if !value.is_finite() {
         return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
@@ -2226,6 +2227,30 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The normal tail against a sixty-digit reference, at the depths the
+    /// conditional quadrature actually visits. `statrs`'s `Normal::cdf` is
+    /// wrong by about 5e-11 here, which is noise to a quadrature asking for
+    /// 1e-13 and was enough to make it refuse ordinary rectangles.
+    #[test]
+    fn the_normal_tail_is_accurate_where_the_quadrature_uses_it() {
+        const REFERENCE: [(f64, f64); 8] = [
+            (0.5, 3.085_375_387_259_868_9e-1),
+            (3.0, 1.349_898_031_630_095_2e-3),
+            (5.5, 1.898_956_246_588_772_0e-8),
+            (6.0, 9.865_876_450_377_014e-10),
+            (8.0, 6.220_960_574_271_819e-16),
+            (12.0, 1.776_482_112_077_702e-33),
+            (20.0, 2.753_624_118_606_331e-89),
+            (26.0, 2.476_063_315_503_457e-149),
+        ];
+        for (point, truth) in REFERENCE {
+            let value = normal_sf(point).expect("tail");
+            assert!(
+                ((value - truth) / truth).abs() < 1.0e-13,
+                "at {point}: {value} against {truth}"
+            );
+        }
+    }
 
     /// A rectangle at a correlation of nearly minus one, where both
     /// coordinates are asked to be large and they can barely both be. The

@@ -289,6 +289,15 @@ probabilities. Compiled values agree within `2e-8`; central derivatives for all
 five free parameters agree within `3e-6`. A continuous underflow case remains
 finite on the log scale.
 
+The normal tail underneath all of this is `erfc(x / sqrt 2) / 2` from FDLIBM.
+Against a sixty-digit evaluation it is right to an ulp for ordinary arguments
+and never worse than `4e-14` out to 36 deviations. This matters more than it
+looks: the tail `statrs` supplies is wrong by about `5e-11`, and its error
+wanders from point to point rather than varying smoothly, which to a quadrature
+asking for `1e-13` is noise. The conditional integrand inherited it and the
+quadrature subdivided to its depth limit chasing rounding, refusing rectangles
+as ordinary as `[6, 40] x [5, inf)` at a correlation of 0.7.
+
 Two-person rectangles far into the tail are computed on the log scale by
 conditional quadrature rather than by differencing four corner probabilities,
 which cancel there. Against an independent high-order Gauss-Legendre value the
