@@ -15,10 +15,8 @@ def _paired_gene_matrix(
     genotypes = np.zeros((2 * pairs, pairs), dtype=np.float64)
     for pair in range(pairs):
         genotypes[2 * pair : 2 * pair + 2, pair] = 1.0
-    return asterism.gene_linear_matrix(
-        genotypes,
-        variant_weights=np.full(pairs, multiplier),
-    )
+    weighted = genotypes * multiplier
+    return weighted @ weighted.T
 
 
 def _four_person_group_matrix(subjects: int) -> np.ndarray:

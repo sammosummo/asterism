@@ -183,23 +183,32 @@ marker effects. Selective refitting is usually the useful compromise. The
 marker remains inside the relationship matrix; Asterism does not perform a
 leave-one-chromosome-out analysis or multiple-testing correction.
 
-## Variant-set matrices
+## Variant sets: genes and pathways
 
 ```python
-linear = asterism.gene_linear_matrix(
-    dosages,
-    variant_weights=column_multipliers,
-)
-burden = asterism.gene_burden_matrix(
-    dosages,
-    variant_weights=column_multipliers,
-)
+model = asterism.VariantSetModel([relationship], design, y)
+
+weighted = dosages * variant_weights          # Z = G W, one column per variant
+result = model.test(weighted)                 # variance-component test
+family = model.test_family(weighted)          # across burden-to-variance-component
 ```
 
-The weighted linear matrix is `(G W)(G W)'`; the burden matrix is `b b'` with
-`b = G w`. Both return ordinary dense NumPy arrays. They do not centre, impute,
-normalise, or estimate variant weights. Hand the result to `ComponentModel`
-beside the relationship matrix to test a gene or a pathway.
+Rare variants tested one at a time find nothing, because each has a handful of
+carriers. This asks whether a set carries more trait variance together than
+chance allows. The null is fitted once for a whole scan.
+
+**Pass `Z = G * w`, not a kernel.** Nothing of size `n by n` is formed, so the
+memory is one column per variant rather than one per person squared.
+
+`test_family` turns a dial from a variance-component test, which assumes
+nothing about direction, to a burden test, which assumes the variants all act
+alike. Neither wins in general, so it runs both ends and between, and combines
+them by the Cauchy method rather than reporting whichever looked best.
+
+The weighting is yours to choose and is not innocent: a column multiplier `w`
+is a variance weight of `w**2`, and the usual rare-focused choice is a
+`Beta(1, 25)` density at each minor allele frequency. Under the null that shape
+is unidentified, so it cannot be fitted; run a few and combine them instead.
 
 ## Latent mediation with continuous and threshold observations
 
@@ -264,7 +273,7 @@ stability is a numerical diagnostic rather than an inferential error bound.
 ```sh
 cargo test --release
 uv run --no-project pytest tests/ -q
-uv run --locked --no-sync python checks/matrix_builders.py
+uv run --locked --no-sync python checks/against_famskat.py
 ```
 
 The full list of simulation and package-comparison commands is in

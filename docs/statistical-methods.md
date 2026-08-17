@@ -280,34 +280,6 @@ refitted p below your threshold while its held p sits above it. Ten times the
 threshold is ample for a gap that never exceeded a factor of 1.1 in the cases
 studied.
 
-## Variant-set matrix construction
-
-For genotype matrix `G` and nonnegative column multipliers `w`, the weighted
-linear and burden matrices are
-
-```text
-Z_ij = G_ij w_j                 K_linear = Z Z'
-b_i  = sum_j G_ij w_j           K_burden = b b'.
-```
-
-Thus `w_j^2` is the linear-kernel variance weight. The builders do not centre,
-standardise, impute, or normalise. Dosages must be finite and in `[0,2]`.
-Both return dense arrays and cost memory quadratic in the number of people.
-
-### Using these matrices
-
-A builder produces one covariance basis. The test comes from putting it in a
-`ComponentModel` beside the genome-wide relationship matrix and testing it
-against zero, which is a variance-component test for the whole variant set.
-Nothing here corrects for testing many genes.
-
-**A variant set with no carriers is refused rather than returned as zero.**
-`gene_linear_matrix` and `gene_burden_matrix` raise
-`GENE_MATRIX_WEIGHTED_VALUES_ALL_ZERO` when every weighted dosage is zero,
-which in a sweep means a gene nobody in the sample carries. A scan should catch
-that code and record the gene as untestable. Nothing is lost by doing so: a
-zero matrix carries no variance, and `ComponentModel` returns `p = 1` for it.
-
 ## Testing a whole variant set
 
 Testing rare variants one at a time finds nothing, because each has a handful
@@ -318,7 +290,9 @@ more trait variance together than chance allows:
 y = X beta + Z gamma + g + e,   gamma_j ~ (0, tau),   g ~ N(0, sigma_g^2 A)
 ```
 
-with `Z = G W` the dosages already multiplied by their column weights, and the
+with `Z = G W` the dosages already multiplied by their column weights, which
+the caller forms — a column multiplier `w` means a variance weight of `w^2`,
+and nothing here centres, standardises or imputes, and the
 test being of `tau = 0`. This is the model famSKAT fits, and Asterism agrees
 with famSKAT to `2e-6` relative, which is about the accuracy either computes.
 

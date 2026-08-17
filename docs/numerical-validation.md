@@ -168,15 +168,6 @@ responses, observed/expected tail-count ratios were 1.024 at 0.01, 1.040 at
 used because linked markers are not independent. The experiment did not reach
 genome-wide `5e-8` calibration, which would require vastly more null tests.
 
-## Variant-set matrix builders
-
-- Independent NumPy calculations agree exactly on the worked weighted-linear
-  and burden matrices.
-- With SKAT 2.2.5, the public linear and burden score statistics agree within
-  `1e-10` when evaluated from Asterism's matrices and SKAT's null residuals.
-  This compares score statistics, not SKAT's unexposed full matrix, and an
-  intercept-only null cannot distinguish raw from column-centred genotypes.
-
 ## Variant-set score test
 
 Against famSKAT — `SKAT_NULL_emmaX` for the kinship-carrying null, then
@@ -297,7 +288,6 @@ The tests, and the equation checks that need only NumPy:
 ```sh
 cargo test --release
 uv run --no-project pytest tests/ -q
-uv run --locked --no-sync python checks/matrix_builders.py
 uv run --no-project python checks/against_latent_mediation.py
 uv run --no-project python checks/against_mixture_tail.py
 uv run --no-project python checks/bivariate_reference.py
@@ -316,7 +306,6 @@ uv run --no-project python checks/spatial_against_solar.py
 uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
-uv run --locked --no-sync python checks/against_skat_builders.py
 uv run --locked --no-sync python checks/against_famskat.py
 ```
 
