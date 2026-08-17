@@ -153,6 +153,30 @@ genome-wide `5e-8` calibration, which would require vastly more null tests.
   This compares score statistics, not SKAT's unexposed full matrix, and an
   intercept-only null cannot distinguish raw from column-centred genotypes.
 
+## Variant-set score test
+
+Against famSKAT — `SKAT_NULL_emmaX` for the kinship-carrying null, then
+`SKAT` with Davies' method — on identical data with identical weights, the two
+agree to `2e-6` relative across twelve data sets spanning `p = 3.7e-3` to
+`p = 0.99`. That is about the accuracy either implementation computes its own
+tail to, so it is agreement to the precision available rather than to a
+tolerance chosen for comfort.
+
+The reason for building it is calibration. Simulated under the null on a
+rare-variant kernel, 2,500 replicates, 300 people:
+
+| kernel | test | rejection at 0.05 | at 0.01 |
+| --- | --- | --- | --- |
+| linear | likelihood ratio | 0.0436 | 0.0088 |
+| linear | score | 0.0484 | 0.0076 |
+| burden | likelihood ratio | 0.0200 | 0.0028 |
+| burden | score | 0.0512 | 0.0080 |
+
+The burden kernel is rank one, which is where assuming a 50:50 reference goes
+furthest wrong: the likelihood ratio rejected 0.020 against a nominal 0.05,
+seven binomial standard errors low. The score test, whose reference is computed
+from the kernel's own eigenvalues, sits on nominal.
+
 ## The weighted chi-square tail
 
 Checked against Ruben's series expansion, which writes the statistic as a
@@ -252,6 +276,7 @@ uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
 uv run --locked --no-sync python checks/against_skat_builders.py
+uv run --locked --no-sync python checks/against_famskat.py
 ```
 
 Simulation. These take minutes to hours, and several read the GOBS pedigree:

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from collections.abc import Sequence
+
 import numpy as np
 
 from . import _core
@@ -924,6 +926,79 @@ class DiscreteGxeModel:
             "alternative_loglik": alternative_loglik,
             "estimator": "reml" if reml else "ml",
         }
+
+
+class VariantSetModel:
+    """Score a whole set of variants at once, in the famSKAT form.
+
+    Testing rare variants one at a time finds nothing, because each has a
+    handful of carriers. This asks instead whether the variants in a set — a
+    gene, a pathway — carry more trait variance together than chance allows,
+    without committing to which of them matters or which way each pushes.
+
+    ``backgrounds`` are the covariance bases carrying everything that is not
+    the set under test, and ``design`` must include its own intercept.
+
+    **Pass ``Z = G * w``, not the kernel.** One row per person, one column per
+    variant, with the column weights already applied. Nothing is lost — the
+    kernel is ``Z Z'`` — and nothing ``n by n`` is ever formed, so the memory
+    is one column per variant rather than one per person squared and the
+    eigenvalues come from a matrix the size of the set rather than the roster.
+
+    **The weights are your choice and they are not innocent.** Squaring is
+    implicit: a column multiplier ``w`` is a variance weight of ``w**2``. The
+    usual rare-focused choice is ``Beta(1, 25)`` evaluated at each minor allele
+    frequency, but it encodes a belief about which variants matter, and a
+    different belief gives a different answer. Running a small pre-specified
+    set of weightings and combining them is more honest than picking one.
+
+    **Why a score test and not a likelihood ratio.** The null sits on a
+    boundary, and Asterism's usual 50:50 reference is right only when the
+    tested matrix spreads across many eigenvalues. A variant-set kernel does
+    not — a burden kernel has rank one. Measured under the null on a
+    rare-variant kernel, the likelihood ratio rejected 0.020 against a nominal
+    0.05, where this reached 0.0467. The null is also fitted once for a whole
+    scan rather than refitted per set.
+
+    Nothing here corrects for testing many sets.
+    """
+
+    def __init__(
+        self,
+        backgrounds: Sequence[Any],
+        design: Any,
+        y: Any,
+        reml: bool = True,
+    ) -> None:
+        self._backgrounds = [_matrix(b, "background") for b in backgrounds]
+        self._design = _matrix(design, "design")
+        self._y = np.ascontiguousarray(y, dtype=np.float64)
+        self._reml = bool(reml)
+
+    def scan(self, roots: Sequence[Any]) -> list[dict[str, Any]]:
+        """Score every set, fitting the null once.
+
+        Each record carries the statistic, the p-value, the chi-square mixture
+        weights it was read against, and ``trustworthy``, which is false where
+        the tail is small enough that cancellation has eaten the digits. A set
+        nobody carries returns ``code`` of ``VARIANT_SET_NO_CARRIERS`` rather
+        than a statistic of nought dressed up as a result.
+        """
+        prepared = [
+            np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
+            for r in roots
+        ]
+        for root in prepared:
+            if root.ndim != 2:
+                raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
+        records = _core.variant_set_scan(
+            self._backgrounds, self._design, self._y, prepared, self._reml
+        )
+        return [dict(r) for r in records]
+
+    def test(self, root: Any) -> dict[str, Any]:
+        """Score one set."""
+        return self.scan([root])[0]
 
 
 class LiabilityModel:

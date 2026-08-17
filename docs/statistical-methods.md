@@ -308,6 +308,52 @@ which in a sweep means a gene nobody in the sample carries. A scan should catch
 that code and record the gene as untestable. Nothing is lost by doing so: a
 zero matrix carries no variance, and `ComponentModel` returns `p = 1` for it.
 
+## Testing a whole variant set
+
+Testing rare variants one at a time finds nothing, because each has a handful
+of carriers. `VariantSetModel` asks instead whether the variants in a set carry
+more trait variance together than chance allows:
+
+```text
+y = X beta + Z gamma + g + e,   gamma_j ~ (0, tau),   g ~ N(0, sigma_g^2 A)
+```
+
+with `Z = G W` the dosages already multiplied by their column weights, and the
+test being of `tau = 0`. This is the model famSKAT fits, and Asterism agrees
+with famSKAT to `2e-6` relative, which is about the accuracy either computes.
+
+**The test is a score test, not a likelihood ratio, and that is the point.**
+The null sits on a boundary, and the usual 50:50 chi-bar-square reference is
+right only when the tested matrix spreads across many eigenvalues. A
+variant-set kernel does not: a burden kernel has rank one. With `r = P y` for
+the residual projection at the fitted null covariance,
+
+```text
+Q      = || Z' r ||^2
+lambda = eigenvalues of Z' P Z
+Q      ~ sum_i lambda_i chi-square(1)   under the null
+```
+
+so the reference is computed from the kernel rather than assumed. The null is
+fitted once for a whole scan rather than refitted per set.
+
+**The interface takes the root `Z`, not the kernel `Z Z'`.** They carry the
+same information, and the root costs one column per variant instead of one
+column per person: nothing of size `n by n` is formed, and the eigenvalues come
+from a matrix the size of the variant set rather than the roster.
+
+**The weights are the caller's choice and are not innocent.** A column
+multiplier `w` is a variance weight of `w^2`. The usual rare-focused choice
+evaluates a `Beta(1, 25)` density at each minor allele frequency, but that
+encodes a belief about which variants matter and a different belief gives a
+different answer. Under the null the weight shape is unidentified, exactly as
+the spatial range is when the spatial variance is zero, so it cannot be fitted
+as a free parameter without destroying the reference distribution. Running a
+small pre-specified set of weightings and combining them is the honest course.
+
+Nothing here corrects for testing many sets, and a set nobody in the roster
+carries is refused rather than returned as a statistic of nought.
+
 ## The tail of a weighted sum of chi-squares
 
 A score test for one variance component gives a statistic distributed as

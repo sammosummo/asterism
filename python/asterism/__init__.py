@@ -46,6 +46,7 @@ from .models import (
     DiscreteGxeModel,
     LiabilityModel,
     SpatialModel,
+    VariantSetModel,
     kinship_classes,
 )
 
@@ -64,6 +65,7 @@ __all__ = [
     "LiabilityModel",
     "LatentMediationModel",
     "SpatialModel",
+    "VariantSetModel",
     "kinship_classes",
     "__version__",
 ]
