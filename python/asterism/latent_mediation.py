@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from ._core import LatentMediationCore
+from ._core import latent_mediation_simulate as _simulate
 
 __all__ = ["LatentMediationModel"]
 
@@ -153,6 +154,9 @@ class LatentMediationModel:
         mediator_proxy_specificities: list[list[Any]] = []
         ascertainments: list[str] = []
         proband_indices: list[Any] = []
+        mediator_designs: list[list[list[Any]]] = []
+        outcome_designs: list[list[list[Any]]] = []
+        outcome_prevalences: list[list[Any]] = []
 
         for family in families:
             if not isinstance(family, Mapping):
@@ -171,6 +175,23 @@ class LatentMediationModel:
             ]
             relationships.append(relationship)
             size = len(relationship)
+            for name, into in (
+                ("mediator_design", mediator_designs),
+                ("outcome_design", outcome_designs),
+            ):
+                rows = _field(family, name, default=[])
+                into.append(
+                    [
+                        _sequence(
+                            row,
+                            "LATENT_MEDIATION_DESIGN_ROW_NOT_A_SEQUENCE",
+                            numeric=True,
+                        )
+                        for row in _sequence(
+                            rows, "LATENT_MEDIATION_DESIGN_NOT_A_SEQUENCE"
+                        )
+                    ]
+                )
             latent_means.append(
                 _sequence(
                     _field(family, "latent_mean", default=[0.0] * (2 * size)),
@@ -198,6 +219,14 @@ class LatentMediationModel:
             mediator_thresholds.append(
                 _person_vector(
                     family, "mediator_threshold", size, scalar=True
+                )
+            )
+            outcome_prevalences.append(
+                _sequence(
+                    _field(family, "outcome_prevalence", default=[]),
+                    "LATENT_MEDIATION_OUTCOME_PREVALENCE_NOT_A_SEQUENCE",
+                    numeric=True,
+                    allow_none=True,
                 )
             )
             outcome_thresholds.append(
@@ -245,6 +274,9 @@ class LatentMediationModel:
             ascertainments,
             proband_indices,
             qmc_points,
+            mediator_designs,
+            outcome_designs,
+            outcome_prevalences,
         )
 
     def evaluate(
@@ -265,7 +297,7 @@ class LatentMediationModel:
             sigma_m2=sigma_m2,
         )
 
-    def test_vertical(self) -> dict[str, Any]:
+    def test_vertical(self, *, bootstrap_replicates: int = 200) -> dict[str, Any]:
         """Test the vertical estimand ``a * b`` against nought.
 
         **The null is a union, not a point.** ``a * b = 0`` holds whenever the
@@ -291,7 +323,7 @@ class LatentMediationModel:
         this null with nothing being mediated, and no likelihood separates
         those two stories.
         """
-        return self._core.test_vertical()
+        return self._core.test_vertical(bootstrap_replicates)
 
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.
@@ -300,3 +332,109 @@ class LatentMediationModel:
         convergence checks, integration diagnostics, and record construction.
         """
         return self._core.fit()
+
+
+def simulate(
+    *,
+    relationship: Sequence[Sequence[float]],
+    a: float,
+    b: float,
+    c_prime: float,
+    d: float,
+    sigma_m2: float,
+    families: int,
+    seed: int,
+    outcome_threshold: float | Sequence[float] = 0.0,
+    mediator_threshold: float | Sequence[float] = 0.0,
+    measurement_error_variance: float | Sequence[float | None] | None = 0.15,
+    observe_mediator_proxy: bool | Sequence[bool] = False,
+    sensitivity: float | Sequence[float] = 0.8,
+    specificity: float | Sequence[float] = 0.85,
+    observe_outcome: bool | Sequence[bool] = True,
+    ascertainment: str = "population_unconditioned",
+    proband_index: int | None = None,
+    mediator_design: Sequence[Sequence[float]] | None = None,
+    mediator_coefficients: Sequence[float] | None = None,
+    outcome_design: Sequence[Sequence[float]] | None = None,
+    outcome_coefficients: Sequence[float] | None = None,
+    outcome_prevalence: float | Sequence[float | None] | None = None,
+) -> list[dict[str, Any]]:
+    """Draw families from the model, for calibration, coverage and power work.
+
+    One family's shape in, that many draws out, as the same dictionaries
+    :class:`LatentMediationModel` takes — so a campaign is ``simulate`` then
+    fit, with nothing in between to get wrong.
+
+    Anything person-specific may be given as one value for everybody or as a
+    list the length of the family.
+
+    **The draws use the same covariance construction as the likelihood.** A
+    simulator that built it its own way would make a calibration measure the
+    agreement between two constructions rather than the behaviour of the test;
+    the construction itself is checked against an independently written
+    evaluation, which is where that assurance belongs.
+
+    ``ascertainment="condition_on_named_proband_case"`` draws and redraws until
+    the named person is a case, which is what the model's denominator assumes
+    and what a clinic roster actually is. Drawing unconditionally and keeping
+    the cases would be a different design.
+
+    Parameters
+    ----------
+    relationship
+        One family's relationship matrix — twice the kinship.
+    a, b, c_prime, d, sigma_m2
+        The truth to draw from. ``a`` is the mediator's loading on the
+        inherited factor, ``b`` the path from mediator to outcome,
+        ``c_prime`` the direct inherited effect on the outcome.
+    families
+        How many to draw.
+    seed
+        Fixed, so a campaign reruns exactly.
+    measurement_error_variance
+        The known error variance where the mediator is measured; ``None`` where
+        it is not measured at all. At least one family must measure it
+        somewhere or the mediator scale is not identified.
+
+    Raises
+    ------
+    ValueError
+        With a stable code where the design does not describe a family, where a
+        proband is asked for and not named, or where the conditioning cannot be
+        satisfied — a threshold so far out that a case essentially never occurs.
+    """
+    size = len(relationship)
+
+    def spread(value: Any) -> list[Any]:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+            return [value] * size
+        if len(value) != size:
+            raise ValueError("LATENT_MEDIATION_DESIGN_SHAPE_INVALID")
+        return list(value)
+
+    return list(
+        _simulate(
+            [list(map(float, row)) for row in relationship],
+            [list(map(float, row)) for row in (mediator_design or [])],
+            [float(v) for v in (mediator_coefficients or [])],
+            [list(map(float, row)) for row in (outcome_design or [])],
+            [float(v) for v in (outcome_coefficients or [])],
+            [None if v is None else float(v) for v in spread(outcome_prevalence)],
+            [float(v) for v in spread(mediator_threshold)],
+            [float(v) for v in spread(outcome_threshold)],
+            [None if v is None else float(v) for v in spread(measurement_error_variance)],
+            [bool(v) for v in spread(observe_mediator_proxy)],
+            [float(v) for v in spread(sensitivity)],
+            [float(v) for v in spread(specificity)],
+            [bool(v) for v in spread(observe_outcome)],
+            float(a),
+            float(b),
+            float(c_prime),
+            float(d),
+            float(sigma_m2),
+            int(families),
+            int(seed),
+            ascertainment,
+            proband_index,
+        )
+    )

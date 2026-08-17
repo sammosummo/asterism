@@ -29,8 +29,9 @@ pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
-    LatentMediationEvaluation, LatentMediationFamilyEvaluation, LatentMediationFamilyInput,
-    LatentMediationFit, LatentMediationModel, LatentMediationParameters, VerticalTest,
+    LatentMediationDesign, LatentMediationEvaluation, LatentMediationFamilyEvaluation,
+    LatentMediationFamilyInput, LatentMediationFit, LatentMediationModel,
+    LatentMediationParameters, VerticalTest, simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
@@ -99,6 +100,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_class::<latent_mediation::python::PyLatentMediationCore>()?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        latent_mediation::python::latent_mediation_simulate,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         liability::python::liability_fit,
         module

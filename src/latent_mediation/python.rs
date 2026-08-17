@@ -7,11 +7,14 @@
 // them by value whether or not the body consumes them. The lint cannot be
 // satisfied here without breaking the macro.
 #![allow(clippy::needless_pass_by_value)]
+// A `#[pyfunction]`'s parameter list is the Python signature, so grouping
+// arguments into a struct to shorten it would make the interface worse.
+#![allow(clippy::too_many_arguments)]
 
 use super::{
-    FIT_GRADIENT_TOLERANCE, LatentMediationEvaluation, LatentMediationFamilyEvaluation,
-    LatentMediationFamilyInput, LatentMediationFit, LatentMediationModel,
-    LatentMediationParameters,
+    FIT_GRADIENT_TOLERANCE, LatentMediationDesign, LatentMediationEvaluation,
+    LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
+    LatentMediationModel, LatentMediationParameters,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -82,7 +85,10 @@ impl PyLatentMediationCore {
         mediator_proxy_specificities,
         ascertainments,
         proband_indices,
-        qmc_points
+        qmc_points,
+        mediator_designs,
+        outcome_designs,
+        outcome_prevalences
     ))]
     #[allow(clippy::too_many_arguments)]
     fn _build(
@@ -99,6 +105,9 @@ impl PyLatentMediationCore {
         ascertainments: Vec<String>,
         proband_indices: &Bound<'_, PyAny>,
         qmc_points: &Bound<'_, PyAny>,
+        mediator_designs: &Bound<'_, PyAny>,
+        outcome_designs: &Bound<'_, PyAny>,
+        outcome_prevalences: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         for value in [
             relationships,
@@ -110,6 +119,9 @@ impl PyLatentMediationCore {
             mediator_proxy_sensitivities,
             mediator_proxy_specificities,
             qmc_points,
+            mediator_designs,
+            outcome_designs,
+            outcome_prevalences,
         ] {
             reject_boolean_tree(value, "LATENT_MEDIATION_NUMERIC_BOOLEAN")?;
         }
@@ -119,6 +131,9 @@ impl PyLatentMediationCore {
         reject_boolean_tree(proband_indices, "LATENT_MEDIATION_PROBAND_BOOLEAN")?;
 
         let relationships: Vec<Vec<Vec<f64>>> = relationships.extract()?;
+        let mediator_designs: Vec<Vec<Vec<f64>>> = mediator_designs.extract()?;
+        let outcome_designs: Vec<Vec<Vec<f64>>> = outcome_designs.extract()?;
+        let outcome_prevalences: Vec<Vec<Option<f64>>> = outcome_prevalences.extract()?;
         let latent_means: Vec<Vec<f64>> = latent_means.extract()?;
         let mediator_measurements: Vec<Vec<Option<f64>>> = mediator_measurements.extract()?;
         let mediator_measurement_error_variances: Vec<Vec<Option<f64>>> =
@@ -152,6 +167,9 @@ impl PyLatentMediationCore {
         for index in 0..family_count {
             inputs.push(LatentMediationFamilyInput {
                 relationship: relationships[index].clone(),
+                mediator_design: mediator_designs[index].clone(),
+                outcome_design: outcome_designs[index].clone(),
+                outcome_prevalence: outcome_prevalences[index].clone(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
                 mediator_measurement_error_variance: mediator_measurement_error_variances[index]
@@ -256,12 +274,21 @@ impl PyLatentMediationCore {
     }
 
     /// Test the vertical estimand `a b` against nought.
-    #[pyo3(signature = ())]
-    fn test_vertical<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let test = self.model.test_vertical().map_err(code)?;
+    #[pyo3(signature = (bootstrap_replicates=200))]
+    fn test_vertical<'py>(
+        &self,
+        py: Python<'py>,
+        bootstrap_replicates: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let test = self
+            .model
+            .test_vertical_with(bootstrap_replicates)
+            .map_err(code)?;
         let out = PyDict::new(py);
         out.set_item("p_value", test.p_value)?;
         out.set_item("rule", test.rule)?;
+        out.set_item("loading_reference", test.loading_reference)?;
+        out.set_item("bootstrap_replicates", test.bootstrap_replicates)?;
         out.set_item("loading_statistic", test.loading_statistic)?;
         out.set_item("loading_p_value", test.loading_p_value)?;
         out.set_item("path_statistic", test.path_statistic)?;
@@ -374,6 +401,7 @@ fn fit_dict<'py>(
     output.set_item("scaled_gradient", fit.scaled_gradient)?;
     output.set_item("gradient_tolerance", FIT_GRADIENT_TOLERANCE)?;
     output.set_item("boundary_parameters", fit.boundary_parameters.clone())?;
+    output.set_item("coefficients", fit.coefficients.clone())?;
     output.set_item("horizontal_identified", fit.horizontal_identified)?;
 
     let fixed = PyDict::new(py);
@@ -408,5 +436,118 @@ fn fit_dict<'py>(
         warnings.push("integration_is_approximate");
     }
     output.set_item("warnings", warnings)?;
+    Ok(output)
+}
+
+/// Draw families from the model, for calibration and power work.
+///
+/// The design is one family's shape, drawn from as many times as asked. It is
+/// returned as the same dictionaries the model takes, so a campaign is
+/// `simulate` then `LatentMediationModel` with nothing in between to get wrong.
+#[pyfunction]
+#[pyo3(signature = (
+    relationship,
+    mediator_design,
+    mediator_coefficients,
+    outcome_design,
+    outcome_coefficients,
+    outcome_prevalence,
+    mediator_threshold,
+    outcome_threshold,
+    mediator_measurement_error_variance,
+    observe_mediator_proxy,
+    mediator_proxy_sensitivity,
+    mediator_proxy_specificity,
+    observe_outcome,
+    a,
+    b,
+    c_prime,
+    d,
+    sigma_m2,
+    families,
+    seed,
+    ascertainment="population_unconditioned",
+    proband_index=None,
+))]
+pub fn latent_mediation_simulate<'py>(
+    py: Python<'py>,
+    relationship: Vec<Vec<f64>>,
+    mediator_design: Vec<Vec<f64>>,
+    mediator_coefficients: Vec<f64>,
+    outcome_design: Vec<Vec<f64>>,
+    outcome_coefficients: Vec<f64>,
+    outcome_prevalence: Vec<Option<f64>>,
+    mediator_threshold: Vec<f64>,
+    outcome_threshold: Vec<f64>,
+    mediator_measurement_error_variance: Vec<Option<f64>>,
+    observe_mediator_proxy: Vec<bool>,
+    mediator_proxy_sensitivity: Vec<f64>,
+    mediator_proxy_specificity: Vec<f64>,
+    observe_outcome: Vec<bool>,
+    a: f64,
+    b: f64,
+    c_prime: f64,
+    d: f64,
+    sigma_m2: f64,
+    families: usize,
+    seed: u64,
+    ascertainment: &str,
+    proband_index: Option<usize>,
+) -> PyResult<Bound<'py, PyList>> {
+    let design = LatentMediationDesign {
+        relationship,
+        mediator_design,
+        mediator_coefficients,
+        outcome_design,
+        outcome_coefficients,
+        outcome_prevalence,
+        mediator_threshold,
+        outcome_threshold,
+        mediator_measurement_error_variance,
+        observe_mediator_proxy,
+        mediator_proxy_sensitivity,
+        mediator_proxy_specificity,
+        observe_outcome,
+        ascertainment: ascertainment.to_owned(),
+        proband_index,
+    };
+    let parameters = LatentMediationParameters {
+        a,
+        b,
+        c_prime,
+        d,
+        sigma_m2,
+    };
+    let drawn =
+        super::simulate(&design, parameters, families, seed).map_err(PyValueError::new_err)?;
+    let output = PyList::empty(py);
+    for family in drawn {
+        let item = PyDict::new(py);
+        item.set_item("relationship", family.relationship)?;
+        item.set_item("latent_mean", family.latent_mean)?;
+        item.set_item("mediator_design", family.mediator_design)?;
+        item.set_item("outcome_design", family.outcome_design)?;
+        item.set_item("mediator_measurement", family.mediator_measurement)?;
+        item.set_item(
+            "mediator_measurement_error_variance",
+            family.mediator_measurement_error_variance,
+        )?;
+        item.set_item("mediator_proxy_status", family.mediator_proxy_status)?;
+        item.set_item("outcome_status", family.outcome_status)?;
+        item.set_item("mediator_threshold", family.mediator_threshold)?;
+        item.set_item("outcome_threshold", family.outcome_threshold)?;
+        item.set_item("outcome_prevalence", family.outcome_prevalence)?;
+        item.set_item(
+            "mediator_proxy_sensitivity",
+            family.mediator_proxy_sensitivity,
+        )?;
+        item.set_item(
+            "mediator_proxy_specificity",
+            family.mediator_proxy_specificity,
+        )?;
+        item.set_item("ascertainment", family.ascertainment)?;
+        item.set_item("proband_index", family.proband_index)?;
+        output.append(item)?;
+    }
     Ok(output)
 }
