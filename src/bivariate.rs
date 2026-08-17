@@ -1903,6 +1903,11 @@ const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 pub struct ProfileInterval {
     pub lower: f64,
     pub upper: f64,
+    /// True where the endpoint is the edge of the parameter space rather than a
+    /// point the data ruled out. Read it beside `profile_failures`: a bound
+    /// reached because the likelihood never crossed and a bound reached because
+    /// the profile could not be evaluated there are both reported here, and
+    /// only a non-zero failure count separates them.
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,

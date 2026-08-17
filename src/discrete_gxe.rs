@@ -955,7 +955,10 @@ pub struct DiscreteGxeInterval {
     /// True where the endpoint sat at the edge of what a correlation may be
     /// rather than where the likelihood fell away. An interval that reaches a
     /// bound is coverage without precision, and saying so is the difference
-    /// between a wide answer and no answer.
+    /// between a wide answer and no answer. Read it beside `profile_failures`:
+    /// a bound reached because the likelihood never crossed and a bound reached
+    /// because the profile could not be evaluated there are both reported here,
+    /// and only a non-zero failure count separates them.
     pub lower_limited: bool,
     pub upper_limited: bool,
     /// How many profile fits could not be evaluated while the endpoints were

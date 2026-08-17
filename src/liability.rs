@@ -790,6 +790,11 @@ pub struct LiabilityInterval {
     pub estimate: f64,
     pub lower: f64,
     pub upper: f64,
+    /// True where the endpoint is the edge of what a heritability may be rather
+    /// than a point the data ruled out. Read it beside `profile_failures`: a
+    /// bound reached because the likelihood never crossed and a bound reached
+    /// because the profile could not be evaluated there are both reported here,
+    /// and only a non-zero failure count separates them.
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,
