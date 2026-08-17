@@ -869,6 +869,102 @@ fn mixture(
 }
 
 
+/// A 95 per cent profile-likelihood interval for the genetic correlation.
+#[derive(Clone, Copy, Debug)]
+pub struct DiscreteGxeInterval {
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the endpoint sat at the edge of what a correlation may be
+    /// rather than where the likelihood fell away. An interval that reaches a
+    /// bound is coverage without precision, and saying so is the difference
+    /// between a wide answer and no answer.
+    pub lower_limited: bool,
+    pub upper_limited: bool,
+}
+
+impl DiscreteGxeModel {
+    /// A 95 per cent profile-likelihood interval for the genetic correlation.
+    ///
+    /// The correlation is a parameter of this model rather than a function of
+    /// one, so profiling it is a matter of pinning it and refitting everything
+    /// else. The endpoints solve
+    ///
+    /// ```text
+    /// 2 [ loglik(free) - loglik(correlation held) ] = 3.8415
+    /// ```
+    ///
+    /// **The reference is the ordinary chi-square on one degree of freedom and
+    /// not the mixture the correlation *test* uses.** The test asks about a
+    /// correlation of exactly one, which is the edge of the parameter space; an
+    /// interval is a statement about interior values and takes the interior
+    /// reference. Using the test's mixture here would give a narrower interval
+    /// than the coverage it claims.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails, or where the profile
+    /// cannot be evaluated at the estimate itself.
+    pub fn correlation_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+    ) -> Result<DiscreteGxeInterval, &'static str> {
+        let free = self.fit(y, reml)?;
+        let estimate = free.correlation;
+        if !estimate.is_finite() {
+            return Err("DISCRETE_GXE_CORRELATION_NOT_FINITE");
+        }
+        // 3.841458820694124 / 2, the drop in log likelihood that a 95 per cent
+        // interval on one degree of freedom allows.
+        let target = free.loglik - 1.920_729_410_347_062;
+
+        let profile = |correlation: f64| -> Option<f64> {
+            self.fit_under(
+                y,
+                reml,
+                Constraint {
+                    correlation: Some(correlation),
+                    ..Constraint::default()
+                },
+            )
+            .ok()
+            .map(|fit| fit.loglik)
+        };
+        // The profile at the estimate must be reachable, or nothing below it is.
+        profile(estimate).ok_or("DISCRETE_GXE_PROFILE_NOT_EVALUABLE")?;
+
+        // Walk outward from the estimate to each bound, bisecting where the
+        // likelihood crosses. A bound reached without crossing is reported as
+        // reached rather than as an endpoint.
+        let endpoint = |bound: f64| -> (f64, bool) {
+            let at_bound = profile(bound);
+            if at_bound.is_none_or(|value| value >= target) {
+                return (bound, true);
+            }
+            let (mut inside, mut outside) = (estimate, bound);
+            for _ in 0..80 {
+                let middle = 0.5 * (inside + outside);
+                match profile(middle) {
+                    Some(value) if value >= target => inside = middle,
+                    _ => outside = middle,
+                }
+            }
+            (0.5 * (inside + outside), false)
+        };
+        let (lower, lower_limited) = endpoint(-1.0);
+        let (upper, upper_limited) = endpoint(1.0);
+
+        Ok(DiscreteGxeInterval {
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Constraint, DiscreteGxeModel, Tie};
@@ -1161,6 +1257,35 @@ mod tests {
     /// **The residual standard deviations being free is what makes the genetic
     /// tests mean anything.** One sex measured twice as noisily, with identical
     /// genetics, must not come out as a genetic difference.
+    /// The interval must contain the estimate, and a correlation recovered
+    /// well below one must not have an interval running to the bound.
+    #[test]
+    fn the_correlation_interval_contains_its_estimate() {
+        let (a, group, design, y) = sibships(250, [1.0, 1.0], [0.7, 0.7], 0.25, 31);
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
+        let interval = model.correlation_interval(&y, true).expect("intervals");
+        assert!(interval.lower <= interval.estimate && interval.estimate <= interval.upper);
+        assert!(interval.lower >= -1.0 && interval.upper <= 1.0);
+        assert!(
+            interval.upper < 1.0 && !interval.upper_limited,
+            "a correlation of {} ran its interval to the bound",
+            interval.estimate
+        );
+    }
+
+    /// Where the genes are the same in both groups the estimate sits on the
+    /// bound, and the interval says it reached there rather than pretending to
+    /// an endpoint it never found.
+    #[test]
+    fn an_interval_that_reaches_the_bound_says_so() {
+        let (a, group, design, y) = sibships(120, [0.9, 0.9], [0.7, 0.7], 1.0, 77);
+        let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
+        let interval = model.correlation_interval(&y, true).expect("intervals");
+        assert!(interval.upper_limited, "the upper endpoint left the bound");
+        assert!((interval.upper - 1.0).abs() < 1e-12);
+        assert!(interval.lower < interval.estimate);
+    }
+
     #[test]
     fn a_noisier_group_is_not_read_as_a_genetic_difference() {
         let (a, group, design, y) = sibships(250, [0.9, 0.9], [0.5, 1.2], 1.0, 41);

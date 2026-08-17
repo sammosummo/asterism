@@ -138,3 +138,32 @@ pub fn discrete_gxe_test(
     .map_err(PyValueError::new_err)?;
     Ok(unpack(&test))
 }
+
+/// A 95 per cent profile interval for the genetic correlation across the two
+/// environments.
+///
+/// Returns the estimate, the two endpoints, and whether each endpoint sat at
+/// the edge of what a correlation may be rather than where the likelihood fell
+/// away.
+#[pyfunction]
+#[pyo3(signature = (relationship, environment, design, response, reml=true))]
+pub fn discrete_gxe_correlation_interval(
+    relationship: PyReadonlyArray2<'_, f64>,
+    environment: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    response: PyReadonlyArray1<'_, f64>,
+    reml: bool,
+) -> PyResult<(f64, f64, f64, bool, bool)> {
+    let model = build(&relationship, &environment, &design)?;
+    let y = super::python::response(&response);
+    let interval = model
+        .correlation_interval(&y, reml)
+        .map_err(PyValueError::new_err)?;
+    Ok((
+        interval.estimate,
+        interval.lower,
+        interval.upper,
+        interval.lower_limited,
+        interval.upper_limited,
+    ))
+}

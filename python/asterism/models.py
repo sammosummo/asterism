@@ -927,6 +927,41 @@ class DiscreteGxeModel:
             "estimator": "reml" if reml else "ml",
         }
 
+    def correlation_interval(self, y: Any, reml: bool = True) -> dict[str, Any]:
+        """A 95 per cent profile interval for the genetic correlation.
+
+        The correlation is a parameter here rather than a function of one, so
+        the interval comes from pinning it and refitting everything else, with
+        endpoints where twice the drop in log likelihood reaches 3.8415.
+
+        **The reference is the ordinary chi-square on one degree of freedom,
+        not the mixture** ``test(y, "correlation")`` **uses.** That test asks
+        about a correlation of exactly one, which is the edge of the parameter
+        space; an interval is a statement about interior values and takes the
+        interior reference. Borrowing the test's mixture would give a narrower
+        interval than the coverage it claims.
+
+        ``lower_limited`` and ``upper_limited`` say whether an endpoint sat at
+        the edge of what a correlation may be rather than where the likelihood
+        fell away. An interval reaching a bound is coverage without precision,
+        and that is worth knowing before it is quoted.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        estimate, lower, upper, lower_limited, upper_limited = (
+            _core.discrete_gxe_correlation_interval(
+                self._relationship, self._environment, self._design, y, reml
+            )
+        )
+        return {
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
+            "rule": "chi2_1",
+            "estimator": "reml" if reml else "ml",
+        }
+
 
 class VariantSetModel:
     """Score a whole set of variants at once, in the famSKAT form.
@@ -1051,6 +1086,7 @@ class VariantSetModel:
     ) -> dict[str, Any]:
         """Score one set across the family."""
         return self.scan_family([root], correlations)[0]
+
 
 
 class LiabilityModel:

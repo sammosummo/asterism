@@ -247,15 +247,37 @@ impl LatentMediationModel {
     /// Fit all five structural parameters by maximum likelihood using the
     /// fixed, mediator-scale-invariant recipe.
     pub fn fit(&self) -> Result<LatentMediationFit, &'static str> {
+        self.fit_holding(&[])
+    }
+
+    /// Fit with some coordinates held at nought, which is what the constrained
+    /// models behind a test of `a b = 0` need.
+    ///
+    /// `held` names transformed coordinates: 0 is the mediator loading `a` and
+    /// 1 is the mediator-to-outcome path `b`. A held coordinate is pinned by
+    /// closing its bounds onto nought rather than by rewriting the objective,
+    /// so the recipe, the starts and the convergence rule are the ones the
+    /// unconstrained fit uses.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code, as [`Self::fit`] does.
+    pub fn fit_holding(&self, held: &[usize]) -> Result<LatentMediationFit, &'static str> {
+        if held.iter().any(|index| *index >= FIT_DIMENSION) {
+            return Err("LATENT_MEDIATION_HELD_COORDINATE_INVALID");
+        }
         let mediator_scale_squared = self.mediator_scale_squared()?;
-        let bounds = transformed_bounds()?;
+        let bounds = transformed_bounds_holding(held)?;
         let mut best_converged: Option<FitCandidate> = None;
         let mut best_unresolved: Option<f64> = None;
         // The most recent underlying failure, so a fit in which nothing
         // converged reports its cause rather than only the fact.
         let mut last_error: Option<&'static str> = None;
 
-        for start in deterministic_starts() {
+        for mut start in deterministic_starts() {
+            for &index in held {
+                start[index] = 0.0;
+            }
             let Some(initial_objective) =
                 self.optimisation_objective(&start, mediator_scale_squared)
             else {
@@ -463,18 +485,20 @@ impl LatentMediationModel {
     }
 }
 
-fn transformed_bounds() -> Result<Bounds, &'static str> {
-    Bounds::new(
-        vec![
-            0.0,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-            0.0,
-            f64::NEG_INFINITY,
-        ],
-        vec![f64::INFINITY; FIT_DIMENSION],
-    )
-    .map_err(|_| "LATENT_MEDIATION_OPTIMISER_BOUNDS_INVALID")
+fn transformed_bounds_holding(held: &[usize]) -> Result<Bounds, &'static str> {
+    let mut lower = vec![
+        0.0,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+        0.0,
+        f64::NEG_INFINITY,
+    ];
+    let mut upper = vec![f64::INFINITY; FIT_DIMENSION];
+    for &index in held {
+        lower[index] = 0.0;
+        upper[index] = 0.0;
+    }
+    Bounds::new(lower, upper).map_err(|_| "LATENT_MEDIATION_OPTIMISER_BOUNDS_INVALID")
 }
 
 fn deterministic_starts() -> [TransformedPoint; 5] {
@@ -568,6 +592,13 @@ where
     };
     let mut gradient = Vec::with_capacity(FIT_DIMENSION);
     for index in 0..FIT_DIMENSION {
+        // A coordinate whose bounds have closed onto each other is held, not
+        // free. It has no derivative to find -- every step off it is outside
+        // the feasible set -- and asking for one would fail the stencil.
+        if lower[index] == upper[index] {
+            gradient.push(0.0);
+            continue;
+        }
         let mut step = step_multiplier * point[index].abs().max(1.0);
         let mut resolved = None;
         for _ in 0..=FIT_MAXIMUM_STENCIL_HALVINGS {
@@ -675,7 +706,9 @@ fn scaled_projected_gradient(
         if !component.is_finite() {
             return f64::INFINITY;
         }
-        let projected = if (at_lower_bound(point[index], lower[index]) && component > 0.0)
+        let held = lower[index] == upper[index];
+        let projected = if held
+            || (at_lower_bound(point[index], lower[index]) && component > 0.0)
             || (at_upper_bound(point[index], upper[index]) && component < 0.0)
         {
             0.0
@@ -1740,13 +1773,87 @@ where
 #[cfg(feature = "python")]
 pub mod python;
 
+/// A test of the vertical estimand `a b` against nought.
+#[derive(Clone, Debug)]
+pub struct VerticalTest {
+    /// The deviance for the mediator loading `a = 0`, and its p-value against
+    /// the 50:50 reference that a boundary null needs.
+    pub loading_statistic: f64,
+    pub loading_p_value: f64,
+    /// The deviance for the path `b = 0`, which is interior, so an ordinary
+    /// chi-square on one degree of freedom.
+    pub path_statistic: f64,
+    pub path_p_value: f64,
+    /// The p-value for `a b = 0`, which is the larger of the two above.
+    pub p_value: f64,
+    pub rule: &'static str,
+}
+
+impl LatentMediationModel {
+    /// Test the vertical estimand `a b` against nought.
+    ///
+    /// **The null is a union, not a point.** `a b = 0` holds whenever the
+    /// mediator carries no inherited signal (`a = 0`) *or* the mediator does
+    /// not reach the outcome (`b = 0`), and those are different models. A
+    /// single likelihood ratio has no reference distribution here, which is
+    /// why the model reported point estimates and no p-value until now.
+    ///
+    /// The construction is the intersection-union test: the union null is
+    /// rejected only when **both** parts are rejected, so the p-value is the
+    /// larger of the two. That is exactly level `alpha` for any `alpha`, at
+    /// the cost of being conservative — most so near `a = b = 0`, where both
+    /// parts are true at once.
+    ///
+    /// Each part has its own reference. `a` is bounded below at nought, so its
+    /// null sits on the boundary and takes the even mixture of a point mass
+    /// with chi-square on one. `b` is signed and interior, so it takes an
+    /// ordinary chi-square on one.
+    ///
+    /// This tests the *mediated path*, not whether mediation is the right
+    /// account of the data. A trait and a mediator sharing inherited causes
+    /// will reject this null without anything being mediated, and no
+    /// likelihood can tell the two apart.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where any of the three fits
+    /// fails.
+    pub fn test_vertical(&self) -> Result<VerticalTest, &'static str> {
+        let free = self.fit()?;
+        let without_loading = self.fit_holding(&[0])?;
+        let without_path = self.fit_holding(&[1])?;
+
+        let loading_statistic =
+            crate::deviance::deviance(free.log_likelihood, without_loading.log_likelihood);
+        let path_statistic =
+            crate::deviance::deviance(free.log_likelihood, without_path.log_likelihood);
+        // `a` rests on its lower bound under its null, so half the mass of the
+        // reference sits at nought; `b` is interior and takes the whole of it.
+        let loading_p_value = crate::deviance::p_value(loading_statistic, |t| {
+            0.5 * crate::deviance::chi2_upper_tail(t, 1.0)
+        });
+        let path_p_value = crate::deviance::p_value(path_statistic, |t| {
+            crate::deviance::chi2_upper_tail(t, 1.0)
+        });
+
+        Ok(VerticalTest {
+            loading_statistic,
+            loading_p_value,
+            path_statistic,
+            path_p_value,
+            p_value: loading_p_value.max(path_p_value),
+            rule: "intersection_union_of_boundary_and_interior",
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         FIT_GRADIENT_TOLERANCE, LatentMediationFamilyInput, LatentMediationModel,
         LatentMediationParameters, adaptive_simpson, bivariate_normal_cdf, bound_aware_gradient,
         directional_covariance, scaled_projected_gradient,
-        stable_bound_aware_gradient, transformed_bounds, transformed_parameters,
+        stable_bound_aware_gradient, transformed_bounds_holding, transformed_parameters,
     };
     use nalgebra::DMatrix;
 
@@ -1984,7 +2091,7 @@ mod tests {
     #[test]
     fn finite_difference_and_projected_kkt_respect_a_lower_bound() {
         let point = [0.0, 2.0, -1.0, 0.25, 0.4];
-        let bounds = transformed_bounds().expect("bounds");
+        let bounds = transformed_bounds_holding(&[]).expect("bounds");
         let objective = |candidate: &[f64]| {
             Some(
                 (candidate[0] + 1.0).powi(2)
@@ -2015,7 +2122,7 @@ mod tests {
         let base = deterministic_fit_model_at_mediator_scale(1.0);
         let rescaled = deterministic_fit_model_at_mediator_scale(1.0e6);
         let point = [0.2_f64.sqrt(), 0.5, 0.5, 0.5, 0.8_f64.ln()];
-        let bounds = transformed_bounds().expect("bounds");
+        let bounds = transformed_bounds_holding(&[]).expect("bounds");
         let base_scale = base.mediator_scale_squared().expect("base mediator scale");
         let rescaled_scale = rescaled
             .mediator_scale_squared()
@@ -2059,6 +2166,58 @@ mod tests {
             .expect("rescaled raw likelihood")
             .log_likelihood;
         assert!((rescaled_loglik - base_loglik + 20.0 * 1.0e6_f64.ln()).abs() < 1.0e-9);
+    }
+
+    /// Holding a coordinate must cost likelihood, never gain it: the held
+    /// model is nested inside the free one.
+    #[test]
+    fn a_held_fit_cannot_beat_the_free_one() {
+        let model = deterministic_fit_model();
+        let free = model.fit().expect("free fit");
+        for held in [0usize, 1] {
+            let constrained = model.fit_holding(&[held]).expect("held fit");
+            assert!(
+                constrained.log_likelihood <= free.log_likelihood + 1e-6,
+                "holding {held} beat the free fit: {} against {}",
+                constrained.log_likelihood,
+                free.log_likelihood
+            );
+        }
+    }
+
+    /// A held coordinate must actually arrive at nought, and the estimand it
+    /// controls with it.
+    #[test]
+    fn holding_a_coordinate_puts_it_at_nought() {
+        let model = deterministic_fit_model();
+        let without_loading = model.fit_holding(&[0]).expect("held fit");
+        assert!(without_loading.parameters.a.abs() < 1e-12);
+        assert!((without_loading.parameters.a * without_loading.parameters.b).abs() < 1e-12);
+        let without_path = model.fit_holding(&[1]).expect("held fit");
+        assert!(without_path.parameters.b.abs() < 1e-12);
+    }
+
+    /// The union null is rejected only when both parts are, so the p-value is
+    /// the larger of the two and each part keeps its own reference.
+    #[test]
+    fn the_vertical_test_takes_the_larger_part() {
+        let model = deterministic_fit_model();
+        let test = model.test_vertical().expect("tests");
+        assert!((0.0..=1.0).contains(&test.p_value));
+        assert!((test.p_value - test.loading_p_value.max(test.path_p_value)).abs() < 1e-15);
+        assert!(test.p_value >= test.loading_p_value - 1e-15);
+        assert!(test.p_value >= test.path_p_value - 1e-15);
+        assert!(test.loading_statistic >= 0.0 && test.path_statistic >= 0.0);
+    }
+
+    /// A coordinate that does not exist cannot be held.
+    #[test]
+    fn an_impossible_coordinate_is_refused() {
+        let model = deterministic_fit_model();
+        assert_eq!(
+            model.fit_holding(&[9]).err(),
+            Some("LATENT_MEDIATION_HELD_COORDINATE_INVALID")
+        );
     }
 
     #[test]

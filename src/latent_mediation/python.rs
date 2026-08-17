@@ -248,6 +248,20 @@ impl PyLatentMediationCore {
         Ok(output)
     }
 
+    /// Test the vertical estimand `a b` against nought.
+    #[pyo3(signature = ())]
+    fn test_vertical<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let test = self.model.test_vertical().map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("p_value", test.p_value)?;
+        out.set_item("rule", test.rule)?;
+        out.set_item("loading_statistic", test.loading_statistic)?;
+        out.set_item("loading_p_value", test.loading_p_value)?;
+        out.set_item("path_statistic", test.path_statistic)?;
+        out.set_item("path_p_value", test.path_p_value)?;
+        Ok(out)
+    }
+
     /// Fit the five structural parameters with the fixed ML recipe.
     #[pyo3(signature = ())]
     fn fit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

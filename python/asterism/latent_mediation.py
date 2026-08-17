@@ -265,6 +265,34 @@ class LatentMediationModel:
             sigma_m2=sigma_m2,
         )
 
+    def test_vertical(self) -> dict[str, Any]:
+        """Test the vertical estimand ``a * b`` against nought.
+
+        **The null is a union, not a point.** ``a * b = 0`` holds whenever the
+        mediator carries no inherited signal (``a = 0``) *or* the mediator does
+        not reach the outcome (``b = 0``), and those are different models. One
+        likelihood ratio has no reference distribution across a union, which is
+        why this model reported point estimates and no p-value until now.
+
+        The construction is the intersection-union test: reject the union only
+        when both parts are rejected, so the p-value is the larger of the two.
+        That is exactly level ``alpha``, at the cost of being conservative --
+        most so near ``a = b = 0``, where both parts are true at once.
+
+        Each part carries its own reference. ``a`` is bounded below at nought,
+        so its null sits on a boundary and takes the even mixture of a point
+        mass with chi-square on one; ``b`` is signed and interior, so it takes
+        an ordinary chi-square on one. Both are reported beside the combined
+        p-value, because which of them binds says what the data could not
+        establish.
+
+        This tests the mediated path, not whether mediation is the right
+        account. A trait and a mediator sharing inherited causes will reject
+        this null with nothing being mediated, and no likelihood separates
+        those two stories.
+        """
+        return self._core.test_vertical()
+
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.
 

@@ -26,11 +26,11 @@ pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
-pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeModel};
+pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
     LatentMediationEvaluation, LatentMediationFamilyEvaluation, LatentMediationFamilyInput,
-    LatentMediationFit, LatentMediationModel, LatentMediationParameters,
+    LatentMediationFit, LatentMediationModel, LatentMediationParameters, VerticalTest,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
@@ -88,6 +88,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(discrete_gxe::python::discrete_gxe_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(discrete_gxe::python::discrete_gxe_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_correlation_interval,
+        module
+    )?)?;
     module.add_class::<latent_mediation::python::PyLatentMediationCore>()?;
     module.add_function(pyo3::wrap_pyfunction!(
         liability::python::liability_fit,
