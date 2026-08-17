@@ -26,6 +26,7 @@ version = "0.1.0"
 dependencies = [
  "faer",
  "lbfgsb-rs-pure",
+ "libm",
  "nalgebra",
  "numpy",
  "pyo3",
