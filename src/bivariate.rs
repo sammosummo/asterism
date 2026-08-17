@@ -1774,7 +1774,7 @@ mod python {
         quantity: &str,
         null: f64,
         reml: bool,
-    ) -> PyResult<(f64, f64, String, f64)> {
+    ) -> PyResult<(f64, f64, String, f64, f64)> {
         let wanted = match quantity {
             "rho_g" => super::Reported::GeneticCorrelation,
             "rho_e" => super::Reported::ResidualCorrelation,
@@ -1796,6 +1796,7 @@ mod python {
             test.p_value,
             test.rule.to_owned(),
             test.null_loglik,
+            test.alternative_loglik,
         ))
     }
 
@@ -2291,7 +2292,19 @@ pub struct CorrelationTest {
     pub p_value: f64,
     /// `chi2_1` at an interior null, `mixture_50_50` at a bound.
     pub rule: &'static str,
+    /// The profiled log likelihood under the null.
+    ///
+    /// **Both log likelihoods here are on the trait-standardised scale, which
+    /// is not the scale `BivariateFit::loglik` reports.** They differ by a
+    /// constant that depends on the response's own units, so pairing one from
+    /// each gives a deviance that can come out negative -- measured at -138 on
+    /// an ordinary two-trait problem. That is why the alternative is carried
+    /// beside the null rather than left to be fetched from the fit: these two
+    /// belong together and nothing else pairs with either.
     pub null_loglik: f64,
+    /// The profiled log likelihood at the estimate, on the same scale as
+    /// `null_loglik`, so that `2 (alternative - null)` reproduces `statistic`.
+    pub alternative_loglik: f64,
 }
 
 
@@ -2364,16 +2377,27 @@ impl BivariateModel {
         let maximum = self
             .profile_at(y, reml, quantity, fitted)
             .ok_or("BIVARIATE_MAXIMUM_FAILED")?;
-        let statistic = (2.0 * (maximum - null_loglik)).max(0.0);
+        let statistic = crate::deviance::deviance(maximum, null_loglik);
 
         let interior = null.abs() < 1.0;
+        // A correlation of plus or minus one is the edge of the parameter
+        // space, so its null takes the even mixture. **The settling tolerance
+        // matters and an exact test for nought does not**: `maximum` and
+        // `null_loglik` come from two separate profile searches, which never
+        // land on identically the same number, so a fit genuinely resting on
+        // the bound arrives as a statistic of about 1e-12 and was reported at
+        // p = 0.5 rather than p = 1. Under this null that is often half the
+        // fits, and it puts the atom in the wrong place for a quantile plot.
         let (p_value, rule) = if interior {
-            (chi2_one_df_upper_tail(statistic), "chi2_1")
-        } else if statistic <= 0.0 {
-            // The estimate sits on the bound: nothing can be more extreme.
-            (1.0, "mixture_50_50")
+            (
+                crate::deviance::p_value(statistic, chi2_one_df_upper_tail),
+                "chi2_1",
+            )
         } else {
-            (0.5 * chi2_one_df_upper_tail(statistic), "mixture_50_50")
+            (
+                crate::deviance::p_value(statistic, |s| 0.5 * chi2_one_df_upper_tail(s)),
+                "mixture_50_50",
+            )
         };
 
         Ok(CorrelationTest {
@@ -2381,6 +2405,7 @@ impl BivariateModel {
             p_value,
             rule,
             null_loglik,
+            alternative_loglik: maximum,
         })
     }
 }

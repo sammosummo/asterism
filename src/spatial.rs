@@ -691,14 +691,28 @@ impl SpatialModel {
             effects.push(at.fixed_effects);
             covariances.push(at.fixed_covariance);
         }
-        if logliks.is_empty() {
+        // **The divisor is the whole grid and not the part of it that
+        // happened to evaluate.** A point drops out when its covariance will
+        // not factorise, which depends on lambda and therefore on where the
+        // search currently is, so the surviving set genuinely changes as theta
+        // moves. Dividing by the survivors renormalises them to sum to one and
+        // steps the objective by ln(12/11), about 0.087, as the search crosses
+        // a boundary where a point starts or stops factorising -- which both
+        // stalls the search and makes two constrained integrated fits
+        // incomparable, though their difference is exactly what the integrated
+        // likelihood ratio takes. A point that cannot be evaluated contributes
+        // nothing, which is what an infeasible region should contribute.
+        //
+        // Too few surviving points is a different matter: the rule is then
+        // integrating over a grid that mostly does not exist, and says so.
+        if logliks.len() * 2 < INTEGRATION_POINTS {
             return None;
         }
 
         // log of the mean of the likelihoods, taken safely.
         let largest = logliks.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let total: f64 = logliks.iter().map(|l| (l - largest).exp()).sum();
-        let integrated = largest + (total / logliks.len() as f64).ln();
+        let integrated = largest + (total / INTEGRATION_POINTS as f64).ln();
         if !integrated.is_finite() {
             return None;
         }

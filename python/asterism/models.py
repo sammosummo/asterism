@@ -180,13 +180,25 @@ class ComponentModel:
         }
 
     def interval(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
-        """A 95 per cent profile interval for one raw coefficient proportion."""
+        """A 95 per cent profile interval for one raw coefficient proportion.
+
+        **This profiles the raw proportion, which is not the headline the fit
+        reports.** ``fit`` leads with ``mean_diagonal_proportions`` where those
+        are defined, because they are invariant to how a matrix is scaled;
+        the raw proportion is not, and the two can differ by orders of
+        magnitude for the same component of the same fit. The estimate this
+        interval is actually around is therefore returned beside it as
+        ``estimate``, so the pair can be read together and cannot be mismatched
+        by picking the headline from one dictionary and the endpoints from the
+        other.
+        """
         y = np.ascontiguousarray(y, dtype=np.float64)
         lower, upper, at_lower, at_upper, level = _core.component_interval(
             self._matrices, self._x, y, component, reml
         )
         return {
             "quantity": "raw_coefficient_proportion",
+            "estimate": self.fit(y, reml)["raw_coefficient_proportions"][component],
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
@@ -370,7 +382,13 @@ class BivariateModel:
         does. Heritabilities are not testable this way.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        statistic, p_value, rule, null_loglik = _core.bivariate_correlation_test(
+        (
+            statistic,
+            p_value,
+            rule,
+            null_loglik,
+            alternative_loglik,
+        ) = _core.bivariate_correlation_test(
             self._k, self._observed, self._design, y, quantity, null, reml
         )
         return {
@@ -378,6 +396,7 @@ class BivariateModel:
             "p_value": p_value,
             "rule": rule,
             "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
         }
 
 
@@ -504,17 +523,32 @@ class SpatialModel:
         ``quantity`` is a component index as a string, or ``"lambda"``. Asking
         for the range when it has been integrated out is refused rather than
         answered.
+
+        **A component index profiles the raw proportion, which is not the
+        headline the fit reports.** ``fit`` leads with
+        ``mean_diagonal_proportions`` where those are defined, because they do
+        not move when a matrix is rescaled; the raw proportion does, and the two
+        can differ by orders of magnitude for the same component of the same
+        fit. The estimate these endpoints are actually around is returned beside
+        them as ``estimate``, so the pair reads together and cannot be
+        mismatched by taking the headline from one dictionary and the endpoints
+        from the other.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
         lower, upper, at_lower, at_upper, level = _core.spatial_interval(
             self._fixed, self._distance, self._design, y, quantity, reml, integrated
         )
+        estimate = None
+        if quantity != "lambda":
+            fitted = self.fit(y, reml=reml, integrated=integrated)
+            estimate = fitted["raw_coefficient_proportions"][int(quantity)]
         return {
             "quantity": (
                 "decay_per_km"
                 if quantity == "lambda"
                 else "raw_coefficient_proportion"
             ),
+            "estimate": estimate,
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
