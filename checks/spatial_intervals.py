@@ -81,25 +81,35 @@ def one(index: int) -> dict | None:
 
     out: dict = {}
     try:
-        lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
+        proportion = _core.spatial_interval(
             [relationship], distance, design, y, "1", True, INTEGRATED
         )
+    except ValueError:
+        proportion = None
+    if proportion is None:
+        out["raw_coefficient_proportion"] = None
+    else:
+        lower, upper, at_lower, at_upper, _ = proportion
         out["raw_coefficient_proportion"] = {
             "lower": lower,
             "upper": upper,
             "at_bound": at_lower or at_upper,
         }
-    except Exception:
-        out["raw_coefficient_proportion"] = None
     if INTEGRATED:
         # There is no range once it has been integrated out, so there is nothing
         # to cover and nothing to check.
         out["half_distance"] = None
         return out
     try:
-        lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
+        decay = _core.spatial_interval(
             [relationship], distance, design, y, "lambda", True
         )
+    except ValueError:
+        decay = None
+    if decay is None:
+        out["half_distance"] = None
+    else:
+        lower, upper, at_lower, at_upper, _ = decay
         # Reported as a half distance, which runs the other way: a larger decay
         # is a shorter distance.
         out["half_distance"] = {
@@ -107,8 +117,6 @@ def one(index: int) -> dict | None:
             "upper": np.log(2) / lower,
             "at_bound": at_lower or at_upper,
         }
-    except Exception:
-        out["half_distance"] = None
     return out
 
 

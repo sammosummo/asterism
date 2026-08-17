@@ -48,6 +48,17 @@ use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::chi2_upper_tail;
 
+/// The best start so far: its negative log likelihood, the parameters that
+/// reached it, the fixed effects there, and their covariance where one could
+/// be formed.
+type BestStart = (f64, Vec<f64>, Vec<f64>, Option<DMatrix<f64>>);
+
+/// One family block: its rows, the inverse of its covariance, and that inverse
+/// applied to the response and to the design. Named because the four parts are
+/// carried together through the derivative loops and a bare tuple says nothing
+/// about which is which.
+type BlockSolve = (Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>);
+
 /// The five parameters, in the order the search holds them.
 const PARAMETERS: usize = 5;
 const GENETIC_FIRST: usize = 0;
@@ -151,6 +162,11 @@ impl DiscreteGxeModel {
     ///
     /// Returns a stable code where the inputs do not describe a model, or the
     /// environment does not take exactly the two named levels.
+    ///
+    /// # Panics
+    ///
+    /// If an environment label is not a number, which cannot happen: every
+    /// label is checked for finiteness before it is sorted.
     pub fn build_expecting(
         relationship: &DMatrix<f64>,
         environment: &[f64],
@@ -369,8 +385,7 @@ impl DiscreteGxeModel {
         let mut xvx = DMatrix::<f64>::zeros(p, p);
         let mut xvy = DVector::<f64>::zeros(p);
         let mut yvy = 0.0;
-        let mut kept: Vec<(Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>)> =
-            Vec::with_capacity(self.blocks.len());
+        let mut kept: Vec<BlockSolve> = Vec::with_capacity(self.blocks.len());
 
         for block in &self.blocks {
             let size = block.len();
@@ -515,7 +530,7 @@ impl DiscreteGxeModel {
                 .map_or_else(|| vec![0.0; width], |e| constraint.fold(&e.gradient))
         };
 
-        let mut best: Option<(f64, Vec<f64>, Vec<f64>, Option<DMatrix<f64>>)> = None;
+        let mut best: Option<BestStart> = None;
         for start in starts {
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;

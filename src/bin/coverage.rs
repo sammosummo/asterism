@@ -101,7 +101,7 @@ fn design(families: usize, block: usize, covariates: bool) -> DMatrix<f64> {
 }
 const BAND: (f64, f64) = (0.940, 0.960);
 /// Fixed so repeated runs use the same simulated samples.
-const BASE_SEED: u64 = 2_026_08_11;
+const BASE_SEED: u64 = 20_260_811;
 
 // ---------------------------------------------------------------- the roster
 
@@ -353,10 +353,11 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
                 // that is merely present proves nothing; one whose interval
                 // covers at 95 per cent is the right size.
                 let effect = &fit.fixed_effects[index];
-                if let (Some(lower), Some(upper)) = (effect.lower, effect.upper) {
-                    if lower <= truth && truth <= upper {
-                        beta_covered[index] += 1;
-                    }
+                if let (Some(lower), Some(upper)) = (effect.lower, effect.upper)
+                    && lower <= truth
+                    && truth <= upper
+                {
+                    beta_covered[index] += 1;
                 }
             }
         }
@@ -375,15 +376,15 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
                 naive_covered += 1;
             }
         }
-        if !fit.converged {
-            nonconverged += 1;
-        } else {
+        if fit.converged {
             match fit.boundary {
                 asterism::Boundary::Lower => at_lower += 1,
                 asterism::Boundary::Upper => at_upper += 1,
                 asterism::Boundary::Interior => {}
             }
             widths.push(fit.interval.upper - fit.interval.lower);
+        } else {
+            nonconverged += 1;
         }
     }
 
@@ -504,7 +505,7 @@ fn main() {
              \"estimator\": \"reml\", \"coverage\": {}, \"cp_lower\": {}, \"cp_upper\": {}, \
              \"band\": [{}, {}], \"passes\": {}, \"fraction_at_zero\": {}, \
              \"fraction_at_one\": {}, \"nonconverged\": {}, \"median_width\": {}, \
-             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"beta_coverage\": {}, \
+             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"beta_coverage\": {:?}, \
              \"seconds\": {:.3}}}{}",
             cell.truth,
             n,
@@ -523,7 +524,7 @@ fn main() {
             cell.naive
                 .map_or_else(|| "null".to_owned(), |v| v.to_string()),
             cell.worst_beta_bias,
-            format!("{:?}", cell.beta_coverage),
+            cell.beta_coverage,
             cell.seconds,
             if index + 1 == cells.len() { "" } else { "," }
         );
@@ -603,7 +604,7 @@ mod tests {
                     naive += 1;
                 }
             }
-            let coverage = covered as f64 / replicates as f64;
+            let coverage = covered as f64 / f64::from(replicates);
             assert!(
                 (0.930..=0.970).contains(&coverage),
                 "coverage {coverage} at a true heritability of {truth}"
@@ -612,7 +613,7 @@ mod tests {
                 // Counting a lower endpoint of nought as containing nought is
                 // the obvious rule and it over-covers. If this ever stops being
                 // true the mixture rule has stopped doing anything.
-                let naive_coverage = naive as f64 / replicates as f64;
+                let naive_coverage = naive as f64 / f64::from(replicates);
                 assert!(
                     naive_coverage > coverage + 0.01,
                     "the naive rule gave {naive_coverage} against the mixture's {coverage}"

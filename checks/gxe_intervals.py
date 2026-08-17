@@ -117,17 +117,21 @@ def one(job):
     out = {"surface": surface, "intervals": {}}
     for quantity, first, second in TRUE_VALUES[surface]:
         try:
-            estimate, lower, upper, at_lower, at_upper, _ = _core.gxe_interval(
+            interval = _core.gxe_interval(
                 RELATIONSHIP, Z, DESIGN, y, surface, quantity, first, second, True
             )
+        except ValueError:
+            interval = None
+        if interval is None:
+            out["intervals"][f"{quantity}@{first}"] = None
+        else:
+            estimate, lower, upper, at_lower, at_upper, _ = interval
             out["intervals"][f"{quantity}@{first}"] = {
                 "estimate": estimate,
                 "lower": lower,
                 "upper": upper,
                 "at_bound": bool(at_lower or at_upper),
             }
-        except Exception:
-            out["intervals"][f"{quantity}@{first}"] = None
     return out
 
 

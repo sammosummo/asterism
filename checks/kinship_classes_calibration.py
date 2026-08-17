@@ -130,14 +130,14 @@ def one(index: int) -> dict | None:
     for component in range(1, 5):
         out["coefficient_proportions"].append(proportions[component])
         try:
-            lower, upper, _, _, _, _ = _core.component_interval(
-                MATRICES, DESIGN, y, component, True
-            )
-            out["covered"].append(
-                bool(lower <= TRUE_PROPORTIONS[component] <= upper)
-            )
-        except Exception:
+            interval = _core.component_interval(MATRICES, DESIGN, y, component, True)
+        except ValueError:
+            interval = None
+        if interval is None:
             out["covered"].append(None)
+        else:
+            lower, upper, _, _, _, _ = interval
+            out["covered"].append(bool(lower <= TRUE_PROPORTIONS[component] <= upper))
     return out
 
 

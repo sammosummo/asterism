@@ -128,14 +128,15 @@ def coverage(k: np.ndarray) -> dict:
         whole = True
         for quantity in QUANTITIES:
             try:
-                lower, upper, _, _, _, _ = _core.bivariate_interval(
+                interval = _core.bivariate_interval(
                     k, observed, design, y, quantity, True
                 )
-            except Exception:
+            except ValueError:
                 # An interval that will not compute does not contribute to the
                 # measured coverage. It is counted out rather than as a miss.
                 whole = False
                 continue
+            lower, upper, _, _, _, _ = interval
             attempted[quantity] += 1
             if lower <= true_value[quantity] <= upper:
                 contained[quantity] += 1
@@ -168,13 +169,19 @@ def calibration(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 70000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            _, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_g", 0.0, True
             )
-            p_values.append(p_value)
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        _, p_value, _, _, _ = outcome
+        p_values.append(p_value)
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -209,15 +216,21 @@ def boundary(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 90000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            statistic, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_g", 1.0, True
             )
-            p_values.append(p_value)
-            if statistic <= 0.0:
-                at_zero += 1
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        statistic, p_value, _, _, _ = outcome
+        p_values.append(p_value)
+        if statistic <= 0.0:
+            at_zero += 1
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -251,13 +264,19 @@ def phenotypic_null(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 130000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            _, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_p", 0.0, True
             )
-            p_values.append(p_value)
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        _, p_value, _, _, _ = outcome
+        p_values.append(p_value)
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -319,6 +338,12 @@ def main() -> int:
     if replicates < TEST_REPLICATES * 0.9:
         failures.append(f"only {replicates} of {TEST_REPLICATES} replicates tested")
     print(f"\n  {replicates} of {TEST_REPLICATES} replicates tested.\n")
+    if replicates == 0:
+        print("  Nothing to report: no replicate produced a p-value.")
+        print("\nNOT CALIBRATED:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
     rates = {}
     for level in LEVELS:

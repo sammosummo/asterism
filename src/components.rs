@@ -705,6 +705,11 @@ impl ComponentModel {
     ///
     /// Returns a stable code where fewer than two classes are named, an index
     /// is out of range, or a fit fails.
+    ///
+    /// # Panics
+    ///
+    /// If a named class is missing from the list it was just taken from, which
+    /// cannot happen: the indices are validated against that list first.
     pub fn contrasts(
         &self,
         y: &DVector<f64>,
@@ -1157,8 +1162,7 @@ impl ComponentModel {
         let residual = y - &self.design * &beta;
 
         let mut xvx = DMatrix::<f64>::zeros(p, p);
-        let mut solves: Vec<(Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>)> =
-            Vec::with_capacity(self.blocks.len());
+        let mut solves: Vec<BlockSolve> = Vec::with_capacity(self.blocks.len());
         for block in &self.blocks {
             let size = block.len();
             let v = self.assemble(block, &theta);
@@ -1169,7 +1173,12 @@ impl ComponentModel {
             let vr = chol.solve_vector(&rb);
             let vx = chol.solve_matrix(&xb);
             xvx += xb.transpose() * &vx;
-            solves.push((block.clone(), chol.inverse(), vr, vx));
+            solves.push(BlockSolve {
+                rows: block.clone(),
+                inverse: chol.inverse(),
+                vr,
+                vx,
+            });
         }
         let xvx_inverse = xvx
             .cholesky()
@@ -1180,7 +1189,8 @@ impl ComponentModel {
         let mut errors = vec![0.0; n];
         let matrix = &self.matrices[component];
         let scale = theta[component];
-        for (block, inverse, vr, vx) in &solves {
+        for solve in &solves {
+            let (block, inverse, vr, vx) = (&solve.rows, &solve.inverse, &solve.vr, &solve.vx);
             let size = block.len();
             // G over this block, which is the component's own matrix scaled.
             let g = DMatrix::from_fn(size, size, |i, j| scale * matrix[(block[i], block[j])]);
@@ -1741,7 +1751,7 @@ mod tests {
         }
         let design = DMatrix::from_element(n, 1, 1.0);
 
-        let mut seed = 20260812u64;
+        let mut seed = 20_260_812u64;
         // Three uniforms scaled to unit variance.
         let mut next = || {
             let mut total = 0.0;
@@ -1845,7 +1855,7 @@ mod tests {
     #[test]
     fn one_component_matches_the_eigen_simplified_model() {
         let (a, _, design, y) = small();
-        let model = ComponentModel::build(&[a.clone()], &design).expect("valid");
+        let model = ComponentModel::build(std::slice::from_ref(&a), &design).expect("valid");
         let fit = model.fit(&y, true).expect("fits");
 
         let prepared = crate::prepared::PreparedModel::build(&design, &a).expect("prepared builds");

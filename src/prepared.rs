@@ -685,6 +685,9 @@ pub struct Fit {
 
 #[cfg(feature = "python")]
 #[pymethods]
+// PyO3 extracts each argument from a Python object, so a `#[pymethods]` entry
+// takes them by value whether or not the body consumes them.
+#[allow(clippy::needless_pass_by_value)]
 impl PreparedModel {
     #[new]
     #[pyo3(signature = (x, k))]

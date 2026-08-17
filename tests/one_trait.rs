@@ -91,7 +91,7 @@ fn the_relationship_matrix_splits_into_one_block_per_family() {
 #[test]
 fn a_moderate_heritability_is_recovered_by_reml() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 3.0, 20260811);
+    let y = simulate(1000, 0.5, 3.0, 20_260_811);
     let fit = model.fit_one_trait(&y, true);
 
     assert!(fit.converged);
@@ -115,7 +115,7 @@ fn a_moderate_heritability_is_recovered_by_reml() {
 #[test]
 fn ml_and_reml_both_run_and_differ_by_less_than_the_standard_error() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260812);
+    let y = simulate(1000, 0.5, 0.0, 20_260_812);
     let reml = model.fit_one_trait(&y, true);
     let ml = model.fit_one_trait(&y, false);
 
@@ -137,7 +137,7 @@ fn ml_and_reml_both_run_and_differ_by_less_than_the_standard_error() {
 #[test]
 fn the_interval_contains_the_estimate_and_keeps_its_shape() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260813);
+    let y = simulate(1000, 0.5, 0.0, 20_260_813);
     let fit = model.fit_one_trait(&y, true);
 
     assert!(fit.interval.lower <= fit.h2 && fit.h2 <= fit.interval.upper);
@@ -151,7 +151,7 @@ fn the_interval_contains_the_estimate_and_keeps_its_shape() {
 #[test]
 fn strong_heritability_is_rejected_against_no_additive_variance() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.8, 0.0, 20260814);
+    let y = simulate(1000, 0.8, 0.0, 20_260_814);
     let fit = model.fit_one_trait(&y, true);
     let test = fit.test.expect("a converged fit carries the test");
 
@@ -169,7 +169,7 @@ fn strong_heritability_is_rejected_against_no_additive_variance() {
 #[test]
 fn no_additive_variance_is_not_rejected_when_there_is_none() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.0, 0.0, 20260815);
+    let y = simulate(1000, 0.0, 0.0, 20_260_815);
     let fit = model.fit_one_trait(&y, true);
     let test = fit.test.expect("a converged fit carries the test");
 
@@ -184,7 +184,7 @@ fn no_additive_variance_is_not_rejected_when_there_is_none() {
 fn a_fit_on_the_lower_bound_reports_state_and_withholds_the_standard_error() {
     // A response with no family structure at all drives the estimate to zero.
     let model = prepare(300);
-    let mut stream = Stream(20260816);
+    let mut stream = Stream(20_260_816);
     let y = DVector::from_iterator(600, (0..600).map(|_| stream.normal()));
     let fit = model.fit_one_trait(&y, true);
 
@@ -212,7 +212,7 @@ fn a_fit_on_the_lower_bound_reports_state_and_withholds_the_standard_error() {
 #[test]
 fn an_interior_fit_carries_a_standard_error_of_a_believable_size() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260817);
+    let y = simulate(1000, 0.5, 0.0, 20_260_817);
     let fit = model.fit_one_trait(&y, true);
 
     assert_eq!(fit.boundary, Boundary::Interior);

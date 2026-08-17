@@ -138,16 +138,16 @@ def one(job):
     out = {"scenario": scenario, "p": {}}
     try:
         fit = model.fit(y)
-        out["correlation"] = fit["genetic_correlation"]
-        out["converged"] = fit["converged"]
-    except Exception:
-        out["correlation"] = None
-        out["converged"] = False
+    except ValueError:
+        fit = None
+    out["correlation"] = None if fit is None else fit["genetic_correlation"]
+    out["converged"] = False if fit is None else fit["converged"]
     for null in NULLS:
         try:
-            out["p"][null] = model.test(y, null)["p_value"]
-        except Exception:
-            out["p"][null] = None
+            outcome = model.test(y, null)
+        except ValueError:
+            outcome = None
+        out["p"][null] = None if outcome is None else outcome["p_value"]
     return out
 
 

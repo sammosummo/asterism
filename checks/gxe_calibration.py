@@ -199,12 +199,20 @@ def one(job):
     for surface in SURFACES:
         for null in TESTS:
             try:
-                statistic, p_value, rule, _, _ = _core.gxe_test(
+                outcome = _core.gxe_test(
                     RELATIONSHIP, Z, DESIGN, y, surface, null, True
                 )
-                out[f"{surface}/{null}"] = {"p": p_value, "statistic": statistic, "rule": rule}
-            except Exception:
+            except ValueError:
+                outcome = None
+            if outcome is None:
                 out[f"{surface}/{null}"] = None
+            else:
+                statistic, p_value, rule, _, _ = outcome
+                out[f"{surface}/{null}"] = {
+                    "p": p_value,
+                    "statistic": statistic,
+                    "rule": rule,
+                }
     return out
 
 

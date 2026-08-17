@@ -124,12 +124,13 @@ def coverage(relationship, household, design, n) -> dict:
         whole = True
         for index, name in enumerate(NAMES[:2]):
             try:
-                lower, upper, _, _, _, _ = _core.component_interval(
+                interval = _core.component_interval(
                     [relationship, household], design, y, index, True
                 )
-            except Exception:
+            except ValueError:
                 whole = False
                 continue
+            lower, upper, _, _, _, _ = interval
             attempted[name] += 1
             if lower <= TRUTH[name] <= upper:
                 contained[name] += 1
@@ -159,11 +160,11 @@ def boundary(relationship, household, design, n, present: bool) -> dict:
     for replicate in range(TEST_REPLICATES):
         y = draw(n, shares, (9000 if present else 4000) + replicate)
         try:
-            _, p_value, _, _ = _core.component_test(
+            outcome = _core.component_test(
                 [relationship, household], design, y, 1, True
             )
-            p_values.append(p_value)
-        except Exception:
+            p_values.append(outcome[1])
+        except ValueError:
             # The test refuses where another component has itself gone to
             # nought, because the mixture assumes only one is on the boundary.
             # Those replicates are counted out and reported, not counted as

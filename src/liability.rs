@@ -232,7 +232,7 @@ impl LiabilityModel {
                 let same = f64::from(u8::from(a == b));
                 heritability * self.relationship[(a, b)] + (1.0 - heritability) * same
             });
-            total += self.region_log_probability(&mean, &sign, &covariance, &normal)?;
+            total += Self::region_log_probability(&mean, &sign, &covariance, &normal)?;
         }
         total.is_finite().then_some(total)
     }
@@ -240,7 +240,6 @@ impl LiabilityModel {
     /// The log probability that one family's liabilities fall where its
     /// statuses say they do.
     fn region_log_probability(
-        &self,
         mean: &[f64],
         sign: &[f64],
         covariance: &DMatrix<f64>,

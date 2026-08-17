@@ -216,6 +216,12 @@ impl VariantSetModel {
     ///
     /// Returns a stable code where the matrix is the wrong shape, is not
     /// finite, or carries nothing to test.
+    ///
+    /// # Panics
+    ///
+    /// If an eigenvalue is not a number, which cannot happen: the matrix it
+    /// comes from is checked for finiteness first, and a symmetric eigenvalue
+    /// decomposition of a finite matrix is finite.
     pub fn test(&self, kernel_root: &DMatrix<f64>) -> Result<VariantSetTest, &'static str> {
         let (score, middle) = self.projected(kernel_root)?;
         let statistic = score.dot(&score);
@@ -345,6 +351,11 @@ impl VariantSetModel {
     /// Returns a stable code where the set cannot be tested, or where a
     /// correlation lies outside `[0, 1)`. One is excluded because the burden
     /// end is reached exactly by the rank-one root and needs no dial.
+    ///
+    /// # Panics
+    ///
+    /// If an eigenvalue is not a number, which cannot happen for the same
+    /// reason as in [`Self::test`].
     pub fn test_family(
         &self,
         kernel_root: &DMatrix<f64>,
@@ -618,8 +629,8 @@ mod tests {
     fn malformed_input_is_refused() {
         let (relationship, design, people) = roster(10, 4);
         let y = response(people, 1);
-        let model =
-            VariantSetModel::build(&[relationship.clone()], &design, &y, true).expect("fits");
+        let model = VariantSetModel::build(std::slice::from_ref(&relationship), &design, &y, true)
+            .expect("fits");
         assert_eq!(
             model.test(&DMatrix::<f64>::zeros(people + 1, 3)).err(),
             Some("VARIANT_SET_ROOT_WRONG_SHAPE")

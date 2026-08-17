@@ -49,6 +49,11 @@ too_many_lines = "allow"
 # between the code and the equations it implements.
 many_single_char_names = "allow"
 similar_names = "allow"
+# In these loops the counter is a parameter number that the body uses for
+# several things -- picking a derivative, testing which component it is -- and
+# only incidentally to write one gradient entry. The lint is aimed at
+# `for i in 0..v.len() { v[i] }`, which is not what these are.
+needless_range_loop = "allow"
 
 [dependencies]
 faer = { version = "0.24.4", default-features = false, features = ["std", "rayon"] }

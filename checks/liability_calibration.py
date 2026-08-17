@@ -113,24 +113,30 @@ def one(job):
 
     out = {"scenario": scenario}
     try:
-        statistic, p_value, _, _ = _core.liability_test(relationship, status, design)
+        outcome = _core.liability_test(relationship, status, design)
+    except ValueError:
+        outcome = None
+    if outcome is None:
+        out["p_value"] = None
+    else:
+        statistic, p_value, _, _ = outcome
         out["p_value"] = p_value
         out["statistic"] = statistic
-    except Exception:
-        out["p_value"] = None
     if scenario == "heritable":
         try:
-            estimate, lower, upper, at_lower, at_upper, _ = _core.liability_interval(
-                relationship, status, design
-            )
+            interval = _core.liability_interval(relationship, status, design)
+        except ValueError:
+            interval = None
+        if interval is None:
+            out["interval"] = None
+        else:
+            estimate, lower, upper, at_lower, at_upper, _ = interval
             out["interval"] = {
                 "estimate": estimate,
                 "lower": lower,
                 "upper": upper,
                 "at_bound": bool(at_lower or at_upper),
             }
-        except Exception:
-            out["interval"] = None
     return out
 
 

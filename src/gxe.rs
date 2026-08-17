@@ -76,6 +76,17 @@ use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
 
+/// The best start so far: its negative log likelihood, the parameters that
+/// reached it, the fixed effects there, and their covariance where one could
+/// be formed.
+type BestStart = (f64, Vec<f64>, Vec<f64>, Option<DMatrix<f64>>);
+
+/// One family block: its rows, the inverse of its covariance, and that inverse
+/// applied to the response and to the design. Named because the four parts are
+/// carried together through the derivative loops and a bare tuple says nothing
+/// about which is which.
+type BlockSolve = (Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>);
+
 /// The fixed shapes the powered-exponential kernel may take.
 ///
 /// **This is an enumeration and not a number, on purpose.** Shape and decay
@@ -189,6 +200,10 @@ impl Surface {
     /// distribution, so it belongs here beside the indices rather than in the
     /// test that uses them.
     #[must_use]
+    // The two arms hold the same pair of indices but not the same pair of
+    // parameters, and which parameters they are is what the reference
+    // distribution turns on. Collapsing them would throw that away.
+    #[allow(clippy::match_same_arms)]
     pub const fn genetic_shape(self) -> [usize; 2] {
         match self {
             // gamma_g, lambda
@@ -580,8 +595,7 @@ impl GxeModel {
         let mut xvx = DMatrix::<f64>::zeros(p, p);
         let mut xvy = DVector::<f64>::zeros(p);
         let mut yvy = 0.0;
-        let mut kept: Vec<(Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>)> =
-            Vec::with_capacity(self.blocks.len());
+        let mut kept: Vec<BlockSolve> = Vec::with_capacity(self.blocks.len());
 
         for block in &self.blocks {
             let size = block.len();
@@ -736,7 +750,7 @@ impl GxeModel {
             .collect();
         starts.dedup_by(|a, b| a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < 1e-12));
 
-        let mut best: Option<(f64, Vec<f64>, Vec<f64>, Option<DMatrix<f64>>)> = None;
+        let mut best: Option<BestStart> = None;
         for start in starts {
             let value_of = |c: &[f64]| -> f64 {
                 let mut theta = [0.0; PARAMETERS];

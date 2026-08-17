@@ -655,9 +655,10 @@ mod tests {
     /// Wald statistic -- checked here rather than claimed in a comment.
     #[test]
     fn held_variance_makes_wald_and_the_likelihood_ratio_identical() {
-        for effect in [0.0_f64, 0.15, 0.4] {
-            let (k, design, y, marker) =
-                simulate(200, 0.5, effect, 4_242 + (effect * 100.0) as u64);
+        // A distinct seed per effect size, so the three runs are not the same
+        // draw scaled, written out rather than derived from the effect.
+        for (effect, seed) in [(0.0_f64, 4_242_u64), (0.15, 4_257), (0.4, 4_282)] {
+            let (k, design, y, marker) = simulate(200, 0.5, effect, seed);
             let model = AssociationModel::build(&k, &design, &y).expect("valid");
             let got = model.test_marker(&marker, Variance::Held).expect("tests");
             assert!(

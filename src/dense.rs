@@ -113,7 +113,8 @@ mod tests {
     fn both_routes_give_the_same_answer() {
         for n in [4usize, 11, 12, 40, 120] {
             let v = DMatrix::from_fn(n, n, |i, j| {
-                0.5f64.powi((i as i32 - j as i32).abs()) + if i == j { 1.0 } else { 0.0 }
+                0.5f64.powi(i32::try_from(i.abs_diff(j)).unwrap_or(i32::MAX))
+                    + if i == j { 1.0 } else { 0.0 }
             });
             let b = DVector::from_fn(n, |i, _| (i as f64).sin());
             let x = DMatrix::from_fn(n, 3, |i, j| ((i * 3 + j) as f64).cos());

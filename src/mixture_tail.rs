@@ -190,11 +190,16 @@ fn graded_band(lower: f64, upper: f64, weights: &[f64], q: f64, fine: f64) -> f6
     // narrow: their width is about `pi / q`, so grading every band to the same
     // depth would spend forty panels resolving a function that is smooth
     // across the whole of it.
-    let panels = if width <= fine {
-        1
-    } else {
-        ((width / fine).log2().ceil() as usize + 1).clamp(1, BAND_PANELS)
-    };
+    // The doublings it takes to grow the finest panel out to the whole band,
+    // capped. Counted rather than taken from a logarithm, so there is no
+    // rounding to reason about and no conversion that could go the wrong way
+    // for a width that is not finite.
+    let mut panels = 1usize;
+    let mut span = fine;
+    while span < width && panels < BAND_PANELS {
+        span *= 2.0;
+        panels += 1;
+    }
     if panels == 1 {
         return gauss_panel(lower, upper, weights, q);
     }
@@ -202,11 +207,15 @@ fn graded_band(lower: f64, upper: f64, weights: &[f64], q: f64, fine: f64) -> f6
     let mut edge = lower;
     for panel in 0..panels {
         // Widths 2^-K, 2^-K, 2^-(K-1), ... of the band, summing to the whole.
-        let share = if panel == 0 {
-            0.5f64.powi(panels as i32 - 1)
+        // `panels` is at most `BAND_PANELS`, so the exponent always fits; the
+        // fallback is unreachable and only spares a cast that could not be
+        // read as safe on its own.
+        let steps = if panel == 0 {
+            panels - 1
         } else {
-            0.5f64.powi((panels - panel) as i32)
+            panels - panel
         };
+        let share = 0.5f64.powi(i32::try_from(steps).unwrap_or(i32::MAX));
         let next = if panel == panels - 1 {
             upper
         } else {
@@ -386,10 +395,10 @@ mod tests {
     #[test]
     fn the_inversion_matches_an_independent_series() {
         for (q, weights, expected) in [
-            (1.5_f64, vec![3.0_f64, 2.0, 1.0], 8.468441e-01_f64),
-            (20.0, vec![3.0, 2.0, 1.0], 2.512656e-02),
-            (60.0, vec![3.0, 2.0, 1.0], 1.770821e-05),
-            (30.0, vec![2.0, 1.0], 1.574936e-04),
+            (1.5_f64, vec![3.0_f64, 2.0, 1.0], 8.468_441e-01_f64),
+            (20.0, vec![3.0, 2.0, 1.0], 2.512_656e-02),
+            (60.0, vec![3.0, 2.0, 1.0], 1.770_821e-05),
+            (30.0, vec![2.0, 1.0], 1.574_936e-04),
         ] {
             let got = weighted_chi2_upper_tail(q, &weights).expect("valid");
             assert_eq!(got.method, "gil_pelaez_inversion");

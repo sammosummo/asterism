@@ -64,6 +64,16 @@ impl PedigreeError {
     }
 }
 
+/// Where a person has got to in the depth-first walk. A node is marked
+/// `InProgress` while its ancestors are being visited, so a loop in the
+/// pedigree is caught rather than looped on.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    Unvisited,
+    InProgress,
+    Done,
+}
+
 /// Order people so that every parent comes before every child. The relationship
 /// recursion reads only rows it has already filled, so this ordering is what
 /// makes one pass enough.
@@ -95,14 +105,6 @@ fn topological_order(people: &[Person]) -> Result<Vec<usize>, PedigreeError> {
         }
     }
 
-    // Depth-first, marking a node grey while its ancestors are being visited so
-    // that a loop in the pedigree is caught rather than looped on.
-    #[derive(Clone, Copy, PartialEq)]
-    enum Mark {
-        Unvisited,
-        InProgress,
-        Done,
-    }
     let mut marks = vec![Mark::Unvisited; people.len()];
     let mut order = Vec::with_capacity(people.len());
     // An explicit stack rather than recursion: a deep pedigree should not be

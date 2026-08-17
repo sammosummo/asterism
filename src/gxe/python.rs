@@ -7,6 +7,10 @@
 // them by value whether or not the body consumes them. The lint cannot be
 // satisfied here without breaking the macro.
 #![allow(clippy::needless_pass_by_value)]
+// A `#[pyfunction]`'s parameter list is the Python signature, so grouping
+// arguments into a struct to shorten it would make the interface worse rather
+// than better.
+#![allow(clippy::too_many_arguments)]
 
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;

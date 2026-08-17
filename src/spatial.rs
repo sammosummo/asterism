@@ -135,7 +135,7 @@ enum DerivativeSource<'a> {
 }
 
 impl DerivativeSource<'_> {
-    #[inline(always)]
+    #[inline]
     fn at(&self, i: usize, j: usize) -> f64 {
         match self {
             Self::Fixed(m) => m[(i, j)],
@@ -331,7 +331,7 @@ impl SpatialModel {
     }
 
     /// The spatial correlation between two people.
-    #[inline(always)]
+    #[inline]
     fn kernel_at(&self, kernel: &DMatrix<f64>, i: usize, j: usize) -> f64 {
         kernel[(self.place[i], self.place[j])]
     }
@@ -1459,14 +1459,13 @@ impl SpatialModel {
         for _ in 0..replicates {
             let draw = DVector::from_iterator(n, (0..n).map(|_| stream.normal()));
             let simulated = &mean + &factor * draw;
-            match self.spatial_statistic(&simulated, reml, integrated) {
-                Ok(statistic) => {
-                    usable += 1;
-                    if statistic >= observed {
-                        exceedances += 1;
-                    }
+            // A replicate that cannot be fitted is left out of the count
+            // rather than counted as a non-exceedance.
+            if let Ok(statistic) = self.spatial_statistic(&simulated, reml, integrated) {
+                usable += 1;
+                if statistic >= observed {
+                    exceedances += 1;
                 }
-                Err(_) => continue,
             }
         }
         if usable == 0 {
@@ -1488,6 +1487,9 @@ impl SpatialModel {
 // them by value whether or not the body consumes them. The lint cannot be
 // satisfied here without breaking the macro.
 #[allow(clippy::needless_pass_by_value)]
+// A `#[pyfunction]`'s parameter list is the Python signature, so grouping
+// arguments into a struct to shorten it would make the interface worse.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -1731,7 +1733,7 @@ mod tests {
         let mut y = DVector::<f64>::zeros(n);
         // A smooth spatial field, made by giving nearby places correlated
         // values through a shared draw per neighbourhood of ten pairs.
-        for region in 0..pairs / 10 + 1 {
+        for region in 0..=(pairs / 10) {
             let shared = next();
             for i in 0..n {
                 if i / 2 / 10 == region {
@@ -2042,7 +2044,8 @@ mod tests {
     #[test]
     fn the_statistic_is_nought_without_a_spatial_effect_and_positive_with_one() {
         let (a, distance, design, y) = small();
-        let model = SpatialModel::build(&[a.clone()], &distance, &design).expect("valid");
+        let model =
+            SpatialModel::build(std::slice::from_ref(&a), &distance, &design).expect("valid");
         assert!(
             model.spatial_statistic(&y, true, false).expect("statistic") > 1.0,
             "no signal found on data simulated with a spatial effect"

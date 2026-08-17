@@ -116,9 +116,10 @@ def one_null_data_set(index: int) -> float | None:
     truth = 0.4 * relationship + 0.6 * np.eye(n)
     y = simulate(truth, 800_000 + index)
     try:
-        return bootstrap_p_value(relationship, distance, design, y, seed=index)["p_value"]
-    except Exception:
+        outcome = bootstrap_p_value(relationship, distance, design, y, seed=index)
+    except ValueError:
         return None
+    return outcome["p_value"]
 
 
 def main() -> int:
