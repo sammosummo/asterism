@@ -37,8 +37,7 @@ pub fn variant_set_scan<'py>(
     let x = matrix(&design);
     let view = response.as_array();
     let y = DVector::from_iterator(view.len(), view.iter().copied());
-    let model =
-        VariantSetModel::build(&background, &x, &y, reml).map_err(PyValueError::new_err)?;
+    let model = VariantSetModel::build(&background, &x, &y, reml).map_err(PyValueError::new_err)?;
 
     let mut out = Vec::with_capacity(roots.len());
     for root in &roots {
@@ -84,8 +83,7 @@ pub fn variant_set_family_scan<'py>(
     let x = matrix(&design);
     let view = response.as_array();
     let y = DVector::from_iterator(view.len(), view.iter().copied());
-    let model =
-        VariantSetModel::build(&background, &x, &y, reml).map_err(PyValueError::new_err)?;
+    let model = VariantSetModel::build(&background, &x, &y, reml).map_err(PyValueError::new_err)?;
 
     let mut out = Vec::with_capacity(roots.len());
     for root in &roots {

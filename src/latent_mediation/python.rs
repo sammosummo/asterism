@@ -123,15 +123,12 @@ impl PyLatentMediationCore {
         let mediator_measurements: Vec<Vec<Option<f64>>> = mediator_measurements.extract()?;
         let mediator_measurement_error_variances: Vec<Vec<Option<f64>>> =
             mediator_measurement_error_variances.extract()?;
-        let mediator_proxy_statuses: Vec<Vec<Option<i8>>> =
-            mediator_proxy_statuses.extract()?;
+        let mediator_proxy_statuses: Vec<Vec<Option<i8>>> = mediator_proxy_statuses.extract()?;
         let outcome_statuses: Vec<Vec<Option<i8>>> = outcome_statuses.extract()?;
         let mediator_thresholds: Vec<Vec<f64>> = mediator_thresholds.extract()?;
         let outcome_thresholds: Vec<Vec<f64>> = outcome_thresholds.extract()?;
-        let mediator_proxy_sensitivities: Vec<Vec<f64>> =
-            mediator_proxy_sensitivities.extract()?;
-        let mediator_proxy_specificities: Vec<Vec<f64>> =
-            mediator_proxy_specificities.extract()?;
+        let mediator_proxy_sensitivities: Vec<Vec<f64>> = mediator_proxy_sensitivities.extract()?;
+        let mediator_proxy_specificities: Vec<Vec<f64>> = mediator_proxy_specificities.extract()?;
         let proband_indices: Vec<Option<usize>> = proband_indices.extract()?;
         let qmc_points: usize = qmc_points.extract()?;
         let family_count = relationships.len();
@@ -157,8 +154,7 @@ impl PyLatentMediationCore {
                 relationship: relationships[index].clone(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
-                mediator_measurement_error_variance: mediator_measurement_error_variances
-                    [index]
+                mediator_measurement_error_variance: mediator_measurement_error_variances[index]
                     .clone(),
                 mediator_proxy_status: mediator_proxy_statuses[index].clone(),
                 outcome_status: outcome_statuses[index].clone(),
@@ -210,7 +206,10 @@ impl PyLatentMediationCore {
             record.ordinary_scale_representable,
         )?;
         output.set_item("integration_methods", record.integration_methods.clone())?;
-        output.set_item("maximum_qmc_log_batch_range", record.maximum_qmc_log_batch_range)?;
+        output.set_item(
+            "maximum_qmc_log_batch_range",
+            record.maximum_qmc_log_batch_range,
+        )?;
         let uses_qmc = record
             .integration_methods
             .iter()
@@ -240,7 +239,10 @@ impl PyLatentMediationCore {
                 family.ordinary_scale_representable,
             )?;
             item.set_item("integration_methods", family.integration_methods)?;
-            item.set_item("maximum_qmc_log_batch_range", family.maximum_qmc_log_batch_range)?;
+            item.set_item(
+                "maximum_qmc_log_batch_range",
+                family.maximum_qmc_log_batch_range,
+            )?;
             item.set_item("family_size", family.family_size)?;
             item.set_item(
                 "mediator_proxy_truth_configurations",
@@ -281,10 +283,10 @@ impl PyLatentMediationCore {
     }
 }
 
-fn parameter_dict<'py>(
-    py: Python<'py>,
+fn parameter_dict(
+    py: Python<'_>,
     values: LatentMediationParameters,
-) -> PyResult<Bound<'py, PyDict>> {
+) -> PyResult<Bound<'_, PyDict>> {
     let output = PyDict::new(py);
     output.set_item("a", values.a)?;
     output.set_item("b", values.b)?;
@@ -303,7 +305,10 @@ fn family_diagnostics<'py>(
         let item = PyDict::new(py);
         item.set_item("family_index", index)?;
         item.set_item("integration_methods", family.integration_methods.clone())?;
-        item.set_item("maximum_qmc_log_batch_range", family.maximum_qmc_log_batch_range)?;
+        item.set_item(
+            "maximum_qmc_log_batch_range",
+            family.maximum_qmc_log_batch_range,
+        )?;
         item.set_item("ascertainment", family.ascertainment)?;
         item.set_item("family_size", family.family_size)?;
         item.set_item(
@@ -390,9 +395,11 @@ fn fit_dict<'py>(
         "integration_diagnostics",
         integration_diagnostics(py, &fit.integration, qmc_points)?,
     )?;
-    let approximate = fit.integration.integration_methods.iter().any(|method| {
-        method.starts_with("bivariate") || method == "deterministic_genz_halton"
-    });
+    let approximate = fit
+        .integration
+        .integration_methods
+        .iter()
+        .any(|method| method.starts_with("bivariate") || method == "deterministic_genz_halton");
     let mut warnings = Vec::new();
     if !fit.horizontal_identified {
         warnings.push("horizontal_decomposition_unidentified_at_a_zero");

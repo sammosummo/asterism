@@ -19,11 +19,11 @@ use super::weighted_chi2_upper_tail;
 /// for the value to be read as a probability.
 #[pyfunction]
 #[pyo3(name = "weighted_chi2_upper_tail")]
-pub fn py_weighted_chi2_upper_tail<'py>(
-    py: Python<'py>,
+pub fn py_weighted_chi2_upper_tail(
+    py: Python<'_>,
     q: f64,
     weights: Vec<f64>,
-) -> PyResult<Bound<'py, PyDict>> {
+) -> PyResult<Bound<'_, PyDict>> {
     let tail = weighted_chi2_upper_tail(q, &weights).map_err(PyValueError::new_err)?;
     let out = PyDict::new(py);
     out.set_item("probability", tail.probability)?;

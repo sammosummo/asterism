@@ -19,6 +19,7 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use statrs::function::erf::erfc;
 
 use crate::blocks::family_blocks;
+use crate::deviance::chi2_one_df_upper_tail;
 #[cfg(feature = "python")]
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 #[cfg(feature = "python")]
@@ -27,7 +28,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::types::PyDict;
-use crate::deviance::chi2_one_df_upper_tail;
 
 /// Eigenvalues of a positive semi-definite relationship matrix may dip a few
 /// units in the last place below zero; anything under this floor is a genuine
@@ -63,7 +63,6 @@ fn log_two_pi() -> f64 {
 fn code(text: &str) -> PyErr {
     PyValueError::new_err(text.to_owned())
 }
-
 
 /// The two-sided tail of a standard normal, for the Wald test on a fixed
 /// effect. Written through the complementary error function rather than one

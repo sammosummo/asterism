@@ -25,8 +25,8 @@ mod variant_set;
 pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
-pub use gxe::{GxeFit, GxeModel, Surface};
 pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
+pub use gxe::{GxeFit, GxeModel, Surface};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
     LatentMediationEvaluation, LatentMediationFamilyEvaluation, LatentMediationFamilyInput,
@@ -86,8 +86,14 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         association::python::association_sweep,
         module
     )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(discrete_gxe::python::discrete_gxe_fit, module)?)?;
-    module.add_function(pyo3::wrap_pyfunction!(discrete_gxe::python::discrete_gxe_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_test,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         discrete_gxe::python::discrete_gxe_correlation_interval,
         module

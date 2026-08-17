@@ -26,8 +26,7 @@ fn build_expecting(
     let x = design.as_array();
     let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
     let environment: Vec<f64> = environment.as_array().iter().copied().collect();
-    DiscreteGxeModel::build_expecting(&a, &environment, &x, expected)
-        .map_err(PyValueError::new_err)
+    DiscreteGxeModel::build_expecting(&a, &environment, &x, expected).map_err(PyValueError::new_err)
 }
 
 fn response(y: &PyReadonlyArray1<'_, f64>) -> DVector<f64> {

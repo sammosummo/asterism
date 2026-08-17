@@ -2018,12 +2018,11 @@ impl BivariateModel {
                 optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
             {
                 let theta = expand(&solution.par);
-                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
+                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                    && at.negative_loglik.is_finite()
+                    && best.is_none_or(|b: f64| at.negative_loglik < b)
+                {
+                    best = Some(at.negative_loglik);
                 }
             }
         }
@@ -2182,16 +2181,12 @@ impl BivariateModel {
             control.lmm = 5;
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
+                && let Some(theta) = expand(&solution.par)
+                && let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                && at.negative_loglik.is_finite()
+                && best.is_none_or(|b: f64| at.negative_loglik < b)
             {
-                if let Some(theta) = expand(&solution.par) {
-                    if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
-                        if at.negative_loglik.is_finite()
-                            && best.is_none_or(|b: f64| at.negative_loglik < b)
-                        {
-                            best = Some(at.negative_loglik);
-                        }
-                    }
-                }
+                best = Some(at.negative_loglik);
             }
         }
         best.map(|negative| -negative)
@@ -2330,7 +2325,6 @@ pub struct CorrelationTest {
     /// `null_loglik`, so that `2 (alternative - null)` reproduces `statistic`.
     pub alternative_loglik: f64,
 }
-
 
 impl BivariateModel {
     /// Test a correlation against a fixed value by refitting with it held there.

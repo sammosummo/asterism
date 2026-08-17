@@ -232,7 +232,8 @@ impl LatentMediationModel {
             let record = family.evaluate(&covariance, self.qmc_points)?;
             total += record.log_likelihood;
             ordinary_scale_representable &= record.ordinary_scale_representable;
-            maximum_qmc_log_batch_range = maximum_qmc_log_batch_range.max(record.maximum_qmc_log_batch_range);
+            maximum_qmc_log_batch_range =
+                maximum_qmc_log_batch_range.max(record.maximum_qmc_log_batch_range);
             methods.extend(record.integration_methods.iter().cloned());
             family_records.push(record);
         }
@@ -997,7 +998,8 @@ impl LatentMediationFamily {
                 )?
             };
             log_terms.push(log_measurement_weight + rectangle.log_probability);
-            maximum_qmc_log_batch_range = maximum_qmc_log_batch_range.max(rectangle.log_batch_range);
+            maximum_qmc_log_batch_range =
+                maximum_qmc_log_batch_range.max(rectangle.log_batch_range);
             methods.insert(rectangle.method.to_owned());
         }
         let log_discrete_probability = log_sum_exp(&log_terms);
@@ -1212,7 +1214,6 @@ fn condition_on_mediator_measurements(
         log_continuous_density,
     })
 }
-
 
 /// `ln(sum_i exp(x_i))`, taken about the largest term so that a sum every one
 /// of whose terms is below the smallest double still has a log.
@@ -1613,13 +1614,18 @@ fn bivariate_rectangle(
             cdf(standardised_upper[0], standardised_lower[1]),
             cdf(standardised_lower[0], standardised_lower[1]),
         ];
-        if let [Ok(both_upper), Ok(low_first), Ok(low_second), Ok(both_lower)] = corners {
+        if let [
+            Ok(both_upper),
+            Ok(low_first),
+            Ok(low_second),
+            Ok(both_lower),
+        ] = corners
+        {
             let corner_values = [both_upper, low_first, low_second, both_lower];
             let probability =
                 corner_values[0] - corner_values[1] - corner_values[2] + corner_values[3];
-            let rounding_budget = 16.0
-                * f64::EPSILON
-                * corner_values.iter().map(|value| value.abs()).sum::<f64>();
+            let rounding_budget =
+                16.0 * f64::EPSILON * corner_values.iter().map(|value| value.abs()).sum::<f64>();
             let absolute_budget = 4.0 * BIVARIATE_ABSOLUTE_TOLERANCE + rounding_budget;
             if probability > absolute_budget {
                 if probability > geometry_bound + absolute_budget {
@@ -1745,7 +1751,8 @@ fn log_bivariate_rectangle(
     let log_integrand = |x: f64| -> Result<f64, &'static str> {
         let shifted_lower = (inner[0] - correlation * x) / conditional_sd;
         let shifted_upper = (inner[1] - correlation * x) / conditional_sd;
-        Ok(-0.5 * x * x - 0.5 * LOG_TWO_PI + log_interval_probability(shifted_lower, shifted_upper)?)
+        Ok(-0.5 * x * x - 0.5 * LOG_TWO_PI
+            + log_interval_probability(shifted_lower, shifted_upper)?)
     };
     // The integrand is log-concave, so it has a single peak and a
     // golden-section search finds it -- but only once the search is given a
@@ -2156,9 +2163,8 @@ impl LatentMediationModel {
         let loading_p_value = crate::deviance::p_value(loading_statistic, |t| {
             0.5 * crate::deviance::chi2_upper_tail(t, 1.0)
         });
-        let path_p_value = crate::deviance::p_value(path_statistic, |t| {
-            crate::deviance::chi2_upper_tail(t, 1.0)
-        });
+        let path_p_value =
+            crate::deviance::p_value(path_statistic, |t| crate::deviance::chi2_upper_tail(t, 1.0));
 
         Ok(VerticalTest {
             loading_statistic,
@@ -2202,7 +2208,10 @@ mod tests {
         ] {
             for unit in [0.05_f64, 0.25, 0.5, 0.75, 0.95] {
                 let point = truncated_standard_normal(lower, upper, unit).expect("draw");
-                assert!(lower <= point && point <= upper, "{point} outside {lower}..{upper}");
+                assert!(
+                    lower <= point && point <= upper,
+                    "{point} outside {lower}..{upper}"
+                );
                 let whole = log_interval_probability(lower, upper).expect("whole");
                 let below = log_interval_probability(lower, point).expect("below");
                 let share = (below - whole).exp();
@@ -2243,7 +2252,6 @@ mod tests {
             );
         }
     }
-
 
     /// A growing region cannot hold less probability, however far out its
     /// edge is pushed. The conditional integrand used to be searched over a
@@ -2297,12 +2305,9 @@ mod tests {
     fn deep_tail_rectangles_add_up() {
         for correlation in [0.0, 0.7, -0.4] {
             for (start, split, finish) in [(6.0, 9.0, 40.0), (30.0, 45.0, 90.0)] {
-                let whole = log_bivariate_rectangle(
-                    &[start, 5.0],
-                    &[finish, f64::INFINITY],
-                    correlation,
-                )
-                .expect("whole");
+                let whole =
+                    log_bivariate_rectangle(&[start, 5.0], &[finish, f64::INFINITY], correlation)
+                        .expect("whole");
                 let left =
                     log_bivariate_rectangle(&[start, 5.0], &[split, f64::INFINITY], correlation)
                         .expect("left");
@@ -2310,8 +2315,7 @@ mod tests {
                     log_bivariate_rectangle(&[split, 5.0], &[finish, f64::INFINITY], correlation)
                         .expect("right");
                 let larger = left.max(right);
-                let combined =
-                    larger + ((left - larger).exp() + (right - larger).exp()).ln();
+                let combined = larger + ((left - larger).exp() + (right - larger).exp()).ln();
                 assert!(
                     (whole - combined).abs() < 1.0e-9,
                     "correlation {correlation}, {start}..{split}..{finish}: \
@@ -2324,8 +2328,8 @@ mod tests {
     use super::{
         FIT_GRADIENT_TOLERANCE, LatentMediationFamilyInput, LatentMediationModel,
         LatentMediationParameters, adaptive_simpson, bivariate_normal_cdf, bound_aware_gradient,
-        directional_covariance, scaled_projected_gradient,
-        stable_bound_aware_gradient, transformed_bounds_holding, transformed_parameters,
+        directional_covariance, scaled_projected_gradient, stable_bound_aware_gradient,
+        transformed_bounds_holding, transformed_parameters,
     };
     use nalgebra::DMatrix;
 
@@ -2458,20 +2462,22 @@ mod tests {
         ];
         let families = PAIRS
             .into_iter()
-            .map(|(first, second, first_status, second_status)| LatentMediationFamilyInput {
-                relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
-                latent_mean: vec![0.0; 4],
-                mediator_measurement: vec![Some(first), Some(second)],
-                mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
-                mediator_proxy_status: vec![None, None],
-                outcome_status: vec![Some(first_status), Some(second_status)],
-                mediator_threshold: vec![0.0, 0.0],
-                outcome_threshold: vec![0.0, 0.0],
-                mediator_proxy_sensitivity: vec![0.8, 0.8],
-                mediator_proxy_specificity: vec![0.85, 0.85],
-                ascertainment: "population_unconditioned".to_owned(),
-                proband_index: None,
-            })
+            .map(
+                |(first, second, first_status, second_status)| LatentMediationFamilyInput {
+                    relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                    latent_mean: vec![0.0; 4],
+                    mediator_measurement: vec![Some(first), Some(second)],
+                    mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+                    mediator_proxy_status: vec![None, None],
+                    outcome_status: vec![Some(first_status), Some(second_status)],
+                    mediator_threshold: vec![0.0, 0.0],
+                    outcome_threshold: vec![0.0, 0.0],
+                    mediator_proxy_sensitivity: vec![0.8, 0.8],
+                    mediator_proxy_specificity: vec![0.85, 0.85],
+                    ascertainment: "population_unconditioned".to_owned(),
+                    proband_index: None,
+                },
+            )
             .collect();
         LatentMediationModel::build(families, 256).expect("valid fit model")
     }
@@ -2751,7 +2757,13 @@ mod tests {
     #[test]
     fn a_second_loading_on_its_bound_is_refused_rather_than_answered() {
         let model = deterministic_fit_model();
-        assert!(model.fit().expect("fits").boundary_parameters.contains(&"d"));
+        assert!(
+            model
+                .fit()
+                .expect("fits")
+                .boundary_parameters
+                .contains(&"d")
+        );
         assert_eq!(
             model.test_vertical().err(),
             Some("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO")

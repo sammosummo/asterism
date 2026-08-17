@@ -515,7 +515,7 @@ impl SpatialModel {
         // because the decay rate spans orders of magnitude.
         let span = (self.lambda_upper / self.lambda_lower).ln();
         for step in 0..4 {
-            let lambda = self.lambda_lower * (span * (step as f64 + 0.5) / 4.0).exp();
+            let lambda = self.lambda_lower * (span * (f64::from(step) + 0.5) / 4.0).exp();
             let mut even = vec![1.0 / variance_count as f64; count];
             even[self.lambda_index()] = lambda;
             starts.push(even);
@@ -855,7 +855,13 @@ impl SpatialModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if crate::components::resting_on_zero(par[k]) { g.min(0.0) } else { *g })
+            .map(|(k, g)| {
+                if crate::components::resting_on_zero(par[k]) {
+                    g.min(0.0)
+                } else {
+                    *g
+                }
+            })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
         let scaled_gradient = projected / negative.abs().max(1.0);
 
@@ -1131,7 +1137,8 @@ impl SpatialModel {
         let mut best: Option<f64> = None;
         let profile_span = (self.lambda_upper / self.lambda_lower).ln();
         for step in 0..3 {
-            let lambda_start = self.lambda_lower * (profile_span * (step as f64 + 0.5) / 3.0).exp();
+            let lambda_start =
+                self.lambda_lower * (profile_span * (f64::from(step) + 0.5) / 3.0).exp();
             let start: Vec<f64> = free
                 .iter()
                 .map(|&k| {
@@ -1210,12 +1217,11 @@ impl SpatialModel {
                 } else {
                     self.evaluate(&theta, y, reml, false)
                 };
-                if let Some(at) = at {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
+                if let Some(at) = at
+                    && at.negative_loglik.is_finite()
+                    && best.is_none_or(|b: f64| at.negative_loglik < b)
+                {
+                    best = Some(at.negative_loglik);
                 }
             }
             if quantity == SpatialQuantity::Lambda {

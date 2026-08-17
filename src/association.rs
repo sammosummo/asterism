@@ -595,7 +595,6 @@ impl AssociationModel {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{AssociationModel, Variance};

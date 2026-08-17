@@ -438,10 +438,10 @@ mod python {
         if father.len() != ids.len() || mother.len() != ids.len() {
             return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
         }
-        if let Some(groups) = &mz_twin {
-            if groups.len() != ids.len() {
-                return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
-            }
+        if let Some(groups) = &mz_twin
+            && groups.len() != ids.len()
+        {
+            return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
         }
         let people: Vec<Person> = (0..ids.len())
             .map(|i| Person {

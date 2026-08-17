@@ -139,8 +139,8 @@ impl VariantSetModel {
         }
         // The residual variance is last, and the structured coefficients
         // precede it in the order the matrices were given.
-        let mut covariance = DMatrix::<f64>::identity(rows, rows)
-            * null.variances[null.variances.len() - 1];
+        let mut covariance =
+            DMatrix::<f64>::identity(rows, rows) * null.variances[null.variances.len() - 1];
         for (matrix, variance) in background.iter().zip(&null.variances) {
             covariance += matrix * *variance;
         }
@@ -618,7 +618,8 @@ mod tests {
     fn malformed_input_is_refused() {
         let (relationship, design, people) = roster(10, 4);
         let y = response(people, 1);
-        let model = VariantSetModel::build(&[relationship.clone()], &design, &y, true).expect("fits");
+        let model =
+            VariantSetModel::build(&[relationship.clone()], &design, &y, true).expect("fits");
         assert_eq!(
             model.test(&DMatrix::<f64>::zeros(people + 1, 3)).err(),
             Some("VARIANT_SET_ROOT_WRONG_SHAPE")

@@ -566,7 +566,13 @@ impl ComponentModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if resting_on_zero(par[k]) { g.min(0.0) } else { *g })
+            .map(|(k, g)| {
+                if resting_on_zero(par[k]) {
+                    g.min(0.0)
+                } else {
+                    *g
+                }
+            })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
 
         // Back to the response's own units. Variances carry the square of the
@@ -828,7 +834,6 @@ impl ComponentModel {
     }
 }
 
-
 impl ComponentModel {
     /// The best log-likelihood with one component holding a fixed proportion of
     /// the sum of raw covariance coefficients.
@@ -912,14 +917,11 @@ impl ComponentModel {
             control.lmm = free.len().min(10);
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                && let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false)
+                && at.negative_loglik.is_finite()
+                && best.is_none_or(|b: f64| at.negative_loglik < b)
             {
-                if let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false) {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
-                }
+                best = Some(at.negative_loglik);
             }
         }
         best.map(|negative| -negative)
@@ -1472,7 +1474,6 @@ impl ComponentModel {
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {

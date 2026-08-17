@@ -73,8 +73,8 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
-use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
 use crate::dense::DenseFactor;
+use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
 
 /// The fixed shapes the powered-exponential kernel may take.
 ///
@@ -843,8 +843,6 @@ pub struct GxeTest {
     pub null_loglik: f64,
     pub alternative_loglik: f64,
 }
-
-
 
 impl GxeModel {
     /// Test for any genotype-by-environment interaction at all.

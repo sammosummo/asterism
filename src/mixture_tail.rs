@@ -76,10 +76,10 @@ const BAND_PANELS: usize = 40;
 const GAUSS_NODES: [f64; 20] = [
     -0.993_128_599_185_094_9,
     -0.963_971_927_277_913_8,
-    -0.912_234_428_251_326_0,
+    -0.912_234_428_251_326,
     -0.839_116_971_822_218_8,
     -0.746_331_906_460_150_8,
-    -0.636_053_680_726_515_0,
+    -0.636_053_680_726_515,
     -0.510_867_001_950_827_1,
     -0.373_706_088_715_419_55,
     -0.227_785_851_141_645_07,
@@ -88,10 +88,10 @@ const GAUSS_NODES: [f64; 20] = [
     0.227_785_851_141_645_07,
     0.373_706_088_715_419_55,
     0.510_867_001_950_827_1,
-    0.636_053_680_726_515_0,
+    0.636_053_680_726_515,
     0.746_331_906_460_150_8,
     0.839_116_971_822_218_8,
-    0.912_234_428_251_326_0,
+    0.912_234_428_251_326,
     0.963_971_927_277_913_8,
     0.993_128_599_185_094_9,
 ];
@@ -134,11 +134,7 @@ pub struct MixtureTail {
 }
 
 fn phase(t: f64, weights: &[f64], q: f64) -> f64 {
-    0.5 * weights
-        .iter()
-        .map(|w| (2.0 * w * t).atan())
-        .sum::<f64>()
-        - q * t
+    0.5 * weights.iter().map(|w| (2.0 * w * t).atan()).sum::<f64>() - q * t
 }
 
 fn log_amplitude(t: f64, weights: &[f64]) -> f64 {
@@ -154,7 +150,6 @@ fn integrand(t: f64, weights: &[f64], q: f64) -> f64 {
     }
     phase(t, weights, q).sin() * (-log_amplitude(t, weights)).exp() / t
 }
-
 
 /// Integrate one band with a fixed Gauss-Legendre rule.
 fn gauss_panel(lower: f64, upper: f64, weights: &[f64], q: f64) -> f64 {
@@ -314,10 +309,10 @@ pub fn weighted_chi2_upper_tail(q: f64, weights: &[f64]) -> Result<MixtureTail, 
                 let (mut low, mut high) = (upper, next);
                 for _ in 0..80 {
                     let middle = 0.5 * (low + high);
-                    if (phase(middle, &kept, q) / std::f64::consts::PI).floor() != band {
-                        high = middle;
-                    } else {
+                    if (phase(middle, &kept, q) / std::f64::consts::PI).floor() == band {
                         low = middle;
+                    } else {
+                        high = middle;
                     }
                 }
                 upper = high;
@@ -340,7 +335,9 @@ pub fn weighted_chi2_upper_tail(q: f64, weights: &[f64]) -> Result<MixtureTail, 
         step = (upper - lower).max(step).min(widest_probe);
         lower = upper;
 
-        let running = (0.5 + total / std::f64::consts::PI).abs().max(f64::MIN_POSITIVE);
+        let running = (0.5 + total / std::f64::consts::PI)
+            .abs()
+            .max(f64::MIN_POSITIVE);
         if segments > 4 && last_term / std::f64::consts::PI < RELATIVE_TOLERANCE * running {
             break;
         }
@@ -364,7 +361,6 @@ pub fn weighted_chi2_upper_tail(q: f64, weights: &[f64]) -> Result<MixtureTail, 
 mod tests {
     use super::weighted_chi2_upper_tail;
     use crate::deviance::chi2_upper_tail;
-
 
     /// Equal weights are an ordinary chi-square, and a single weight is one
     /// scaled. Both are taken exactly rather than integrated.

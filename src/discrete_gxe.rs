@@ -45,8 +45,8 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
-use crate::deviance::chi2_upper_tail;
 use crate::dense::DenseFactor;
+use crate::deviance::chi2_upper_tail;
 
 /// The five parameters, in the order the search holds them.
 const PARAMETERS: usize = 5;
@@ -217,7 +217,10 @@ impl DiscreteGxeModel {
                 }
             }
         }
-        let first: Vec<bool> = environment.iter().map(|value| *value == levels[0]).collect();
+        let first: Vec<bool> = environment
+            .iter()
+            .map(|value| *value == levels[0])
+            .collect();
         let counted = first.iter().filter(|f| **f).count();
         // A group of one has no within-group pair, so its genetic standard
         // deviation rests on nothing and the correlation is unidentified.
@@ -546,7 +549,8 @@ impl DiscreteGxeModel {
                 ));
             }
         }
-        let (negative, reduced, beta, covariance) = best.ok_or("DISCRETE_GXE_NO_START_CONVERGED")?;
+        let (negative, reduced, beta, covariance) =
+            best.ok_or("DISCRETE_GXE_NO_START_CONVERGED")?;
 
         let par = constraint.expand(&reduced);
         let at = self
@@ -684,7 +688,11 @@ impl DiscreteGxeModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit failed.
-    pub fn correlation_test(&self, y: &DVector<f64>, reml: bool) -> Result<DiscreteGxeTest, &'static str> {
+    pub fn correlation_test(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+    ) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
@@ -719,7 +727,11 @@ impl DiscreteGxeModel {
     /// # Errors
     ///
     /// Returns a stable code where either fit failed.
-    pub fn gene_by_environment_test(&self, y: &DVector<f64>, reml: bool) -> Result<DiscreteGxeTest, &'static str> {
+    pub fn gene_by_environment_test(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+    ) -> Result<DiscreteGxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let null = self.fit_under(
             y,
@@ -918,7 +930,6 @@ fn mixture(
         alternative_loglik: alternative,
     }
 }
-
 
 /// A 95 per cent profile-likelihood interval for the genetic correlation.
 #[derive(Clone, Copy, Debug)]
@@ -1291,7 +1302,9 @@ mod tests {
             "different genes were read as a scale difference at p = {}",
             scale.p_value
         );
-        let overall = model.gene_by_environment_test(&y, true).expect("the test runs");
+        let overall = model
+            .gene_by_environment_test(&y, true)
+            .expect("the test runs");
         assert!(
             overall.p_value < 0.01,
             "the headline test missed it at p = {}",
@@ -1318,7 +1331,9 @@ mod tests {
             if fit.correlation > 1.0 - 1e-6 {
                 on_the_bound += 1;
             }
-            let overall = model.gene_by_environment_test(&y, true).expect("the test runs");
+            let overall = model
+                .gene_by_environment_test(&y, true)
+                .expect("the test runs");
             if overall.p_value <= 0.05 {
                 rejected += 1;
             }
@@ -1398,7 +1413,9 @@ mod tests {
             "a noisier sex was read as a genetic scale difference at p = {}",
             scale.p_value
         );
-        let headline = model.gene_by_environment_test(&y, true).expect("the test runs");
+        let headline = model
+            .gene_by_environment_test(&y, true)
+            .expect("the test runs");
         assert!(
             headline.p_value > 0.05,
             "a noisier group was read as gene-by-environment at p = {}",
@@ -1497,12 +1514,18 @@ mod tests {
         );
         // Any two distinct labels name the two environments; the smaller label
         // is the first group. A 0/1 exposure works exactly like sex coded 1/2.
-        let recoded: Vec<f64> = group.iter().map(|v| if *v == 1.0 { 0.0 } else { 1.0 }).collect();
-        let relabelled = DiscreteGxeModel::build(&a, &recoded, &design).expect("binary labels build");
+        let recoded: Vec<f64> = group
+            .iter()
+            .map(|v| if *v == 1.0 { 0.0 } else { 1.0 })
+            .collect();
+        let relabelled =
+            DiscreteGxeModel::build(&a, &recoded, &design).expect("binary labels build");
         assert_eq!(relabelled.levels(), [0.0, 1.0]);
         assert_eq!(
             relabelled.counts(),
-            DiscreteGxeModel::build(&a, &group, &design).expect("builds").counts()
+            DiscreteGxeModel::build(&a, &group, &design)
+                .expect("builds")
+                .counts()
         );
         // A group of one has no within-group pair, so its genetic standard
         // deviation rests on nothing.
