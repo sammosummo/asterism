@@ -408,6 +408,10 @@ mod tests {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{IntoPyArray, PyArray2};

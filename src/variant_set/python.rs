@@ -1,5 +1,10 @@
 //! The Python interface to [`crate::variant_set`].
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#![allow(clippy::needless_pass_by_value)]
+
 use nalgebra::{DMatrix, DVector};
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;

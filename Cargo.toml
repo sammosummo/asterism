@@ -19,8 +19,36 @@ python = ["dep:pyo3", "dep:numpy"]
 unsafe_code = "forbid"
 
 [lints.clippy]
-all = "warn"
-pedantic = "warn"
+# The groups take a lower priority so the named exceptions below can override
+# them; Cargo applies them in priority order, not in the order written.
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Deliberate exceptions. Each is a place where following the lint would make
+# the code wrong rather than merely different, so they are set here once with
+# the reason instead of being waved through at three hundred call sites.
+#
+# `!(x > 0.0)` rejects a NaN where `x <= 0.0` quietly admits one, and a
+# numerical library has to reject it.
+neg_cmp_op_on_partial_ord = "allow"
+# The exact comparisons are exact on purpose: a relationship matrix asymmetric
+# by one unit in the last place is a real error and there is a test for it, and
+# a parameter held at a bound sits on it exactly.
+float_cmp = "allow"
+# Every one of these casts is a count -- of people, of variants, of quadrature
+# points -- and all of them are far below the 2^53 where the conversion stops
+# being exact.
+cast_precision_loss = "allow"
+# A likelihood evaluation or an optimiser driver that reads as one continuous
+# derivation is easier to check against the mathematics than the same thing cut
+# into fragments that each need their arguments explained. Length is not the
+# thing to optimise in these particular functions.
+too_many_lines = "allow"
+# Statistical notation is short on purpose: `a`, `b`, `d` are the structural
+# parameters and `y` is the response, and spelling them out would put distance
+# between the code and the equations it implements.
+many_single_char_names = "allow"
+similar_names = "allow"
 
 [dependencies]
 faer = { version = "0.24.4", default-features = false, features = ["std", "rayon"] }

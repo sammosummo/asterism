@@ -3,6 +3,11 @@
 //! Kept beside the model rather than inside it, so the model file is the
 //! mathematics and this file is the translation to and from Python.
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#![allow(clippy::needless_pass_by_value)]
+
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;

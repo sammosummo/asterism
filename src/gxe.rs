@@ -985,7 +985,10 @@ pub struct GxeInterval {
     pub upper: f64,
     /// The endpoint ran to the edge of what the quantity can be rather than to
     /// a likelihood crossing, so it is a limit of the parameter space and not a
-    /// measurement.
+    /// measurement. Read it beside `profile_failures`: a bound reached because
+    /// the likelihood never crossed and a bound reached because the profile
+    /// could not be evaluated there are both reported here, and only a non-zero
+    /// failure count separates them.
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,

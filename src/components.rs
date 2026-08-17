@@ -612,7 +612,10 @@ pub struct ComponentInterval {
     pub lower: f64,
     pub upper: f64,
     /// True where the endpoint is the edge of the parameter space rather than a
-    /// point the data ruled out.
+    /// point the data ruled out. Read it beside `profile_failures`: a bound
+    /// reached because the likelihood never crossed and a bound reached because
+    /// the profile could not be evaluated there are both reported here, and
+    /// only a non-zero failure count separates them.
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,
@@ -1200,6 +1203,10 @@ impl ComponentModel {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
