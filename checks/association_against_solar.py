@@ -1,9 +1,8 @@
 """Does the association test agree with native SOLAR?
 
-ADR 0006 says agreement proves fidelity, and ADR 0008 records that the
-association model has not earned it. SOLAR does measured-genotype association by
-putting the marker in as a covariate and fitting the polygenic model around it,
-which is the same model from an entirely separate implementation.
+SOLAR performs measured-genotype association by putting the marker in as a
+covariate and fitting the polygenic model around it. This checks that model
+against Asterism's separate implementation.
 
 **The comparison is against `refitted`, not `held`.** SOLAR fits the variance
 components with the marker in the design, so comparing it with the held-variance
@@ -35,12 +34,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 RUN = """load pedigree ped.csv
 load phenotypes phen.csv
@@ -158,10 +156,12 @@ def main() -> int:
             k, design, y, marker = build(directory, 40, heritability, effect, seed)
             theirs = run_solar(directory)
             markers = np.ascontiguousarray(marker.reshape(-1, 1))
-            _, _, refitted = _core.association_sweep(k, design, y, markers, "refitted")
-            _, _, held = _core.association_sweep(k, design, y, markers, "held")
-            r_effect, r_error, _, r_ratio, r_p, r_code = refitted[0]
-            h_effect, _, h_wald, _, h_p, h_code = held[0]
+            _, _, refitted, _ = _core.association_sweep(
+                k, design, y, markers, "refitted", None
+            )
+            _, _, held, _ = _core.association_sweep(k, design, y, markers, "held", None)
+            r_effect, _r_error, _, r_ratio, r_p, _, r_code = refitted[0]
+            h_effect, _, h_wald, _, h_p, _, h_code = held[0]
             if r_code or h_code:
                 raise SystemExit(f"Asterism refused the marker: {r_code or h_code}")
             cases.append(
@@ -212,15 +212,11 @@ def main() -> int:
     if worst > bar:
         print(f"\nNOT AGREED: {worst:.3f} exceeds {bar} orders of magnitude")
         return 1
-    print("The two agree. Under ADR 0006 that is fidelity, and it is independent:")
-    print("SOLAR shares no code with this package.")
+    print("The independently implemented refitted association results agree.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/association-against-solar-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "association test against native SOLAR measured genotype",
-                "date": "2026-08-14",
                 "compared": "refitted, because SOLAR refits with the marker present",
                 "worst_log10_p_disagreement": worst,
                 "threshold": bar,
@@ -228,7 +224,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

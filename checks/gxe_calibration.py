@@ -78,10 +78,8 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 250
@@ -200,12 +198,20 @@ def one(job):
     for surface in SURFACES:
         for null in TESTS:
             try:
-                statistic, p_value, rule, _, _ = _core.gxe_test(
+                outcome = _core.gxe_test(
                     RELATIONSHIP, Z, DESIGN, y, surface, null, True
                 )
-                out[f"{surface}/{null}"] = {"p": p_value, "statistic": statistic, "rule": rule}
-            except Exception:
+            except ValueError:
+                outcome = None
+            if outcome is None:
                 out[f"{surface}/{null}"] = None
+            else:
+                statistic, p_value, rule, _, _ = outcome
+                out[f"{surface}/{null}"] = {
+                    "p": p_value,
+                    "statistic": statistic,
+                    "rule": rule,
+                }
     return out
 
 
@@ -261,11 +267,11 @@ def main() -> int:
                         else "power" if in_family
                         else "power_wrong_family"
                     ),
-                    "rejection": {str(level): rate for level, rate in zip(LEVELS, rates)},
+                    "rejection": {str(level): rate for level, rate in zip(LEVELS, rates, strict=True)},
                     "atom_at_one": atom,
                 }
                 marks = []
-                for level, rate in zip(LEVELS, rates):
+                for level, rate in zip(LEVELS, rates, strict=True):
                     if not is_null:
                         marks.append(f"{rate:>10.3f}")
                         continue
@@ -310,12 +316,9 @@ def main() -> int:
     print("surface can represent, including where the residual variance changes")
     print("with the environment and the genes do not.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/gxe-calibration-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and power of the two genotype-by-environment tests",
-                "date": "2026-08-13",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": N,
@@ -332,7 +335,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

@@ -58,10 +58,8 @@ from __future__ import annotations
 import json
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 200
@@ -70,7 +68,7 @@ INTERVAL_REPLICATES = 200
 TEST_REPLICATES = 300
 LEVELS = (0.01, 0.05, 0.10)
 
-TRUTH = dict(additive=0.4, household=0.2, residual=0.4)
+TRUTH = {"additive": 0.4, "household": 0.2, "residual": 0.4}
 NAMES = ("additive", "household", "residual")
 
 
@@ -116,8 +114,8 @@ def draw(n: int, shares: dict, seed: int) -> np.ndarray:
 
 
 def coverage(relationship, household, design, n) -> dict:
-    contained = {name: 0 for name in NAMES[:2]}
-    attempted = {name: 0 for name in NAMES[:2]}
+    contained = dict.fromkeys(NAMES[:2], 0)
+    attempted = dict.fromkeys(NAMES[:2], 0)
     complete = 0
     started = time.perf_counter()
     for replicate in range(INTERVAL_REPLICATES):
@@ -125,12 +123,13 @@ def coverage(relationship, household, design, n) -> dict:
         whole = True
         for index, name in enumerate(NAMES[:2]):
             try:
-                lower, upper, _, _, _ = _core.component_interval(
+                interval = _core.component_interval(
                     [relationship, household], design, y, index, True
                 )
-            except Exception:
+            except ValueError:
                 whole = False
                 continue
+            lower, upper, _, _, _, _ = interval
             attempted[name] += 1
             if lower <= TRUTH[name] <= upper:
                 contained[name] += 1
@@ -150,21 +149,21 @@ def boundary(relationship, household, design, n, present: bool) -> dict:
     if not present:
         # No household effect at all; its share goes to the residual so the
         # total still comes to one.
-        shares = dict(
-            additive=TRUTH["additive"],
-            household=0.0,
-            residual=TRUTH["residual"] + TRUTH["household"],
-        )
+        shares = {
+            "additive": TRUTH["additive"],
+            "household": 0.0,
+            "residual": TRUTH["residual"] + TRUTH["household"],
+        }
     p_values, refused = [], 0
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(n, shares, (9000 if present else 4000) + replicate)
         try:
-            _, p_value, _, _ = _core.component_test(
+            outcome = _core.component_test(
                 [relationship, household], design, y, 1, True
             )
-            p_values.append(p_value)
-        except Exception:
+            p_values.append(outcome[1])
+        except ValueError:
             # The test refuses where another component has itself gone to
             # nought, because the mixture assumes only one is on the boundary.
             # Those replicates are counted out and reported, not counted as
@@ -273,12 +272,9 @@ def main() -> int:
     print("an effect that is there. Calibration is a different question from the")
     print("agreement with SOLAR and R, which do not fit this model at all.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/components-calibration-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "one trait, three components: additive, household and residual",
-                "date": "2026-08-12",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": n,
@@ -310,7 +306,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

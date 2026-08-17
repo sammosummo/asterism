@@ -1,0 +1,31 @@
+{
+  "what": "coverage of the profile interval for the genetic correlation",
+  "date": "2026-08-17",
+  "estimator": "reml",
+  "people": 600,
+  "families": 150,
+  "sibs_per_family": 4,
+  "replicates": 400,
+  "nominal": 0.95,
+  "results": [
+    {
+      "true_correlation": 0.3,
+      "coverage": 0.958,
+      "reached_bound": 0.138,
+      "median_width": 0.682
+    },
+    {
+      "true_correlation": 0.6,
+      "coverage": 0.955,
+      "reached_bound": 0.49,
+      "median_width": 0.623
+    },
+    {
+      "true_correlation": 0.9,
+      "coverage": 0.995,
+      "reached_bound": 0.94,
+      "median_width": 0.389
+    }
+  ],
+  "note": "coverage is nominal away from the bound and conservative against it, where nearly every interval reaches one and covers without pinning the value down"
+}

@@ -7,8 +7,7 @@ One trait with one component is two steps::
 
 Building the model validates and decomposes; the decomposition is what every
 fit runs against, so many fits against one prepared model cost one preparation.
-Holding a prepared model is itself the proof that validation happened, which is
-why there is no way to skip it.
+Validation is part of preparation and cannot be disabled.
 
 The other models are objects of the same shape, built from their matrices and
 then fitted::
@@ -35,38 +34,40 @@ import numpy as np
 
 from ._core import PreparedModel, __version__
 from ._core import relationship as _relationship
+from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
+from .latent_mediation import LatentMediationModel
 from .models import (
+    AssociationModel,
     BivariateModel,
     ComponentModel,
-    AssociationModel,
+    DiscreteGxeModel,
     GxeModel,
     LiabilityModel,
     SpatialModel,
+    VariantSetModel,
     kinship_classes,
 )
 
 __all__ = [
+    "AssociationModel",
+    "BivariateModel",
+    "ComponentModel",
+    "DiscreteGxeModel",
+    "GxeModel",
+    "LatentMediationModel",
+    "LiabilityModel",
     "PreparedModel",
+    "SpatialModel",
+    "VariantSetModel",
+    "__version__",
+    "kinship_classes",
     "prepare",
     "relationship_matrix",
-    "ComponentModel",
-    "BivariateModel",
-    "AssociationModel",
-    "GxeModel",
-    "LiabilityModel",
-    "SpatialModel",
-    "kinship_classes",
-    "__version__",
+    "weighted_chi2_upper_tail",
 ]
 
 
-def prepare(
-    x: Any,
-    k: Any,
-    *,
-    subject_ids: list[str] | None = None,
-    subject_order_sha256: str | None = None,
-) -> PreparedModel:
+def prepare(x: Any, k: Any) -> PreparedModel:
     """Validate and decompose a fixed-effect design and a relationship matrix.
 
     Parameters
@@ -77,16 +78,9 @@ def prepare(
     k
         The relationship matrix, in the same subject order as ``x``. Twice the
         kinship is the usual choice, but nothing here requires it: the matrix
-        is checked as mathematics rather than for its provenance, so a genomic
-        relationship matrix is equally acceptable.
-    subject_ids
-        Identifiers in fit order. Asterism records a hash of them and echoes it
-        on every fit, which is what lets a result be tied back to one exact row
-        ordering. Arrays cannot carry identifiers themselves.
-    subject_order_sha256
-        The same commitment supplied directly, when the hash is already known.
-        Giving both this and ``subject_ids`` is an error rather than a
-        preference.
+        is checked numerically, so a genomic relationship matrix is equally
+        acceptable. Row alignment among ``x``, ``k``, and the response is
+        positional and is the caller's responsibility.
 
     Raises
     ------
@@ -101,12 +95,28 @@ def prepare(
         raise ValueError("PREPARE_X_NOT_TWO_DIMENSIONAL")
     if k.ndim != 2:
         raise ValueError("PREPARE_K_NOT_TWO_DIMENSIONAL")
-    return PreparedModel(
-        x,
-        k,
-        subject_ids=subject_ids,
-        subject_order_sha256=subject_order_sha256,
-    )
+    return PreparedModel(x, k)
+
+
+def weighted_chi2_upper_tail(q: float, weights: Any) -> dict[str, Any]:
+    """The upper tail of a weighted sum of chi-squares on one degree of freedom.
+
+    ``P(sum_j weights_j * chisq_1 > q)``, which is what a variance-component
+    score test reads. ``weights`` are the eigenvalues of the tested matrix
+    after projection, so they are nonnegative.
+
+    A gene scan reads this at around 1e-6, where an approximation calibrated at
+    0.05 is worthless, so the result carries its own diagnostics. ``method``
+    says which recipe answered: a single weight, or weights that are all equal,
+    have exact chi-square answers and are taken directly rather than
+    integrated. ``settled_to`` is the size of the last term kept as a share of
+    the answer. ``trustworthy`` is false where the probability is small enough
+    that cancellation has eaten the digits, because the tail is recovered as
+    ``1/2 + integral`` and a small answer is a difference of two nearly equal
+    numbers.
+    """
+    values = [float(v) for v in np.asarray(weights, dtype=np.float64).ravel()]
+    return dict(_weighted_chi2_upper_tail(float(q), values))
 
 
 def relationship_matrix(
@@ -119,10 +129,9 @@ def relationship_matrix(
 ) -> tuple[Any, list[str]]:
     """Build the additive relationship matrix from a pedigree.
 
-    Returns the matrix and the identifiers its rows are in. Hand those
-    identifiers straight to `prepare` as ``subject_ids`` and align the response
-    and design to the same order — that commitment is what catches a
-    misalignment, which is the way to get a confident wrong answer here.
+    Returns the matrix and the identifiers its rows are in. Align the response
+    and design to that order before fitting; Asterism's numerical interface is
+    positional.
 
     Parameters
     ----------
@@ -158,8 +167,6 @@ def relationship_matrix(
     )
 
 
-# There is deliberately no one-shot `fit(x, k, y)` here. `docs/adr/0003` rules
-# it out for the first release: one way in, because both predecessors grew their
-# interface one convenience at a time. Preparing once and fitting many times is
-# also the thing that makes a bootstrap affordable, and a one-shot call throws
-# that away every time it is used.
+# There is no one-shot `fit(x, k, y)`: preparing once and fitting many
+# responses reuses the expensive decomposition and makes bootstrap fitting
+# affordable.

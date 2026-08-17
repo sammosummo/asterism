@@ -1,0 +1,59 @@
+{
+  "what": "the intersection-union test of the vertical estimand, exercised",
+  "date": "2026-08-17",
+  "people": 36,
+  "families": 12,
+  "people_per_family": 3,
+  "outcomes": "binary only, threshold 0.4",
+  "runs": [
+    {
+      "truth": {
+        "a": 0.7,
+        "b": 0.6,
+        "a_times_b": 0.42
+      },
+      "estimated_a_times_b": 7.7902,
+      "p_loading": 0.0182,
+      "p_path": 0.7423,
+      "p_vertical": 0.7423,
+      "seconds": 807
+    },
+    {
+      "truth": {
+        "a": 0.0,
+        "b": 0.6,
+        "a_times_b": 0.0
+      },
+      "estimated_a_times_b": 0.5439,
+      "p_loading": 0.3969,
+      "p_path": 0.1358,
+      "p_vertical": 0.3969,
+      "seconds": 170
+    },
+    {
+      "truth": {
+        "a": 0.7,
+        "b": 0.0,
+        "a_times_b": 0.0
+      },
+      "estimated_a_times_b": -2459.0323,
+      "p_loading": 0.0081,
+      "p_path": 0.1232,
+      "p_vertical": 0.1232,
+      "seconds": 316
+    },
+    {
+      "truth": {
+        "a": 0.0,
+        "b": 0.0,
+        "a_times_b": 0.0
+      },
+      "estimated_a_times_b": -0.0934,
+      "p_loading": 0.2883,
+      "p_path": 0.7744,
+      "p_vertical": 0.7744,
+      "seconds": 226
+    }
+  ],
+  "note": "a demonstration that the construction behaves, not a calibration: four runs cannot measure a rejection rate. the point estimate runs away where a is identified and b is not, which is what a binary-only outcome allows"
+}

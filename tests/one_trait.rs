@@ -1,9 +1,8 @@
 //! One-trait fits against simulated data whose heritability is known.
 //!
-//! These are not agreement tests. Agreement with another implementation proves
-//! fidelity and never correctness (`docs/adr/0006`), so what is checked here is
-//! recovery of a truth the simulation controls, plus the behaviour the decision
-//! record requires at the boundary.
+//! Agreement with another implementation cannot establish correctness, so
+//! these tests check recovery of a truth the simulation controls and numerical
+//! behaviour at the boundary.
 //!
 //! The design throughout is sibling pairs, which is the least informative
 //! pedigree in common use and therefore the honest one to set tolerances
@@ -77,7 +76,7 @@ fn intercept(n: usize) -> DMatrix<f64> {
 fn prepare(pairs: usize) -> PreparedModel {
     let k = sibling_relationship(pairs);
     let x = intercept(2 * pairs);
-    PreparedModel::build(&x, &k, None).expect("a sibling design is valid")
+    PreparedModel::build(&x, &k).expect("a sibling design is valid")
 }
 
 #[test]
@@ -92,7 +91,7 @@ fn the_relationship_matrix_splits_into_one_block_per_family() {
 #[test]
 fn a_moderate_heritability_is_recovered_by_reml() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 3.0, 20260811);
+    let y = simulate(1000, 0.5, 3.0, 20_260_811);
     let fit = model.fit_one_trait(&y, true);
 
     assert!(fit.converged);
@@ -105,14 +104,18 @@ fn a_moderate_heritability_is_recovered_by_reml() {
     );
     // The grand mean is estimated far more precisely than the variance ratio.
     assert!((fit.beta[0] - 3.0).abs() < 0.1, "mean = {}", fit.beta[0]);
-    assert!((fit.total_variance - 1.0).abs() < 0.15, "sigma2 = {}", fit.total_variance);
+    assert!(
+        (fit.total_variance - 1.0).abs() < 0.15,
+        "sigma2 = {}",
+        fit.total_variance
+    );
     assert!(fit.loglik.is_finite());
 }
 
 #[test]
 fn ml_and_reml_both_run_and_differ_by_less_than_the_standard_error() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260812);
+    let y = simulate(1000, 0.5, 0.0, 20_260_812);
     let reml = model.fit_one_trait(&y, true);
     let ml = model.fit_one_trait(&y, false);
 
@@ -134,7 +137,7 @@ fn ml_and_reml_both_run_and_differ_by_less_than_the_standard_error() {
 #[test]
 fn the_interval_contains_the_estimate_and_keeps_its_shape() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260813);
+    let y = simulate(1000, 0.5, 0.0, 20_260_813);
     let fit = model.fit_one_trait(&y, true);
 
     assert!(fit.interval.lower <= fit.h2 && fit.h2 <= fit.interval.upper);
@@ -148,7 +151,7 @@ fn the_interval_contains_the_estimate_and_keeps_its_shape() {
 #[test]
 fn strong_heritability_is_rejected_against_no_additive_variance() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.8, 0.0, 20260814);
+    let y = simulate(1000, 0.8, 0.0, 20_260_814);
     let fit = model.fit_one_trait(&y, true);
     let test = fit.test.expect("a converged fit carries the test");
 
@@ -166,7 +169,7 @@ fn strong_heritability_is_rejected_against_no_additive_variance() {
 #[test]
 fn no_additive_variance_is_not_rejected_when_there_is_none() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.0, 0.0, 20260815);
+    let y = simulate(1000, 0.0, 0.0, 20_260_815);
     let fit = model.fit_one_trait(&y, true);
     let test = fit.test.expect("a converged fit carries the test");
 
@@ -181,13 +184,13 @@ fn no_additive_variance_is_not_rejected_when_there_is_none() {
 fn a_fit_on_the_lower_bound_reports_state_and_withholds_the_standard_error() {
     // A response with no family structure at all drives the estimate to zero.
     let model = prepare(300);
-    let mut stream = Stream(20260816);
+    let mut stream = Stream(20_260_816);
     let y = DVector::from_iterator(600, (0..600).map(|_| stream.normal()));
     let fit = model.fit_one_trait(&y, true);
 
     if fit.boundary == Boundary::Lower {
         assert_eq!(fit.h2, 0.0);
-        // Absent, never NaN and never zero (`docs/adr/0005`).
+        // Absent, never NaN and never zero.
         assert!(fit.standard_error.is_none());
         // The interval keeps the shape it always has.
         assert_eq!(fit.interval.lower, 0.0);
@@ -209,7 +212,7 @@ fn a_fit_on_the_lower_bound_reports_state_and_withholds_the_standard_error() {
 #[test]
 fn an_interior_fit_carries_a_standard_error_of_a_believable_size() {
     let model = prepare(1000);
-    let y = simulate(1000, 0.5, 0.0, 20260817);
+    let y = simulate(1000, 0.5, 0.0, 20_260_817);
     let fit = model.fit_one_trait(&y, true);
 
     assert_eq!(fit.boundary, Boundary::Interior);
@@ -228,13 +231,13 @@ fn validation_refuses_what_it_should() {
     let mut asymmetric = good_k.clone();
     asymmetric[(0, 1)] = 0.4;
     assert_eq!(
-        PreparedModel::build(&good_x, &asymmetric, None).err().unwrap(),
+        PreparedModel::build(&good_x, &asymmetric).err().unwrap(),
         "PREPARE_K_ASYMMETRIC"
     );
 
     let wrong_shape = sibling_relationship(4);
     assert_eq!(
-        PreparedModel::build(&good_x, &wrong_shape, None).err().unwrap(),
+        PreparedModel::build(&good_x, &wrong_shape).err().unwrap(),
         "PREPARE_SHAPE_MISMATCH"
     );
 
@@ -244,14 +247,14 @@ fn validation_refuses_what_it_should() {
         duplicated[(i, 1)] = 1.0;
     }
     assert_eq!(
-        PreparedModel::build(&duplicated, &good_k, None).err().unwrap(),
+        PreparedModel::build(&duplicated, &good_k).err().unwrap(),
         "PREPARE_X_RANK_DEFICIENT"
     );
 
     let mut not_finite = good_x.clone();
     not_finite[(0, 0)] = f64::NAN;
     assert_eq!(
-        PreparedModel::build(&not_finite, &good_k, None).err().unwrap(),
+        PreparedModel::build(&not_finite, &good_k).err().unwrap(),
         "PREPARE_X_NOT_FINITE"
     );
 
@@ -259,7 +262,7 @@ fn validation_refuses_what_it_should() {
     not_psd[(0, 1)] = 2.0;
     not_psd[(1, 0)] = 2.0;
     assert_eq!(
-        PreparedModel::build(&good_x, &not_psd, None).err().unwrap(),
+        PreparedModel::build(&good_x, &not_psd).err().unwrap(),
         "PREPARE_K_NOT_PSD"
     );
 }

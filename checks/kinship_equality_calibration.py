@@ -41,9 +41,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 DATABASE = Path(
     "~/MathiasLab/staging/studies/existing/safs/data/SAFS.db"
@@ -112,17 +111,19 @@ def one(job):
     model = asterism.ComponentModel(matrices, design)
     out = {"scenario": scenario, "contrasts": {}}
     try:
-        out["omnibus"] = model.equality_test(y)["p_value"]
-    except Exception:
-        out["omnibus"] = None
+        omnibus = model.equality_test(y)
+    except ValueError:
+        omnibus = None
+    out["omnibus"] = None if omnibus is None else omnibus["p_value"]
     for component, name in enumerate(names, start=1):
         others = [m for index_, m in enumerate(matrices) if index_ != component]
         pooled = np.ascontiguousarray(sum(others[1:], others[0]))
         try:
             pair = asterism.ComponentModel([matrices[component], pooled], design)
-            out["contrasts"][name] = pair.equality_test(y, [0, 1])["p_value"]
-        except Exception:
-            out["contrasts"][name] = None
+            contrast = pair.equality_test(y, [0, 1])
+        except ValueError:
+            contrast = None
+        out["contrasts"][name] = None if contrast is None else contrast["p_value"]
     return out
 
 
@@ -175,10 +176,10 @@ def main() -> int:
             rates = [float(np.mean([v <= level for v in have])) for level in LEVELS]
             recorded[scenario][label] = {
                 "computed": len(have),
-                "rejection": {str(l): r for l, r in zip(LEVELS, rates)},
+                "rejection": {str(l): r for l, r in zip(LEVELS, rates, strict=True)},
             }
             marks = []
-            for level, rate in zip(LEVELS, rates):
+            for level, rate in zip(LEVELS, rates, strict=True):
                 if not is_null:
                     marks.append(f"{rate:>10.3f}")
                     continue
@@ -201,12 +202,9 @@ def main() -> int:
     print("\nThe omnibus and every contrast hold their level on the real pedigree,")
     print("with its real and badly unbalanced classes.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/kinship-equality-calibration-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and power of the kinship-class equality tests",
-                "date": "2026-08-14",
                 "estimator": "reml",
                 "pedigree": "the real GOBS pedigree; only responses simulated",
                 "people": n,
@@ -224,7 +222,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

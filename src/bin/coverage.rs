@@ -6,18 +6,13 @@
 //! printing intervals that are too narrow. There is no way to learn this by
 //! reading the code, which is why it exists.
 //!
-//! This is not inherited. Astrarium ran a check of this shape and it is what
-//! chose the interval recipe in `docs/adr/0004` — but its roster and its
-//! fixtures deliberately did not come across, so the pedigree here is generated
-//! and the result has to be earned again.
-//!
 //! Three rules that make the number mean something:
 //!
 //! 1. **Every replicate is scored.** A fit that does not converge never covers.
 //!    Dropping the awkward ones is how a coverage check comes out at 95 per cent
 //!    while the package is wrong.
-//! 2. **Membership of a boundary point follows the mixture rule** of
-//!    `docs/adr/0004`, not ordinary containment. At a true heritability of zero
+//! 2. **Membership of a boundary point follows the Self–Liang mixture rule**,
+//!    not ordinary containment. At a true heritability of zero
 //!    the estimate lands on the bound about half the time, and whether the
 //!    interval contains the point nought is exactly the question that recipe
 //!    was chosen to answer.
@@ -36,18 +31,26 @@ use statrs::distribution::{Beta, ContinuousCDF};
 /// The truths to check. Both bounds are in, because the bounds are where the
 /// recipe is doing work, and the cluster near zero is there because that is
 /// where a heritability study usually lives.
-const TRUTHS: [f64; 12] = [0.0, 0.05, 0.07, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 1.0];
-/// The number for the record. A smaller count may be passed as an argument
+const TRUTHS: [f64; 12] = [
+    0.0, 0.05, 0.07, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 1.0,
+];
+/// The default replicate count. A smaller count may be passed as an argument
 /// while working on the check itself, but a smaller count is not the check:
 /// the band is only meaningful against a Clopper–Pearson interval this tight.
 const REPLICATES: usize = 8_000;
 
 fn replicates() -> usize {
-    std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(REPLICATES)
+    std::env::args()
+        .nth(1)
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(REPLICATES)
 }
 
 fn families() -> usize {
-    std::env::args().nth(2).and_then(|a| a.parse().ok()).unwrap_or(25)
+    std::env::args()
+        .nth(2)
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(25)
 }
 
 /// Covariates are on by default, because a check run on a design nobody uses is
@@ -97,8 +100,8 @@ fn design(families: usize, block: usize, covariates: bool) -> DMatrix<f64> {
     x
 }
 const BAND: (f64, f64) = (0.940, 0.960);
-/// Fixed, so the whole check returns next year (`docs/adr/0001`, decision 18).
-const BASE_SEED: u64 = 2_026_08_11;
+/// Fixed so repeated runs use the same simulated samples.
+const BASE_SEED: u64 = 20_260_811;
 
 // ---------------------------------------------------------------- the roster
 
@@ -115,10 +118,16 @@ struct Person {
 /// relationships — which is the point. A roster of sibling pairs would be
 /// easier and would check the estimator on a pedigree nobody analyses.
 fn extended_family() -> Vec<Person> {
-    let founder = Person { mother: None, father: None };
+    let founder = Person {
+        mother: None,
+        father: None,
+    };
     let mut family = vec![founder, founder]; // 0, 1: the founding couple
     for _ in 0..3 {
-        family.push(Person { mother: Some(0), father: Some(1) }); // 2, 3, 4
+        family.push(Person {
+            mother: Some(0),
+            father: Some(1),
+        }); // 2, 3, 4
     }
     for _ in 0..3 {
         family.push(founder); // 5, 6, 7: married in, unrelated to everyone
@@ -245,8 +254,7 @@ fn simulate(factors: &[DMatrix<f64>], block: usize, stream: &mut Stream) -> DVec
 ///
 /// At an interior truth this is ordinary containment. At nought or one it is
 /// the mixture rule, because the endpoint sitting on the bound says nothing by
-/// itself about whether the bound is in the interval — which is the whole
-/// substance of `docs/adr/0004`.
+/// itself about whether the bound is in the interval.
 fn covers(fit: &asterism::Fit, truth: f64) -> bool {
     if !fit.converged {
         return false;
@@ -294,7 +302,7 @@ struct Cell {
     beta_coverage: Vec<f64>,
     /// What the coverage would have been at a boundary truth if the endpoint
     /// sitting on the bound had been taken to mean the bound is in the interval
-    /// — the obvious rule, and the one `docs/adr/0004` rejects. Only meaningful
+    /// — the obvious rule, but not the mixture-calibrated rule. Only meaningful
     /// at a truth of nought or one; `None` elsewhere.
     naive: Option<f64>,
     seed: u64,
@@ -315,7 +323,7 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
     let n = k.nrows();
     let covariates = with_covariates();
     let x = design(n / block, block, covariates);
-    let model = PreparedModel::build(&x, k, None).expect("the roster is valid");
+    let model = PreparedModel::build(&x, k).expect("the roster is valid");
     let fixed = if covariates {
         let beta = DVector::from_row_slice(&BETA);
         &x * beta
@@ -345,10 +353,11 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
                 // that is merely present proves nothing; one whose interval
                 // covers at 95 per cent is the right size.
                 let effect = &fit.fixed_effects[index];
-                if let (Some(lower), Some(upper)) = (effect.lower, effect.upper) {
-                    if lower <= truth && truth <= upper {
-                        beta_covered[index] += 1;
-                    }
+                if let (Some(lower), Some(upper)) = (effect.lower, effect.upper)
+                    && lower <= truth
+                    && truth <= upper
+                {
+                    beta_covered[index] += 1;
                 }
             }
         }
@@ -367,15 +376,15 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
                 naive_covered += 1;
             }
         }
-        if !fit.converged {
-            nonconverged += 1;
-        } else {
+        if fit.converged {
             match fit.boundary {
                 asterism::Boundary::Lower => at_lower += 1,
                 asterism::Boundary::Upper => at_upper += 1,
                 asterism::Boundary::Interior => {}
             }
             widths.push(fit.interval.upper - fit.interval.lower);
+        } else {
+            nonconverged += 1;
         }
     }
 
@@ -398,8 +407,7 @@ fn run_cell(k: &DMatrix<f64>, block: usize, truth: f64, index: usize) -> Cell {
             .iter()
             .map(|total| (total / replicates() as f64).abs())
             .fold(0.0f64, f64::max),
-        naive: (truth == 0.0 || truth == 1.0)
-            .then(|| naive_covered as f64 / replicates() as f64),
+        naive: (truth == 0.0 || truth == 1.0).then(|| naive_covered as f64 / replicates() as f64),
         seed,
         coverage,
         cp,
@@ -424,7 +432,10 @@ fn main() {
          {count} replicates per cell, REML, {} fixed effects, base seed {BASE_SEED}.",
         if with_covariates() { "6" } else { "1" }
     );
-    println!("A cell passes when its Clopper-Pearson interval overlaps [{:.3}, {:.3}].", BAND.0, BAND.1);
+    println!(
+        "A cell passes when its Clopper-Pearson interval overlaps [{:.3}, {:.3}].",
+        BAND.0, BAND.1
+    );
     println!();
 
     let started = Instant::now();
@@ -437,12 +448,24 @@ fn main() {
                 scope.spawn(move || run_cell(k, block, truth, index))
             })
             .collect();
-        handles.into_iter().map(|h| h.join().expect("cell")).collect()
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("cell"))
+            .collect()
     });
 
     println!(
         "{:>6} {:>9} {:>18} {:>7} {:>9} {:>9} {:>7} {:>9} {:>9} {:>9}",
-        "truth", "coverage", "95% CP interval", "passes", "at 0", "at 1", "failed", "width", "beta bias", "mean b cov"
+        "truth",
+        "coverage",
+        "95% CP interval",
+        "passes",
+        "at 0",
+        "at 1",
+        "failed",
+        "width",
+        "beta bias",
+        "mean b cov"
     );
     for cell in &cells {
         println!(
@@ -473,7 +496,7 @@ fn main() {
         started.elapsed().as_secs_f64()
     );
 
-    // The record, in the shape the evidence file keeps.
+    // The numerical summary printed by the executable.
     println!();
     println!("[");
     for (index, cell) in cells.iter().enumerate() {
@@ -482,7 +505,7 @@ fn main() {
              \"estimator\": \"reml\", \"coverage\": {}, \"cp_lower\": {}, \"cp_upper\": {}, \
              \"band\": [{}, {}], \"passes\": {}, \"fraction_at_zero\": {}, \
              \"fraction_at_one\": {}, \"nonconverged\": {}, \"median_width\": {}, \
-             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"beta_coverage\": {}, \
+             \"naive_boundary_coverage\": {}, \"worst_beta_bias\": {}, \"beta_coverage\": {:?}, \
              \"seconds\": {:.3}}}{}",
             cell.truth,
             n,
@@ -498,9 +521,10 @@ fn main() {
             cell.at_upper,
             cell.nonconverged,
             cell.median_width,
-            cell.naive.map_or_else(|| "null".to_owned(), |v| v.to_string()),
+            cell.naive
+                .map_or_else(|| "null".to_owned(), |v| v.to_string()),
             cell.worst_beta_bias,
-            format!("{:?}", cell.beta_coverage),
+            cell.beta_coverage,
             cell.seconds,
             if index + 1 == cells.len() { "" } else { "," }
         );
@@ -515,7 +539,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        block_factors, covers, extended_family, kinship, roster, simulate, PreparedModel, Stream,
+        PreparedModel, Stream, block_factors, covers, extended_family, kinship, roster, simulate,
     };
 
     /// Textbook kinship coefficients. If any of these is wrong the whole check
@@ -525,7 +549,10 @@ mod tests {
         let phi = kinship(&extended_family());
         let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
 
-        assert!(close(phi[(0, 0)], 0.5), "a non-inbred person with themselves");
+        assert!(
+            close(phi[(0, 0)], 0.5),
+            "a non-inbred person with themselves"
+        );
         assert!(close(phi[(0, 1)], 0.0), "the founding couple are unrelated");
         assert!(close(phi[(0, 2)], 0.25), "parent and offspring");
         assert!(close(phi[(2, 3)], 0.25), "full siblings");
@@ -559,7 +586,7 @@ mod tests {
         let block = extended_family().len();
         let k = roster(25);
         let x = nalgebra::DMatrix::from_element(k.nrows(), 1, 1.0);
-        let model = PreparedModel::build(&x, &k, None).expect("valid roster");
+        let model = PreparedModel::build(&x, &k).expect("valid roster");
 
         for (truth, seed) in [(0.0, 7u64), (0.5, 8u64)] {
             let factors = block_factors(&k, block, truth);
@@ -577,7 +604,7 @@ mod tests {
                     naive += 1;
                 }
             }
-            let coverage = covered as f64 / replicates as f64;
+            let coverage = covered as f64 / f64::from(replicates);
             assert!(
                 (0.930..=0.970).contains(&coverage),
                 "coverage {coverage} at a true heritability of {truth}"
@@ -586,7 +613,7 @@ mod tests {
                 // Counting a lower endpoint of nought as containing nought is
                 // the obvious rule and it over-covers. If this ever stops being
                 // true the mixture rule has stopped doing anything.
-                let naive_coverage = naive as f64 / replicates as f64;
+                let naive_coverage = naive as f64 / f64::from(replicates);
                 assert!(
                     naive_coverage > coverage + 0.01,
                     "the naive rule gave {naive_coverage} against the mixture's {coverage}"
@@ -602,7 +629,11 @@ mod tests {
     fn the_relationship_matrix_is_positive_definite() {
         let k = roster(1);
         let eigen = nalgebra::SymmetricEigen::new(k);
-        let smallest = eigen.eigenvalues.iter().copied().fold(f64::INFINITY, f64::min);
+        let smallest = eigen
+            .eigenvalues
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
         assert!(smallest > 1e-9, "smallest eigenvalue was {smallest}");
     }
 }

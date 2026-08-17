@@ -22,20 +22,11 @@
 //! which is six ordinary variance components. `ComponentModel` fits it as it
 //! stands, and this module's only job is to hand it the right matrices.
 //!
-//! **Report shares, not weights, and the reason is not presentation.** The
-//! weight is a ratio of two estimated variances, `w_c = v_c / s_A`, and such a
-//! ratio is biased upward when the denominator is uncertain. Simulated at the
-//! class counts GOBS actually has, with every true weight one, the ratios come
-//! back near 2.7 while each class's share of the total variance is unbiased to
-//! within 0.006. The bias falls by an order of magnitude for each quadrupling
-//! of the sample, which is the signature of the estimator rather than of a
-//! fault.
-//!
-//! That matters historically. This model failed an independent qualification
-//! gate in 2026 on "multiple parent-weight bias and coverage requirements", and
-//! an implementation written fresh here reproduces the same failure. The gate
-//! was right. What it caught was the reporting parameterisation and not the
-//! model, and a share does not have the fault a ratio does.
+//! The component coefficients are the fitted quantities. Ratios such as
+//! `w_c = v_c / s_A` are strongly biased when the denominator is uncertain.
+//! The split class matrices also have zero diagonals, so their raw coefficient
+//! proportions are not shares of phenotypic variance. Equality tests and class
+//! contrasts answer the scientific questions without either misinterpretation.
 
 use std::collections::HashMap;
 
@@ -92,8 +83,7 @@ impl KinshipClasses {
             .enumerate()
             .map(|(index, id)| (id.as_str(), index))
             .collect();
-        let by_id: HashMap<&str, &Person> =
-            people.iter().map(|p| (p.id.as_str(), p)).collect();
+        let by_id: HashMap<&str, &Person> = people.iter().map(|p| (p.id.as_str(), p)).collect();
 
         let n = order.len();
         let mut rest = matrix.clone();
@@ -186,15 +176,11 @@ mod tests {
             person("son", Some("dad"), Some("mum")),
             person("daughter", Some("dad"), Some("mum")),
         ];
-        let sex: HashMap<String, String> = [
-            ("mum", "2"),
-            ("dad", "1"),
-            ("son", "1"),
-            ("daughter", "2"),
-        ]
-        .iter()
-        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
-        .collect();
+        let sex: HashMap<String, String> =
+            [("mum", "2"), ("dad", "1"), ("son", "1"), ("daughter", "2")]
+                .iter()
+                .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                .collect();
         (people, sex)
     }
 
@@ -207,8 +193,7 @@ mod tests {
     fn the_parts_add_back_up_to_the_whole() {
         let (people, sex) = family();
         let split = KinshipClasses::build(&people, &sex, &[]).expect("valid");
-        let (whole, order) =
-            crate::relationship::relationship_matrix(&people, &[]).expect("valid");
+        let (whole, order) = crate::relationship::relationship_matrix(&people, &[]).expect("valid");
         assert_eq!(order, split.order);
         let mut total = split.rest.clone();
         for class in &split.classes {
@@ -240,11 +225,7 @@ mod tests {
         );
         for i in 0..split.order.len() {
             for j in 0..split.order.len() {
-                let occupied = split
-                    .classes
-                    .iter()
-                    .filter(|c| c[(i, j)] != 0.0)
-                    .count();
+                let occupied = split.classes.iter().filter(|c| c[(i, j)] != 0.0).count();
                 assert!(occupied <= 1, "cell ({i}, {j}) is in {occupied} classes");
             }
         }
@@ -288,6 +269,10 @@ mod tests {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{IntoPyArray, PyArray2};
@@ -342,8 +327,9 @@ mod python {
             .iter()
             .map(|m| {
                 let n = m.nrows();
-                let rows: Vec<Vec<f64>> =
-                    (0..n).map(|i| (0..n).map(|j| m[(i, j)]).collect()).collect();
+                let rows: Vec<Vec<f64>> = (0..n)
+                    .map(|i| (0..n).map(|j| m[(i, j)]).collect())
+                    .collect();
                 let flat: Vec<f64> = rows.into_iter().flatten().collect();
                 numpy::ndarray::Array2::from_shape_vec((n, n), flat)
                     .expect("square by construction")

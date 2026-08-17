@@ -2,21 +2,23 @@
 
 `checks/spatial_bootstrap.py` calibrates the *test* for no spatial variance.
 This calibrates the *intervals*, which is a different question and the one that
-matters when a share and a range are reported side by side.
+matters when a coefficient proportion and a range are reported side by side.
 
-**Two quantities, and they are not alike.** The spatial share behaves like the
-other variance shares in the package. The decay rate does not: it is the one
-parameter here that is not a variance, it enters the covariance non-linearly, and
-on a single simulated data set with a true half distance of 35 km the estimate
-came back at 6. Its interval contained the truth that time, which is one draw and
-not coverage.
+**Two quantities, and they are not alike.** The first is the spatial raw
+coefficient proportion. In this simulation every covariance basis has mean
+diagonal one, so it also equals the spatial mean-diagonal proportion. That
+equivalence does not hold for arbitrarily scaled fixed matrices. The decay rate
+is not a variance: it enters the covariance non-linearly, and on a single
+simulated data set with a true half distance of 35 km the estimate came back at
+6. Its interval contained the truth that time, which is one draw and not
+coverage.
 
-**A caution about reading the lower endpoint of the share.** An interval for the
-spatial share reaching nought is not a test of whether there is a spatial effect.
-Under that null the decay rate is unidentified and the deviance has no
-chi-squared reference — which is the whole reason the test is bootstrapped. The
-interval is honest about how large the share is, given that there is one; it
-cannot be read backwards as a hypothesis test.
+**A caution about reading the lower endpoint.** An interval for the spatial raw
+coefficient proportion reaching nought is not a test of whether there is a
+spatial effect. Under that null the decay rate is unidentified and the deviance
+has no chi-squared reference — which is the whole reason the test is
+bootstrapped. The interval describes the coefficient proportion given that the
+component exists; it cannot be read backwards as a hypothesis test.
 
 The range is checked as the half distance rather than as the decay rate, because
 that is the number anybody reports and the one whose coverage is meaningful in
@@ -30,15 +32,12 @@ Run with:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
-
-import os
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 150
@@ -52,7 +51,7 @@ WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
 INTEGRATED = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
 MODE = "integrated" if INTEGRATED else "profile"
 
-TRUTH = dict(additive=0.35, spatial=0.25, residual=0.40, decay_per_km=0.02)
+TRUTH = {"additive": 0.35, "spatial": 0.25, "residual": 0.40, "decay_per_km": 0.02}
 TRUE_HALF_KM = np.log(2) / TRUTH["decay_per_km"]
 
 
@@ -80,21 +79,35 @@ def one(index: int) -> dict | None:
 
     out: dict = {}
     try:
-        lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
+        proportion = _core.spatial_interval(
             [relationship], distance, design, y, "1", True, INTEGRATED
         )
-        out["share"] = {"lower": lower, "upper": upper, "at_bound": at_lower or at_upper}
-    except Exception:
-        out["share"] = None
+    except ValueError:
+        proportion = None
+    if proportion is None:
+        out["raw_coefficient_proportion"] = None
+    else:
+        lower, upper, at_lower, at_upper, _ = proportion
+        out["raw_coefficient_proportion"] = {
+            "lower": lower,
+            "upper": upper,
+            "at_bound": at_lower or at_upper,
+        }
     if INTEGRATED:
         # There is no range once it has been integrated out, so there is nothing
         # to cover and nothing to check.
         out["half_distance"] = None
         return out
     try:
-        lower, upper, at_lower, at_upper, _ = _core.spatial_interval(
+        decay = _core.spatial_interval(
             [relationship], distance, design, y, "lambda", True
         )
+    except ValueError:
+        decay = None
+    if decay is None:
+        out["half_distance"] = None
+    else:
+        lower, upper, at_lower, at_upper, _ = decay
         # Reported as a half distance, which runs the other way: a larger decay
         # is a shorter distance.
         out["half_distance"] = {
@@ -102,13 +115,11 @@ def one(index: int) -> dict | None:
             "upper": np.log(2) / lower,
             "at_bound": at_lower or at_upper,
         }
-    except Exception:
-        out["half_distance"] = None
     return out
 
 
 def main() -> int:
-    relationship, distance, design, n = structure()
+    _relationship, _distance, _design, n = structure()
     print(
         f"Spatial intervals, REML, {MODE}. {PAIRS} sibling pairs, n = {n}, "
         f"{SPACING_KM:.0f} km apart.\n"
@@ -126,7 +137,7 @@ def main() -> int:
     failures = []
     print(f"{'quantity':<16}{'coverage':>10}{'binomial 95%':>22}{'of':>6}{'at a bound':>12}")
     recorded = {}
-    quantities = [("share", TRUTH["spatial"])]
+    quantities = [("raw_coefficient_proportion", TRUTH["spatial"])]
     if not INTEGRATED:
         # There is no range to cover once it has been integrated out, so its
         # absence is the correct answer rather than a missing result. Treating
@@ -163,18 +174,15 @@ def main() -> int:
         return 1
 
     print(
-        f"\n{'The share covers' if INTEGRATED else 'Both intervals cover'}. Its lower "
+        f"\n{'The coefficient-proportion interval covers' if INTEGRATED else 'Both intervals cover'}. Its lower "
         f"endpoint is still not a test of whether\nthere is a spatial effect: under "
         f"that null the decay rate is unidentified,\nwhich is why the test is "
         f"bootstrapped instead."
     )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path(f"evidence/spatial-intervals-{MODE}-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "coverage of the spatial share and the half distance",
-                "date": "2026-08-13",
                 "estimator": "reml",
                 "decay_rate": MODE,
                 "pairs": PAIRS,
@@ -185,14 +193,13 @@ def main() -> int:
                 "nominal": 0.95,
                 "intervals": recorded,
                 "note": (
-                    "an interval for the spatial share reaching nought is not a test "
+                    "an interval for the spatial raw coefficient proportion reaching nought is not a test "
                     "of whether there is a spatial effect; the decay rate is "
                     "unidentified under that null and the test is bootstrapped"
                 ),
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

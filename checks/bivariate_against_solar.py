@@ -1,9 +1,8 @@
 """The two-trait ML fit against native SOLAR.
 
-`docs/adr/0006` divides the external comparisons: SOLAR for ML, R `regress` for
-REML. `checks/bivariate_against_r.py` is the REML side of the two-trait model and
-this is the ML side. SOLAR's `polygenic` maximises the likelihood, which makes it
-the right comparator here and the wrong one for the REML default.
+This is the ML comparison for the two-trait model; the separate R `regress`
+check covers REML. SOLAR's `polygenic` maximises the likelihood, so it provides
+the like-for-like comparison here rather than for the REML default.
 
 This is the check that matters most for two traits, because SOLAR reports the
 genetic and residual correlations directly rather than as covariances that have
@@ -39,12 +38,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 # SOLAR prints seven significant figures, so that is the most agreement it can
 # demonstrate. The tolerance is set to what its printing supports rather than to
@@ -195,19 +193,20 @@ def main() -> int:
     if shutil.which("solar") is None:
         raise SystemExit("solar is not on the path. This check fails rather than skips.")
 
-    truth = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
     families, seed = 25, 411
-    directory = Path(tempfile.mkdtemp())
-    k, observed, design, values, n = build(directory, families, truth, seed)
-    theirs = run_solar(directory)
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        directory = Path(temporary_directory)
+        k, observed, design, values, n = build(directory, families, truth, seed)
+        theirs = run_solar(directory)
 
-    theta, loglik, gradient, converged = _core.bivariate_fit(
-        np.ascontiguousarray(k),
-        observed.tolist(),
-        np.ascontiguousarray(design),
-        np.ascontiguousarray(values),
-        False,  # ML, because SOLAR's polygenic is ML
-    )
+        theta, loglik, gradient, converged = _core.bivariate_fit(
+            np.ascontiguousarray(k),
+            observed.tolist(),
+            np.ascontiguousarray(design),
+            np.ascontiguousarray(values),
+            False,  # ML, because SOLAR's polygenic is ML
+        )
     ours = {
         "h2_first": theta[2],
         "h2_second": theta[3],
@@ -261,10 +260,9 @@ def main() -> int:
     print(f"Asterism scaled projected gradient: {gradient:.3e}.")
     print("SOLAR reports the correlations directly, so nothing was re-expressed")
     print("on the way to this comparison.")
-    print("This proves fidelity, not correctness (`docs/adr/0006`).")
+    print("The independently implemented ML calculations agree.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/bivariate-against-solar-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
                 "seed": seed,
@@ -289,7 +287,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

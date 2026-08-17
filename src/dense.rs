@@ -113,7 +113,8 @@ mod tests {
     fn both_routes_give_the_same_answer() {
         for n in [4usize, 11, 12, 40, 120] {
             let v = DMatrix::from_fn(n, n, |i, j| {
-                0.5f64.powi((i as i32 - j as i32).abs()) + if i == j { 1.0 } else { 0.0 }
+                0.5f64.powi(i32::try_from(i.abs_diff(j)).unwrap_or(i32::MAX))
+                    + if i == j { 1.0 } else { 0.0 }
             });
             let b = DVector::from_fn(n, |i, _| (i as f64).sin());
             let x = DMatrix::from_fn(n, 3, |i, j| ((i * 3 + j) as f64).cos());
@@ -123,8 +124,8 @@ mod tests {
             let reference = v.clone().cholesky().expect("positive definite");
 
             assert!(
-                (chosen.logdet() - 2.0
-                    * reference.l().diagonal().iter().map(|d| d.ln()).sum::<f64>())
+                (chosen.logdet()
+                    - 2.0 * reference.l().diagonal().iter().map(|d| d.ln()).sum::<f64>())
                 .abs()
                     < 1e-9,
                 "log determinant differs at n = {n}"
@@ -151,7 +152,10 @@ mod tests {
         for n in [4usize, FAER_FROM + 5] {
             let mut v = DMatrix::<f64>::identity(n, n);
             v[(0, 0)] = -1.0;
-            assert!(DenseFactor::new(&v).is_none(), "accepted a negative pivot at n = {n}");
+            assert!(
+                DenseFactor::new(&v).is_none(),
+                "accepted a negative pivot at n = {n}"
+            );
         }
     }
 }

@@ -1,19 +1,10 @@
-"""The Python interface: what crosses, what comes back, and what is refused.
-
-The statistics are checked in `one_trait.rs`, against simulated truth. What is
-checked here is the interface itself — that the record has the shape
-`docs/adr/0003` requires, that `docs/adr/0005`'s rules about a boundary fit hold
-in what Python actually receives, and that validation refuses what it should.
-"""
+"""The Python interface: numerical outputs and invalid-input behaviour."""
 
 from __future__ import annotations
 
-import hashlib
-
+import asterism
 import numpy as np
 import pytest
-
-import asterism
 
 
 def sibling_relationship(pairs: int) -> np.ndarray:
@@ -41,12 +32,11 @@ def model() -> asterism.PreparedModel:
     return asterism.prepare(np.ones((2 * pairs, 1)), sibling_relationship(pairs))
 
 
-def test_the_record_carries_exactly_the_fields_the_decision_record_lists(model):
+def test_the_fit_returns_the_documented_numerical_fields(model):
     record = model.fit(simulate(800, 0.5, 11))
     assert set(record) == {
         "estimator",
         "n",
-        "subject_order",
         "h2",
         "total_variance",
         "beta",
@@ -110,8 +100,8 @@ def test_a_boundary_fit_withholds_the_standard_error_rather_than_faking_one():
     record = model.fit(rng.standard_normal(2 * pairs))
     if record["boundary"] == "lower":
         assert record["h2"] == 0.0
-        # `docs/adr/0005`: the standard errors are a per-parameter mapping from
-        # which one undefined at the optimum is *absent*. The mapping itself
+        # The standard errors are a per-parameter mapping from which one
+        # undefined at the optimum is *absent*. The mapping itself
         # stays, because the fixed effects still have theirs — nothing
         # degenerate happens to a regression coefficient when h2 pins.
         assert "h2" not in record["standard_errors"]
@@ -122,35 +112,6 @@ def test_a_boundary_fit_withholds_the_standard_error_rather_than_faking_one():
         assert record["test"]["p_value"] == 1.0
     else:
         assert record["standard_errors"]["h2"] > 0.0
-
-
-def test_the_subject_order_commitment_round_trips():
-    pairs = 20
-    ids = [f"subject-{i:03d}" for i in range(2 * pairs)]
-    expected = hashlib.sha256(("\n".join(ids) + "\n").encode()).hexdigest()
-
-    from_ids = asterism.prepare(
-        np.ones((2 * pairs, 1)), sibling_relationship(pairs), subject_ids=ids
-    )
-    assert from_ids.subject_order == expected
-
-    from_hash = asterism.prepare(
-        np.ones((2 * pairs, 1)),
-        sibling_relationship(pairs),
-        subject_order_sha256=expected,
-    )
-    assert from_hash.subject_order == expected
-
-    rng = np.random.default_rng(16)
-    assert from_ids.fit(rng.standard_normal(2 * pairs))["subject_order"] == expected
-
-    with pytest.raises(ValueError, match="PREPARE_SUBJECT_ORDER_AMBIGUOUS"):
-        asterism.prepare(
-            np.ones((2 * pairs, 1)),
-            sibling_relationship(pairs),
-            subject_ids=ids,
-            subject_order_sha256=expected,
-        )
 
 
 @pytest.mark.parametrize(
@@ -179,8 +140,7 @@ def test_an_asymmetric_relationship_matrix_is_refused():
 
 
 def test_there_is_no_one_shot_fit():
-    # `docs/adr/0003`: one way in for the first release. If this ever passes,
-    # something has been added that the decision record does not allow.
+    # Preparing explicitly keeps the costly decomposition reusable.
     assert not hasattr(asterism, "fit")
 
 
@@ -301,8 +261,7 @@ def test_the_builder_refuses_a_pedigree_that_makes_no_sense():
 
 
 def test_a_pedigree_goes_straight_into_a_fit():
-    # The whole point of the builder: pedigree in, fit out, with the subject
-    # order committed on the way through so a misalignment cannot hide.
+    # Pedigree in, matrix out, then an ordinary positional numerical fit.
     pairs = 300
     ids, father, mother = [], [], []
     for pair in range(pairs):
@@ -316,8 +275,7 @@ def test_a_pedigree_goes_straight_into_a_fit():
     assert order == keep
     assert k.shape == (2 * pairs, 2 * pairs)
 
-    model = asterism.prepare(np.ones((len(order), 1)), k, subject_ids=order)
+    model = asterism.prepare(np.ones((len(order), 1)), k)
     record = model.fit(simulate(pairs, 0.5, 41))
     assert record["converged"]
-    assert record["subject_order"] == model.subject_order
     assert 0.0 <= record["h2"] <= 1.0

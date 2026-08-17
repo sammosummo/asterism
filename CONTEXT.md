@@ -39,6 +39,12 @@ _Avoid_: fast path, lane, backend
 A second implementation of the same calculation. Agreement between the two
 proves fidelity and never correctness; disagreement is the informative outcome.
 Any capability added to Asterism arrives with one.
+
+A check that cannot run is not one. The matrix builders arrived with checks
+against R's `SKAT` and `rres`, neither of which was installed, so their stated
+agreement could not be reproduced by anyone. Both packages were installed and
+both checks run and pass; the lesson kept is that a check is only evidence once
+somebody has run it on the machine that makes the claim.
 _Avoid_: oracle, reference lane
 
 **The coverage check**:
@@ -61,6 +67,36 @@ with an order is a roadmap.
 Liability and threshold models, gene-by-environment, spatial, BLUP and
 association have each left this list by an amendment naming the analysis that
 needed them.
+
+The variant-set builders left the list on 16 August 2026, named by the gene and
+variant finding effort: gene and pathway scans on the neuroimaging traits, the
+biomarkers and the auditory traits, with association follow-up on anything that
+comes up. `AssociationModel` already does the follow-up.
+
+**Linkage was considered on the same day and dropped, on measured power rather
+than on taste.** This is separate from the gene and pathway scans, which stay.
+ The local-IBD builders were removed with it. Simulated at 900
+people with a rare variant of large effect, and comparing each method at the
+threshold a real scan demands — about 5e-5 for linkage against 5e-8 genome-wide
+or 2.5e-6 gene-based — linkage lost in every case tried. For a variant private
+to one family, where its indifference to the kind of variant would have been
+worth something, its power was nought while a gene-based test reached 0.568.
+Where linkage finally worked, at a three standard deviation effect shared
+across fifteen families, association was already certain to find it.
+
+Two things follow. Whole-genome sequencing removes most of the reason to infer
+descent at all, since the variants can simply be observed. And where a variant
+cannot be observed — a repeat expansion, a structural variant, an unmappable
+region — the answer is a caller built for that kind of variant, not a method
+that ignores the question, because linkage has no power there either.
+
+The latent mediation model left the list on 16 August 2026, named by the
+mediation grant, which is the analysis it was built for.
+
+The variant-set kernels stay for the same effort, and Asterism will grow the
+test that belongs with them. Using SKAT through R would mean treating the
+method as a black box; the point of having it here is to be able to change it
+for traits and designs that the published form does not cover.
 
 **SOLAR**:
 A comparator, never the definition of correct. Differences between Asterism and

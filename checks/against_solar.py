@@ -1,10 +1,7 @@
 """Compare Asterism's ML fit against native SOLAR.
 
-`docs/adr/0006` puts correctness in external comparisons with a fixed division of
-labour: SOLAR for ML, R `regress` for REML. This is the ML side. SOLAR's
-`polygenic` maximises the likelihood, so it is the right comparator for the ML
-estimator and the wrong one for the REML default — which is why the two checks
-exist rather than one.
+SOLAR's `polygenic` maximises the likelihood, so this check compares it with
+Asterism's ML estimator. The separate R comparison checks REML.
 
 Run with:
 
@@ -32,16 +29,16 @@ import sys
 import tempfile
 from pathlib import Path
 
+import asterism
 import numpy as np
 
-import asterism
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
+from against_r import extended_family, roster
 
 # SOLAR prints seven significant figures, so that is the most agreement it can
-# demonstrate. `docs/adr/0006`'s 1e-6 relative tolerance is at the edge of what
-# is observable here; the tolerance below is set to what SOLAR's own printing
-# supports rather than to a tighter number the comparison cannot see.
+# demonstrate. The 1e-6 relative tolerance is at the edge of what is observable
+# here; the tolerance below follows SOLAR's printed precision rather than a
+# tighter number the comparison cannot see.
 H2_TOLERANCE = 5e-7
 LOGLIK_TOLERANCE = 1e-6
 
@@ -162,9 +159,10 @@ def main() -> int:
     results = []
     failures = []
     for h2, seed in ((0.5, 202), (0.2, 203), (0.7, 204)):
-        directory = Path(tempfile.mkdtemp())
-        k, x, y, n = build(directory, 25, h2, seed)
-        theirs = run_solar(directory)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            k, x, y, n = build(directory, 25, h2, seed)
+            theirs = run_solar(directory)
         ours = asterism.prepare(x, k).fit(y, "ml")
 
         relative = abs(ours["h2"] - theirs["h2"]) / (1.0 + abs(theirs["h2"]))
@@ -205,10 +203,7 @@ def main() -> int:
                 f"{unexplained:.3e} unaccounted for"
             )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/against-solar-2026-08-11.json").write_text(
-        json.dumps({"results": results}, indent=2) + "\n"
-    )
+    print(json.dumps({"results": results}, indent=2))
 
     if failures:
         print("\nDISAGREEMENT:")
@@ -216,7 +211,7 @@ def main() -> int:
             print(f"  {failure}")
         return 1
     print("\nAgreement to every digit SOLAR prints.")
-    print("This proves fidelity, not correctness (`docs/adr/0006`).")
+    print("The two ML implementations agree within the observable precision.")
     return 0
 
 

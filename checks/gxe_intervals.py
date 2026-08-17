@@ -37,10 +37,8 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 250
@@ -118,17 +116,21 @@ def one(job):
     out = {"surface": surface, "intervals": {}}
     for quantity, first, second in TRUE_VALUES[surface]:
         try:
-            estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
+            interval = _core.gxe_interval(
                 RELATIONSHIP, Z, DESIGN, y, surface, quantity, first, second, True
             )
+        except ValueError:
+            interval = None
+        if interval is None:
+            out["intervals"][f"{quantity}@{first}"] = None
+        else:
+            estimate, lower, upper, at_lower, at_upper, _ = interval
             out["intervals"][f"{quantity}@{first}"] = {
                 "estimate": estimate,
                 "lower": lower,
                 "upper": upper,
                 "at_bound": bool(at_lower or at_upper),
             }
-        except Exception:
-            out["intervals"][f"{quantity}@{first}"] = None
     return out
 
 
@@ -154,7 +156,7 @@ def main() -> int:
             f"{'binomial 95%':>20}{'of':>6}{'at a bound':>12}"
         )
         recorded[surface] = {}
-        for (quantity, first, second), truth in TRUE_VALUES[surface].items():
+        for (quantity, first, _second), truth in TRUE_VALUES[surface].items():
             key = f"{quantity}@{first}"
             have = [r["intervals"][key] for r in got if r["intervals"][key] is not None]
             if not have:
@@ -193,12 +195,9 @@ def main() -> int:
     print("environment is weakly identified when people are spread along a continuous")
     print("environment, so an endpoint running to nought or one is the model saying so.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/gxe-intervals-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "coverage of the genotype-by-environment profile intervals",
-                "date": "2026-08-13",
                 "estimator": "reml",
                 "pairs": PAIRS,
                 "people": N,
@@ -217,7 +216,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

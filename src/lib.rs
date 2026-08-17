@@ -1,35 +1,43 @@
 //! Asterism: variance components models for quantitative genetics.
 //!
-//! What Asterism is at any moment is what `docs/adr/` describes. Its reportable
-//! surface is one trait, additive and residual variance, REML and ML, an
-//! interval and a likelihood ratio test. The admitted two-trait Gaussian model
-//! now has a checked fixed-state likelihood and convergent ML/REML optimisation;
-//! its uncertainty, tests, coverage and JASA application remain unfinished.
-//! Everything else is deferred, which means not yet rather than never.
-//!
-//! `CONTEXT.md` is the vocabulary. Read it before naming anything here.
+//! The crate implements Gaussian variance-component models, specialised
+//! quantitative-genetic likelihoods, and numerical relationship-matrix
+//! constructors. Statistical definitions and limitations are described in
+//! `docs/statistical-methods.md`.
 
+mod association;
 mod bivariate;
 mod blocks;
 mod components;
 mod dense;
-mod kinship_classes;
-mod prepared;
-mod association;
+mod deviance;
+mod discrete_gxe;
 mod gxe;
+mod kinship_classes;
+mod latent_mediation;
 mod liability;
+mod mixture_tail;
+mod prepared;
 mod relationship;
 mod spatial;
+mod variant_set;
 
+pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
-pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
-pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
+pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
-pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
+pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
+pub use latent_mediation::{
+    LatentMediationEvaluation, LatentMediationFamilyEvaluation, LatentMediationFamilyInput,
+    LatentMediationFit, LatentMediationModel, LatentMediationParameters, VerticalTest,
+};
 pub use liability::{LiabilityFit, LiabilityModel};
-pub use relationship::{relationship_matrix, PedigreeError, Person};
+pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
+pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
+pub use relationship::{PedigreeError, Person, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
+pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -38,19 +46,38 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PreparedModel>()?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixture_tail::python::py_weighted_chi2_upper_tail,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;
-    module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_objective, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        bivariate::bivariate_objective,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_fit, module)?)?;
-    module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_interval, module)?)?;
-    module.add_function(pyo3::wrap_pyfunction!(kinship_classes::kinship_classes, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        bivariate::bivariate_interval,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        kinship_classes::kinship_classes,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
-    module.add_function(pyo3::wrap_pyfunction!(components::component_interval, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        components::component_interval,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         components::component_equality_test,
         module
     )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(components::component_contrasts, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        components::component_contrasts,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_blup, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(gxe::python::gxe_test, module)?)?;
@@ -59,12 +86,39 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         association::python::association_sweep,
         module
     )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(liability::python::liability_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_test,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        discrete_gxe::python::discrete_gxe_correlation_interval,
+        module
+    )?)?;
+    module.add_class::<latent_mediation::python::PyLatentMediationCore>()?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        liability::python::liability_fit,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         liability::python::liability_interval,
         module
     )?)?;
-    module.add_function(pyo3::wrap_pyfunction!(liability::python::liability_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        liability::python::liability_test,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        variant_set::python::variant_set_scan,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        variant_set::python::variant_set_family_scan,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;

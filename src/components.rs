@@ -5,7 +5,7 @@
 //! every likelihood evaluation is a pass over a diagonal. **That saving does not
 //! survive a second component.** Two structured matrices share no eigenbasis and
 //! cannot be diagonalised together, so each evaluation goes back to factorising
-//! a dense covariance (`docs/adr/0001`).
+//! a dense covariance.
 //!
 //! Once that is given up, the cost of two components and of five is the same
 //! order: a Cholesky per block either way, with one trace term per component.
@@ -27,6 +27,7 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::deviance::{chi2_one_df_upper_tail, chi2_upper_tail};
 
 /// A fitted multi-component model.
 #[derive(Clone, Debug)]
@@ -34,10 +35,12 @@ pub struct ComponentFit {
     /// One variance per structured component, in the order they were given,
     /// with the residual last.
     pub variances: Vec<f64>,
-    /// Each variance as a share of their total. This is what gets reported: the
-    /// first entry of a relationship-plus-residual model is the heritability.
+    /// Each raw covariance coefficient divided by their sum. These proportions
+    /// depend on the submitted matrix scales and are not generally variance
+    /// shares or heritabilities for unnormalised matrices.
     pub proportions: Vec<f64>,
-    pub total_variance: f64,
+    /// Sum of the raw covariance coefficients. This depends on matrix scaling.
+    pub coefficient_total: f64,
     pub fixed_effects: Vec<f64>,
     /// The standard error of each fixed effect, the square root of the diagonal
     /// of `(X' V^-1 X)^-1` at the fitted variances.
@@ -62,6 +65,20 @@ struct Evaluation {
     /// wanted for their standard errors. Kept only where it was formed.
     fixed_covariance: Option<DMatrix<f64>>,
 }
+
+/// Is a component resting on its lower bound of nought?
+///
+/// **This cannot be an exact test.** A bounded search leaves a component on its
+/// bound a hair above it rather than at it -- measured at 1e-37, 1e-17 and
+/// 1e-19 on ordinary problems -- so `value <= 0.0` never fires, the one-sided
+/// derivative is counted in full, and a fit that is demonstrably the maximum
+/// reports itself unconverged. On a unit-variance scale anything below this is
+/// nought in every sense that matters.
+pub(crate) fn resting_on_zero(value: f64) -> bool {
+    value <= RESTING_TOLERANCE
+}
+
+const RESTING_TOLERANCE: f64 = 1e-9;
 
 struct BlockSolve {
     rows: Vec<usize>,
@@ -88,10 +105,7 @@ impl ComponentModel {
     /// # Errors
     ///
     /// Returns a stable code where the inputs do not describe a model.
-    pub fn build(
-        matrices: &[DMatrix<f64>],
-        design: &DMatrix<f64>,
-    ) -> Result<Self, &'static str> {
+    pub fn build(matrices: &[DMatrix<f64>], design: &DMatrix<f64>) -> Result<Self, &'static str> {
         if matrices.is_empty() {
             return Err("COMPONENTS_NONE_GIVEN");
         }
@@ -238,13 +252,13 @@ impl ComponentModel {
         for block in &self.blocks {
             let size = block.len();
             let v = self.assemble(block, theta);
-            let chol = v.cholesky()?;
-            logdet += 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+            let factor = crate::dense::DenseFactor::new(&v)?;
+            logdet += factor.logdet();
 
             let yb = DVector::from_iterator(size, block.iter().map(|&i| y[i]));
             let xb = DMatrix::from_fn(size, p, |r, c| self.design[(block[r], c)]);
-            let vy = chol.solve(&yb);
-            let vx = chol.solve(&xb);
+            let vy = factor.solve_vector(&yb);
+            let vx = factor.solve_matrix(&xb);
             xvx += xb.transpose() * &vx;
             xvy += xb.transpose() * &vy;
             yvy += yb.dot(&vy);
@@ -252,7 +266,7 @@ impl ComponentModel {
             if want_gradient {
                 kept.push(BlockSolve {
                     rows: block.clone(),
-                    inverse: chol.inverse(),
+                    inverse: factor.inverse(),
                     vr: vy,
                     vx,
                 });
@@ -442,7 +456,7 @@ impl ComponentModel {
         // start that puts it near nought.
         //
         // **A signed coordinate needs its own start and will not converge from
-        // these.** They put every coordinate at a positive share, which is
+        // these.** They put every coordinate at a positive proportion, which is
         // right for a variance and wrong for a deviation: the matrix behind a
         // signed coordinate is a difference of two others and is not positive
         // semidefinite, so a positive start pushes the covariance somewhere it
@@ -453,21 +467,22 @@ impl ComponentModel {
         let mut starts: Vec<Vec<f64>> = Vec::new();
         if !signed.is_empty() {
             let unsigned = count - signed.len();
-            let share = if unsigned > 0 { 1.0 / unsigned as f64 } else { 0.0 };
-            let mut start = vec![share; count];
+            let proportion = if unsigned > 0 {
+                1.0 / unsigned as f64
+            } else {
+                0.0
+            };
+            let mut start = vec![proportion; count];
             for &k in signed {
                 start[k] = 0.0;
             }
             starts.push(start);
         }
-        starts.extend(vec![
-            vec![1.0 / count as f64; count],
-            {
-                let mut s = vec![0.1 / count as f64; count];
-                s[count - 1] = 0.9;
-                s
-            },
-        ]);
+        starts.extend(vec![vec![1.0 / count as f64; count], {
+            let mut s = vec![0.1 / count as f64; count];
+            s[count - 1] = 0.9;
+            s
+        }]);
         for component in 0..count - 1 {
             let mut s = vec![0.1 / count as f64; count];
             s[component] = 0.6;
@@ -492,7 +507,10 @@ impl ComponentModel {
             control.maxit = 500;
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; count];
-            control.factr = 0.0;
+            // R's own default: stop once the objective has settled to about
+            // 1e-9 relative. At nought the search ran to `maxit` every time,
+            // factorising a dense covariance per evaluation for nothing.
+            control.factr = 1.0e3;
             control.pgtol = 1e-9;
             control.lmm = count.min(10);
             let Ok(solution) =
@@ -519,7 +537,7 @@ impl ComponentModel {
                     if signed.contains(&k) {
                         // No bound to rest on, so no projection.
                         *g
-                    } else if solution.par[k] <= 0.0 {
+                    } else if resting_on_zero(solution.par[k]) {
                         g.min(0.0)
                     } else {
                         *g
@@ -548,7 +566,13 @@ impl ComponentModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if par[k] <= 0.0 { g.min(0.0) } else { *g })
+            .map(|(k, g)| {
+                if resting_on_zero(par[k]) {
+                    g.min(0.0)
+                } else {
+                    *g
+                }
+            })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
 
         // Back to the response's own units. Variances carry the square of the
@@ -568,12 +592,16 @@ impl ComponentModel {
         let errors = at
             .fixed_covariance
             .as_ref()
-            .map(|c| (0..c.nrows()).map(|i| (c[(i, i)].max(0.0)).sqrt() * scale).collect())
+            .map(|c| {
+                (0..c.nrows())
+                    .map(|i| (c[(i, i)].max(0.0)).sqrt() * scale)
+                    .collect()
+            })
             .unwrap_or_default();
         Ok(ComponentFit {
             variances,
             proportions,
-            total_variance: total,
+            coefficient_total: total,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
             fixed_effect_errors: errors,
             loglik,
@@ -584,16 +612,24 @@ impl ComponentModel {
     }
 }
 
-/// A profile-likelihood interval for one component's share of the variance.
+/// A profile-likelihood interval for one raw coefficient proportion.
 #[derive(Clone, Copy, Debug)]
 pub struct ComponentInterval {
     pub lower: f64,
     pub upper: f64,
     /// True where the endpoint is the edge of the parameter space rather than a
-    /// point the data ruled out.
+    /// point the data ruled out. Read it beside `profile_failures`: a bound
+    /// reached because the likelihood never crossed and a bound reached because
+    /// the profile could not be evaluated there are both reported here, and
+    /// only a non-zero failure count separates them.
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// A likelihood ratio test of one component against no variance at all.
@@ -669,6 +705,11 @@ impl ComponentModel {
     ///
     /// Returns a stable code where fewer than two classes are named, an index
     /// is out of range, or a fit fails.
+    ///
+    /// # Panics
+    ///
+    /// If a named class is missing from the list it was just taken from, which
+    /// cannot happen: the indices are validated against that list first.
     pub fn contrasts(
         &self,
         y: &DVector<f64>,
@@ -701,11 +742,7 @@ impl ComponentModel {
         let mut out: Vec<Option<Contrast>> = vec![None; named.len()];
         for (omitted, &last) in named.iter().enumerate() {
             // Everything but the omitted class, differenced against it.
-            let free: Vec<usize> = named
-                .iter()
-                .copied()
-                .filter(|k| *k != last)
-                .collect();
+            let free: Vec<usize> = named.iter().copied().filter(|k| *k != last).collect();
             let mut matrices = vec![baseline.clone()];
             for &k in &free {
                 matrices.push(&self.matrices[k] - &self.matrices[last]);
@@ -802,19 +839,12 @@ impl ComponentModel {
     }
 }
 
-/// The upper tail of a chi-square on one degree of freedom.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::erf::erfc((statistic / 2.0).sqrt())
-}
-
 impl ComponentModel {
-    /// The best log-likelihood with one component holding a fixed share of the
-    /// total variance.
+    /// The best log-likelihood with one component holding a fixed proportion of
+    /// the sum of raw covariance coefficients.
     ///
-    /// A share is not a parameter, so it cannot be pinned by fixing one. But
+    /// A coefficient proportion is not a parameter, so it cannot be pinned by
+    /// fixing one. But
     /// holding it fixed is a substitution, and an easier one than it looks. From
     ///
     /// ```text
@@ -826,7 +856,7 @@ impl ComponentModel {
     /// them the chain rule is a constant rather than a derivative — every free
     /// variance moves the pinned one by the same `v / (1 - v)`.
     ///
-    /// A share of exactly one would need every other variance at nought and the
+    /// A proportion of exactly one would need every other coefficient at nought and the
     /// substitution divides by zero there, so it is refused and the endpoint
     /// reports itself as limited by the parameter space.
     fn profile_objective(
@@ -834,14 +864,14 @@ impl ComponentModel {
         y: &DVector<f64>,
         reml: bool,
         component: usize,
-        share: f64,
+        proportion: f64,
     ) -> Option<f64> {
-        if !(0.0..=1.0).contains(&share) || share > 1.0 - 1e-9 {
+        if !(0.0..=1.0).contains(&proportion) || proportion > 1.0 - 1e-9 {
             return None;
         }
         let count = self.parameters();
         let free: Vec<usize> = (0..count).filter(|k| *k != component).collect();
-        let factor = share / (1.0 - share);
+        let factor = proportion / (1.0 - proportion);
 
         let expand = |packed: &[f64]| -> Vec<f64> {
             let mut theta = vec![0.0; count];
@@ -855,31 +885,29 @@ impl ComponentModel {
         };
 
         let mut best: Option<f64> = None;
-        for start in [
-            vec![1.0 / count as f64; free.len()],
-            {
-                let mut s = vec![0.1; free.len()];
-                if let Some(last) = s.last_mut() {
-                    *last = 0.9;
-                }
-                s
-            },
-        ] {
+        for start in [vec![1.0 / count as f64; free.len()], {
+            let mut s = vec![0.1; free.len()];
+            if let Some(last) = s.last_mut() {
+                *last = 0.9;
+            }
+            s
+        }] {
             let value_of = |candidate: &[f64]| -> f64 {
                 self.evaluate(&expand(candidate), y, reml, false)
                     .map_or(1e30, |e| e.negative_loglik)
             };
             let gradient_of = |candidate: &[f64]| -> Vec<f64> {
-                self.evaluate(&expand(candidate), y, reml, true).map_or_else(
-                    || vec![0.0; free.len()],
-                    |e| {
-                        // The pinned component is carried by all the others at
-                        // once, so each of them picks up the same share of its
-                        // slope.
-                        let through = e.gradient[component] * factor;
-                        free.iter().map(|&k| e.gradient[k] + through).collect()
-                    },
-                )
+                self.evaluate(&expand(candidate), y, reml, true)
+                    .map_or_else(
+                        || vec![0.0; free.len()],
+                        |e| {
+                            // The pinned component is carried by all the others at
+                            // once, so each of them picks up the same proportion of its
+                            // slope.
+                            let through = e.gradient[component] * factor;
+                            free.iter().map(|&k| e.gradient[k] + through).collect()
+                        },
+                    )
             };
             let Ok(bounds) = Bounds::new(vec![0.0; free.len()], vec![f64::INFINITY; free.len()])
             else {
@@ -889,25 +917,22 @@ impl ComponentModel {
             control.maxit = 400;
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; free.len()];
-            control.factr = 0.0;
+            control.factr = 1.0e3;
             control.pgtol = 1e-9;
             control.lmm = free.len().min(10);
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                && let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false)
+                && at.negative_loglik.is_finite()
+                && best.is_none_or(|b: f64| at.negative_loglik < b)
             {
-                if let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false) {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
-                }
+                best = Some(at.negative_loglik);
             }
         }
         best.map(|negative| -negative)
     }
 
-    /// A 95 per cent profile-likelihood interval for one component's share.
+    /// A 95 per cent profile-likelihood interval for one raw coefficient proportion.
     ///
     /// # Errors
     ///
@@ -935,14 +960,26 @@ impl ComponentModel {
         let maximum = self
             .profile_objective(&scaled, reml, component, fitted)
             .ok_or("COMPONENTS_PROFILE_MAXIMUM_FAILED")?;
-        let deviance = |share: f64| -> f64 {
-            self.profile_objective(&scaled, reml, component, share)
-                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+        let deviance = |proportion: f64| -> Option<f64> {
+            self.profile_objective(&scaled, reml, component, proportion)
+                .map(|ll| 2.0 * (maximum - ll))
         };
 
-        let endpoint = |bound: f64| -> (f64, bool) {
-            if deviance(bound) <= CHI2_ONE_DF_95 {
-                return (bound, true);
+        // **A profile that could not be evaluated is not a likelihood that fell
+        // away.** Read as an infinite deviance it looked like ground the data
+        // had ruled out, so the bisection stepped inward and the interval came
+        // back narrower than the data support -- confidently, and with nothing
+        // to show it had happened. A failure is now covered rather than cut
+        // away, and counted so a reader can see it.
+        let mut failures = 0usize;
+        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
+            match deviance(bound) {
+                None => {
+                    *failures += 1;
+                    return (bound, true);
+                }
+                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
+                Some(_) => {}
             }
             let (mut inside, mut outside) = (fitted, bound);
             for _ in 0..80 {
@@ -950,23 +987,27 @@ impl ComponentModel {
                 if (outside - inside).abs() <= 1e-9 {
                     break;
                 }
-                if deviance(middle) <= CHI2_ONE_DF_95 {
-                    inside = middle;
-                } else {
-                    outside = middle;
+                match deviance(middle) {
+                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
+                    Some(_) => outside = middle,
+                    None => {
+                        *failures += 1;
+                        inside = middle;
+                    }
                 }
             }
             (0.5 * (inside + outside), false)
         };
 
-        let (lower, lower_limited) = endpoint(0.0);
-        let (upper, upper_limited) = endpoint(1.0 - 1e-9);
+        let (lower, lower_limited) = endpoint(0.0, &mut failures);
+        let (upper, upper_limited) = endpoint(1.0 - 1e-9, &mut failures);
         Ok(ComponentInterval {
             lower,
             upper,
             lower_limited,
             upper_limited,
             level: 0.95,
+            profile_failures: failures,
         })
     }
 
@@ -1009,8 +1050,8 @@ impl ComponentModel {
         // it. If another component has also gone to nought the null is a
         // different mixture, and returning this one would be a p-value for a
         // question nobody asked.
-        for (other, share) in fit.proportions.iter().enumerate() {
-            if other != component && *share <= 1e-9 {
+        for (other, proportion) in fit.proportions.iter().enumerate() {
+            if other != component && *proportion <= 1e-9 {
                 return Err("COMPONENTS_ANOTHER_COMPONENT_AT_ZERO");
             }
         }
@@ -1026,18 +1067,23 @@ impl ComponentModel {
             .collect();
         let null_loglik = if kept.is_empty() {
             // Nothing structured left: residual only, which is still a model.
-            let residual = ComponentModel::build(&[DMatrix::identity(self.rows, self.rows)], &self.design)?;
+            let residual =
+                ComponentModel::build(&[DMatrix::identity(self.rows, self.rows)], &self.design)?;
             residual.fit(y, reml)?.loglik
         } else {
-            ComponentModel::build(&kept, &self.design)?.fit(y, reml)?.loglik
+            ComponentModel::build(&kept, &self.design)?
+                .fit(y, reml)?
+                .loglik
         };
 
-        let statistic = (2.0 * (fit.loglik - null_loglik)).max(0.0);
-        let p_value = if statistic <= 0.0 {
-            1.0
-        } else {
-            0.5 * chi2_one_df_upper_tail(statistic)
-        };
+        let statistic = crate::deviance::deviance(fit.loglik, null_loglik);
+        // The settling tolerance matters here and an exact test for nought does
+        // not: two searches never land on identically the same number, so a fit
+        // resting on the boundary arrives as a statistic of about 1e-10 and was
+        // being reported at p = 0.5 rather than p = 1. Under these nulls that is
+        // often half the fits, and in a scan it puts the atom in the wrong place
+        // for a quantile plot or an inflation factor.
+        let p_value = crate::deviance::p_value(statistic, |t| 0.5 * chi2_one_df_upper_tail(t));
         Ok(ComponentTest {
             statistic,
             p_value,
@@ -1116,26 +1162,35 @@ impl ComponentModel {
         let residual = y - &self.design * &beta;
 
         let mut xvx = DMatrix::<f64>::zeros(p, p);
-        let mut solves: Vec<(Vec<usize>, DMatrix<f64>, DVector<f64>, DMatrix<f64>)> =
-            Vec::with_capacity(self.blocks.len());
+        let mut solves: Vec<BlockSolve> = Vec::with_capacity(self.blocks.len());
         for block in &self.blocks {
             let size = block.len();
             let v = self.assemble(block, &theta);
-            let chol = crate::dense::DenseFactor::new(&v).ok_or("COMPONENTS_NOT_POSITIVE_DEFINITE")?;
+            let chol =
+                crate::dense::DenseFactor::new(&v).ok_or("COMPONENTS_NOT_POSITIVE_DEFINITE")?;
             let rb = DVector::from_iterator(size, block.iter().map(|&i| residual[i]));
             let xb = DMatrix::from_fn(size, p, |r, c| self.design[(block[r], c)]);
             let vr = chol.solve_vector(&rb);
             let vx = chol.solve_matrix(&xb);
             xvx += xb.transpose() * &vx;
-            solves.push((block.clone(), chol.inverse(), vr, vx));
+            solves.push(BlockSolve {
+                rows: block.clone(),
+                inverse: chol.inverse(),
+                vr,
+                vx,
+            });
         }
-        let xvx_inverse = xvx.cholesky().ok_or("COMPONENTS_DESIGN_RANK_DEFICIENT")?.inverse();
+        let xvx_inverse = xvx
+            .cholesky()
+            .ok_or("COMPONENTS_DESIGN_RANK_DEFICIENT")?
+            .inverse();
 
         let mut values = vec![0.0; n];
         let mut errors = vec![0.0; n];
         let matrix = &self.matrices[component];
         let scale = theta[component];
-        for (block, inverse, vr, vx) in &solves {
+        for solve in &solves {
+            let (block, inverse, vr, vx) = (&solve.rows, &solve.inverse, &solve.vr, &solve.vx);
             let size = block.len();
             // G over this block, which is the component's own matrix scaled.
             let g = DMatrix::from_fn(size, size, |i, j| scale * matrix[(block[i], block[j])]);
@@ -1160,6 +1215,10 @@ impl ComponentModel {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -1210,7 +1269,7 @@ mod python {
         Ok((
             fit.variances,
             fit.proportions,
-            fit.total_variance,
+            fit.coefficient_total,
             fit.loglik,
             fit.scaled_gradient,
             fit.converged,
@@ -1271,7 +1330,12 @@ mod python {
         let test = model
             .equality_test(&response(&y), &components, reml)
             .map_err(PyValueError::new_err)?;
-        Ok((test.statistic, test.p_value, test.rule.to_owned(), test.null_loglik))
+        Ok((
+            test.statistic,
+            test.p_value,
+            test.rule.to_owned(),
+            test.null_loglik,
+        ))
     }
 
     /// Predict the random effects of one component.
@@ -1294,7 +1358,7 @@ mod python {
         Ok((prediction.values, prediction.errors))
     }
 
-    /// A 95 per cent profile interval for one component's share of the variance.
+    /// A 95 per cent profile interval for one raw coefficient proportion.
     #[pyfunction]
     #[pyo3(signature = (matrices, design, y, component, reml=true))]
     pub fn component_interval(
@@ -1303,7 +1367,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         component: usize,
         reml: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+    ) -> PyResult<(f64, f64, bool, bool, f64, usize)> {
         let model = build(&matrices, &design)?;
         let interval = model
             .profile_interval(&response(&y), reml, component)
@@ -1314,6 +1378,7 @@ mod python {
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
+            interval.profile_failures,
         ))
     }
 
@@ -1418,15 +1483,6 @@ impl ComponentModel {
             null_loglik: null.loglik,
         })
     }
-}
-
-/// The upper tail of chi-square on `df` degrees of freedom, by the regularised
-/// upper incomplete gamma function.
-fn chi2_upper_tail(statistic: f64, df: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::gamma::gamma_ur(df / 2.0, statistic / 2.0)
 }
 
 #[cfg(test)]
@@ -1554,7 +1610,10 @@ mod tests {
     #[test]
     fn pooling_every_split_piece_gives_the_unsplit_model_back() {
         let (matrices, design, y) = split_by_class(0.0);
-        let whole = matrices.iter().skip(1).fold(matrices[0].clone(), |sum, m| sum + m);
+        let whole = matrices
+            .iter()
+            .skip(1)
+            .fold(matrices[0].clone(), |sum, m| sum + m);
         let split = ComponentModel::build(&matrices, &design).expect("valid");
         let together = ComponentModel::build(&[whole], &design).expect("valid");
         let all: Vec<usize> = (0..matrices.len()).collect();
@@ -1638,7 +1697,11 @@ mod tests {
                 total - 6.0
             }),
         );
-        (vec![rest, first, second], DMatrix::from_element(n, 1, 1.0), factor * draw)
+        (
+            vec![rest, first, second],
+            DMatrix::from_element(n, 1, 1.0),
+            factor * draw,
+        )
     }
     use super::ComponentModel;
     use nalgebra::{DMatrix, DVector};
@@ -1688,7 +1751,7 @@ mod tests {
         }
         let design = DMatrix::from_element(n, 1, 1.0);
 
-        let mut seed = 20260812u64;
+        let mut seed = 20_260_812u64;
         // Three uniforms scaled to unit variance.
         let mut next = || {
             let mut total = 0.0;
@@ -1744,8 +1807,14 @@ mod tests {
                     let mut down = point.clone();
                     up[k] += step;
                     down[k] -= step;
-                    let numeric = (model.evaluate(&up, &y, reml, false).unwrap().negative_loglik
-                        - model.evaluate(&down, &y, reml, false).unwrap().negative_loglik)
+                    let numeric = (model
+                        .evaluate(&up, &y, reml, false)
+                        .unwrap()
+                        .negative_loglik
+                        - model
+                            .evaluate(&down, &y, reml, false)
+                            .unwrap()
+                            .negative_loglik)
                         / (2.0 * step);
                     let scale = at.gradient[k].abs().max(1.0);
                     assert!(
@@ -1766,7 +1835,11 @@ mod tests {
         let (a, h, design, y) = small();
         let model = ComponentModel::build(&[a, h], &design).expect("valid");
         let fit = model.fit(&y, true).expect("fits");
-        assert!(fit.converged, "did not converge, |g| = {}", fit.scaled_gradient);
+        assert!(
+            fit.converged,
+            "did not converge, |g| = {}",
+            fit.scaled_gradient
+        );
         assert_eq!(fit.variances.len(), 3);
         assert!(
             fit.proportions[1] > 0.05,
@@ -1774,7 +1847,7 @@ mod tests {
             fit.proportions[1]
         );
         let total: f64 = fit.proportions.iter().sum();
-        assert!((total - 1.0).abs() < 1e-12, "shares sum to {total}");
+        assert!((total - 1.0).abs() < 1e-12, "proportions sum to {total}");
     }
 
     /// With one component this is the model `prepared.rs` fits, by a slower
@@ -1782,11 +1855,10 @@ mod tests {
     #[test]
     fn one_component_matches_the_eigen_simplified_model() {
         let (a, _, design, y) = small();
-        let model = ComponentModel::build(&[a.clone()], &design).expect("valid");
+        let model = ComponentModel::build(std::slice::from_ref(&a), &design).expect("valid");
         let fit = model.fit(&y, true).expect("fits");
 
-        let prepared =
-            crate::prepared::PreparedModel::build(&design, &a, None).expect("prepared builds");
+        let prepared = crate::prepared::PreparedModel::build(&design, &a).expect("prepared builds");
         let theirs = prepared.fit_one_trait(&y, true);
         assert!(
             (fit.proportions[0] - theirs.h2).abs() < 1e-6,
@@ -1826,7 +1898,11 @@ mod tests {
             let inverse = v.clone().cholesky().expect("positive definite").inverse();
             let beta = DVector::from_iterator(p, fit.fixed_effects.iter().copied());
             let residual = &y - &design * &beta;
-            let g = if component == 0 { &a * fit.variances[0] } else { &h * fit.variances[1] };
+            let g = if component == 0 {
+                &a * fit.variances[0]
+            } else {
+                &h * fit.variances[1]
+            };
             let expected = &g * &inverse * &residual;
 
             let xvx = design.transpose() * &inverse * &design;
@@ -1864,7 +1940,11 @@ mod tests {
 
         let spread = {
             let mean = predicted.values.iter().sum::<f64>() / predicted.values.len() as f64;
-            (predicted.values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
+            (predicted
+                .values
+                .iter()
+                .map(|v| (v - mean).powi(2))
+                .sum::<f64>()
                 / predicted.values.len() as f64)
                 .sqrt()
         };
@@ -1879,7 +1959,10 @@ mod tests {
                 "person {index} has a prediction error {error} above the effect's own \
                  spread {effect}"
             );
-            assert!(*error > 0.0, "person {index} has no prediction error at all");
+            assert!(
+                *error > 0.0,
+                "person {index} has no prediction error at all"
+            );
         }
     }
 
@@ -1960,8 +2043,7 @@ mod tests {
             let common = next();
             for i in 0..2 {
                 let genetic = half * common + half * next();
-                plain[2 * pair + i] =
-                    additive.sqrt() * genetic + residual.sqrt() * next();
+                plain[2 * pair + i] = additive.sqrt() * genetic + residual.sqrt() * next();
             }
         }
         let absent = model.component_test(&plain, true, 1).expect("tests");
@@ -1993,7 +2075,11 @@ mod tests {
         }
         let design = DMatrix::from_element(n, 1, 1.0);
         let relationship_only = crate::blocks::family_blocks(&a);
-        assert_eq!(relationship_only.len(), 2, "the pedigree alone gives two families");
+        assert_eq!(
+            relationship_only.len(),
+            2,
+            "the pedigree alone gives two families"
+        );
         let model = ComponentModel::build(&[a, h], &design).expect("valid");
         assert_eq!(
             model.blocks.len(),

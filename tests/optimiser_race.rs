@@ -64,10 +64,7 @@ fn problem() -> (ComponentModel, DVector<f64>) {
             y[2 * pair + i] += 0.4f64.sqrt() * genetic + 0.4f64.sqrt() * next();
         }
     }
-    (
-        ComponentModel::build(&[a, h], &design).expect("valid"),
-        y,
-    )
+    (ComponentModel::build(&[a, h], &design).expect("valid"), y)
 }
 
 #[test]

@@ -1,8 +1,7 @@
 //! The builder that makes an additive relationship matrix from a pedigree.
 //!
-//! A builder is a convenience, not the boundary: Asterism's interface takes a
-//! relationship matrix and does not care where it came from (`docs/adr/0001`,
-//! decision 11). This is here because the additive matrix is the one everybody
+//! Asterism's estimator takes a relationship matrix and does not care where it
+//! came from. This builder is included because the additive matrix is the one everybody
 //! needs and computing it by hand is where row-alignment mistakes live.
 //!
 //! What it produces is `A = 2 × kinship`, the numerator relationship matrix —
@@ -11,7 +10,7 @@
 //! and a grandchild.
 //!
 //! The pedigree arrives as parallel lists already in memory. Asterism reads no
-//! files (`docs/adr/0001`, decision 24), so turning a pedigree file into these
+//! files, so turning a pedigree file into these
 //! lists is the caller's business and stays outside.
 //!
 //! Ported from Astrarium's `pedigree.rs` and `relationship.rs`, which are the
@@ -39,7 +38,10 @@ pub enum PedigreeError {
     /// treating the unknown parent as an unrelated founder is a modelling
     /// choice, and a silent one would be the wrong kind.
     OneKnownParent(String),
-    MissingParentRecord { child: String, parent: String },
+    MissingParentRecord {
+        child: String,
+        parent: String,
+    },
     SelfParent(String),
     Cycle(String),
     UnknownId(String),
@@ -60,6 +62,16 @@ impl PedigreeError {
             Self::UnknownId(id) => format!("PEDIGREE_UNKNOWN_ID: {id}"),
         }
     }
+}
+
+/// Where a person has got to in the depth-first walk. A node is marked
+/// `InProgress` while its ancestors are being visited, so a loop in the
+/// pedigree is caught rather than looped on.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    Unvisited,
+    InProgress,
+    Done,
 }
 
 /// Order people so that every parent comes before every child. The relationship
@@ -93,14 +105,6 @@ fn topological_order(people: &[Person]) -> Result<Vec<usize>, PedigreeError> {
         }
     }
 
-    // Depth-first, marking a node grey while its ancestors are being visited so
-    // that a loop in the pedigree is caught rather than looped on.
-    #[derive(Clone, Copy, PartialEq)]
-    enum Mark {
-        Unvisited,
-        InProgress,
-        Done,
-    }
     let mut marks = vec![Mark::Unvisited; people.len()];
     let mut order = Vec::with_capacity(people.len());
     // An explicit stack rather than recursion: a deep pedigree should not be
@@ -143,8 +147,11 @@ fn topological_order(people: &[Person]) -> Result<Vec<usize>, PedigreeError> {
 /// among the people being analysed depend on their ancestors and on nobody
 /// else.
 fn ancestor_closure(people: &[Person], keep: &[String]) -> Result<HashSet<usize>, PedigreeError> {
-    let position: HashMap<&str, usize> =
-        people.iter().enumerate().map(|(i, p)| (p.id.as_str(), i)).collect();
+    let position: HashMap<&str, usize> = people
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.id.as_str(), i))
+        .collect();
     let mut wanted = HashSet::new();
     let mut stack = Vec::new();
     for id in keep {
@@ -259,7 +266,7 @@ pub fn relationship_matrix(
 
 #[cfg(test)]
 mod tests {
-    use super::{relationship_matrix, PedigreeError, Person};
+    use super::{PedigreeError, Person, relationship_matrix};
 
     fn person(id: &str, father: Option<&str>, mother: Option<&str>) -> Person {
         Person {
@@ -373,7 +380,10 @@ mod tests {
             PedigreeError::OneKnownParent("c".to_owned())
         );
         assert_eq!(
-            refuse(vec![person("c", Some("f"), Some("m")), person("m", None, None)]),
+            refuse(vec![
+                person("c", Some("f"), Some("m")),
+                person("m", None, None)
+            ]),
             PedigreeError::MissingParentRecord {
                 child: "c".to_owned(),
                 parent: "f".to_owned(),
@@ -400,20 +410,23 @@ mod tests {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{IntoPyArray, PyArray2};
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
 
-    use super::{relationship_matrix, Person};
+    use super::{Person, relationship_matrix};
 
     /// Build the additive relationship matrix from a pedigree held in memory.
     ///
-    /// Returns the matrix and the identifiers its rows are in, so that the
-    /// caller can align a response and a design to the same order — and then
-    /// hand those identifiers to `prepare` as the subject-order commitment,
-    /// which is what catches a misalignment later.
+    /// Returns the matrix and the identifiers its rows are in so the caller can
+    /// align the response and design before passing the numerical arrays to
+    /// `prepare`.
     #[pyfunction]
     #[pyo3(signature = (ids, father, mother, mz_twin=None, keep=None))]
     pub fn relationship(
@@ -427,10 +440,10 @@ mod python {
         if father.len() != ids.len() || mother.len() != ids.len() {
             return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
         }
-        if let Some(groups) = &mz_twin {
-            if groups.len() != ids.len() {
-                return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
-            }
+        if let Some(groups) = &mz_twin
+            && groups.len() != ids.len()
+        {
+            return Err(PyValueError::new_err("PEDIGREE_LENGTH_MISMATCH"));
         }
         let people: Vec<Person> = (0..ids.len())
             .map(|i| Person {

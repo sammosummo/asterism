@@ -4,8 +4,7 @@
 //! Building it validates — exact symmetry, positive semi-definiteness at a
 //! -1e-9 eigenvalue floor, finiteness, shapes, design rank — and decomposes the
 //! relationship matrix block by block, once. Every fit then runs against the
-//! stored spectral form. There is no way to switch validation off: holding a
-//! `PreparedModel` is itself the proof that it happened (`docs/adr/0002`).
+//! stored spectral form. Validation cannot be switched off.
 //!
 //! The objective is fixed by the interface. This is always the ordinary
 //! Gaussian model, and the response is never inspected to choose a likelihood;
@@ -19,6 +18,8 @@
 use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use statrs::function::erf::erfc;
 
+use crate::blocks::family_blocks;
+use crate::deviance::chi2_one_df_upper_tail;
 #[cfg(feature = "python")]
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 #[cfg(feature = "python")]
@@ -27,10 +28,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::types::PyDict;
-#[cfg(feature = "python")]
-use sha2::{Digest, Sha256};
-
-use crate::blocks::family_blocks;
 
 /// Eigenvalues of a positive semi-definite relationship matrix may dip a few
 /// units in the last place below zero; anything under this floor is a genuine
@@ -40,7 +37,7 @@ const EIGENVALUE_FLOOR: f64 = -1e-9;
 const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 /// The 0.95 quantile of the 50:50 mixture of chi-square with zero and one
 /// degrees of freedom — the Self–Liang rule deciding whether a boundary *point*
-/// belongs to the interval (`docs/adr/0004`).
+/// belongs to the interval.
 const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
 /// Snap width at the upper bound only. With a singular relationship matrix and
 /// a response duplicated within a zero-eigenvalue direction the likelihood has
@@ -65,16 +62,6 @@ fn log_two_pi() -> f64 {
 #[cfg(feature = "python")]
 fn code(text: &str) -> PyErr {
     PyValueError::new_err(text.to_owned())
-}
-
-/// The upper tail of chi-square with one degree of freedom, computed through
-/// the complementary error function rather than one minus a distribution
-/// function, which loses its digits exactly where a p-value needs them.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    erfc((statistic / 2.0).sqrt())
 }
 
 /// The two-sided tail of a standard normal, for the Wald test on a fixed
@@ -162,7 +149,6 @@ pub struct PreparedModel {
     dfr: f64,
     logdet_xtx: f64,
     min_eigenvalue: f64,
-    subject_order: Option<String>,
 }
 
 impl PreparedModel {
@@ -228,17 +214,28 @@ impl PreparedModel {
                 * (self.dfr * log_two_pi() + logdet_v + logdet_xwx - self.logdet_xtx
                     + self.dfr * sigma2.ln()
                     + self.dfr);
-            Some(Profiled { loglik, beta, sigma2, xtwx_inverse })
+            Some(Profiled {
+                loglik,
+                beta,
+                sigma2,
+                xtwx_inverse,
+            })
         } else {
             let nf = n as f64;
             let sigma2 = quad / nf;
             let loglik = -0.5 * (nf * log_two_pi() + logdet_v + nf * sigma2.ln() + nf);
-            Some(Profiled { loglik, beta, sigma2, xtwx_inverse })
+            Some(Profiled {
+                loglik,
+                beta,
+                sigma2,
+                xtwx_inverse,
+            })
         }
     }
 
     fn loglik_at(&self, yt: &DVector<f64>, h2: f64, reml: bool) -> f64 {
-        self.profile(yt, h2, reml).map_or(f64::NEG_INFINITY, |profiled| profiled.loglik)
+        self.profile(yt, h2, reml)
+            .map_or(f64::NEG_INFINITY, |profiled| profiled.loglik)
     }
 
     /// Number of observations.
@@ -261,12 +258,6 @@ impl PreparedModel {
         self.min_eigenvalue
     }
 
-    /// The subject-order commitment, if one was given.
-    #[must_use]
-    pub fn subject_order(&self) -> Option<&str> {
-        self.subject_order.as_deref()
-    }
-
     /// Validate and decompose. Kept separate from the Python constructor so the
     /// crate is usable, and testable, without Python in the picture.
     ///
@@ -280,11 +271,7 @@ impl PreparedModel {
         clippy::float_cmp,
         reason = "symmetry and the eigenvalue floor are exact tests by intent"
     )]
-    pub fn build(
-        x: &DMatrix<f64>,
-        k: &DMatrix<f64>,
-        subject_order: Option<String>,
-    ) -> Result<Self, &'static str> {
+    pub fn build(x: &DMatrix<f64>, k: &DMatrix<f64>) -> Result<Self, &'static str> {
         let (n, p) = (x.nrows(), x.ncols());
         if k.nrows() != k.ncols() {
             return Err("PREPARE_K_NOT_SQUARE");
@@ -345,7 +332,10 @@ impl PreparedModel {
         let gram = xt.transpose() * &xt;
         let gram_eigenvalues = SymmetricEigen::new(gram).eigenvalues;
         let max_eigenvalue = gram_eigenvalues.iter().copied().fold(0.0_f64, f64::max);
-        if gram_eigenvalues.iter().any(|&value| value <= 1e-12 * max_eigenvalue) {
+        if gram_eigenvalues
+            .iter()
+            .any(|&value| value <= 1e-12 * max_eigenvalue)
+        {
             return Err("PREPARE_X_RANK_DEFICIENT");
         }
         let logdet_xtx = gram_eigenvalues.iter().map(|value| value.ln()).sum::<f64>();
@@ -359,7 +349,6 @@ impl PreparedModel {
             dfr: (n - p) as f64,
             logdet_xtx,
             min_eigenvalue,
-            subject_order,
         })
     }
 
@@ -412,11 +401,10 @@ impl PreparedModel {
         }
 
         let final_fit = self.profile(&yt, best_h2, reml);
-        let converged =
-            converged_grid && final_fit.as_ref().is_some_and(|p| p.loglik.is_finite());
+        let converged = converged_grid && final_fit.as_ref().is_some_and(|p| p.loglik.is_finite());
 
-        // The fixed effects and their Wald tests (`docs/adr/0001`, decision 8:
-        // covariate significance is reported and never acted on). The variance
+        // The fixed effects and their Wald tests. Covariate significance is
+        // reported and is not used for automatic model selection. The variance
         // of the fixed effects is sigma2 times the inverse weighted
         // cross-product, so the standard errors come straight off the
         // decomposition the fit already did.
@@ -430,7 +418,7 @@ impl PreparedModel {
         // The reference distribution is the normal rather than a t. The
         // variance components are estimated, so a t on n - p is not justified
         // either, and the two are indistinguishable at the sizes this is used
-        // at. `Wald` is what decision 8 asks for and what the record says.
+        // at. The result labels this approximation as `wald`.
         let (loglik, beta, sigma2, fixed_effects) = match final_fit {
             Some(profiled) => {
                 let effects = (0..self.p)
@@ -485,7 +473,11 @@ impl PreparedModel {
             let optimum = -loglik;
             let deviance = |h2: f64| -> f64 {
                 let value = objective(h2);
-                if value.is_finite() { 2.0 * (value - optimum) } else { f64::INFINITY }
+                if value.is_finite() {
+                    2.0 * (value - optimum)
+                } else {
+                    f64::INFINITY
+                }
             };
             let endpoint = |bound: f64| -> (f64, bool) {
                 let mut outer = bound;
@@ -516,8 +508,11 @@ impl PreparedModel {
                     return (outer, true);
                 }
                 let crossing = |h2: f64| deviance(h2) - CHI2_ONE_DF_95;
-                let (a, b) =
-                    if best_h2 < outer { (best_h2, outer) } else { (outer, best_h2) };
+                let (a, b) = if best_h2 < outer {
+                    (best_h2, outer)
+                } else {
+                    (outer, best_h2)
+                };
                 (bisect_root(&crossing, a, b), false)
             };
             let (lower, lower_limited) = endpoint(0.0);
@@ -544,7 +539,7 @@ impl PreparedModel {
                 // parameter is on its bound under the null: the 50:50 mixture
                 // of chi-square on nought and one degrees of freedom. This is
                 // the one case where that mixture is verified rather than
-                // assumed (`docs/adr/0001`, decision 12).
+                // assumed by the boundary-mixture likelihood-ratio test.
                 //
                 // The atom has to be handled separately. For a positive
                 // statistic the nought-degree part contributes nothing and the
@@ -560,7 +555,11 @@ impl PreparedModel {
                 } else {
                     0.5 * chi2_one_df_upper_tail(statistic)
                 };
-                Some(LikelihoodRatioTest { statistic, null_loglik, p_value })
+                Some(LikelihoodRatioTest {
+                    statistic,
+                    null_loglik,
+                    p_value,
+                })
             } else {
                 None
             }
@@ -604,8 +603,8 @@ impl PreparedModel {
     }
 }
 
-/// One fixed effect, with the Wald inference decision 8 of `docs/adr/0001`
-/// requires. The interval is symmetric on the coefficient's own scale, which is
+/// One fixed effect with Wald inference. The interval is symmetric on the
+/// coefficient's own scale, which is
 /// legitimate here in a way it is not for a variance ratio: a regression
 /// coefficient is unbounded and asymptotically normal, whereas h² lives on
 /// [0, 1] and piles up on its bounds.
@@ -618,8 +617,7 @@ pub struct FixedEffect {
     pub upper: Option<f64>,
 }
 
-/// Which bound, if any, the fit landed on. A state, not advice
-/// (`docs/adr/0005`).
+/// Which bound, if any, the fit landed on at the fitted covariance parameters.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Boundary {
     Interior,
@@ -639,7 +637,7 @@ impl Boundary {
     }
 }
 
-/// The interval keeps one shape whatever the fit did (`docs/adr/0005`).
+/// The interval keeps one shape whether the optimum is interior or on a bound.
 pub struct Interval {
     pub lower: f64,
     pub upper: f64,
@@ -669,8 +667,7 @@ pub struct LikelihoodRatioTest {
     pub p_value: f64,
 }
 
-/// What a fit returns. Held in memory; nothing here writes to disk
-/// (`docs/adr/0003`).
+/// What a fit returns. Held in memory; nothing here writes to disk.
 pub struct Fit {
     pub h2: f64,
     pub total_variance: f64,
@@ -688,41 +685,18 @@ pub struct Fit {
 
 #[cfg(feature = "python")]
 #[pymethods]
+// PyO3 extracts each argument from a Python object, so a `#[pymethods]` entry
+// takes them by value whether or not the body consumes them.
+#[allow(clippy::needless_pass_by_value)]
 impl PreparedModel {
     #[new]
-    #[pyo3(signature = (x, k, subject_ids=None, subject_order_sha256=None))]
-    fn py_new(
-        x: PyReadonlyArray2<'_, f64>,
-        k: PyReadonlyArray2<'_, f64>,
-        subject_ids: Option<Vec<String>>,
-        subject_order_sha256: Option<String>,
-    ) -> PyResult<Self> {
-        if subject_ids.is_some() && subject_order_sha256.is_some() {
-            return Err(code("PREPARE_SUBJECT_ORDER_AMBIGUOUS"));
-        }
-        let subject_order = match (subject_ids, subject_order_sha256) {
-            (Some(ids), None) => {
-                let mut joined = ids.join("\n");
-                joined.push('\n');
-                let mut hasher = Sha256::new();
-                hasher.update(joined.as_bytes());
-                Some(format!("{:x}", hasher.finalize()))
-            }
-            (None, Some(hex)) => {
-                if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(code("PREPARE_SUBJECT_ORDER_SHA256_INVALID"));
-                }
-                Some(hex.to_ascii_lowercase())
-            }
-            (None, None) => None,
-            (Some(_), Some(_)) => unreachable!(),
-        };
-
+    #[pyo3(signature = (x, k))]
+    fn py_new(x: PyReadonlyArray2<'_, f64>, k: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         let x = x.as_array();
         let k = k.as_array();
         let x_matrix = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
         let k_matrix = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
-        Self::build(&x_matrix, &k_matrix, subject_order).map_err(code)
+        Self::build(&x_matrix, &k_matrix).map_err(code)
     }
 
     #[getter(n)]
@@ -738,11 +712,6 @@ impl PreparedModel {
     #[getter(min_eigenvalue)]
     fn py_min_eigenvalue(&self) -> f64 {
         self.min_eigenvalue
-    }
-
-    #[getter(subject_order)]
-    fn py_subject_order(&self) -> Option<String> {
-        self.subject_order.clone()
     }
 
     /// Fit the ordinary Gaussian model. The estimator is data on the record;
@@ -772,7 +741,6 @@ impl PreparedModel {
         let record = PyDict::new(py);
         record.set_item("estimator", estimator)?;
         record.set_item("n", self.n)?;
-        record.set_item("subject_order", self.subject_order.clone())?;
         record.set_item("h2", fit.h2)?;
         record.set_item("total_variance", fit.total_variance)?;
         record.set_item("beta", fit.beta)?;

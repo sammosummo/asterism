@@ -1,11 +1,8 @@
 """Are the two-trait intervals and tests calibrated?
 
-`docs/adr/0006` separates two questions that are easy to run together. The
-comparisons against SOLAR and R ask whether Asterism computes the same numbers as
-software that is already trusted — fidelity. This asks something they cannot:
-whether the uncertainty around those numbers means what it says. Agreement with
-SOLAR to seven figures says nothing about whether a 95 per cent interval contains
-the truth 95 per cent of the time.
+The comparisons against SOLAR and R ask whether Asterism computes the same
+numbers. This simulation asks whether a 95 per cent interval contains the truth
+at its stated rate and whether each test rejects at its stated level.
 
 Three things are measured, all by simulating data whose answer is known.
 
@@ -44,19 +41,17 @@ from __future__ import annotations
 import json
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
-from scipy import stats
-
 from asterism import _core
+from scipy import stats
 
 FAMILIES, PER_FAMILY = 30, 6
 INTERVAL_REPLICATES = 300
 TEST_REPLICATES = 400
 LEVELS = (0.01, 0.05, 0.10)
 
-TRUTH = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+TRUTH = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
 QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
 
 
@@ -114,17 +109,17 @@ def coverage(k: np.ndarray) -> dict:
                 TRUTH["rg"],
                 TRUTH["re"],
                 phenotypic(TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"]),
-            ),
+            ), strict=True,
         )
     )
 
-    contained = {q: 0 for q in QUANTITIES}
+    contained = dict.fromkeys(QUANTITIES, 0)
     # Each quantity is counted over the replicates where *its own* interval was
     # computed. Sharing one denominator across all four is wrong: a replicate
     # that fails on the third interval has already contributed to the first two,
     # so their numerators advance while the shared denominator does not, and the
     # ratio can exceed one. It did -- 1.040 -- which is how this was found.
-    attempted = {q: 0 for q in QUANTITIES}
+    attempted = dict.fromkeys(QUANTITIES, 0)
     complete = 0
     started = time.perf_counter()
     for replicate in range(INTERVAL_REPLICATES):
@@ -132,14 +127,15 @@ def coverage(k: np.ndarray) -> dict:
         whole = True
         for quantity in QUANTITIES:
             try:
-                lower, upper, _, _, _ = _core.bivariate_interval(
+                interval = _core.bivariate_interval(
                     k, observed, design, y, quantity, True
                 )
-            except Exception:
-                # An interval that will not compute is not evidence about
-                # coverage. It is counted out rather than counted as a miss.
+            except ValueError:
+                # An interval that will not compute does not contribute to the
+                # measured coverage. It is counted out rather than as a miss.
                 whole = False
                 continue
+            lower, upper, _, _, _, _ = interval
             attempted[quantity] += 1
             if lower <= true_value[quantity] <= upper:
                 contained[quantity] += 1
@@ -172,13 +168,19 @@ def calibration(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 70000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            _, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_g", 0.0, True
             )
-            p_values.append(p_value)
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        _, p_value, _, _, _ = outcome
+        p_values.append(p_value)
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -193,8 +195,8 @@ def boundary(k: np.ndarray) -> dict:
 
     Against zero the correlation is interior and a plain chi-squared applies.
     Against plus or minus one it sits on a bound, and the Self-Liang 50:50
-    mixture applies instead (`docs/adr/0001` decision 29). That is a different
-    code path and it needs its own calibration.
+    mixture applies instead. That is a different approximation and is measured
+    separately here.
 
     Simulating with the genetic correlation exactly one makes the genetic
     covariance singular -- rank one, the two traits sharing a single genetic
@@ -213,15 +215,21 @@ def boundary(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 90000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            statistic, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_g", 1.0, True
             )
-            p_values.append(p_value)
-            if statistic <= 0.0:
-                at_zero += 1
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        statistic, p_value, _, _, _ = outcome
+        p_values.append(p_value)
+        if statistic <= 0.0:
+            at_zero += 1
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -255,13 +263,19 @@ def phenotypic_null(k: np.ndarray) -> dict:
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):
         y = draw(chol, n, 130000 + replicate)
+        # **Unpacked outside the `try`.** A tuple of the wrong length raises
+        # `ValueError`, which is also what the Rust layer raises for a fit that
+        # could not be made, so catching around the unpacking hid a changed
+        # return arity as four hundred failed replicates -- and the calibration
+        # reported nothing at all rather than reporting a fault.
         try:
-            _, p_value, _, _ = _core.bivariate_correlation_test(
+            outcome = _core.bivariate_correlation_test(
                 k, observed, design, y, "rho_p", 0.0, True
             )
-            p_values.append(p_value)
-        except Exception:
-            pass
+        except ValueError:
+            continue
+        _, p_value, _, _, _ = outcome
+        p_values.append(p_value)
         if (replicate + 1) % 100 == 0:
             print(
                 f"  {replicate + 1} replicates, "
@@ -323,6 +337,12 @@ def main() -> int:
     if replicates < TEST_REPLICATES * 0.9:
         failures.append(f"only {replicates} of {TEST_REPLICATES} replicates tested")
     print(f"\n  {replicates} of {TEST_REPLICATES} replicates tested.\n")
+    if replicates == 0:
+        print("  Nothing to report: no replicate produced a p-value.")
+        print("\nNOT CALIBRATED:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
     rates = {}
     for level in LEVELS:
@@ -429,10 +449,9 @@ def main() -> int:
     print("\nIntervals cover and the test holds its level.")
     print("This is calibration, which is a different question from the agreement")
     print("with SOLAR and R — those say the numbers match, this says the")
-    print("uncertainty around them means what it claims (`docs/adr/0006`).")
+    print("interval coverage and rejection rates match their stated levels.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/bivariate-calibration-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
                 "families": FAMILIES,
@@ -484,7 +503,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

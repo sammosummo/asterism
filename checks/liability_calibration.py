@@ -14,9 +14,9 @@ matrix, and only the statuses are simulated.
 the profile; whether the test holds its level is about the reference
 distribution, which is assumed rather than earned. A heritability of nought sits
 on a bound, so the even mixture of a point mass and chi-square on one degree of
-freedom is the natural reference and is what a Gaussian variance component gets.
-Decision 16 of the estimator record warned that the boundary geometry changes
-for a liability model. This is where that warning is either borne out or not.
+freedom is the natural reference for a Gaussian variance component. Because the
+liability likelihood has different boundary geometry, its rejection rate is
+checked directly here rather than inferred from the Gaussian case.
 
 **The criterion is validity, not uniformity.** The statistic sits on a bound
 under its null, so a share of fits land exactly on it and return a p-value of
@@ -37,13 +37,12 @@ import os
 import sqlite3
 import sys
 import time
-from statistics import NormalDist
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-
-import numpy as np
+from statistics import NormalDist
 
 import asterism
+import numpy as np
 from asterism import _core
 
 DATABASE = Path(
@@ -113,24 +112,30 @@ def one(job):
 
     out = {"scenario": scenario}
     try:
-        statistic, p_value, _, _ = _core.liability_test(relationship, status, design)
+        outcome = _core.liability_test(relationship, status, design)
+    except ValueError:
+        outcome = None
+    if outcome is None:
+        out["p_value"] = None
+    else:
+        statistic, p_value, _, _ = outcome
         out["p_value"] = p_value
         out["statistic"] = statistic
-    except Exception:
-        out["p_value"] = None
     if scenario == "heritable":
         try:
-            estimate, lower, upper, at_lower, at_upper = _core.liability_interval(
-                relationship, status, design
-            )
+            interval = _core.liability_interval(relationship, status, design)
+        except ValueError:
+            interval = None
+        if interval is None:
+            out["interval"] = None
+        else:
+            estimate, lower, upper, at_lower, at_upper, _ = interval
             out["interval"] = {
                 "estimate": estimate,
                 "lower": lower,
                 "upper": upper,
                 "at_bound": bool(at_lower or at_upper),
             }
-        except Exception:
-            out["interval"] = None
     return out
 
 
@@ -224,12 +229,9 @@ def main() -> int:
     print("\nThe test holds its level and the interval covers, on the real pedigree")
     print("with its real family sizes, which is where the approximation is used.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/liability-calibration-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "level and coverage of the binary liability model",
-                "date": "2026-08-14",
                 "estimator": "ml",
                 "pedigree": "the real GOBS pedigree; only statuses simulated",
                 "people": n,
@@ -249,7 +251,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

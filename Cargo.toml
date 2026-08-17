@@ -19,16 +19,49 @@ python = ["dep:pyo3", "dep:numpy"]
 unsafe_code = "forbid"
 
 [lints.clippy]
-all = "warn"
-pedantic = "warn"
+# The groups take a lower priority so the named exceptions below can override
+# them; Cargo applies them in priority order, not in the order written.
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Deliberate exceptions. Each is a place where following the lint would make
+# the code wrong rather than merely different, so they are set here once with
+# the reason instead of being waved through at three hundred call sites.
+#
+# `!(x > 0.0)` rejects a NaN where `x <= 0.0` quietly admits one, and a
+# numerical library has to reject it.
+neg_cmp_op_on_partial_ord = "allow"
+# The exact comparisons are exact on purpose: a relationship matrix asymmetric
+# by one unit in the last place is a real error and there is a test for it, and
+# a parameter held at a bound sits on it exactly.
+float_cmp = "allow"
+# Every one of these casts is a count -- of people, of variants, of quadrature
+# points -- and all of them are far below the 2^53 where the conversion stops
+# being exact.
+cast_precision_loss = "allow"
+# A likelihood evaluation or an optimiser driver that reads as one continuous
+# derivation is easier to check against the mathematics than the same thing cut
+# into fragments that each need their arguments explained. Length is not the
+# thing to optimise in these particular functions.
+too_many_lines = "allow"
+# Statistical notation is short on purpose: `a`, `b`, `d` are the structural
+# parameters and `y` is the response, and spelling them out would put distance
+# between the code and the equations it implements.
+many_single_char_names = "allow"
+similar_names = "allow"
+# In these loops the counter is a parameter number that the body uses for
+# several things -- picking a derivative, testing which component it is -- and
+# only incidentally to write one gradient entry. The lint is aimed at
+# `for i in 0..v.len() { v[i] }`, which is not what these are.
+needless_range_loop = "allow"
 
 [dependencies]
+libm = "0.2.16"
 faer = { version = "0.24.4", default-features = false, features = ["std", "rayon"] }
 nalgebra = { version = "0.34.1", default-features = false, features = ["std"] }
 numpy = { version = "0.29.0", optional = true }
 pyo3 = { version = "0.29.0", features = ["abi3-py39"], optional = true }
 rcompat-lbfgsb = "0.2.1"
-sha2 = "0.10.9"
 statrs = { version = "0.18.0", default-features = false }
 
 [dev-dependencies]

@@ -1,12 +1,9 @@
 //! Two traits, additive and residual variance, with the correlations carried as
 //! free parameters.
 //!
-//! Admitted by `docs/adr/0001` decision 29 for the JASA reanalysis. The
-//! fixed-state check this is measured against is `checks/bivariate_reference.py`,
-//! written first and deliberately: written second it would have been a
-//! transcription rather than a second route. The fitted REML comparison is the
-//! still more independent `checks/bivariate_against_r.py`, which calls the
-//! compiled Rust fit and R's `regress` (`docs/adr/0006`).
+//! The fixed-state calculation is compared with
+//! `checks/bivariate_reference.py`; fitted REML estimates are compared with
+//! R's `regress` by `checks/bivariate_against_r.py`.
 //!
 //! # The model
 //!
@@ -22,30 +19,19 @@
 //! Six parameters, and at two traits the constraint set is simply a box: the
 //! variances positive, the heritabilities in [0,1], the correlations in [−1,1].
 //! Nothing further is needed to keep both covariances positive semi-definite,
-//! which is what makes this parameterisation worth having here even though it
-//! fails at three traits (decision 5).
+//! which is what makes this parameterisation useful for exactly two traits.
 //!
 //! # Unbalanced by construction
 //!
 //! A person contributes the rows for the traits they actually have, and everyone
-//! with at least one measured trait is in (decision 9). This is what breaks the
+//! with at least one measured trait is included. This is what breaks the
 //! Kronecker structure: the eigen-rotation that makes the one-trait fit fast
 //! survives extra traits only while everybody has every trait. So each family
 //! block is assembled and factorised directly. On the real rosters the largest
 //! family is 160 people, which makes an evaluation about 0.05 Gflop against the
 //! 1.2 a single dense factorisation would cost.
 //!
-//! # State, as of 11 August 2026
-//!
-//! **The fixed-state objective, the interior score and every exact-boundary
-//! state's free score are checked. The bound-constrained search meets its
-//! `1e-7` projected KKT criterion for ML and REML on the deterministic
-//! unbalanced comparison, including exact heritability and correlation
-//! boundaries.** This establishes the numerical optimiser; it does not
-//! establish standard errors, tests, intervals, coverage, or the realised JASA
-//! analysis. Do not report scientific results from this yet.
-//!
-//! What is established:
+//! # Numerical checks
 //!
 //! - This objective and the reference's agree to **1.4e-14** at the same
 //!   parameters on the same data, for both estimators. They are the same
@@ -64,8 +50,8 @@
 //! score non-differentiable and its correlation unidentified. At |ρ| = 1 one
 //! component is rank deficient, but the full covariance can remain positive
 //! definite because the other component supplies the missing direction. Exact
-//! correlation bounds are therefore valid and required for decision 29's null
-//! refits; zero-variance states need a lower-dimensional parameterisation.
+//! correlation bounds are therefore valid for null refits; zero-variance states
+//! need a lower-dimensional parameterisation.
 //!
 //! - **Here**: returned a large value with a **zero gradient**, which tells a
 //!   quasi-Newton method it has found a stationary point. The fit settled
@@ -89,9 +75,8 @@
 //!
 //! # Gradients are analytic
 //!
-//! Decision 14, and for the reason given there: the convergence test is the
-//! scaled gradient against a tolerance, and a differenced gradient cannot
-//! certify convergence below its own noise floor.
+//! The convergence test is the scaled gradient against a tolerance; a
+//! differenced gradient cannot certify convergence below its own noise floor.
 //!
 //! ```text
 //! ∂ℓ/∂θ = −½[ tr(V⁻¹ ∂V/∂θ) − r'V⁻¹ (∂V/∂θ) V⁻¹ r ]
@@ -105,6 +90,7 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::deviance::chi2_one_df_upper_tail;
 
 /// How many free parameters: two total variances, two heritabilities, two
 /// correlations.
@@ -142,8 +128,7 @@ pub struct BivariateFit {
     pub converged: bool,
     pub estimator: &'static str,
     /// The largest scaled gradient at the reported point. This is the
-    /// convergence test decision 14 names, and it is on the record so that a
-    /// claim of convergence can be checked rather than taken.
+    /// convergence diagnostic returned with the fit.
     pub scaled_gradient: f64,
 }
 
@@ -205,7 +190,7 @@ fn derivative(theta: &[f64; PARAMETERS], which: usize) -> ([[f64; 2]; 2], [[f64;
 }
 
 /// The objective and its gradient at one point, with the fixed effects profiled
-/// out by generalised least squares (decision 10).
+/// out by generalised least squares.
 struct Evaluation {
     negative_loglik: f64,
     gradient: [f64; PARAMETERS],
@@ -603,8 +588,8 @@ struct BlockSolve {
 ///
 /// Correlations are different: `ρ = ±1` makes one component rank deficient, but
 /// the sum defining the full observation covariance may remain positive
-/// definite. Those exact boundaries are therefore retained, as decision 29
-/// requires for the genetic-correlation null refits.
+/// definite. Those exact boundaries are therefore retained for correlation
+/// null refits.
 const INTERIOR_EPSILON: f64 = f64::EPSILON;
 const LOWER: [f64; PARAMETERS] = [1e-8, 1e-8, INTERIOR_EPSILON, INTERIOR_EPSILON, -1.0, -1.0];
 const UPPER: [f64; PARAMETERS] = [
@@ -786,8 +771,8 @@ fn project_full(theta: &mut [f64; PARAMETERS]) {
     }
 }
 
-/// The convergence test of decision 14: the largest gradient component, scaled
-/// by the parameter and by the objective so that it is a relative quantity, and
+/// The largest gradient component, scaled by the parameter and by the objective
+/// so that it is a relative convergence diagnostic, and
 /// ignoring directions pressed against a bound the gradient points into.
 ///
 /// This is evaluated in the reversible, trait-standardised coordinates used by
@@ -819,14 +804,13 @@ impl BivariateModel {
     ///
     /// Bound-constrained L-BFGS-B with analytic gradients, three deterministic
     /// starts and an independently recomputed projected KKT check. The retained
-    /// curvature memory is six, equal to the parameter count (decision 14 as
-    /// amended after measuring the available searches).
+    /// curvature memory is six, equal to the parameter count.
     ///
     /// # Errors
     ///
     /// Returns a stable code where the response is invalid, no exact state has a
-    /// KKT-qualified optimum, or a failed search found a materially better point
-    /// than every qualified candidate.
+    /// converged optimum, or a failed search found a materially better point
+    /// than every converged candidate.
     pub fn fit(&self, y: &DVector<f64>, reml: bool) -> Result<BivariateFit, &'static str> {
         if y.len() != self.rows {
             return Err("BIVARIATE_Y_LENGTH_MISMATCH");
@@ -836,7 +820,7 @@ impl BivariateModel {
         }
 
         // One good warm start and two insurance starts in each exact
-        // heritability state (decision 14). The lower/upper states remove the
+        // heritability state. The lower/upper states remove the
         // correlation that ceases to exist when a component variance vanishes.
         let standardised = self.standardised_problem(y)?;
         let starts = [
@@ -976,15 +960,8 @@ impl BivariateModel {
     /// `1e-7` KKT criterion for both ML and REML on the same unbalanced problem,
     /// including an exact correlation-bound solution.
     ///
-    /// Decision 14 preferred extending a hand-written BFGS to taking a
-    /// dependency, but that reasoning rested on Astrarium already having one and
-    /// it did not come across in the fresh start. A hand-written attempt is in
-    /// the history: it descended and then stalled two orders of magnitude short
-    /// of the tolerance, because a good bound-constrained search needs a line
-    /// search that checks the slope has flattened and not merely that the value
-    /// fell, and an active set that optimises over the free parameters rather
-    /// than projecting a step computed as though the bounds were not there.
-    /// Both are genuinely hard and both have been done properly already.
+    /// A bound-constrained optimiser is necessary because projected
+    /// hand-written searches stalled well above the gradient tolerance.
     ///
     /// The memory equals the number of free parameters in the state, at most
     /// six. This remains an L-BFGS-B representation, but retains enough recent
@@ -1065,6 +1042,10 @@ impl BivariateModel {
         control.maxit = 500;
         control.fnscale = initial_objective.abs().max(1.0);
         control.parscale = vec![1.0; dimension];
+        // Deliberately not R's function-settling default: the thirty-seed
+        // stress battery has deterministic cases whose best start is only
+        // found by running the search to the gradient criterion alone, so the
+        // function-based stop stays disabled in this module.
         control.factr = 0.0;
         // Ask the dependency for a tighter raw projected score than Asterism's
         // scaled criterion. Their norms are not identical, so using the public
@@ -1162,8 +1143,8 @@ mod tests {
         // two traits. Without one, h² goes to zero and the genetic correlation
         // multiplies the square root of zero — it stops affecting the likelihood
         // at all and no optimiser can converge on it. That is a real state
-        // (decision 5: a correlation is absent, not zero, where the variance
-        // is), and it is tested separately rather than here.
+        // because a correlation is absent, not zero, where the corresponding
+        // variance is zero. That state is tested separately rather than here.
         let mut index = 0;
         let mut shared = vec![(0.0, 0.0); pairs];
         for pair in &mut shared {
@@ -1537,8 +1518,8 @@ mod tests {
             (0.00, 0.60, 0.35, 0.55),
             (-0.25, 0.20, 0.80, -0.60),
             (0.70, 0.90, 0.85, 0.75),
-            (0.10, 0.02, 0.50, 0.30),   // a heritability near nought
-            (0.10, 0.98, 0.50, 0.30),   // and one near one
+            (0.10, 0.02, 0.50, 0.30), // a heritability near nought
+            (0.10, 0.98, 0.50, 0.30), // and one near one
         ] {
             // The substitution must invert the definition it came from.
             let re = implied(target, h1, h2, rg);
@@ -1585,11 +1566,11 @@ mod tests {
     #[test]
     fn the_feasible_window_for_the_genetic_correlation_is_found() {
         for &(target, h1, h2) in &[
-            (0.90f64, 0.61f64, 0.56f64),  // weight and waist circumference
-            (0.86, 0.61, 0.57),  // two diffusion measures
+            (0.90f64, 0.61f64, 0.56f64), // weight and waist circumference
+            (0.86, 0.61, 0.57),          // two diffusion measures
             (0.00, 0.60, 0.35),
             (-0.80, 0.50, 0.50),
-            (0.30, 0.05, 0.05),  // little genetic variance to work with
+            (0.30, 0.05, 0.05), // little genetic variance to work with
         ] {
             let p = (h1 * h2).sqrt();
             let d = ((1.0 - h1) * (1.0 - h2)).sqrt();
@@ -1718,7 +1699,9 @@ mod tests {
         ];
         for (quantity, fitted) in quantities {
             let Some(fitted) = fitted else { continue };
-            let interval = model.profile_interval(&y, true, quantity).expect("interval");
+            let interval = model
+                .profile_interval(&y, true, quantity)
+                .expect("interval");
             assert!(
                 interval.lower <= fitted + 1.0e-9 && fitted <= interval.upper + 1.0e-9,
                 "[{}, {}] does not contain {fitted}",
@@ -1735,6 +1718,10 @@ mod tests {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -1791,7 +1778,7 @@ mod python {
         quantity: &str,
         null: f64,
         reml: bool,
-    ) -> PyResult<(f64, f64, String, f64)> {
+    ) -> PyResult<(f64, f64, String, f64, f64)> {
         let wanted = match quantity {
             "rho_g" => super::Reported::GeneticCorrelation,
             "rho_e" => super::Reported::ResidualCorrelation,
@@ -1808,7 +1795,13 @@ mod python {
         let test = model
             .correlation_test(&y, reml, wanted, null)
             .map_err(PyValueError::new_err)?;
-        Ok((test.statistic, test.p_value, test.rule.to_owned(), test.null_loglik))
+        Ok((
+            test.statistic,
+            test.p_value,
+            test.rule.to_owned(),
+            test.null_loglik,
+            test.alternative_loglik,
+        ))
     }
 
     /// A 95 per cent profile-likelihood interval for one reported quantity.
@@ -1823,7 +1816,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         quantity: &str,
         reml: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+    ) -> PyResult<(f64, f64, bool, bool, f64, usize)> {
         let wanted = match quantity {
             "h2_first" => super::Reported::HeritabilityFirst,
             "h2_second" => super::Reported::HeritabilitySecond,
@@ -1848,6 +1841,7 @@ mod python {
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
+            interval.profile_failures,
         ))
     }
 
@@ -1900,7 +1894,7 @@ const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 
 /// A profile-likelihood interval for one reported quantity.
 ///
-/// The same shape whatever the fit did (`docs/adr/0005`): a lower and an upper
+/// The same shape whatever the fit did: a lower and an upper
 /// endpoint, and a flag on each saying whether it reached a bound without the
 /// deviance ever crossing. A `limited` endpoint is the bound itself, not a
 /// crossing, and reporting it as though it were one would overstate what the
@@ -1909,14 +1903,24 @@ const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 pub struct ProfileInterval {
     pub lower: f64,
     pub upper: f64,
+    /// True where the endpoint is the edge of the parameter space rather than a
+    /// point the data ruled out. Read it beside `profile_failures`: a bound
+    /// reached because the likelihood never crossed and a bound reached because
+    /// the profile could not be evaluated there are both reported here, and
+    /// only a non-zero failure count separates them.
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// Which reported quantity an interval is for. These are parameters in this
 /// parameterisation, which is what makes profiling them a constrained refit
-/// rather than a reparameterisation (`docs/adr/0001` decision 29).
+/// rather than a reparameterisation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reported {
     HeritabilityFirst,
@@ -1983,7 +1987,7 @@ impl BivariateModel {
             [1.0f64, 1.0, 0.3, 0.3, 0.4, 0.4],
             [1.0f64, 1.0, 0.7, 0.7, -0.3, 0.3],
         ] {
-            let mut packed: Vec<f64> = free
+            let packed: Vec<f64> = free
                 .iter()
                 .enumerate()
                 .map(|(slot, &k)| start[k].clamp(lower[slot], upper[slot]))
@@ -2019,12 +2023,11 @@ impl BivariateModel {
                 optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
             {
                 let theta = expand(&solution.par);
-                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
+                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                    && at.negative_loglik.is_finite()
+                    && best.is_none_or(|b: f64| at.negative_loglik < b)
+                {
+                    best = Some(at.negative_loglik);
                 }
             }
         }
@@ -2183,16 +2186,12 @@ impl BivariateModel {
             control.lmm = 5;
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
+                && let Some(theta) = expand(&solution.par)
+                && let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                && at.negative_loglik.is_finite()
+                && best.is_none_or(|b: f64| at.negative_loglik < b)
             {
-                if let Some(theta) = expand(&solution.par) {
-                    if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false) {
-                        if at.negative_loglik.is_finite()
-                            && best.is_none_or(|b: f64| at.negative_loglik < b)
-                        {
-                            best = Some(at.negative_loglik);
-                        }
-                    }
-                }
+                best = Some(at.negative_loglik);
             }
         }
         best.map(|negative| -negative)
@@ -2257,16 +2256,26 @@ impl BivariateModel {
 
         // Deviance at a value: how much log-likelihood is given up by holding
         // the quantity there. Infinite where the value cannot be supported.
-        let deviance = |value: f64| -> f64 {
+        let deviance = |value: f64| -> Option<f64> {
             self.profile_at(y, reml, quantity, value)
-                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+                .map(|ll| 2.0 * (maximum - ll))
         };
 
-        let endpoint = |bound: f64| -> (f64, bool) {
-            if deviance(bound) <= CHI2_ONE_DF_95 {
+        // **A profile that could not be evaluated is not a likelihood that fell
+        // away.** Read as an infinite deviance it looked like ground the data
+        // had ruled out, so the bisection stepped inward and the interval came
+        // back narrower than the data support, with nothing to show for it.
+        let mut failures = 0usize;
+        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
+            match deviance(bound) {
+                None => {
+                    *failures += 1;
+                    return (bound, true);
+                }
                 // The threshold is never reached: the endpoint is the bound and
                 // the interval is limited by the parameter space, not the data.
-                return (bound, true);
+                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
+                Some(_) => {}
             }
             let (mut inside, mut outside) = (fitted, bound);
             for _ in 0..80 {
@@ -2274,24 +2283,28 @@ impl BivariateModel {
                 if (outside - inside).abs() <= 1e-9 {
                     break;
                 }
-                if deviance(middle) <= CHI2_ONE_DF_95 {
-                    inside = middle;
-                } else {
-                    outside = middle;
+                match deviance(middle) {
+                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
+                    Some(_) => outside = middle,
+                    None => {
+                        *failures += 1;
+                        inside = middle;
+                    }
                 }
             }
             (0.5 * (inside + outside), false)
         };
 
         let (bottom, top) = quantity.range();
-        let (lower, lower_limited) = endpoint(bottom);
-        let (upper, upper_limited) = endpoint(top);
+        let (lower, lower_limited) = endpoint(bottom, &mut failures);
+        let (upper, upper_limited) = endpoint(top, &mut failures);
         Ok(ProfileInterval {
             lower,
             upper,
             lower_limited,
             upper_limited,
             level: 0.95,
+            profile_failures: failures,
         })
     }
 }
@@ -2303,23 +2316,25 @@ pub struct CorrelationTest {
     pub p_value: f64,
     /// `chi2_1` at an interior null, `mixture_50_50` at a bound.
     pub rule: &'static str,
+    /// The profiled log likelihood under the null.
+    ///
+    /// **Both log likelihoods here are on the trait-standardised scale, which
+    /// is not the scale `BivariateFit::loglik` reports.** They differ by a
+    /// constant that depends on the response's own units, so pairing one from
+    /// each gives a deviance that can come out negative -- measured at -138 on
+    /// an ordinary two-trait problem. That is why the alternative is carried
+    /// beside the null rather than left to be fetched from the fit: these two
+    /// belong together and nothing else pairs with either.
     pub null_loglik: f64,
-}
-
-/// The upper tail of chi-square on one degree of freedom, through the
-/// complementary error function rather than one minus a distribution function,
-/// which loses its digits exactly where a p-value needs them.
-fn chi2_one_df_upper_tail(statistic: f64) -> f64 {
-    if statistic <= 0.0 {
-        return 1.0;
-    }
-    statrs::function::erf::erfc((statistic / 2.0).sqrt())
+    /// The profiled log likelihood at the estimate, on the same scale as
+    /// `null_loglik`, so that `2 (alternative - null)` reproduces `statistic`.
+    pub alternative_loglik: f64,
 }
 
 impl BivariateModel {
     /// Test a correlation against a fixed value by refitting with it held there.
     ///
-    /// Carried as a free parameter (decision 29), a correlation supports an
+    /// Carried as a free parameter, a correlation supports an
     /// ordinary likelihood ratio against a constrained refit — no
     /// reparameterisation and no special machinery.
     ///
@@ -2385,18 +2400,35 @@ impl BivariateModel {
         let maximum = self
             .profile_at(y, reml, quantity, fitted)
             .ok_or("BIVARIATE_MAXIMUM_FAILED")?;
-        let statistic = (2.0 * (maximum - null_loglik)).max(0.0);
+        let statistic = crate::deviance::deviance(maximum, null_loglik);
 
         let interior = null.abs() < 1.0;
+        // A correlation of plus or minus one is the edge of the parameter
+        // space, so its null takes the even mixture. **The settling tolerance
+        // matters and an exact test for nought does not**: `maximum` and
+        // `null_loglik` come from two separate profile searches, which never
+        // land on identically the same number, so a fit genuinely resting on
+        // the bound arrives as a statistic of about 1e-12 and was reported at
+        // p = 0.5 rather than p = 1. Under this null that is often half the
+        // fits, and it puts the atom in the wrong place for a quantile plot.
         let (p_value, rule) = if interior {
-            (chi2_one_df_upper_tail(statistic), "chi2_1")
-        } else if statistic <= 0.0 {
-            // The estimate sits on the bound: nothing can be more extreme.
-            (1.0, "mixture_50_50")
+            (
+                crate::deviance::p_value(statistic, chi2_one_df_upper_tail),
+                "chi2_1",
+            )
         } else {
-            (0.5 * chi2_one_df_upper_tail(statistic), "mixture_50_50")
+            (
+                crate::deviance::p_value(statistic, |s| 0.5 * chi2_one_df_upper_tail(s)),
+                "mixture_50_50",
+            )
         };
 
-        Ok(CorrelationTest { statistic, p_value, rule, null_loglik })
+        Ok(CorrelationTest {
+            statistic,
+            p_value,
+            rule,
+            null_loglik,
+            alternative_loglik: maximum,
+        })
     }
 }

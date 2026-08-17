@@ -1,0 +1,53 @@
+{
+  "what": "class-weighted kinship calibration",
+  "date": "2026-08-17",
+  "estimator": "reml",
+  "people": 720,
+  "true_weight": 1.0,
+  "replicates": 200,
+  "completed": 200,
+  "nominal": 0.95,
+  "classes": {
+    "mother_son": {
+      "pairs": 100,
+      "true_coefficient_proportion": 0.16666666666666666,
+      "coefficient_proportion_mean": 0.1616148605265863,
+      "coefficient_proportion_bias": -0.005051806140080356,
+      "coverage": 0.945,
+      "intervals": 200,
+      "weight_mean": 2.445303561700646,
+      "weight_bias": 1.445303561700646
+    },
+    "mother_daughter": {
+      "pairs": 140,
+      "true_coefficient_proportion": 0.16666666666666666,
+      "coefficient_proportion_mean": 0.16657462270638354,
+      "coefficient_proportion_bias": -9.20439602831169e-05,
+      "coverage": 0.935,
+      "intervals": 200,
+      "weight_mean": 2.3844209764739968,
+      "weight_bias": 1.3844209764739968
+    },
+    "father_son": {
+      "pairs": 50,
+      "true_coefficient_proportion": 0.16666666666666666,
+      "coefficient_proportion_mean": 0.1665526727835004,
+      "coefficient_proportion_bias": -0.00011399388316626902,
+      "coverage": 0.94,
+      "intervals": 200,
+      "weight_mean": 2.591685318516931,
+      "weight_bias": 1.591685318516931
+    },
+    "father_daughter": {
+      "pairs": 70,
+      "true_coefficient_proportion": 0.16666666666666666,
+      "coefficient_proportion_mean": 0.1596734123311018,
+      "coefficient_proportion_bias": -0.006993254335564858,
+      "coverage": 0.925,
+      "intervals": 200,
+      "weight_mean": 2.3373629518159205,
+      "weight_bias": 1.3373629518159205
+    }
+  },
+  "note": "the weights are ratios of two estimated variances and are biased upward; raw coefficient proportions avoid that bias here but remain scale-dependent, so report coefficients, equality tests, and contrasts for zero-diagonal class bases"
+}

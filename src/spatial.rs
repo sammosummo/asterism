@@ -28,9 +28,10 @@
 //! neither the 50:50 mixture `components.rs` uses nor anything else in closed
 //! form. Simulating the null is the only honest route, which is what
 //! `bootstrap_spatial_variance` does. Everything else — an interval for the
-//! spatial share, an interval for `λ`, a test of `λ` against a particular value
-//! — is ordinary profile likelihood and needs no such machinery, because those
-//! are interior questions asked where the component exists.
+//! spatial raw coefficient proportion, an interval for `λ`, a test of `λ`
+//! against a particular value — is ordinary profile likelihood and needs no
+//! such machinery, because those are interior questions asked where the
+//! component exists.
 
 use faer::linalg::solvers::{Llt, Solve};
 use faer::{Mat, Side};
@@ -90,9 +91,13 @@ pub struct SpatialFit {
     /// One variance per fixed component in the order given, then the spatial
     /// variance, then the residual.
     pub variances: Vec<f64>,
-    /// Each variance as a share of their total.
-    pub proportions: Vec<f64>,
-    pub total_variance: f64,
+    /// Each raw covariance coefficient divided by their sum. These proportions
+    /// depend on the submitted fixed-matrix scales and are not generally
+    /// variance shares for unnormalised matrices.
+    pub raw_coefficient_proportions: Vec<f64>,
+    /// Sum of the raw covariance coefficients. This depends on fixed-matrix
+    /// scaling and is not generally a marginal variance.
+    pub raw_coefficient_total: f64,
     /// The estimated decay rate, per kilometre.
     pub lambda: f64,
     /// The distance at which the spatial correlation is a half, in kilometres.
@@ -130,7 +135,7 @@ enum DerivativeSource<'a> {
 }
 
 impl DerivativeSource<'_> {
-    #[inline(always)]
+    #[inline]
     fn at(&self, i: usize, j: usize) -> f64 {
         match self {
             Self::Fixed(m) => m[(i, j)],
@@ -155,7 +160,6 @@ const INTEGRATION_POINTS: usize = 12;
 pub struct SpatialModel {
     design: DMatrix<f64>,
     fixed: Vec<DMatrix<f64>>,
-    distance: DMatrix<f64>,
     /// Which place each person lives at, indexing `place_distance`.
     ///
     /// **People share addresses, and the kernel does not care which of them is
@@ -211,7 +215,7 @@ fn decay_bounds(distance: &DMatrix<f64>) -> (f64, f64) {
     if !(widest > 0.0) || !closest.is_finite() {
         // Everybody in one place: no spatial information at all, and any decay
         // rate describes the data equally. The range is left nominal and the
-        // fit will report a spatial share of nothing.
+        // spatial coefficient will fit to nothing.
         return (1.0e-6, 1.0);
     }
     (
@@ -292,7 +296,6 @@ impl SpatialModel {
             place_distance,
             design: design.clone(),
             fixed: fixed.to_vec(),
-            distance: distance.clone(),
             rows: n,
             logdet_xtx,
             lambda_lower,
@@ -328,7 +331,7 @@ impl SpatialModel {
     }
 
     /// The spatial correlation between two people.
-    #[inline(always)]
+    #[inline]
     fn kernel_at(&self, kernel: &DMatrix<f64>, i: usize, j: usize) -> f64 {
         kernel[(self.place[i], self.place[j])]
     }
@@ -342,7 +345,10 @@ impl SpatialModel {
     ) -> Option<Evaluation> {
         let count = self.parameters();
         let lambda = theta[self.lambda_index()];
-        if theta[..count - 1].iter().any(|v| !v.is_finite() || *v < 0.0) {
+        if theta[..count - 1]
+            .iter()
+            .any(|v| !v.is_finite() || *v < 0.0)
+        {
             return None;
         }
         if !lambda.is_finite() || !(self.lambda_lower..=self.lambda_upper).contains(&lambda) {
@@ -432,12 +438,7 @@ impl SpatialModel {
                     } else if index == self.spatial_index() {
                         DerivativeSource::Kernel(&kernel, &self.place)
                     } else {
-                        DerivativeSource::Decay(
-                            &kernel,
-                            &self.place_distance,
-                            &self.place,
-                            scale,
-                        )
+                        DerivativeSource::Decay(&kernel, &self.place_distance, &self.place, scale)
                     };
 
                     let mut trace = 0.0;
@@ -514,7 +515,7 @@ impl SpatialModel {
         // because the decay rate spans orders of magnitude.
         let span = (self.lambda_upper / self.lambda_lower).ln();
         for step in 0..4 {
-            let lambda = self.lambda_lower * (span * (step as f64 + 0.5) / 4.0).exp();
+            let lambda = self.lambda_lower * (span * (f64::from(step) + 0.5) / 4.0).exp();
             let mut even = vec![1.0 / variance_count as f64; count];
             even[self.lambda_index()] = lambda;
             starts.push(even);
@@ -562,7 +563,9 @@ impl SpatialModel {
                 continue;
             };
             if at.negative_loglik.is_finite()
-                && best.as_ref().is_none_or(|(v, _, _)| at.negative_loglik < *v)
+                && best
+                    .as_ref()
+                    .is_none_or(|(v, _, _)| at.negative_loglik < *v)
             {
                 best = Some((at.negative_loglik, solution.par.clone(), at.fixed_effects));
             }
@@ -591,8 +594,11 @@ impl SpatialModel {
         let scaled_gradient = projected / negative.abs().max(1.0);
 
         let variances: Vec<f64> = par[..count - 1].iter().map(|v| v * variance).collect();
-        let total: f64 = variances.iter().sum();
-        let proportions = variances.iter().map(|v| v / total).collect();
+        let raw_coefficient_total: f64 = variances.iter().sum();
+        let raw_coefficient_proportions = variances
+            .iter()
+            .map(|v| v / raw_coefficient_total)
+            .collect();
         let lambda = par[self.lambda_index()];
         let observations = if reml {
             (self.rows - self.design.ncols()) as f64
@@ -602,15 +608,19 @@ impl SpatialModel {
 
         Ok(SpatialFit {
             variances,
-            proportions,
-            total_variance: total,
+            raw_coefficient_proportions,
+            raw_coefficient_total,
             lambda,
             half_distance_km: std::f64::consts::LN_2 / lambda,
             fixed_effects: beta.iter().map(|b| b * scale).collect(),
             fixed_effect_errors: at
                 .fixed_covariance
                 .as_ref()
-                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .map(|c| {
+                    (0..c.nrows())
+                        .map(|i| c[(i, i)].max(0.0).sqrt() * scale)
+                        .collect()
+                })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
@@ -635,13 +645,13 @@ impl SpatialModel {
     /// The weight is uniform on the logarithm of the decay rate across the range
     /// the distances support, because a decay rate spans orders of magnitude and
     /// nothing in the data picks a scale. That is the same instinct as the port
-    /// lab's outcome-blind frozen grid, reached from the other direction: it
+    /// use of a fixed grid, reached from the other direction: it
     /// declines to let the data choose a range and then report the choice as
     /// though it were estimated.
     ///
     /// Three things follow. There is no decay rate to report, so the
     /// uninformative interval on it disappears rather than being suppressed. The
-    /// spatial share's uncertainty now includes not knowing the range, where
+    /// spatial coefficient proportion's uncertainty now includes not knowing the range, where
     /// before it was conditional on a badly determined estimate of it. And the
     /// statistic is an integrated likelihood ratio, which is better behaved
     /// under the null than a supremum over something unidentified.
@@ -661,8 +671,7 @@ impl SpatialModel {
         let mut logliks = Vec::with_capacity(INTEGRATION_POINTS);
         let mut gradients = Vec::with_capacity(INTEGRATION_POINTS);
         let mut effects: Vec<Vec<f64>> = Vec::with_capacity(INTEGRATION_POINTS);
-        let mut covariances: Vec<Option<DMatrix<f64>>> =
-            Vec::with_capacity(INTEGRATION_POINTS);
+        let mut covariances: Vec<Option<DMatrix<f64>>> = Vec::with_capacity(INTEGRATION_POINTS);
 
         let span = (self.lambda_upper / self.lambda_lower).ln();
         for point in 0..INTEGRATION_POINTS {
@@ -682,14 +691,28 @@ impl SpatialModel {
             effects.push(at.fixed_effects);
             covariances.push(at.fixed_covariance);
         }
-        if logliks.is_empty() {
+        // **The divisor is the whole grid and not the part of it that
+        // happened to evaluate.** A point drops out when its covariance will
+        // not factorise, which depends on lambda and therefore on where the
+        // search currently is, so the surviving set genuinely changes as theta
+        // moves. Dividing by the survivors renormalises them to sum to one and
+        // steps the objective by ln(12/11), about 0.087, as the search crosses
+        // a boundary where a point starts or stops factorising -- which both
+        // stalls the search and makes two constrained integrated fits
+        // incomparable, though their difference is exactly what the integrated
+        // likelihood ratio takes. A point that cannot be evaluated contributes
+        // nothing, which is what an infeasible region should contribute.
+        //
+        // Too few surviving points is a different matter: the rule is then
+        // integrating over a grid that mostly does not exist, and says so.
+        if logliks.len() * 2 < INTEGRATION_POINTS {
             return None;
         }
 
         // log of the mean of the likelihoods, taken safely.
         let largest = logliks.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let total: f64 = logliks.iter().map(|l| (l - largest).exp()).sum();
-        let integrated = largest + (total / logliks.len() as f64).ln();
+        let integrated = largest + (total / INTEGRATION_POINTS as f64).ln();
         if !integrated.is_finite() {
             return None;
         }
@@ -757,11 +780,7 @@ impl SpatialModel {
     /// # Errors
     ///
     /// Returns a stable code where no start reached a usable optimum.
-    pub fn fit_integrated(
-        &self,
-        y: &DVector<f64>,
-        reml: bool,
-    ) -> Result<SpatialFit, &'static str> {
+    pub fn fit_integrated(&self, y: &DVector<f64>, reml: bool) -> Result<SpatialFit, &'static str> {
         if y.len() != self.rows {
             return Err("SPATIAL_RESPONSE_WRONG_LENGTH");
         }
@@ -820,7 +839,9 @@ impl SpatialModel {
                 continue;
             };
             if at.negative_loglik.is_finite()
-                && best.as_ref().is_none_or(|(v, _, _)| at.negative_loglik < *v)
+                && best
+                    .as_ref()
+                    .is_none_or(|(v, _, _)| at.negative_loglik < *v)
             {
                 best = Some((at.negative_loglik, solution.par.clone(), at.fixed_effects));
             }
@@ -834,13 +855,22 @@ impl SpatialModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if par[k] <= 0.0 { g.min(0.0) } else { *g })
+            .map(|(k, g)| {
+                if crate::components::resting_on_zero(par[k]) {
+                    g.min(0.0)
+                } else {
+                    *g
+                }
+            })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
         let scaled_gradient = projected / negative.abs().max(1.0);
 
         let variances: Vec<f64> = par.iter().map(|v| v * variance).collect();
-        let total: f64 = variances.iter().sum();
-        let proportions = variances.iter().map(|v| v / total).collect();
+        let raw_coefficient_total: f64 = variances.iter().sum();
+        let raw_coefficient_proportions = variances
+            .iter()
+            .map(|v| v / raw_coefficient_total)
+            .collect();
         let observations = if reml {
             (self.rows - self.design.ncols()) as f64
         } else {
@@ -849,8 +879,8 @@ impl SpatialModel {
 
         Ok(SpatialFit {
             variances,
-            proportions,
-            total_variance: total,
+            raw_coefficient_proportions,
+            raw_coefficient_total,
             // There is no decay rate to report: it has been integrated out.
             // Reporting the middle of the range would invite it to be read as an
             // estimate, so it is reported as not a number.
@@ -860,7 +890,11 @@ impl SpatialModel {
             fixed_effect_errors: at
                 .fixed_covariance
                 .as_ref()
-                .map(|c| (0..c.nrows()).map(|i| c[(i, i)].max(0.0).sqrt() * scale).collect())
+                .map(|c| {
+                    (0..c.nrows())
+                        .map(|i| c[(i, i)].max(0.0).sqrt() * scale)
+                        .collect()
+                })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
             converged: scaled_gradient < 1e-6,
@@ -917,8 +951,7 @@ impl SpatialModel {
             v[(i, i)] += fit.variances[self.residual_index()];
         }
 
-        let factor = crate::dense::DenseFactor::new(&v)
-            .ok_or("SPATIAL_NOT_POSITIVE_DEFINITE")?;
+        let factor = crate::dense::DenseFactor::new(&v).ok_or("SPATIAL_NOT_POSITIVE_DEFINITE")?;
         let inverse = factor.inverse();
         let beta = DVector::from_iterator(p, fit.fixed_effects.iter().copied());
         let residual = y - &self.design * &beta;
@@ -942,7 +975,11 @@ impl SpatialModel {
         let gvx = &g * &vx;
         let correction = &gvx * &xvx_inverse * gvx.transpose();
         let errors = (0..n)
-            .map(|i| (g[(i, i)] - gvig[(i, i)] + correction[(i, i)]).max(0.0).sqrt())
+            .map(|i| {
+                (g[(i, i)] - gvig[(i, i)] + correction[(i, i)])
+                    .max(0.0)
+                    .sqrt()
+            })
             .collect();
         Ok((predicted.iter().copied().collect(), errors))
     }
@@ -988,8 +1025,8 @@ impl SpatialModel {
 /// Which quantity an interval is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpatialQuantity {
-    /// One variance as a share of the total, by index.
-    Share(usize),
+    /// One raw covariance coefficient divided by their total, by index.
+    RawCoefficientProportion(usize),
     /// The decay rate itself.
     Lambda,
 }
@@ -1009,7 +1046,8 @@ const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 impl SpatialModel {
     /// The best log-likelihood with one quantity held fixed.
     ///
-    /// A share is held by substitution, as in `components.rs`: the other
+    /// A raw coefficient proportion is held by substitution, as in
+    /// `components.rs`: the other
     /// variances are free and this one follows them. The decay rate is held by
     /// pinning the coordinate, since it is a parameter in its own right.
     fn profile_objective(
@@ -1029,7 +1067,7 @@ impl SpatialModel {
         let count = self.parameters();
         let variances = count - 1;
         let (free, factor): (Vec<usize>, f64) = match quantity {
-            SpatialQuantity::Share(index) => {
+            SpatialQuantity::RawCoefficientProportion(index) => {
                 if index >= variances || !(0.0..=1.0).contains(&value) || value > 1.0 - 1e-9 {
                     return None;
                 }
@@ -1055,7 +1093,7 @@ impl SpatialModel {
         let expand = |packed: &[f64]| -> Vec<f64> {
             let mut theta = vec![0.0; count];
             match quantity {
-                SpatialQuantity::Share(index) => {
+                SpatialQuantity::RawCoefficientProportion(index) => {
                     let mut others = 0.0;
                     for (slot, &k) in free.iter().enumerate() {
                         theta[k] = packed[slot];
@@ -1077,7 +1115,13 @@ impl SpatialModel {
 
         let lower: Vec<f64> = free
             .iter()
-            .map(|&k| if k == self.lambda_index() { self.lambda_lower } else { 0.0 })
+            .map(|&k| {
+                if k == self.lambda_index() {
+                    self.lambda_lower
+                } else {
+                    0.0
+                }
+            })
             .collect();
         let upper: Vec<f64> = free
             .iter()
@@ -1093,7 +1137,8 @@ impl SpatialModel {
         let mut best: Option<f64> = None;
         let profile_span = (self.lambda_upper / self.lambda_lower).ln();
         for step in 0..3 {
-            let lambda_start = self.lambda_lower * (profile_span * (step as f64 + 0.5) / 3.0).exp();
+            let lambda_start =
+                self.lambda_lower * (profile_span * (f64::from(step) + 0.5) / 3.0).exp();
             let start: Vec<f64> = free
                 .iter()
                 .map(|&k| {
@@ -1121,7 +1166,7 @@ impl SpatialModel {
                         .map_or_else(
                             || vec![0.0; free.len()],
                             |e| match quantity {
-                                SpatialQuantity::Share(index) => {
+                                SpatialQuantity::RawCoefficientProportion(index) => {
                                     let through = e.gradient[index] * factor;
                                     free.iter().map(|&k| e.gradient[k] + through).collect()
                                 }
@@ -1132,22 +1177,17 @@ impl SpatialModel {
                 self.evaluate(&theta, y, reml, true).map_or_else(
                     || vec![0.0; free.len()],
                     |e| match quantity {
-                        SpatialQuantity::Share(index) => {
+                        SpatialQuantity::RawCoefficientProportion(index) => {
                             // The pinned variance is carried by the free
                             // variances together, so each picks up the same
                             // share of its slope. The decay rate carries none of
                             // it, being no part of the total.
                             let through = e.gradient[index] * factor;
                             free.iter()
-                                .map(|&k| {
-                                    e.gradient[k]
-                                        + if k < variances { through } else { 0.0 }
-                                })
+                                .map(|&k| e.gradient[k] + if k < variances { through } else { 0.0 })
                                 .collect()
                         }
-                        SpatialQuantity::Lambda => {
-                            free.iter().map(|&k| e.gradient[k]).collect()
-                        }
+                        SpatialQuantity::Lambda => free.iter().map(|&k| e.gradient[k]).collect(),
                     },
                 )
             };
@@ -1177,12 +1217,11 @@ impl SpatialModel {
                 } else {
                     self.evaluate(&theta, y, reml, false)
                 };
-                if let Some(at) = at {
-                    if at.negative_loglik.is_finite()
-                        && best.is_none_or(|b: f64| at.negative_loglik < b)
-                    {
-                        best = Some(at.negative_loglik);
-                    }
+                if let Some(at) = at
+                    && at.negative_loglik.is_finite()
+                    && best.is_none_or(|b: f64| at.negative_loglik < b)
+                {
+                    best = Some(at.negative_loglik);
                 }
             }
             if quantity == SpatialQuantity::Lambda {
@@ -1196,9 +1235,10 @@ impl SpatialModel {
 
     /// A 95 per cent profile interval.
     ///
-    /// **This is honest for the decay rate and for a share that is not nought,
-    /// and it is not a way round the bootstrap.** An interval for the spatial
-    /// share whose lower endpoint reaches nought does not test whether there is
+    /// **This is honest for the decay rate and for a raw coefficient proportion
+    /// that is not nought, and it is not a way round the bootstrap.** An
+    /// interval for the spatial coefficient proportion whose lower endpoint
+    /// reaches nought does not test whether there is
     /// a spatial effect: under that null the decay rate means nothing and the
     /// deviance has no chi-squared reference. Read the endpoint, not a
     /// hypothesis test spelled backwards.
@@ -1222,11 +1262,11 @@ impl SpatialModel {
             self.fit(y, reml)?
         };
         let (fitted, bottom, top) = match quantity {
-            SpatialQuantity::Share(index) => {
+            SpatialQuantity::RawCoefficientProportion(index) => {
                 if index >= self.parameters() - 1 {
                     return Err("SPATIAL_NO_SUCH_COMPONENT");
                 }
-                (fit.proportions[index], 0.0, 1.0 - 1e-9)
+                (fit.raw_coefficient_proportions[index], 0.0, 1.0 - 1e-9)
             }
             SpatialQuantity::Lambda => (fit.lambda, self.lambda_lower, self.lambda_upper),
         };
@@ -1287,6 +1327,7 @@ impl SpatialModel {
 /// # Errors
 ///
 /// Returns a stable code for a coordinate outside its range.
+#[cfg(any(feature = "python", test))]
 pub fn pairwise_haversine_km(
     latitude: &[f64],
     longitude: &[f64],
@@ -1320,7 +1361,8 @@ pub fn pairwise_haversine_km(
     Ok(distance)
 }
 
-/// Mean spherical Earth radius, in kilometres, matching the port lab's contract.
+/// Mean spherical Earth radius, in kilometres.
+#[cfg(any(feature = "python", test))]
 pub const EARTH_RADIUS_KM: f64 = 6_371.008_8;
 
 /// splitmix64, so that any bootstrap can be reproduced from its seed alone.
@@ -1417,14 +1459,13 @@ impl SpatialModel {
         for _ in 0..replicates {
             let draw = DVector::from_iterator(n, (0..n).map(|_| stream.normal()));
             let simulated = &mean + &factor * draw;
-            match self.spatial_statistic(&simulated, reml, integrated) {
-                Ok(statistic) => {
-                    usable += 1;
-                    if statistic >= observed {
-                        exceedances += 1;
-                    }
+            // A replicate that cannot be fitted is left out of the count
+            // rather than counted as a non-exceedance.
+            if let Ok(statistic) = self.spatial_statistic(&simulated, reml, integrated) {
+                usable += 1;
+                if statistic >= observed {
+                    exceedances += 1;
                 }
-                Err(_) => continue,
             }
         }
         if usable == 0 {
@@ -1442,6 +1483,13 @@ impl SpatialModel {
     }
 }
 
+// PyO3 extracts each argument from a Python object, so a `#[pyfunction]` takes
+// them by value whether or not the body consumes them. The lint cannot be
+// satisfied here without breaking the macro.
+#[allow(clippy::needless_pass_by_value)]
+// A `#[pyfunction]`'s parameter list is the Python signature, so grouping
+// arguments into a struct to shorten it would make the interface worse.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 mod python {
     use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -1472,7 +1520,8 @@ mod python {
 
     /// Fit one trait with fixed components plus an estimated spatial range.
     ///
-    /// Returns the variances, their shares, the total, the decay rate per
+    /// Returns the raw covariance coefficients, their scale-dependent
+    /// proportions and total, the decay rate per
     /// kilometre, the distance at which the spatial correlation is a half, the
     /// log-likelihood, the scaled gradient and whether it converged.
     #[pyfunction]
@@ -1485,7 +1534,18 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
         integrated: bool,
-    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, f64, f64, bool, Vec<f64>, Vec<f64>)> {
+    ) -> PyResult<(
+        Vec<f64>,
+        Vec<f64>,
+        f64,
+        f64,
+        f64,
+        f64,
+        f64,
+        bool,
+        Vec<f64>,
+        Vec<f64>,
+    )> {
         let model = build(&fixed, &distance, &design)?;
         let response = response(&y);
         let fit = if integrated {
@@ -1496,8 +1556,8 @@ mod python {
         .map_err(PyValueError::new_err)?;
         Ok((
             fit.variances,
-            fit.proportions,
-            fit.total_variance,
+            fit.raw_coefficient_proportions,
+            fit.raw_coefficient_total,
             fit.lambda,
             fit.half_distance_km,
             fit.loglik,
@@ -1547,7 +1607,8 @@ mod python {
             .map_err(PyValueError::new_err)
     }
 
-    /// A 95 per cent profile interval for a share, or for the decay rate.
+    /// A 95 per cent profile interval for a raw coefficient proportion, or for
+    /// the decay rate.
     ///
     /// `quantity` is an index into the variances, or the string `lambda`.
     #[pyfunction]
@@ -1564,7 +1625,7 @@ mod python {
         let wanted = if quantity == "lambda" {
             SpatialQuantity::Lambda
         } else {
-            SpatialQuantity::Share(
+            SpatialQuantity::RawCoefficientProportion(
                 quantity
                     .parse::<usize>()
                     .map_err(|_| PyValueError::new_err("SPATIAL_QUANTITY_UNKNOWN"))?,
@@ -1672,7 +1733,7 @@ mod tests {
         let mut y = DVector::<f64>::zeros(n);
         // A smooth spatial field, made by giving nearby places correlated
         // values through a shared draw per neighbourhood of ten pairs.
-        for region in 0..pairs / 10 + 1 {
+        for region in 0..=(pairs / 10) {
             let shared = next();
             for i in 0..n {
                 if i / 2 / 10 == region {
@@ -1721,8 +1782,14 @@ mod tests {
                     let mut down = point.clone();
                     up[k] += step;
                     down[k] -= step;
-                    let numeric = (model.evaluate(&up, &y, reml, false).unwrap().negative_loglik
-                        - model.evaluate(&down, &y, reml, false).unwrap().negative_loglik)
+                    let numeric = (model
+                        .evaluate(&up, &y, reml, false)
+                        .unwrap()
+                        .negative_loglik
+                        - model
+                            .evaluate(&down, &y, reml, false)
+                            .unwrap()
+                            .negative_loglik)
                         / (2.0 * step);
                     let scale = at.gradient[k].abs().max(1.0);
                     assert!(
@@ -1749,9 +1816,9 @@ mod tests {
             fit.scaled_gradient
         );
         assert!(
-            fit.proportions[1] > 0.02,
-            "the spatial share came out at {} on data simulated with one",
-            fit.proportions[1]
+            fit.raw_coefficient_proportions[1] > 0.02,
+            "the spatial raw coefficient proportion came out at {} on data simulated with one",
+            fit.raw_coefficient_proportions[1]
         );
         let (bottom, top) = super::decay_bounds(&distance);
         assert!(
@@ -1762,9 +1829,7 @@ mod tests {
             fit.half_distance_km
         );
         // The reported half distance must be the one the decay rate implies.
-        assert!(
-            (fit.half_distance_km * fit.lambda - std::f64::consts::LN_2).abs() < 1e-12
-        );
+        assert!((fit.half_distance_km * fit.lambda - std::f64::consts::LN_2).abs() < 1e-12);
     }
 
     /// The kernel is stored between places and read between people, so the
@@ -1776,13 +1841,14 @@ mod tests {
     fn the_kernel_read_by_place_matches_the_distance_between_the_people() {
         // Twelve people at five addresses, deliberately out of order so that a
         // grouping which assumed people at one place are adjacent would fail.
-        let places: [f64; 12] =
-            [0.0, 12.0, 3.0, 0.0, 40.0, 12.0, 3.0, 0.0, 40.0, 3.0, 12.0, 0.0];
+        let places: [f64; 12] = [
+            0.0, 12.0, 3.0, 0.0, 40.0, 12.0, 3.0, 0.0, 40.0, 3.0, 12.0, 0.0,
+        ];
         let n = places.len();
         let distance = DMatrix::from_fn(n, n, |i, j| (places[i] - places[j]).abs());
         let design = DMatrix::from_element(n, 1, 1.0);
-        let model = SpatialModel::build(&[DMatrix::identity(n, n)], &distance, &design)
-            .expect("valid");
+        let model =
+            SpatialModel::build(&[DMatrix::identity(n, n)], &distance, &design).expect("valid");
 
         assert_eq!(
             model.place_distance.nrows(),
@@ -1858,38 +1924,45 @@ mod tests {
     /// and must report no decay rate at all -- there is none to report, and a
     /// number in that slot would be read as an estimate.
     #[test]
-    fn the_integrated_fit_recovers_the_share_and_reports_no_range() {
+    fn the_integrated_fit_recovers_the_raw_coefficient_proportion_and_reports_no_range() {
         let (a, distance, design, y) = small();
         let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
         let fit = model.fit_integrated(&y, true).expect("fits");
-        assert!(fit.converged, "did not converge, |g| = {}", fit.scaled_gradient);
         assert!(
-            fit.proportions[1] > 0.02,
-            "the spatial share came out at {} on data simulated with one",
-            fit.proportions[1]
+            fit.converged,
+            "did not converge, |g| = {}",
+            fit.scaled_gradient
         );
-        assert!(fit.lambda.is_nan(), "a decay rate was reported after integrating it out");
+        assert!(
+            fit.raw_coefficient_proportions[1] > 0.02,
+            "the spatial raw coefficient proportion came out at {} on data simulated with one",
+            fit.raw_coefficient_proportions[1]
+        );
+        assert!(
+            fit.lambda.is_nan(),
+            "a decay rate was reported after integrating it out"
+        );
         assert!(fit.half_distance_km.is_nan());
     }
 
-    /// The integrated share still gets an interval, and asking for one on the
+    /// The integrated raw coefficient proportion still gets an interval, and asking for one on the
     /// range is refused rather than answered. There is no range once it has been
     /// integrated out, and returning something would invite it to be read.
     #[test]
-    fn the_integrated_share_has_an_interval_and_the_range_has_none() {
+    fn the_integrated_raw_coefficient_proportion_has_an_interval_and_the_range_has_none() {
         let (a, distance, design, y) = small();
         let model = SpatialModel::build(&[a], &distance, &design).expect("valid");
         let fit = model.fit_integrated(&y, true).expect("fits");
         let interval = model
-            .profile_interval(&y, true, SpatialQuantity::Share(1), true)
+            .profile_interval(&y, true, SpatialQuantity::RawCoefficientProportion(1), true)
             .expect("interval");
         assert!(
-            interval.lower <= fit.proportions[1] + 1e-9
-                && fit.proportions[1] <= interval.upper + 1e-9,
+            interval.lower <= fit.raw_coefficient_proportions[1] + 1e-9
+                && fit.raw_coefficient_proportions[1] <= interval.upper + 1e-9,
             "[{}, {}] does not contain {}",
             interval.lower,
             interval.upper,
-            fit.proportions[1]
+            fit.raw_coefficient_proportions[1]
         );
         assert!(
             interval.upper - interval.lower > 1e-3,
@@ -1905,9 +1978,8 @@ mod tests {
         );
     }
 
-    /// A bootstrap that cannot be reproduced is not evidence. Two runs at one
-    /// seed must agree exactly, and two different seeds must not, or the seed is
-    /// not doing anything.
+    /// Two runs at one seed must agree exactly, and two different seeds must
+    /// not, showing that the seed controls the bootstrap draws.
     #[test]
     fn the_bootstrap_reproduces_from_its_seed() {
         let (a, distance, design, y) = small();
@@ -1972,7 +2044,8 @@ mod tests {
     #[test]
     fn the_statistic_is_nought_without_a_spatial_effect_and_positive_with_one() {
         let (a, distance, design, y) = small();
-        let model = SpatialModel::build(&[a.clone()], &distance, &design).expect("valid");
+        let model =
+            SpatialModel::build(std::slice::from_ref(&a), &distance, &design).expect("valid");
         assert!(
             model.spatial_statistic(&y, true, false).expect("statistic") > 1.0,
             "no signal found on data simulated with a spatial effect"
@@ -1999,11 +2072,12 @@ mod tests {
                 plain[2 * pair + i] = 0.6 * genetic + 0.8 * next();
             }
         }
-        let statistic = model.spatial_statistic(&plain, true, false).expect("statistic");
+        let statistic = model
+            .spatial_statistic(&plain, true, false)
+            .expect("statistic");
         assert!(
             statistic < 6.0,
             "a large statistic on data with no spatial effect: {statistic}"
         );
     }
 }
-

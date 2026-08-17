@@ -26,13 +26,12 @@ import tempfile
 import time
 from pathlib import Path
 
+import asterism
 import numpy as np
 
-import asterism
-
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import RUN, SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import RUN, SEX
 
 
 def build(directory: Path, families: int, seed: int):
@@ -88,43 +87,44 @@ def main() -> int:
           f"{'  of which build':>17} {'prepare':>9} {'fit':>9} {'next trait':>11}")
 
     for families, seed in ((25, 301), (100, 302), (400, 303)):
-        directory = Path(tempfile.mkdtemp())
-        ids, father, mother, x, y, n = build(directory, families, seed)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            ids, father, mother, x, y, n = build(directory, families, seed)
 
-        started = time.perf_counter()
-        subprocess.run(
-            ["solar"],
-            stdin=(directory / "run.tcl").open(),
-            capture_output=True,
-            cwd=directory,
-            check=False,
-        )
-        solar_seconds = time.perf_counter() - started
-        if not (directory / "out" / "polygenic.out").exists():
-            raise SystemExit(f"SOLAR produced no result at n = {n}")
+            started = time.perf_counter()
+            subprocess.run(
+                ["solar"],
+                stdin=(directory / "run.tcl").open(),
+                capture_output=True,
+                cwd=directory,
+                check=False,
+            )
+            solar_seconds = time.perf_counter() - started
+            if not (directory / "out" / "polygenic.out").exists():
+                raise SystemExit(f"SOLAR produced no result at n = {n}")
 
-        started = time.perf_counter()
-        k, order = asterism.relationship_matrix(ids, father, mother, keep=ids)
-        built = time.perf_counter()
-        model = asterism.prepare(x, k, subject_ids=order)
-        prepared = time.perf_counter()
-        model.fit(y)
-        finished = time.perf_counter()
-
-        # A second trait on the same pedigree: the preparation is already done,
-        # so only the fit runs again.
-        repeats = 20
-        again = time.perf_counter()
-        for _ in range(repeats):
+            started = time.perf_counter()
+            k, _order = asterism.relationship_matrix(ids, father, mother, keep=ids)
+            built = time.perf_counter()
+            model = asterism.prepare(x, k)
+            prepared = time.perf_counter()
             model.fit(y)
-        marginal = (time.perf_counter() - again) / repeats
+            finished = time.perf_counter()
 
-        total = finished - started
-        print(
-            f"{n:>7} {solar_seconds:>9.2f}s {total:>9.3f}s {solar_seconds / total:>7.0f}x "
-            f"{built - started:>16.3f}s {prepared - built:>8.3f}s "
-            f"{finished - prepared:>8.3f}s {marginal:>10.4f}s"
-        )
+            # A second trait on the same pedigree: the preparation is already done,
+            # so only the fit runs again.
+            repeats = 20
+            again = time.perf_counter()
+            for _ in range(repeats):
+                model.fit(y)
+            marginal = (time.perf_counter() - again) / repeats
+
+            total = finished - started
+            print(
+                f"{n:>7} {solar_seconds:>9.2f}s {total:>9.3f}s {solar_seconds / total:>7.0f}x "
+                f"{built - started:>16.3f}s {prepared - built:>8.3f}s "
+                f"{finished - prepared:>8.3f}s {marginal:>10.4f}s"
+            )
 
     print(
         "\nSOLAR's column is everything it does: load the pedigree, compute its own"

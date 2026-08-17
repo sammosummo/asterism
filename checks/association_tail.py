@@ -9,6 +9,17 @@ So this counts rejections at a ladder of thresholds under a null with no marker
 effect anywhere, on the real pedigree, the real ancestry components and real
 markers. The only simulated thing is the response.
 
+**Two arms, because two different things inflate the tail and only one of them
+is the test's fault.** The first arm uses the real genotypes. The second
+permutes each marker across people, which keeps its allele frequency exactly and
+destroys any correspondence between a genotype and how closely two people are
+actually related. Whatever excess survives permutation belongs to the test
+itself and is judged here. Whatever the permutation removes is the pedigree
+kinship failing to describe the relatedness the real genotypes carry -- a
+property of the covariance model, not of the test -- and it is reported rather
+than judged, because no change to the test would remove it. It is largest for
+common markers, which carry the most of that signal.
+
 **What this can and cannot reach.** Validating a threshold needs enough null
 tests that a handful are expected to cross it: about ten million to say anything
 at 1e-06, and of order ten billion at 5e-08. The second is out of reach here and
@@ -35,9 +46,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 from asterism import _core
 
 DATABASE = Path("~/MathiasLab/staging/studies/existing/safs/data/SAFS.db").expanduser()
@@ -142,11 +152,12 @@ def load():
 def one(index: int):
     relationship = STATE["relationship"]
     design = STATE["design"]
-    markers = STATE["markers"]
     factor = STATE["factor"]
     n = design.shape[0]
     y = factor @ np.random.default_rng(640_000 + index).standard_normal(n)
-    _, _, rows = _core.association_sweep(relationship, design, y, markers, "held")
+    _, _, rows, _ = _core.association_sweep(
+        relationship, design, y, STATE["markers"], "held"
+    )
     return [row[4] for row in rows if not row[5]]
 
 
@@ -165,15 +176,31 @@ def main() -> int:
 
     covariance = HERITABILITY * relationship + (1.0 - HERITABILITY) * np.eye(n)
     factor = np.linalg.cholesky(covariance + 1e-9 * np.eye(n))
-    shared = {
-        "relationship": relationship,
-        "design": design,
-        "markers": markers,
-        "factor": factor,
-    }
+    def sweep(these: np.ndarray) -> list:
+        shared = {
+            "relationship": relationship,
+            "design": design,
+            "markers": these,
+            "factor": factor,
+        }
+        with ProcessPoolExecutor(
+            WORKERS, initializer=_start, initargs=(shared,)
+        ) as pool:
+            return list(pool.map(one, range(DRAWS), chunksize=1))
+
     started = time.perf_counter()
-    with ProcessPoolExecutor(WORKERS, initializer=_start, initargs=(shared,)) as pool:
-        batches = list(pool.map(one, range(DRAWS), chunksize=1))
+    batches = sweep(markers)
+    # **The second arm is the same markers with their people shuffled.** Each
+    # column keeps its allele frequency exactly and loses any relation to who is
+    # related to whom. Permuted in place and run as a second pass rather than
+    # alongside the first, so only one marker matrix is ever shipped to the
+    # workers. Permuting per draw would confound the two sources of scatter.
+    shuffle = np.random.default_rng(4_242)
+    permuted = markers.copy()
+    for column in range(m):
+        shuffle.shuffle(permuted[:, column])
+    batches_permuted = sweep(np.ascontiguousarray(permuted))
+    del permuted
     took = time.perf_counter() - started
 
     # **Per draw as well as pooled.** Markers in linkage disequilibrium are not
@@ -183,6 +210,7 @@ def main() -> int:
     # independent realisation of the response, whatever the markers do among
     # themselves.
     per_draw = [np.array(b) for b in batches if b]
+    per_draw_permuted = [np.array(b) for b in batches_permuted if b]
     p_values = np.concatenate(per_draw)
     total = len(p_values)
     print(f"{total:,} null tests in {took / 60:.0f} minutes.\n")
@@ -198,15 +226,17 @@ def main() -> int:
     draws = len(per_draw)
     each = len(per_draw[0])
     print(
-        f"{'threshold':>12}{'per draw':>10}{'expected':>10}{'measured sd':>13}"
-        f"{'binomial sd':>13}{'ratio':>7}{'  verdict':<22}"
+        f"{'threshold':>12}{'per draw':>10}{'permuted':>10}{'expected':>10}"
+        f"{'measured sd':>13}{'binomial sd':>13}{'ratio':>7}{'  verdict':<22}"
     )
 
     failures = []
     recorded = {}
     dispersion = {}
+    structure = {}
     for threshold in THRESHOLDS:
         counts = np.array([(b <= threshold).sum() for b in per_draw])
+        shuffled = np.array([(b <= threshold).sum() for b in per_draw_permuted])
         expected = each * threshold
         binomial = np.sqrt(each * threshold * (1 - threshold))
         measured = counts.std(ddof=1)
@@ -218,8 +248,9 @@ def main() -> int:
         }
         if counts.mean() < 3:
             print(
-                f"{threshold:>12g}{counts.mean():>10.2f}{expected:>10.2f}"
-                f"{'--':>13}{binomial:>13.2f}{'--':>7}  too few to judge"
+                f"{threshold:>12g}{counts.mean():>10.2f}{shuffled.mean():>10.2f}"
+                f"{expected:>10.2f}{'--':>13}{binomial:>13.2f}{'--':>7}"
+                f"  too few to judge"
             )
             continue
         dispersion[str(threshold)] = {
@@ -229,21 +260,52 @@ def main() -> int:
             "binomial_sd": float(binomial),
             "dispersion_ratio": float(measured / binomial),
         }
-        # The mean count per draw against what it should be, with the standard
-        # error of that mean from the scatter actually observed.
-        error = measured / np.sqrt(draws)
+        # **The permuted arm is what the test is judged on.** Its markers have
+        # the same allele frequencies and no relation to who is related to whom,
+        # so any excess there is the test's own. The mean count per draw is
+        # judged against its expectation with the standard error taken from the
+        # scatter actually observed.
+        permuted_sd = shuffled.std(ddof=1)
+        error = permuted_sd / np.sqrt(draws)
         ceiling = expected + 1.96 * error
-        over = counts.mean() > ceiling
+        over = shuffled.mean() > ceiling
         verdict = "OVER" if over else "ok"
         if over:
             failures.append(
-                f"{counts.mean():.1f} per draw below {threshold:g} where at most "
-                f"{ceiling:.1f} was expected"
+                f"{shuffled.mean():.1f} per draw below {threshold:g} on permuted "
+                f"markers where at most {ceiling:.1f} was expected"
             )
+        # What the real genotypes add over the permuted ones is the pedigree
+        # kinship not describing the relatedness they carry. It is reported and
+        # not judged: no change to the test would remove it.
+        structure[str(threshold)] = {
+            "real_per_draw": float(counts.mean()),
+            "permuted_per_draw": float(shuffled.mean()),
+            "expected_per_draw": float(expected),
+            "excess_over_permuted": (
+                float(counts.mean() / shuffled.mean()) if shuffled.mean() else None
+            ),
+        }
         print(
-            f"{threshold:>12g}{counts.mean():>10.2f}{expected:>10.2f}"
-            f"{measured:>13.2f}{binomial:>13.2f}"
+            f"{threshold:>12g}{counts.mean():>10.2f}{shuffled.mean():>10.2f}"
+            f"{expected:>10.2f}{measured:>13.2f}{binomial:>13.2f}"
             f"{measured / binomial:>7.2f}  {verdict}"
+        )
+
+    if structure:
+        gaps = [
+            v["excess_over_permuted"]
+            for v in structure.values()
+            if v["excess_over_permuted"]
+        ]
+        print(
+            f"\nReal genotypes cross {min(gaps):.2f} to {max(gaps):.2f} times as "
+            f"often as permuted ones\nwith the same allele frequencies. That gap is "
+            f"the pedigree kinship not describing\nthe relatedness the real "
+            f"genotypes carry, and it is largest for common markers.\nIt is a "
+            f"property of the covariance model and not of the test, so it is "
+            f"reported\nrather than judged: a genomic relationship matrix, not a "
+            f"pedigree one, is what\nwould close it."
         )
 
     print(
@@ -267,14 +329,14 @@ def main() -> int:
         for failure in failures:
             print(f"  {failure}")
         return 1
-    print("\nThe test is honest everywhere this can see.")
+    print(
+        "\nThe test is honest everywhere this can see, once the covariance model "
+        "is\nnot asked to answer for the genotypes."
+    )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/association-tail-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "type I error of the association test in the tail",
-                "date": "2026-08-14",
                 "pedigree": "the real GOBS pedigree; only responses simulated",
                 "people": n,
                 "markers": m,
@@ -284,11 +346,17 @@ def main() -> int:
                 "variance_components": "held",
                 "thresholds": recorded,
                 "between_draw_dispersion": dispersion,
+                "real_against_permuted": structure,
                 "criterion": (
-                    "the mean count per draw against its expectation, with the "
-                    "standard error taken from the scatter measured between draws "
-                    "rather than from a binomial that assumes the markers are "
-                    "independent, which they are not"
+                    "the mean count per draw on permuted markers against its "
+                    "expectation, with the standard error taken from the scatter "
+                    "measured between draws rather than from a binomial that "
+                    "assumes the markers are independent, which they are not. "
+                    "Permuting keeps each marker's allele frequency and removes "
+                    "its relation to who is related to whom, so what survives is "
+                    "the test's own behaviour; what the real genotypes add over "
+                    "that is the pedigree kinship not describing their relatedness "
+                    "and is reported separately"
                 ),
                 "smallest_judged": min(reachable),
                 "note": (
@@ -299,7 +367,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

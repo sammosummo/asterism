@@ -1,14 +1,11 @@
 """An independent bivariate fit, in numpy and scipy.
 
-`docs/adr/0006` makes an independent implementation a condition of entry for any
-capability, and `0001` decision 21 repeats it: a capability arrives with its own
-independent check or it does not arrive. This is that check for two traits, and
-it exists before the Rust does deliberately — it is what the Rust will be
-measured against, and writing it second would make it a transcription rather
-than an independent route.
+This NumPy and SciPy implementation provides an independent calculation for the
+two-trait model. It was written before the Rust implementation so that the two
+routes could be compared without transcribing one into the other.
 
 **The model.** Two traits, additive and residual variance, with the correlations
-carried as free parameters (`0001` decision 29):
+carried as free parameters:
 
     Σ_A = [[h₁σ₁,          ρ_G√(h₁σ₁h₂σ₂)],
            [ρ_G√(h₁σ₁h₂σ₂), h₂σ₂         ]]
@@ -20,12 +17,11 @@ carried as free parameters (`0001` decision 29):
 Six parameters — σ₁, σ₂, h₁, h₂, ρ_G, ρ_E — and for two traits the constraint
 set is simply a box: the variances positive, the heritabilities in [0,1], the
 correlations in [−1,1]. Nothing more is needed to keep both covariances
-positive semi-definite, which is what makes this parameterisation worth having
-at two traits even though it fails at three (`0001` decision 5).
+positive semi-definite, which is what makes this parameterisation useful for two
+traits even though it does not generalise to three.
 
-**Unbalanced by construction** (`0001` decision 9). A person contributes the
-rows for the traits they actually have. Everyone with at least one measured
-trait is in.
+**Unbalanced by construction.** A person contributes the rows for the traits
+they actually have. Everyone with at least one measured trait is in.
 
 **Checked, twice.** Over 40 replicates at n = 420 with a known truth it recovers
 h² 0.590 and 0.384 against 0.6 and 0.4, and correlations 0.693 and 0.199 against
@@ -95,9 +91,11 @@ def negative_log_likelihood(
     design: np.ndarray,
     reml: bool,
 ) -> float:
-    """Minus the profiled log-likelihood. Fixed effects are profiled out by
-    generalised least squares at every evaluation, as REML does anyway
-    (`0001` decision 10)."""
+    """Return the negative profiled log-likelihood.
+
+    Fixed effects are profiled out by generalised least squares at every
+    evaluation, as REML requires.
+    """
     sigma_a, sigma_e = covariances(theta)
     # A covariance that is exactly singular is legitimate, not infeasible. At
     # |ρ| = 1 the genetic covariance has rank one — complete pleiotropy — and V
@@ -201,8 +199,7 @@ def fit(
     args = (blocks, relationship, observed, y, design, reml)
 
     # Start from each trait on its own, which is what the joint fit reduces to
-    # when the correlations are zero, and from a couple of insurance starts
-    # (`0001` decision 14: one good warm start, not many arbitrary ones).
+    # when the correlations are zero, and from two additional starting values.
     scale = trait_scales(y, observed)
     starts = [
         np.array([scale[0], scale[1], 0.5, 0.5, 0.0, 0.0]),
@@ -256,10 +253,9 @@ def fit_fixing(
 ) -> dict:
     """Refit with one parameter held at `value`.
 
-    This is what makes the correlations testable. Carried as free parameters
-    (`0001` decision 29), a correlation supports an ordinary likelihood ratio
-    against a constrained refit — no reparameterisation of the model, no special
-    machinery, just one fewer free parameter.
+    This is what makes the correlations testable. Carried as free parameters, a
+    correlation supports an ordinary likelihood ratio against a constrained
+    refit: the constrained model has one fewer free parameter.
     """
     blocks = family_blocks(relationship)
     args = (blocks, relationship, observed, y, design, reml)
@@ -381,13 +377,11 @@ def correlation_tests(
     degree of freedom. Against plus or minus one it sits on a bound, and with the
     correlation carried as a free parameter and both variances positive that is a
     single parameter on a smooth one-sided boundary — the well-behaved case, so
-    the Self–Liang 50:50 mixture applies (`0001` decision 29).
+    the Self–Liang 50:50 mixture applies.
 
-    **These are historical diagnostics, not current calibration.** They were run
-    before the admitted Rust optimiser and before exact heritability states.
-    They showed that the old boundary refits were unusable; every test must be
-    recalibrated after the constrained Rust refits exist. Simulation on 11
-    August 2026, 120 replicates at n = 240:
+    The following older simulation used the previous optimiser and approximate
+    heritability states. It showed that the old boundary refits were unusable.
+    Simulation on 11 August 2026, 120 replicates at n = 240:
 
         nominal   rho_g = 0   rho_g = 1
            0.01       0.017       0.608
@@ -405,9 +399,8 @@ def correlation_tests(
     not the mixture itself but the constrained refit: holding the correlation at
     its bound makes the genetic covariance near-singular, the refit converges
     badly, its log-likelihood comes out too low, and the statistic is inflated by
-    the optimiser rather than by the data. Decision 5 warns about exactly this
-    neighbourhood for a different reason, and decision 12's parametric bootstrap
-    is the fallback decision 29 named.
+    the optimiser rather than by the data. A parametric bootstrap is the fallback
+    when this boundary approximation does not hold.
 
     **Recalibrated on 12 August 2026, after the fix, and they now hold.** 200
     replicates at n = 240:

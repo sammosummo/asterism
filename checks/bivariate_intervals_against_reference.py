@@ -41,16 +41,20 @@ import time
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-import bivariate_reference as reference  # noqa: E402
+import bivariate_reference as reference
 
 # Two bisections stopping at different tolerances, over two different
 # optimisers. Agreement to a thousandth on a quantity that runs from -1 to 1 is
 # what this can honestly demonstrate.
-TOLERANCE = 2e-3
+# The worst endpoint gap measured here is 2.6e-5, set by how finely the two
+# profiles bisect rather than by any disagreement about the mathematics. A
+# tolerance of 2e-3 was eighty times looser than that and would have passed a
+# real regression; 2e-4 keeps roughly eight times headroom over the worst
+# measured gap.
+TOLERANCE = 2e-4
 
 QUANTITIES = (
     ("h2_first", 2, "h2_trait_a"),
@@ -69,7 +73,7 @@ def simulate(families: int, per_family: int, seed: int):
         relationship[block, block] = 0.5
     np.fill_diagonal(relationship, 1.0)
 
-    truth = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
     genetic = np.array(
         [
             [truth["h1"], truth["rg"] * np.sqrt(truth["h1"] * truth["h2"])],
@@ -205,16 +209,13 @@ def main() -> int:
     print(f"\nBoth routes agree on every endpoint to {TOLERANCE:.0e}, in "
           f"{time.perf_counter() - started:.0f}s.")
     print("Different optimisers, different constrained refits, different")
-    print("bisections, same interval. This is fidelity, and it is the one thing")
-    print("calibration cannot tell you: two implementations can both cover at 95")
-    print("per cent and still disagree case by case.")
+    print("bisections, same interval. Calibration alone cannot establish this:")
+    print("two implementations can both cover at 95 per cent and still disagree")
+    print("case by case.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/bivariate-intervals-against-reference-2026-08-12.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "the compiled profile intervals against the independent Python ones",
-                "date": "2026-08-12",
                 "estimator": "reml",
                 "people": n,
                 "observations_by_trait": [
@@ -234,7 +235,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

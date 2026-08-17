@@ -47,17 +47,14 @@ Run with:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
-
-import os
 
 import numpy as np
-from scipy import stats
-
 from asterism import _core
+from scipy import stats
 
 PAIRS = 100
 SPACING_KM = 3.0
@@ -117,9 +114,10 @@ def one_null_data_set(index: int) -> float | None:
     truth = 0.4 * relationship + 0.6 * np.eye(n)
     y = simulate(truth, 800_000 + index)
     try:
-        return bootstrap_p_value(relationship, distance, design, y, seed=index)["p_value"]
-    except Exception:
+        outcome = bootstrap_p_value(relationship, distance, design, y, seed=index)
+    except ValueError:
         return None
+    return outcome["p_value"]
 
 
 def main() -> int:
@@ -179,7 +177,7 @@ def main() -> int:
     # only where it applies.** A likelihood ratio against no spatial variance
     # cannot go below nought, and in a good fraction of null data sets it is
     # exactly nought: the spatial variance fits to nothing and there is no
-    # evidence of anything. Every one of those gets a p-value of exactly one,
+    # positive spatial variance. Every one gets a p-value of exactly one,
     # because no simulated statistic can fail to reach nought.
     #
     # That is a point mass at one, and it is correct. It cannot affect the lower
@@ -220,9 +218,9 @@ def main() -> int:
         f"{test.statistic:.4f}, p = {test.pvalue:.3f}."
     )
     print(
-        f"  This is reported, not required. A bootstrap p-value from a statistic\n"
-        f"  with an atom is valid without being uniform, and validity is what the\n"
-        f"  rejection rates above test."
+        "  This is reported, not required. A bootstrap p-value from a statistic\n"
+        "  with an atom is valid without being uniform, and validity is what the\n"
+        "  rejection rates above test."
     )
 
     if failures:
@@ -235,12 +233,9 @@ def main() -> int:
     print("spatial variance available: with the decay rate unidentified under that")
     print("null, no closed-form reference exists to compare it against.")
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path(f"evidence/spatial-bootstrap-{MODE}-2026-08-13.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "the parametric bootstrap for no spatial variance, and whether it holds its level",
-                "date": "2026-08-12",
                 "estimator": "reml",
                 "decay_rate": MODE,
                 "pairs": PAIRS,
@@ -272,7 +267,6 @@ def main() -> int:
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 

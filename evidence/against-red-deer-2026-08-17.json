@@ -1,0 +1,106 @@
+{
+  "source": "Stopher et al. 2012 Evolution 66(8):2411-2426",
+  "data": "Dryad doi:10.5061/dryad.jf04r362",
+  "pedigree_check": {
+    "deer_compared": 579,
+    "largest_difference": 0.0,
+    "inbred": 339
+  },
+  "records": [
+    {
+      "trait": "lbs",
+      "scale": "log10p1",
+      "unknown_mother": "drop",
+      "overlap_matrix": {
+        "variances": {
+          "a": 0.0,
+          "year": 0.03919276117354354,
+          "m": 0.0026628946887635846,
+          "s": 0.04494681894307782,
+          "residual": 0.07593119550135485
+        },
+        "sum": 0.1627336703067398,
+        "h2_percent": 0.0,
+        "loglik": -221.23749585478618,
+        "converged": true,
+        "scaled_gradient": 1.5039055086975e-08,
+        "components": [
+          "a",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "records": 761,
+      "females": 761,
+      "dropped": {
+        "missing_field": 41,
+        "not_in_pedigree": 12
+      },
+      "design_columns": 5,
+      "no_spatial": {
+        "variances": {
+          "a": 0.007051049992852327,
+          "year": 0.07577829954669657,
+          "m": 0.008591005370568741,
+          "residual": 0.10273927079174508
+        },
+        "sum": 0.1941596257018627,
+        "h2_percent": 3.6315737462738014,
+        "loglik": -312.0217414044814,
+        "converged": true,
+        "scaled_gradient": 2.40635033132339e-09,
+        "components": [
+          "a",
+          "year",
+          "m",
+          "residual"
+        ]
+      },
+      "with_overlap": {
+        "variances": {
+          "a": 0.0,
+          "year": 0.03919276117354354,
+          "m": 0.0026628946887635846,
+          "s": 0.04494681894307782,
+          "residual": 0.07593119550135485
+        },
+        "sum": 0.1627336703067398,
+        "h2_percent": 0.0,
+        "loglik": -221.23749585478618,
+        "converged": true,
+        "scaled_gradient": 1.5039055086975e-08,
+        "components": [
+          "a",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "likelihood_ratio": 181.56849109939049,
+      "published": {
+        "a": null,
+        "none": {
+          "a": 0.009,
+          "year": 0.077,
+          "m": 0.007,
+          "residual": 0.103,
+          "h2": 4.592,
+          "sum": 0.196
+        },
+        "overlap": {
+          "a": 0.0,
+          "year": 0.04,
+          "m": 0.003,
+          "s": 0.045,
+          "residual": 0.076,
+          "h2": 0.0,
+          "sum": 0.164
+        },
+        "chisq": 185.6
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "results": [
+    {
+      "case": "truth 0.5/0.3/0.7, within-pedigree",
+      "n": 350,
+      "asterism": {
+        "genetic": 0.3103414039602722,
+        "spatial": 0.3192031186246235,
+        "residual": 0.9225848434933709,
+        "loglik": -567.7618402435777
+      },
+      "solar": {
+        "genetic": 0.31034135747241004,
+        "spatial": 0.3192033043686399,
+        "residual": 0.92258464686129,
+        "loglik": -246.133354,
+        "iterations": 19,
+        "people": 350
+      },
+      "loglik_offset_unexplained": 3.780577344514313e-07,
+      "true_variances": [
+        0.5,
+        0.3,
+        0.7
+      ],
+      "seed": 301
+    },
+    {
+      "case": "truth 0.5/0.3/0.7, dense kernel",
+      "solar_equals_its_own_within_pedigree_fit_to": 0.0,
+      "asterism_dense_differs_from_solar_by": 0.2796795351763798
+    },
+    {
+      "case": "truth 0.2/0.6/0.9, within-pedigree",
+      "n": 350,
+      "asterism": {
+        "genetic": 0.3369279779624189,
+        "spatial": 0.4625143405911502,
+        "residual": 0.5979226084150655,
+        "loglik": -544.3041565422318
+      },
+      "solar": {
+        "genetic": 0.33692812311601,
+        "spatial": 0.46251383900568993,
+        "residual": 0.59792283107209,
+        "loglik": -222.67567,
+        "iterations": 21,
+        "people": 350
+      },
+      "loglik_offset_unexplained": 7.940360546854208e-08,
+      "true_variances": [
+        0.2,
+        0.6,
+        0.9
+      ],
+      "seed": 302
+    },
+    {
+      "case": "truth 0.2/0.6/0.9, dense kernel",
+      "solar_equals_its_own_within_pedigree_fit_to": 0.0,
+      "asterism_dense_differs_from_solar_by": 0.3497517794123346
+    }
+  ]
+}

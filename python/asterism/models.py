@@ -1,8 +1,9 @@
 """The models beyond one trait with one component.
 
 Each is a small object holding the matrices, with `fit`, `interval` and a test.
-Building one validates; fitting returns a dictionary with named fields rather
-than a tuple whose meaning has to be remembered.
+The compiled calculation validates the numerical model before fitting and
+returns a dictionary with named fields rather than a tuple whose meaning has to
+be remembered.
 
 **This layer exists because the compiled bindings are positional.**
 `_core.component_fit` returns eight values in a fixed order and
@@ -13,6 +14,7 @@ comes from the same compiled code, and this only names it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -20,8 +22,8 @@ import numpy as np
 from . import _core
 
 __all__ = [
-    "ComponentModel",
     "BivariateModel",
+    "ComponentModel",
     "SpatialModel",
     "kinship_classes",
 ]
@@ -34,62 +36,122 @@ def _matrix(value: Any, name: str) -> np.ndarray:
     return array
 
 
+def _owned_matrix(value: Any, name: str) -> np.ndarray:
+    """Take a private, read-only copy of a caller's matrix.
+
+    `np.ascontiguousarray` returns the caller's own object when it is already
+    C-contiguous binary64, so storing that would leave the model holding a live
+    view of an array the caller can still change. A model that answered
+    differently after a later, unrelated write would break the record's claim to
+    be reproducible from what it reports, and would do it silently.
+    """
+    array = _matrix(value, name).copy(order="C")
+    array.setflags(write=False)
+    return array
+
+
 class ComponentModel:
     """One trait with any number of variance components.
 
     The residual is added for you and is always last, so a model built with a
-    relationship matrix and a household matrix reports three shares: additive,
-    household, residual.
+    relationship matrix and a household matrix reports three raw coefficient
+    proportions: additive, household, residual. When every structured matrix
+    has a positive finite mean diagonal, the fit also reports each coefficient
+    times its matrix's mean diagonal. These mean-diagonal contributions and
+    their proportions do not change if a matrix is multiplied by a positive
+    constant and its fitted coefficient changes reciprocally.
 
     Parameters
     ----------
     matrices
-        The structured components, in the order you want them reported.
+        The structured components, in the order you want them reported. Each
+        is copied at construction, so later caller mutation cannot change the
+        fitted model. Row alignment is positional and is the caller's
+        responsibility.
     x
         The fixed-effect design, one row per person, including its own
-        intercept column if one is wanted.
+        intercept column if one is wanted. Its values are copied at
+        construction.
     """
 
-    def __init__(self, matrices: list[Any], x: Any) -> None:
+    def __init__(
+        self,
+        matrices: list[Any],
+        x: Any,
+    ) -> None:
         if not matrices:
             raise ValueError("COMPONENTS_NONE_GIVEN")
-        self._matrices = [_matrix(m, f"matrix_{i}") for i, m in enumerate(matrices)]
-        self._x = _matrix(x, "design")
+        converted = [
+            _owned_matrix(matrix, f"matrix_{i}")
+            for i, matrix in enumerate(matrices)
+        ]
+        self._matrices = converted
+        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in converted]
+        self._structured_mean_diagonals = (
+            mean_diagonals
+            if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
+            else None
+        )
+        self._x = _owned_matrix(x, "design")
         self.components = len(self._matrices) + 1
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
-        """Fit, and return the variances and their shares.
+        """Fit, and return variance coefficients and their proportions.
 
-        The share is what gets reported: the first share of a
-        relationship-plus-residual model is the heritability.
+        ``raw_coefficient_proportions`` depend on matrix scale. They are useful
+        for inspecting the optimiser parameterisation but are not generic
+        variance shares. When all structured matrices have positive finite mean
+        diagonals, ``mean_diagonal_proportions`` reports the corresponding
+        scale-invariant marginal contributions.
+
+        Matrix, design, and response alignment is positional and is the
+        caller's responsibility.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
         (
             variances,
-            shares,
-            total,
+            proportions,
+            raw_coefficient_total,
             loglik,
             gradient,
             converged,
             effects,
             errors,
         ) = _core.component_fit(self._matrices, self._x, y, reml)
-        return {
+        record = {
             "variances": list(variances),
-            "shares": list(shares),
-            "total_variance": total,
+            "raw_coefficient_proportions": list(proportions),
+            "raw_coefficient_total": raw_coefficient_total,
             # The generalised least squares estimates: the best linear unbiased
             # estimator of the fixed effects at the fitted variances, with the
             # standard errors from the diagonal of (X' V^-1 X)^-1.
             "fixed_effects": [
                 {"estimate": e, "standard_error": s}
-                for e, s in zip(effects, errors)
+                for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
             "converged": converged,
             "estimator": "reml" if reml else "ml",
         }
+        if self._structured_mean_diagonals is not None:
+            mean_diagonal_contributions = [
+                variance * mean_diagonal
+                for variance, mean_diagonal in zip(
+                    variances[:-1], self._structured_mean_diagonals, strict=True
+                )
+            ]
+            mean_diagonal_contributions.append(variances[-1])
+            mean_diagonal_total = sum(mean_diagonal_contributions)
+            record["mean_diagonal_component_contributions"] = (
+                mean_diagonal_contributions
+            )
+            record["mean_diagonal_total"] = mean_diagonal_total
+            record["mean_diagonal_proportions"] = [
+                contribution / mean_diagonal_total
+                for contribution in mean_diagonal_contributions
+            ]
+        return record
 
     def predict(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
         """Predict the random effects of one component.
@@ -117,17 +179,31 @@ class ComponentModel:
         }
 
     def interval(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
-        """A 95 per cent profile interval for one component's share."""
+        """A 95 per cent profile interval for one raw coefficient proportion.
+
+        **This profiles the raw proportion, which is not the headline the fit
+        reports.** ``fit`` leads with ``mean_diagonal_proportions`` where those
+        are defined, because they are invariant to how a matrix is scaled;
+        the raw proportion is not, and the two can differ by orders of
+        magnitude for the same component of the same fit. The estimate this
+        interval is actually around is therefore returned beside it as
+        ``estimate``, so the pair can be read together and cannot be mismatched
+        by picking the headline from one dictionary and the endpoints from the
+        other.
+        """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level = _core.component_interval(
+        lower, upper, at_lower, at_upper, level, failures = _core.component_interval(
             self._matrices, self._x, y, component, reml
         )
         return {
+            "quantity": "raw_coefficient_proportion",
+            "estimate": self.fit(y, reml)["raw_coefficient_proportions"][component],
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": level,
+            "profile_failures": failures,
         }
 
     def equality_test(
@@ -210,7 +286,7 @@ class ComponentModel:
                 "level": 0.95,
             }
             for c, (deviation, lower, upper, at_lower, at_upper, p_value, statistic)
-            in zip(classes, rows)
+            in zip(classes, rows, strict=True)
         ]
 
     def test(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
@@ -253,9 +329,9 @@ class BivariateModel:
     QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
 
     def __init__(self, k: Any, observed: Any, design: Any) -> None:
-        self._k = _matrix(k, "relationship")
+        self._k = _owned_matrix(k, "relationship")
         self._observed = [[bool(a), bool(b)] for a, b in observed]
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, and return both heritabilities and all three correlations.
@@ -285,7 +361,7 @@ class BivariateModel:
         if quantity not in self.QUANTITIES:
             raise ValueError("BIVARIATE_QUANTITY_UNKNOWN")
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level = _core.bivariate_interval(
+        lower, upper, at_lower, at_upper, level, failures = _core.bivariate_interval(
             self._k, self._observed, self._design, y, quantity, reml
         )
         return {
@@ -294,6 +370,7 @@ class BivariateModel:
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": level,
+            "profile_failures": failures,
         }
 
     def test(
@@ -306,7 +383,13 @@ class BivariateModel:
         does. Heritabilities are not testable this way.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        statistic, p_value, rule, null_loglik = _core.bivariate_correlation_test(
+        (
+            statistic,
+            p_value,
+            rule,
+            null_loglik,
+            alternative_loglik,
+        ) = _core.bivariate_correlation_test(
             self._k, self._observed, self._design, y, quantity, null, reml
         )
         return {
@@ -314,6 +397,7 @@ class BivariateModel:
             "p_value": p_value,
             "rule": rule,
             "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
         }
 
 
@@ -322,24 +406,44 @@ class SpatialModel:
 
     The kernel is ``exp(-λd)`` with distances in kilometres. Any fixed
     components — a relationship matrix, a household matrix — are passed
-    alongside and are reported before the spatial share, which is followed by
-    the residual.
+    alongside and are reported before the spatial component, which is followed
+    by the residual. ``raw_coefficient_proportions`` divide their fitted
+    covariance coefficients by their sum, so they depend on fixed-component
+    matrix scaling. When every fixed component has a positive finite mean
+    diagonal, ``mean_diagonal_proportions`` reports scale-invariant marginal
+    covariance contributions instead.
 
     **Two cautions that the numbers do not carry themselves.** The range is
     barely estimated: its interval reaches a bound in 98 per cent of calibration
     replicates, so report it as a point estimate or use ``integrated=True`` and
-    be rid of it. And an interval for the spatial share reaching nought is not a
-    test of whether there is a spatial effect — under that null the range is
-    unidentified, which is why the test is a bootstrap.
+    be rid of it. And an interval for the spatial raw coefficient proportion
+    reaching nought is not a test of whether there is a spatial effect — under
+    that null the range is unidentified, which is why the test is a bootstrap.
     """
 
     def __init__(self, fixed: list[Any], distance: Any, design: Any) -> None:
-        self._fixed = [_matrix(m, f"matrix_{i}") for i, m in enumerate(fixed)]
-        self._distance = _matrix(distance, "distance")
-        self._design = _matrix(design, "design")
+        self._fixed = [
+            _owned_matrix(matrix, f"matrix_{i}")
+            for i, matrix in enumerate(fixed)
+        ]
+        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in self._fixed]
+        self._fixed_mean_diagonals = (
+            mean_diagonals
+            if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
+            else None
+        )
+        self._distance = _owned_matrix(distance, "distance")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self, y: Any, reml: bool = True, integrated: bool = False) -> dict[str, Any]:
         """Fit, taking the range as a free parameter or integrating it out.
+
+        ``raw_coefficient_proportions`` and ``raw_coefficient_total`` depend
+        on fixed-component matrix scaling. When the fixed component diagonals
+        are positive and finite, ``mean_diagonal_component_contributions`` and
+        ``mean_diagonal_proportions`` instead report the scale-invariant
+        marginal covariance decomposition. The spatial kernel and residual
+        identity both have unit diagonals.
 
         With ``integrated=True`` the range is averaged over rather than
         maximised over, and comes back as ``None``: there is nothing estimated
@@ -348,8 +452,8 @@ class SpatialModel:
         y = np.ascontiguousarray(y, dtype=np.float64)
         (
             variances,
-            shares,
-            total,
+            raw_coefficient_proportions,
+            raw_coefficient_total,
             lam,
             half,
             loglik,
@@ -358,16 +462,16 @@ class SpatialModel:
             effects,
             errors,
         ) = _core.spatial_fit(self._fixed, self._distance, self._design, y, reml, integrated)
-        return {
+        record = {
             "variances": list(variances),
-            "shares": list(shares),
-            "total_variance": total,
+            "raw_coefficient_proportions": list(raw_coefficient_proportions),
+            "raw_coefficient_total": raw_coefficient_total,
             # With the range integrated out these carry the extra uncertainty of
             # not knowing it: the standard errors are the average of the
             # within-range ones plus the spread of the estimates across ranges.
             "fixed_effects": [
                 {"estimate": e, "standard_error": s}
-                for e, s in zip(effects, errors)
+                for e, s in zip(effects, errors, strict=True)
             ],
             "decay_per_km": None if integrated else lam,
             "half_distance_km": None if integrated else half,
@@ -377,6 +481,24 @@ class SpatialModel:
             "estimator": "reml" if reml else "ml",
             "range_treatment": "integrated" if integrated else "profile",
         }
+        if self._fixed_mean_diagonals is not None:
+            mean_diagonal_contributions = [
+                variance * mean_diagonal
+                for variance, mean_diagonal in zip(
+                    variances[: len(self._fixed)], self._fixed_mean_diagonals, strict=True
+                )
+            ]
+            mean_diagonal_contributions.extend(variances[len(self._fixed) :])
+            mean_diagonal_total = sum(mean_diagonal_contributions)
+            record["mean_diagonal_component_contributions"] = (
+                mean_diagonal_contributions
+            )
+            record["mean_diagonal_total"] = mean_diagonal_total
+            record["mean_diagonal_proportions"] = [
+                contribution / mean_diagonal_total
+                for contribution in mean_diagonal_contributions
+            ]
+        return record
 
     def predict(
         self, y: Any, component: int, reml: bool = True, integrated: bool = False
@@ -397,17 +519,37 @@ class SpatialModel:
     def interval(
         self, y: Any, quantity: str, reml: bool = True, integrated: bool = False
     ) -> dict[str, Any]:
-        """An interval for a component's share, or for the range.
+        """An interval for a raw coefficient proportion, or for the range.
 
         ``quantity`` is a component index as a string, or ``"lambda"``. Asking
         for the range when it has been integrated out is refused rather than
         answered.
+
+        **A component index profiles the raw proportion, which is not the
+        headline the fit reports.** ``fit`` leads with
+        ``mean_diagonal_proportions`` where those are defined, because they do
+        not move when a matrix is rescaled; the raw proportion does, and the two
+        can differ by orders of magnitude for the same component of the same
+        fit. The estimate these endpoints are actually around is returned beside
+        them as ``estimate``, so the pair reads together and cannot be
+        mismatched by taking the headline from one dictionary and the endpoints
+        from the other.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
         lower, upper, at_lower, at_upper, level = _core.spatial_interval(
             self._fixed, self._distance, self._design, y, quantity, reml, integrated
         )
+        estimate = None
+        if quantity != "lambda":
+            fitted = self.fit(y, reml=reml, integrated=integrated)
+            estimate = fitted["raw_coefficient_proportions"][int(quantity)]
         return {
+            "quantity": (
+                "decay_per_km"
+                if quantity == "lambda"
+                else "raw_coefficient_proportion"
+            ),
+            "estimate": estimate,
             "lower": lower,
             "upper": upper,
             "lower_at_bound": at_lower,
@@ -477,7 +619,7 @@ class GxeModel:
     - ``"random_regression"``: a smooth quadratic surface on each covariance,
       held by loadings so it stays a covariance. Six parameters.
     - ``"powered_exponential"``: the exponential with the decay taken to a
-      frozen power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
+      fixed power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
       ``shape`` chosen from 0.5, 1.0, 1.5 or 2.0 — **chosen and not fitted**,
       because a shape and a decay rate trade off against each other and a search
       over both wanders. At ``shape=1.0`` it is the exponential surface exactly.
@@ -488,13 +630,6 @@ class GxeModel:
     from 0.92 to 0.45. A shape chosen to suit the answer would be invisible in
     the fit, so choose it for a reason outside the data and report which one was
     used beside the result.
-
-    Provenance differs between them and is worth knowing. The exponential form
-    is a *recovered* method — it reproduces the restored SOLAR covariance to
-    better than 1e-11, and the powered one reproduces the source at all four
-    shapes. Random regression is not recovered: the source-fidelity crate holds
-    it in a module whose own header says nothing in it is a recovered or
-    qualified method. It is a proposal, and this reproduces that proposal.
 
     Nothing is reported in either surface's own coordinates. What comes back is
     the heritability at each environment you ask about and the genetic
@@ -538,9 +673,9 @@ class GxeModel:
                 f"shape must be one of 0.5, 1.0, 1.5, 2.0, not {shape!r}. It is "
                 "chosen rather than fitted."
             )
-        self._relationship = _matrix(relationship, "relationship")
+        self._relationship = _owned_matrix(relationship, "relationship")
         self._environment = [float(v) for v in np.asarray(environment).ravel()]
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
         self._surface = surface
         self._shape = float(shape)
 
@@ -583,7 +718,7 @@ class GxeModel:
                 list(correlations[row * width:(row + 1) * width]) for row in range(width)
             ],
             "fixed_effects": [
-                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors)
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -664,7 +799,7 @@ class GxeModel:
                 f"quantity must be heritability or correlation, not {quantity!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
-        estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
+        estimate, lower, upper, at_lower, at_upper, failures = _core.gxe_interval(
             self._relationship, self._environment, self._design, y,
             self._surface, quantity, float(first), float(second), self._shape, reml,
         )
@@ -679,7 +814,344 @@ class GxeModel:
             "upper_at_bound": at_upper,
             "level": 0.95,
             "estimator": "reml" if reml else "ml",
+            "profile_failures": failures,
         }
+
+
+class DiscreteGxeModel:
+    """One trait whose genes may act differently in two environments.
+
+    This is the discrete case of genotype-by-environment: the environment is a
+    binary label rather than a measured range, so nothing is smoothed and no
+    surface has to be chosen. The model carries one genetic standard deviation
+    per environment, one residual standard deviation per environment, and one
+    genetic correlation between them. Sex is the canonical environment; any
+    other binary label — an exposure, a cohort, a diagnosis — works the same
+    way.
+
+    ``environment`` is one label per person and must take exactly two distinct
+    finite values, compared exactly. **Name them through ``levels`` if you can**
+    — the column is then checked against what you expected, so a third value or
+    a missing code where a group should be is refused rather than fitted. Left
+    unnamed the two are inferred, and a negative one is refused, because ``-9``
+    is the missing code in every pedigree format and far likelier a sentinel
+    than a group. Nought is left alone, since a 0/1 exposure is ordinary; a
+    caller who genuinely means -1 and +1 says so through ``levels``. The people carrying the smaller label form
+    the first group everywhere in the results. **A missing or unknown label
+    must be resolved or removed before building**, because a model that quietly
+    puts the unknowns together is estimating a correlation with a third group
+    in it.
+
+    **Two findings live here and they are not the same.**
+
+    *The heritability differs between the environments.* The genetic variance
+    is larger in one than the other. That is a difference of scale, and a
+    difference of scale can come from the measurement rather than the genetics
+    — men are larger, so a volume in millimetres varies more in men whether or
+    not the genes differ. ``test(y, "genetic")``.
+
+    *The genes differ between the environments.* The genetic correlation across
+    the environments is below one, so the genes that matter in one are not
+    exactly those that matter in the other. No change of units can produce
+    this, and it is usually the interesting claim. ``test(y, "correlation")``.
+
+    Unlike the kernel surfaces in :class:`GxeModel`, the correlation here is a
+    parameter rather than a function of distance, so it is free to be negative:
+    a genotype raising a trait in one environment and lowering it in the other
+    is reachable.
+
+    **The two residual standard deviations are free, and they should be.** A
+    trait simply noisier in one environment would otherwise push its extra
+    variance into the genetic term, and the genetic tests would then reject
+    because of measurement rather than because of genes.
+
+    **Read the headline test first.** ``test(y, "gene_by_environment")`` puts
+    the genetic constraints back at once — same variance, same genes — while
+    leaving the two residual variances free. It is what stops several tests on
+    one trait being read as several findings.
+
+    **Do not use** ``test(y, "any_difference")`` **as the headline.** It ties
+    the residual variances too, so a trait merely measured more noisily in one
+    environment rejects it hard with nothing genetic happening. In simulation
+    on the GOBS pedigree a sex difference in measurement error alone rejected
+    it at p = 1e-34 while every genetic test correctly reported nothing.
+    """
+
+    def __init__(
+        self,
+        relationship: Any,
+        environment: Any,
+        design: Any,
+        levels: tuple[float, float] | None = None,
+    ) -> None:
+        self._relationship = _owned_matrix(relationship, "relationship")
+        self._environment = np.ascontiguousarray(
+            np.asarray(environment).ravel(), dtype=np.float64
+        )
+        self._design = _owned_matrix(design, "design")
+        self._levels = None if levels is None else (float(levels[0]), float(levels[1]))
+
+    def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
+        """Fit, with everything free.
+
+        ``counts`` comes back with the answer because a correlation estimated
+        across a group of thirty is not the same claim as one across a thousand,
+        and the fit itself cannot tell you which you have.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        (
+            genetic,
+            residual,
+            heritability,
+            correlation,
+            effects,
+            errors,
+            loglik,
+            converged,
+            gradient,
+            counts,
+            levels,
+        ) = _core.discrete_gxe_fit(
+            self._relationship, self._environment, self._design, y, reml, self._levels
+        )
+        return {
+            "levels": list(levels),
+            "genetic_variance": list(genetic),
+            "residual_variance": list(residual),
+            "heritability": list(heritability),
+            "genetic_correlation": correlation,
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
+            ],
+            "loglik": loglik,
+            "scaled_gradient": gradient,
+            "converged": converged,
+            "counts": list(counts),
+            "estimator": "reml" if reml else "ml",
+        }
+
+    def test(
+        self, y: Any, null: str = "gene_by_environment", reml: bool = True
+    ) -> dict[str, Any]:
+        """Test one of the five nulls.
+
+        - ``"gene_by_environment"``: no genetic difference of any kind — the
+          same variance and the same genes in both environments — with the two
+          residual variances left free. Two constraints, one of which sits on a
+          bound, so the reference is an even mixture of chi-square on one and
+          on two degrees of freedom. **Read this one first.**
+        - ``"any_difference"``: nothing differs between the environments at
+          all, residual included. Three constraints on an even mixture of
+          chi-square on two and on three. It is **not** a genetic test: a
+          noisier environment rejects it.
+        - ``"correlation"``: the same genes act in both environments. This is
+          the gene-by-environment question proper. The null puts the
+          correlation at the edge of what it may be, so the reference is the
+          even mixture of a point mass at nought with chi-square on one degree
+          of freedom. A plain chi-square would roughly double the p-value.
+        - ``"genetic"``: the same genetic variance in both environments.
+          Interior, so chi-square on one degree of freedom.
+        - ``"residual"``: the same residual variance in both environments.
+          Report it beside the others as a measurement fact, not as a genetic
+          finding.
+
+        ``rule`` names the reference distribution the p-value is a tail of, so a
+        reader need not take it on trust.
+        """
+        allowed = (
+            "gene_by_environment",
+            "any_difference",
+            "correlation",
+            "genetic",
+            "residual",
+        )
+        if null not in allowed:
+            raise ValueError(
+                f"null must be one of {', '.join(allowed)}, not {null!r}"
+            )
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        statistic, p_value, rule, null_loglik, alternative_loglik = _core.discrete_gxe_test(
+            self._relationship, self._environment, self._design, y, null, reml, self._levels
+        )
+        return {
+            "null": null,
+            "statistic": statistic,
+            "p_value": p_value,
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
+            "estimator": "reml" if reml else "ml",
+        }
+
+    def correlation_interval(self, y: Any, reml: bool = True) -> dict[str, Any]:
+        """A 95 per cent profile interval for the genetic correlation.
+
+        The correlation is a parameter here rather than a function of one, so
+        the interval comes from pinning it and refitting everything else, with
+        endpoints where twice the drop in log likelihood reaches 3.8415.
+
+        **The reference is the ordinary chi-square on one degree of freedom,
+        not the mixture** ``test(y, "correlation")`` **uses.** That test asks
+        about a correlation of exactly one, which is the edge of the parameter
+        space; an interval is a statement about interior values and takes the
+        interior reference. Borrowing the test's mixture would give a narrower
+        interval than the coverage it claims.
+
+        ``lower_limited`` and ``upper_limited`` say whether an endpoint sat at
+        the edge of what a correlation may be rather than where the likelihood
+        fell away. An interval reaching a bound is coverage without precision,
+        and that is worth knowing before it is quoted.
+        """
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            profile_failures,
+        ) = (
+            _core.discrete_gxe_correlation_interval(
+                self._relationship, self._environment, self._design, y, reml,
+                self._levels,
+            )
+        )
+        return {
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
+            "profile_failures": profile_failures,
+            "rule": "chi2_1",
+            "estimator": "reml" if reml else "ml",
+        }
+
+
+class VariantSetModel:
+    """Score a whole set of variants at once, in the famSKAT form.
+
+    Testing rare variants one at a time finds nothing, because each has a
+    handful of carriers. This asks instead whether the variants in a set — a
+    gene, a pathway — carry more trait variance together than chance allows,
+    without committing to which of them matters or which way each pushes.
+
+    ``backgrounds`` are the covariance bases carrying everything that is not
+    the set under test, and ``design`` must include its own intercept.
+
+    **Pass ``Z = G * w``, not the kernel.** One row per person, one column per
+    variant, with the column weights already applied. Nothing is lost — the
+    kernel is ``Z Z'`` — and nothing ``n by n`` is ever formed, so the memory
+    is one column per variant rather than one per person squared and the
+    eigenvalues come from a matrix the size of the set rather than the roster.
+
+    **The weights are your choice and they are not innocent.** Squaring is
+    implicit: a column multiplier ``w`` is a variance weight of ``w**2``. The
+    usual rare-focused choice is ``Beta(1, 25)`` evaluated at each minor allele
+    frequency, but it encodes a belief about which variants matter, and a
+    different belief gives a different answer. Running a small pre-specified
+    set of weightings and combining them is more honest than picking one.
+
+    **Why a score test and not a likelihood ratio.** The null sits on a
+    boundary, and Asterism's usual 50:50 reference is right only when the
+    tested matrix spreads across many eigenvalues. A variant-set kernel does
+    not — a burden kernel has rank one. Measured under the null on a
+    rare-variant kernel, the likelihood ratio rejected 0.020 against a nominal
+    0.05, where this reached 0.0467. The null is also fitted once for a whole
+    scan rather than refitted per set.
+
+    Nothing here corrects for testing many sets.
+    """
+
+    def __init__(
+        self,
+        backgrounds: Sequence[Any],
+        design: Any,
+        y: Any,
+        reml: bool = True,
+    ) -> None:
+        self._backgrounds = [_owned_matrix(b, "background") for b in backgrounds]
+        self._design = _owned_matrix(design, "design")
+        self._y = np.ascontiguousarray(y, dtype=np.float64)
+        self._reml = bool(reml)
+
+    def scan(self, roots: Sequence[Any]) -> list[dict[str, Any]]:
+        """Score every set, fitting the null once.
+
+        Each record carries the statistic, the p-value, the chi-square mixture
+        weights it was read against, and ``trustworthy``, which is false where
+        the tail is small enough that cancellation has eaten the digits. A set
+        nobody carries returns ``code`` of ``VARIANT_SET_NO_CARRIERS`` rather
+        than a statistic of nought dressed up as a result.
+        """
+        prepared = [
+            np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
+            for r in roots
+        ]
+        for root in prepared:
+            if root.ndim != 2:
+                raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
+        records = _core.variant_set_scan(
+            self._backgrounds, self._design, self._y, prepared, self._reml
+        )
+        return [dict(r) for r in records]
+
+    def test(self, root: Any) -> dict[str, Any]:
+        """Score one set."""
+        return self.scan([root])[0]
+
+    def scan_family(
+        self,
+        roots: Sequence[Any],
+        correlations: Sequence[float] = (0.0, 0.01, 0.04, 0.09, 0.25, 0.5, 0.9),
+    ) -> list[dict[str, Any]]:
+        """Score every set across a family of assumptions, and combine them.
+
+        Two tests bet on different truths about a set. A **burden** test
+        assumes every variant pushes the trait the same way and adds them into
+        one score: powerful when true, blind when half raise the trait and half
+        lower it, because they cancel. A **variance-component** test assumes
+        nothing about direction and asks only whether the effects are more
+        scattered than chance allows: robust to a mixture, weaker when they
+        genuinely agree.
+
+        They are two ends of one dial, and ``correlations`` is that dial — the
+        assumed correlation between variant effects, nought giving the
+        variance-component test and approaching one giving burden.
+
+        **Taking the best of several tests inflates a p-value unless the
+        looking is paid for.** These tests are strongly dependent, being one
+        score read under different assumptions, so the combination is the
+        Cauchy method, whose tail is right whatever the dependence.
+        ``strongest_correlation`` comes back because it says something about
+        the set, but reporting its p-value alone would be exactly the inflation
+        this exists to avoid: report ``p_value``.
+
+        The same mechanism combines across weightings, which is the honest
+        answer to a weight being an arbitrary choice: run several and combine,
+        rather than fitting one, which the null does not identify.
+        """
+        prepared = [
+            np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
+            for r in roots
+        ]
+        for root in prepared:
+            if root.ndim != 2:
+                raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
+        records = _core.variant_set_family_scan(
+            self._backgrounds, self._design, self._y, prepared,
+            [float(c) for c in correlations], self._reml,
+        )
+        return [dict(r) for r in records]
+
+    def test_family(
+        self,
+        root: Any,
+        correlations: Sequence[float] = (0.0, 0.01, 0.04, 0.09, 0.25, 0.5, 0.9),
+    ) -> dict[str, Any]:
+        """Score one set across the family."""
+        return self.scan_family([root], correlations)[0]
+
 
 
 class LiabilityModel:
@@ -707,11 +1179,11 @@ class LiabilityModel:
     """
 
     def __init__(self, relationship: Any, status: Any, design: Any) -> None:
-        self._relationship = _matrix(relationship, "relationship")
+        self._relationship = _owned_matrix(relationship, "relationship")
         self._status = np.ascontiguousarray(
             np.asarray(status, dtype=np.float64).ravel()
         )
-        self._design = _matrix(design, "design")
+        self._design = _owned_matrix(design, "design")
 
     def fit(self) -> dict[str, Any]:
         """Fit, by maximum likelihood because nothing else is available."""
@@ -741,7 +1213,7 @@ class LiabilityModel:
 
     def interval(self) -> dict[str, Any]:
         """A 95 per cent profile interval for the liability heritability."""
-        estimate, lower, upper, at_lower, at_upper = _core.liability_interval(
+        estimate, lower, upper, at_lower, at_upper, failures = _core.liability_interval(
             self._relationship, self._status, self._design
         )
         return {
@@ -751,6 +1223,7 @@ class LiabilityModel:
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": 0.95,
+            "profile_failures": failures,
         }
 
     def test(self) -> dict[str, Any]:
@@ -801,8 +1274,8 @@ class AssociationModel:
     """
 
     def __init__(self, relationship: Any, design: Any, y: Any) -> None:
-        self._relationship = _matrix(relationship, "relationship")
-        self._design = _matrix(design, "design")
+        self._relationship = _owned_matrix(relationship, "relationship")
+        self._design = _owned_matrix(design, "design")
         self._y = np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel())
 
     def sweep(
@@ -883,13 +1356,15 @@ def kinship_classes(
     father–daughter — with the order their rows are in, the class names, and how
     many pairs fell in each class.
 
-    Hand ``matrices`` to `ComponentModel` and report each class as a **share**.
-    A weight, being a ratio of two estimated variances, comes back near three
-    when the truth is one on a design of this size; the shares are unbiased.
+    Hand ``matrices`` to `ComponentModel` and report the fitted covariance
+    coefficients, the omnibus equality test, and class contrasts. The class
+    matrices have zero diagonals, so neither raw coefficient proportions nor
+    mean-diagonal proportions are interpretable as shares of phenotypic
+    variance.
 
     The pair counts are worth reading before the answer is. They are rarely
-    balanced, and a class with few pairs is a class whose share is least
-    determined.
+    balanced, and a class with few pairs has the least precise coefficient and
+    contrasts involving it.
     """
     matrices, order, names, pairs = _core.kinship_classes(
         ids, father, mother, sex, list(keep or [])
@@ -898,5 +1373,5 @@ def kinship_classes(
         "matrices": [np.ascontiguousarray(m) for m in matrices],
         "order": order,
         "class_names": names,
-        "pairs": dict(zip(names, pairs)),
+        "pairs": dict(zip(names, pairs, strict=True)),
     }

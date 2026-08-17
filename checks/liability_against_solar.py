@@ -1,11 +1,9 @@
 """Does the liability model agree with native SOLAR?
 
-ADR 0006 says agreement proves fidelity, and ADR 0007 records that the liability
-model has not earned it. The likelihood was checked against the SOLAR successor
-and matched to ten digits, but that engine is where this code came from — a
-transplant checked against its donor is not independent agreement. **This is the
-independent one.** SOLAR fits the same liability-threshold model from an entirely
-separate implementation, and if the two agree the transplant is qualified.
+The likelihood previously matched the implementation from which this code was
+adapted, but that is not an independent comparison. Native SOLAR fits the same
+liability-threshold model through a separate implementation, so this check
+compares the resulting heritability estimates and likelihoods.
 
 **SOLAR finds the binary trait by itself.** A phenotype taking exactly two
 consecutive integer values is treated as discrete and given the liability model,
@@ -35,13 +33,11 @@ from pathlib import Path
 from statistics import NormalDist
 
 import numpy as np
-
-import asterism
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 RUN = """load pedigree ped.csv
 load phenotypes phen.csv
@@ -243,29 +239,22 @@ def main() -> int:
         return 1
     print(
         "The two agree to well inside the uncertainty of the quantity, and this\n"
-        "package attains the higher likelihood where they differ. Under ADR 0006\n"
-        "that is fidelity, and it is independent: SOLAR shares no code with this."
+        "package attains the higher likelihood where they differ. The two models\n"
+        "were fitted by separate implementations."
     )
 
-    Path("evidence").mkdir(exist_ok=True)
-    Path("evidence/liability-against-solar-2026-08-14.json").write_text(
+    print(
         json.dumps(
             {
-                "what": "binary liability heritability against native SOLAR",
-                "date": "2026-08-14",
                 "estimator": "ml",
                 "worst_absolute_difference": worst,
                 "worst_difference_in_standard_errors": worst_in_errors,
                 "threshold_in_standard_errors": bar,
                 "cases": cases,
-                "note": (
-                    "independent agreement: SOLAR shares no code with this package, "
-                    "unlike the SOLAR successor this model was cannibalised from"
-                ),
+                "comparison": "native SOLAR and Asterism use separate implementations",
             },
             indent=2,
         )
-        + "\n"
     )
     return 0
 
