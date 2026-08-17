@@ -63,6 +63,14 @@ from scipy import stats
 
 REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "400"))
 WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+# **How many draws a simulated reference may rest on.** Where the outcome
+# loading is also on a bound the even mixture is the wrong reference and one is
+# simulated instead, at two more fits per draw. Two hundred is right for a
+# single answer and ruinous for a campaign of four hundred, so this is set low
+# here and reported with the result. It coarsens the smallest p-value the
+# reference can return -- fifty puts it near 0.02 -- which matters for the 0.01
+# column and is why that column is read with the refusal counts beside it.
+BOOTSTRAP = int(os.environ.get("ASTERISM_BOOTSTRAP", "50"))
 FAMILIES = int(os.environ.get("ASTERISM_FAMILIES", "400"))
 LEVELS = (0.01, 0.05, 0.10)
 
@@ -90,7 +98,8 @@ def one(job: tuple[str, int]) -> tuple[float | None, str | None]:
         ascertainment="population_unconditioned",
     )
     try:
-        return float(asterism.LatentMediationModel(drawn).test_vertical()["p_value"]), None
+        return float(asterism.LatentMediationModel(drawn)
+            .test_vertical(bootstrap_replicates=BOOTSTRAP)["p_value"]), None
     except ValueError as refusal:
         return None, str(refusal).replace("LATENT_MEDIATION_", "")
 
@@ -186,6 +195,7 @@ def main() -> int:
                 "what": "level of the intersection-union test of a b = 0",
                 "date": date.today().isoformat(),
                 "replicates": REPLICATES,
+                "bootstrap_replicates_where_simulated": BOOTSTRAP,
                 "families": FAMILIES,
                 "people_per_family": len(RELATIONSHIP),
                 "fixed": FIXED,

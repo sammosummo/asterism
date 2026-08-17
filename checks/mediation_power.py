@@ -46,6 +46,14 @@ from asterism.latent_mediation import simulate
 
 REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "400"))
 WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+# **How many draws a simulated reference may rest on.** Where the outcome
+# loading is also on a bound the even mixture is the wrong reference and one is
+# simulated instead, at two more fits per draw. Two hundred is right for a
+# single answer and ruinous for a campaign of four hundred, so this is set low
+# here and reported with the result. It coarsens the smallest p-value the
+# reference can return -- fifty puts it near 0.02 -- which matters for the 0.01
+# column and is why that column is read with the refusal counts beside it.
+BOOTSTRAP = int(os.environ.get("ASTERISM_BOOTSTRAP", "50"))
 LEVEL = 0.05
 
 # The truth to draw from. `a` is the mediator's loading on the inherited factor,
@@ -119,7 +127,8 @@ def one(job: tuple[str, int, int, str, str, int]) -> tuple[float | None, str | N
     )
     try:
         return (
-            float(asterism.LatentMediationModel(drawn).test_vertical()["p_value"]),
+            float(asterism.LatentMediationModel(drawn)
+            .test_vertical(bootstrap_replicates=BOOTSTRAP)["p_value"]),
             None,
         )
     except ValueError as refusal:
@@ -221,6 +230,7 @@ def main() -> int:
                 "what": "power and level of the union null across candidate designs",
                 "date": date.today().isoformat(),
                 "replicates": REPLICATES,
+                "bootstrap_replicates_where_simulated": BOOTSTRAP,
                 "level": LEVEL,
                 "truths": TRUTHS,
                 "fixed": FIXED,
