@@ -156,13 +156,10 @@ def one(index: int):
     factor = STATE["factor"]
     n = design.shape[0]
     y = factor @ np.random.default_rng(640_000 + index).standard_normal(n)
-    out = []
-    for arm in ("markers", "permuted"):
-        _, _, rows, _ = _core.association_sweep(
-            relationship, design, y, STATE[arm], "held"
-        )
-        out.append([row[4] for row in rows if not row[5]])
-    return out
+    _, _, rows, _ = _core.association_sweep(
+        relationship, design, y, STATE["markers"], "held"
+    )
+    return [row[4] for row in rows if not row[5]]
 
 
 def main() -> int:
@@ -180,23 +177,31 @@ def main() -> int:
 
     covariance = HERITABILITY * relationship + (1.0 - HERITABILITY) * np.eye(n)
     factor = np.linalg.cholesky(covariance + 1e-9 * np.eye(n))
-    # Permuted once and shared, so the second arm is the same set of markers
-    # with the same allele frequencies and no relation to who is related to
-    # whom. Permuting per draw would confound the two sources of scatter.
-    shuffle = np.random.default_rng(4_242)
-    permuted = np.ascontiguousarray(
-        np.column_stack([shuffle.permutation(markers[:, j]) for j in range(m)])
-    )
-    shared = {
-        "relationship": relationship,
-        "design": design,
-        "markers": markers,
-        "permuted": permuted,
-        "factor": factor,
-    }
+    def sweep(these: np.ndarray) -> list:
+        shared = {
+            "relationship": relationship,
+            "design": design,
+            "markers": these,
+            "factor": factor,
+        }
+        with ProcessPoolExecutor(
+            WORKERS, initializer=_start, initargs=(shared,)
+        ) as pool:
+            return list(pool.map(one, range(DRAWS), chunksize=1))
+
     started = time.perf_counter()
-    with ProcessPoolExecutor(WORKERS, initializer=_start, initargs=(shared,)) as pool:
-        batches = list(pool.map(one, range(DRAWS), chunksize=1))
+    batches = sweep(markers)
+    # **The second arm is the same markers with their people shuffled.** Each
+    # column keeps its allele frequency exactly and loses any relation to who is
+    # related to whom. Permuted in place and run as a second pass rather than
+    # alongside the first, so only one marker matrix is ever shipped to the
+    # workers. Permuting per draw would confound the two sources of scatter.
+    shuffle = np.random.default_rng(4_242)
+    permuted = markers.copy()
+    for column in range(m):
+        shuffle.shuffle(permuted[:, column])
+    batches_permuted = sweep(np.ascontiguousarray(permuted))
+    del permuted
     took = time.perf_counter() - started
 
     # **Per draw as well as pooled.** Markers in linkage disequilibrium are not
@@ -205,8 +210,8 @@ def main() -> int:
     # spread of the count between draws says which: each draw is one
     # independent realisation of the response, whatever the markers do among
     # themselves.
-    per_draw = [np.array(b[0]) for b in batches if b and b[0]]
-    per_draw_permuted = [np.array(b[1]) for b in batches if b and b[1]]
+    per_draw = [np.array(b) for b in batches if b]
+    per_draw_permuted = [np.array(b) for b in batches_permuted if b]
     p_values = np.concatenate(per_draw)
     total = len(p_values)
     print(f"{total:,} null tests in {took / 60:.0f} minutes.\n")
