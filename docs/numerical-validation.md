@@ -291,13 +291,15 @@ bias, so their spread understated the true error by three to four orders of
 magnitude at dimension twelve.
 
 The test of `a b = 0` was exercised on 36 people in 12 families of three, with
-binary outcomes, across a real mediation and two nulls. Every p-value fell the
-right side of 0.05: neither null was rejected, and the real mediation was not
+binary outcomes, across a real mediation and three nulls. Every p-value fell
+the right side of 0.05: no null was rejected, and the real mediation was not
 claimed either, because `b` could not be established at that size. The point
-estimates over the same three runs were +7.79, +0.54 and -2459 against truths
-of 0.42, 0 and 0 — the test is a likelihood ratio and does not depend on them.
+estimates over the same four runs were +7.79, +0.54, -2459 and -0.09 against
+truths of 0.42, 0, 0 and 0 — the test is a likelihood ratio and does not depend
+on them. The runaway is confined to the run where `a` is large and identified
+while `b` is nought and unconstrained.
 
-That is a demonstration that the construction behaves, not a calibration: three
+That is a demonstration that the construction behaves, not a calibration: four
 runs cannot measure a rejection rate. No simulation presently establishes
 coverage or type-I error for the vertical estimand `a b`, so the model reports numerical diagnostics and point estimates
 without a calibrated interval or p-value.

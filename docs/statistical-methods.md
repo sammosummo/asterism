@@ -497,10 +497,16 @@ outcomes binary — the point estimate ran away while the test held:
 | a=0.7, b=0.6 (a b = 0.42) | +7.79 | 0.018 | 0.742 | 0.742 |
 | a=0, b=0.6 (a b = 0) | +0.54 | 0.397 | 0.136 | 0.397 |
 | a=0.7, b=0 (a b = 0) | **-2459** | 0.008 | 0.123 | 0.123 |
+| a=0, b=0 (a b = 0) | -0.09 | 0.288 | 0.774 | 0.774 |
 
-Every p-value is the right side of 0.05: the two true nulls are not rejected,
+Every p-value is the right side of 0.05: all three true nulls are not rejected,
 and the one real mediation is not claimed either, because `b` could not be
-established from 36 binary outcomes. **The test is a likelihood ratio and does
+established from 36 binary outcomes.
+
+Notice which row runs away. With both parameters at nought the estimate is
+-0.09, near enough right; the damage is done in the third row, where `a` is
+large and identified while `b` is nought and unconstrained. That is the shape
+the argument above predicts, and it is the shape to watch for. **The test is a likelihood ratio and does
 not depend on the estimate**, which is why it survives a point estimate of
 minus two thousand.
 
