@@ -855,7 +855,7 @@ impl SpatialModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if par[k] <= 0.0 { g.min(0.0) } else { *g })
+            .map(|(k, g)| if crate::components::resting_on_zero(par[k]) { g.min(0.0) } else { *g })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
         let scaled_gradient = projected / negative.abs().max(1.0);
 

@@ -66,6 +66,20 @@ struct Evaluation {
     fixed_covariance: Option<DMatrix<f64>>,
 }
 
+/// Is a component resting on its lower bound of nought?
+///
+/// **This cannot be an exact test.** A bounded search leaves a component on its
+/// bound a hair above it rather than at it -- measured at 1e-37, 1e-17 and
+/// 1e-19 on ordinary problems -- so `value <= 0.0` never fires, the one-sided
+/// derivative is counted in full, and a fit that is demonstrably the maximum
+/// reports itself unconverged. On a unit-variance scale anything below this is
+/// nought in every sense that matters.
+pub(crate) fn resting_on_zero(value: f64) -> bool {
+    value <= RESTING_TOLERANCE
+}
+
+const RESTING_TOLERANCE: f64 = 1e-9;
+
 struct BlockSolve {
     rows: Vec<usize>,
     inverse: DMatrix<f64>,
@@ -523,7 +537,7 @@ impl ComponentModel {
                     if signed.contains(&k) {
                         // No bound to rest on, so no projection.
                         *g
-                    } else if solution.par[k] <= 0.0 {
+                    } else if resting_on_zero(solution.par[k]) {
                         g.min(0.0)
                     } else {
                         *g
@@ -552,7 +566,7 @@ impl ComponentModel {
             .gradient
             .iter()
             .enumerate()
-            .map(|(k, g)| if par[k] <= 0.0 { g.min(0.0) } else { *g })
+            .map(|(k, g)| if resting_on_zero(par[k]) { g.min(0.0) } else { *g })
             .fold(0.0f64, |worst, g| worst.max(g.abs()));
 
         // Back to the response's own units. Variances carry the square of the

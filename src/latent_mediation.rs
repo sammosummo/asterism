@@ -27,10 +27,11 @@ const BIVARIATE_ABSOLUTE_TOLERANCE: f64 = 1.0e-12;
 // relative accuracy degrades as the probability shrinks; below this scale the
 // log-scale conditional quadrature is the more accurate recipe.
 const BIVARIATE_TAIL_CROSSOVER: f64 = 1.0e-9;
-/// How far either side of a rectangle's own edge the conditional integrand is
-/// followed. Standard normal mass beyond sixty deviations is below anything
-/// binary64 carries, so this is generous wherever the rectangle sits.
-const SEARCH_WIDTH: f64 = 60.0;
+/// How many doubling strides the conditional integrand is followed for, when
+/// climbing to its peak and again when leaving it. Each stride doubles, so two
+/// hundred reaches any distance binary64 holds and the cap is only a guard
+/// against a non-terminating climb.
+const CLIMB_STEPS: usize = 200;
 const FIT_DIMENSION: usize = 5;
 const FIT_GRADIENT_STEP: f64 = 1.0e-5;
 const FIT_GRADIENT_STABILITY_TOLERANCE: f64 = 1.0e-4;
@@ -949,18 +950,26 @@ impl LatentMediationFamily {
         let mut maximum_qmc_batch_range: f64 = 0.0;
         let mut methods = BTreeSet::new();
         for configuration in 0..truth_configurations {
-            let mut measurement_weight = 1.0;
+            // **Summed as logs, not multiplied.** Each factor is a
+            // sensitivity or a specificity, so a family with several fallible
+            // proxies multiplies several numbers below one together; at
+            // extreme accuracies that product underflows to nought and takes
+            // the whole configuration with it, including the dominant one.
+            // Every factor is strictly inside the unit interval, so its
+            // logarithm is finite and the sum is exact.
+            let mut log_measurement_weight = 0.0_f64;
             let mut lower = Vec::with_capacity(self.discrete_target_indices.len());
             let mut upper = Vec::with_capacity(self.discrete_target_indices.len());
             for (position, &(index, observed)) in self.observed_mediator_proxy.iter().enumerate() {
                 let truth = i8::from((configuration & (1usize << position)) != 0);
-                measurement_weight *= match (truth, observed) {
+                log_measurement_weight += match (truth, observed) {
                     (1, 1) => self.mediator_proxy_sensitivity[index],
                     (1, 0) => 1.0 - self.mediator_proxy_sensitivity[index],
                     (0, 1) => 1.0 - self.mediator_proxy_specificity[index],
                     (0, 0) => self.mediator_proxy_specificity[index],
                     _ => unreachable!("validated binary status"),
-                };
+                }
+                .ln();
                 let bounds = status_bounds(truth, self.mediator_threshold[index]);
                 lower.push(bounds.0);
                 upper.push(bounds.1);
@@ -986,7 +995,7 @@ impl LatentMediationFamily {
                     qmc_points,
                 )?
             };
-            log_terms.push(measurement_weight.ln() + rectangle.log_probability);
+            log_terms.push(log_measurement_weight + rectangle.log_probability);
             maximum_qmc_batch_range = maximum_qmc_batch_range.max(rectangle.batch_range);
             methods.insert(rectangle.method.to_owned());
         }
@@ -1376,18 +1385,41 @@ fn normal() -> Result<Normal, &'static str> {
 }
 
 fn normal_cdf(value: f64) -> Result<f64, &'static str> {
-    if !value.is_finite() {
-        return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
-    }
-    Ok(normal()?.cdf(value))
+    normal_sf(-value)
 }
 
+/// Upper tail of the standard normal.
+///
+/// **Not `statrs`'s `Normal::cdf`, which is not accurate enough to integrate
+/// against.** That routes through an `erfc` approximation carrying about 5e-11
+/// of relative error -- it puts the tail at 3 deviations at 1.349898031574e-3
+/// where the true value is 1.349898031630e-3 -- and the error wanders from
+/// point to point rather than varying smoothly. To a quadrature asking for
+/// 1e-13 that is noise, and the conditional integrand inherited it: panels
+/// around 6.06 deviations kept returning an error estimate that fell only as
+/// fast as the panel width, the signature of a rough integrand, so the routine
+/// subdivided to its depth limit and refused rectangles as ordinary as
+/// [6, 40] x [5, inf) at a correlation of 0.7.
+///
+/// The upper tail is the regularised upper incomplete gamma in disguise --
+/// `P(Z > x) = Q(1/2, x^2/2) / 2` for non-negative `x` -- and that `statrs`
+/// computes to 1e-16. Below nought the complementary form keeps the sum away
+/// from cancellation.
 fn normal_sf(value: f64) -> Result<f64, &'static str> {
     if !value.is_finite() {
         return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
     }
-    // Symmetry avoids cancellation in the upper tail.
-    Ok(normal()?.cdf(-value))
+    let half_square = 0.5 * value * value;
+    // `statrs` panics rather than returning for an argument of nought, which
+    // the centre of the distribution reaches exactly.
+    if half_square == 0.0 {
+        return Ok(0.5);
+    }
+    if value >= 0.0 {
+        Ok(0.5 * statrs::function::gamma::gamma_ur(0.5, half_square))
+    } else {
+        Ok(0.5 + 0.5 * statrs::function::gamma::gamma_lr(0.5, half_square))
+    }
 }
 
 fn truncated_standard_normal(lower: f64, upper: f64, unit: f64) -> Result<f64, &'static str> {
@@ -1563,7 +1595,24 @@ fn log_bivariate_rectangle(
 ) -> Result<f64, &'static str> {
     // Integrate over the more extreme coordinate, which concentrates the
     // integrand and keeps the inner interval ordinary.
-    let extremity = |low: f64, high: f64| low.abs().min(high.abs());
+    //
+    // **Extremity is how far into a tail the interval sits, not how near an
+    // edge is to the origin.** Scoring it as the smaller absolute endpoint
+    // called `(-inf, 40]` more extreme than `(7, inf)`, when the first holds
+    // essentially all the mass and the second holds 1e-12 of it, so the outer
+    // and inner coordinates were chosen the wrong way round for every rectangle
+    // with a half-line in it. An interval containing the mode is not extreme at
+    // all, whatever its edges; one lying wholly in a tail is as extreme as its
+    // nearest edge is far out.
+    let extremity = |low: f64, high: f64| {
+        if low > 0.0 {
+            low
+        } else if high < 0.0 {
+            -high
+        } else {
+            0.0
+        }
+    };
     let swap = extremity(lower[1], upper[1]) > extremity(lower[0], upper[0]);
     let (outer, inner) = if swap {
         (([lower[1], upper[1]]), ([lower[0], upper[0]]))
@@ -1579,34 +1628,69 @@ fn log_bivariate_rectangle(
         let shifted_upper = (inner[1] - correlation * x) / conditional_sd;
         Ok(-0.5 * x * x - 0.5 * LOG_TWO_PI + log_interval_probability(shifted_lower, shifted_upper)?)
     };
-    // The integrand is log-concave, so a golden-section search finds its one
-    // peak; the working range clips infinite limits far beyond any mass.
+    // The integrand is log-concave, so it has a single peak and a
+    // golden-section search finds it -- but only once the search is given a
+    // bracket that contains it.
     //
-    // **The clip is relative to the rectangle and not to the origin.** Fixing
-    // it at plus or minus sixty put a ceiling on how far into the tail a
-    // threshold could sit: a rectangle starting past sixty standard deviations
-    // out had an empty working range and returned no probability at all, which
-    // is a property of the constant rather than of the integral. Sixty either
-    // side of the rectangle's own edge carries every part of the integrand that
-    // contributes, wherever the rectangle happens to be.
-    let width = SEARCH_WIDTH;
-    let left_limit = if outer[0].is_finite() {
-        outer[0]
-    } else {
-        outer[1] - width
-    };
-    let right_limit = if outer[1].is_finite() {
-        outer[1]
-    } else {
-        left_limit + width
-    };
-    let right_limit = right_limit.min(left_limit + width);
-    if left_limit >= right_limit {
+    // **Where the peak sits is a property of the whole rectangle, not of the
+    // outer interval alone.** With correlation `rho` and an inner interval
+    // beginning at `c`, the exponent `-x^2/2 + log P(inner | x)` is stationary
+    // where `x = rho * m` for `m` the conditional mean of the inner interval,
+    // which puts the peak near `rho * c` -- far from the origin and far from
+    // the outer edges whenever the inner interval is distant. A window fixed
+    // relative to the rectangle cannot find that, and it also loses the
+    // ordinary case: anchored sixty either side of the rectangle's own edge,
+    // a left half-line `(-inf, t]` was searched over `[t - 60, t]`, so once `t`
+    // passed sixty the range began above the mode and threw nearly all the mass
+    // away. The probability of a strictly growing region then strictly shrank,
+    // by 1805 nats between `t = 40` and `t = 120`, and past `t = 300` the
+    // quadrature failed outright.
+    //
+    // So rather than guess a window, climb: start from the point of the outer
+    // interval nearest the origin, step out doubling the stride while the
+    // integrand rises, and stop when it falls or the interval ends. Log
+    // concavity makes that one climb enough, and it brackets the peak wherever
+    // the peak happens to be.
+    let lower_edge = outer[0];
+    let upper_edge = outer[1];
+    if !(lower_edge < upper_edge) {
         return Ok(f64::NEG_INFINITY);
     }
+    let anchor = 0.0_f64.clamp(lower_edge, upper_edge);
+    let towards = |direction: f64, from: f64, step: f64| -> f64 {
+        let proposed = from + direction * step;
+        if direction > 0.0 {
+            proposed.min(upper_edge)
+        } else {
+            proposed.max(lower_edge)
+        }
+    };
+    let mut low = anchor;
+    let mut high = anchor;
+    for direction in [1.0_f64, -1.0] {
+        let mut previous = log_integrand(anchor)?;
+        let mut step = 1.0;
+        let mut reached = anchor;
+        for _ in 0..CLIMB_STEPS {
+            let candidate = towards(direction, anchor, step);
+            if candidate == reached {
+                break;
+            }
+            let value = log_integrand(candidate)?;
+            reached = candidate;
+            if value <= previous {
+                break;
+            }
+            previous = value;
+            step *= 2.0;
+        }
+        if direction > 0.0 {
+            high = reached;
+        } else {
+            low = reached;
+        }
+    }
     let golden = 0.5 * (5.0_f64.sqrt() - 1.0);
-    let mut low = left_limit;
-    let mut high = right_limit;
     for _ in 0..120 {
         let first = high - golden * (high - low);
         let second = low + golden * (high - low);
@@ -1621,13 +1705,31 @@ fn log_bivariate_rectangle(
     if log_peak == f64::NEG_INFINITY {
         return Ok(f64::NEG_INFINITY);
     }
-    // Bracket where the integrand has fallen eighty logs below its peak;
-    // beyond that the contribution is immaterial at any tolerance used here.
+    // Integrate out to where the integrand has fallen eighty logs below its
+    // peak; the part beyond contributes a relative 1e-35 and is immaterial at
+    // any tolerance used here. The same doubling climb finds that point, so the
+    // integration range is set by the integrand rather than by a constant, and
+    // a bisection then places it precisely.
     let drop = 80.0;
-    let bracket = |mut inside: f64, mut outside: f64| -> Result<f64, &'static str> {
-        if log_integrand(outside)? >= log_peak - drop {
-            return Ok(outside);
+    let spent = |direction: f64| -> Result<f64, &'static str> {
+        let mut inside = peak;
+        let mut step = 1.0;
+        let mut outside = None;
+        for _ in 0..CLIMB_STEPS {
+            let candidate = towards(direction, peak, step);
+            if log_integrand(candidate)? < log_peak - drop {
+                outside = Some(candidate);
+                break;
+            }
+            if candidate == inside {
+                break;
+            }
+            inside = candidate;
+            step *= 2.0;
         }
+        let Some(mut outside) = outside else {
+            return Ok(inside);
+        };
         for _ in 0..80 {
             let middle = 0.5 * (inside + outside);
             if log_integrand(middle)? >= log_peak - drop {
@@ -1638,8 +1740,8 @@ fn log_bivariate_rectangle(
         }
         Ok(outside)
     };
-    let left_edge = bracket(peak, left_limit)?;
-    let right_edge = bracket(peak, right_limit)?;
+    let left_edge = spent(-1.0)?;
+    let right_edge = spent(1.0)?;
     let shifted = |x: f64| match log_integrand(x) {
         Ok(value) => (value - log_peak).exp(),
         Err(_) => f64::NAN,
@@ -1740,7 +1842,17 @@ fn bivariate_normal_cdf(first: f64, second: f64, correlation: f64) -> Result<f64
         return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED");
     }
     let upper_bound = normal_cdf(first)?.min(normal_cdf(second)?);
-    let lower_bound = (normal_cdf(first)? + normal_cdf(second)? - 1.0).max(0.0);
+    // **The Frechet bounds can cross by rounding, and `clamp` panics when they
+    // do.** With both marginals at essentially one, the lower bound is
+    // `p + q - 1` and the upper is `min(p, q)`; these meet exactly at one and
+    // an ulp of arithmetic is enough to put the lower above the upper --
+    // measured at 0.9999999910267894 against 0.9999999910267893, which brought
+    // the whole process down through the Python boundary rather than returning
+    // an error. Ordering them costs nothing and the interval they describe is
+    // a point at that precision anyway.
+    let lower_bound = (normal_cdf(first)? + normal_cdf(second)? - 1.0)
+        .max(0.0)
+        .min(upper_bound);
     if probability < lower_bound - 1.0e-10 || probability > upper_bound + 1.0e-10 {
         return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
     }
@@ -1788,7 +1900,16 @@ where
         if !left.is_finite() || !right.is_finite() {
             return Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_NOT_FINITE");
         }
-        if error.abs() <= 15.0 * tolerance {
+        // The error budget is halved at every level, so it eventually asks for
+        // less than the arithmetic can deliver: a panel is accepted once its
+        // error reaches the level of its own rounding, because no amount of
+        // further splitting can improve on that. Without this the routine
+        // answers a rough integrand by subdividing to its depth limit and then
+        // refusing, which is the worst of both -- it spends the most work
+        // exactly where it will fail, and a likelihood that declines to be
+        // evaluated stops an optimiser dead.
+        let rounding = 16.0 * f64::EPSILON * (left.abs() + right.abs());
+        if error.abs() <= (15.0 * tolerance).max(rounding) {
             Ok(QuadratureResult {
                 value: left + right + error / 15.0,
                 estimated_error: error.abs() / 15.0,
@@ -1910,6 +2031,84 @@ impl LatentMediationModel {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// A growing region cannot hold less probability, however far out its
+    /// edge is pushed. The conditional integrand used to be searched over a
+    /// window fixed relative to the rectangle, so once the edge passed sixty
+    /// the window sat above the mode: the answer fell by 1805 nats between
+    /// `t = 40` and `t = 120` and the quadrature failed outright past 300.
+    #[test]
+    fn distant_rectangle_edges_do_not_lose_probability() {
+        // P(M <= t, Y > 7) for independent standard normals, which is
+        // Phi(t)(1 - Phi(7)) and settles at log 1.2798e-12 once t is past a
+        // few deviations. Checked against a sixty-digit evaluation.
+        let truth = -27.384_307_498_811_08;
+        for t in [10.0, 40.0, 61.0, 120.0, 300.0, 3000.0, 10_000.0] {
+            let value =
+                log_bivariate_rectangle(&[f64::NEG_INFINITY, 7.0], &[t, f64::INFINITY], 0.0)
+                    .expect("rectangle");
+            assert!(
+                (value - truth).abs() < 1.0e-12,
+                "t = {t}: {value} against {truth}"
+            );
+        }
+    }
+
+    /// A rectangle unbounded in one coordinate is that coordinate's marginal,
+    /// and stays so however deep the other one goes and whatever the
+    /// correlation. The peak of the conditional integrand sits near
+    /// `correlation * boundary` here, so a search window anchored on the
+    /// rectangle misses it entirely.
+    #[test]
+    fn unbounded_coordinate_recovers_the_marginal_in_the_deep_tail() {
+        // log Phi(-200), to sixty digits.
+        let truth = -20_006.217_280_898_19;
+        for correlation in [0.0, 0.5, -0.5, 0.9, -0.99] {
+            let value = log_bivariate_rectangle(
+                &[f64::NEG_INFINITY, 200.0],
+                &[f64::INFINITY, f64::INFINITY],
+                correlation,
+            )
+            .expect("rectangle");
+            assert!(
+                (value - truth).abs() < 1.0e-9,
+                "correlation = {correlation}: {value} against {truth}"
+            );
+        }
+    }
+
+    /// Splitting a rectangle in two and adding the halves must return the
+    /// whole, at any depth and any correlation. This holds the quadrature to
+    /// account where no reference distribution reaches.
+    #[test]
+    fn deep_tail_rectangles_add_up() {
+        for correlation in [0.0, 0.7, -0.4] {
+            for (start, split, finish) in [(6.0, 9.0, 40.0), (30.0, 45.0, 90.0)] {
+                let whole = log_bivariate_rectangle(
+                    &[start, 5.0],
+                    &[finish, f64::INFINITY],
+                    correlation,
+                )
+                .expect("whole");
+                let left =
+                    log_bivariate_rectangle(&[start, 5.0], &[split, f64::INFINITY], correlation)
+                        .expect("left");
+                let right =
+                    log_bivariate_rectangle(&[split, 5.0], &[finish, f64::INFINITY], correlation)
+                        .expect("right");
+                let larger = left.max(right);
+                let combined =
+                    larger + ((left - larger).exp() + (right - larger).exp()).ln();
+                assert!(
+                    (whole - combined).abs() < 1.0e-9,
+                    "correlation {correlation}, {start}..{split}..{finish}: \
+                     {whole} against {combined}"
+                );
+            }
+        }
+    }
+
     use super::{
         FIT_GRADIENT_TOLERANCE, LatentMediationFamilyInput, LatentMediationModel,
         LatentMediationParameters, adaptive_simpson, bivariate_normal_cdf, bound_aware_gradient,
