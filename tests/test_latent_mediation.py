@@ -259,7 +259,7 @@ def test_higher_dimensional_rectangle_uses_requested_qmc_work() -> None:
     model = asterism.LatentMediationModel([family], qmc_points=256)
     record = model.evaluate(a=0.5, b=0.3, c_prime=0.2, d=0.6, sigma_m2=0.7)
     assert record["integration_methods"] == ["deterministic_genz_halton"]
-    assert record["maximum_qmc_batch_range"] > 0.0
+    assert record["maximum_qmc_log_batch_range"] > 0.0
     assert record["approximate"] is True
 
 

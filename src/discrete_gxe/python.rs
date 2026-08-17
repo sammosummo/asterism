@@ -10,14 +10,6 @@ use pyo3::prelude::*;
 use super::{DiscreteGxeModel, DiscreteGxeTest};
 use nalgebra::{DMatrix, DVector};
 
-fn build(
-    relationship: &PyReadonlyArray2<'_, f64>,
-    environment: &PyReadonlyArray1<'_, f64>,
-    design: &PyReadonlyArray2<'_, f64>,
-) -> PyResult<DiscreteGxeModel> {
-    build_expecting(relationship, environment, design, None)
-}
-
 fn build_expecting(
     relationship: &PyReadonlyArray2<'_, f64>,
     environment: &PyReadonlyArray1<'_, f64>,

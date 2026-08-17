@@ -80,7 +80,6 @@ pub struct VariantSetTest {
 pub struct VariantSetModel {
     design: DMatrix<f64>,
     /// `V0^-1 X`.
-    weighted_design: DMatrix<f64>,
     /// The factorised `X' V0^-1 X`.
     design_information: DenseFactor,
     /// `P y`, the projected residual.
@@ -160,7 +159,6 @@ impl VariantSetModel {
 
         Ok(Self {
             design: design.clone(),
-            weighted_design,
             design_information: information_factor,
             residual,
             covariance: factor,

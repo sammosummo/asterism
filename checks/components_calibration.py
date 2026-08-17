@@ -124,7 +124,7 @@ def coverage(relationship, household, design, n) -> dict:
         whole = True
         for index, name in enumerate(NAMES[:2]):
             try:
-                lower, upper, _, _, _ = _core.component_interval(
+                lower, upper, _, _, _, _ = _core.component_interval(
                     [relationship, household], design, y, index, True
                 )
             except Exception:

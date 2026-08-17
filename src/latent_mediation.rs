@@ -2130,10 +2130,21 @@ impl LatentMediationModel {
         // whenever it binds, so this is refused rather than answered. The fit
         // already knows: it records exactly this in `boundary_parameters`.
         // `ComponentModel` guards the same case and refuses for the same reason.
+        //
+        // **The reference belongs to the null, so the null fit has to be
+        // asked as well.** The reference for `a = 0` is set by which other
+        // parameters rest on a bound where that null holds, and the free fit
+        // is not that point: `d` can be comfortably positive with `a` free and
+        // fall to nought once `a` is held there, which is the corner the guard
+        // exists to catch and the free fit alone reports nothing about. Either
+        // fit resting on `d` is enough to refuse.
         if free.boundary_parameters.contains(&"d") {
             return Err("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO");
         }
         let without_loading = self.fit_holding(&[0])?;
+        if without_loading.boundary_parameters.contains(&"d") {
+            return Err("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO");
+        }
         let without_path = self.fit_holding(&[1])?;
 
         let loading_statistic =
@@ -2396,32 +2407,68 @@ mod tests {
     /// A model whose outcome loading `d` does not rest on its bound, which the
     /// vertical test needs: the even mixture it reads the loading against
     /// assumes `a` is the only parameter on a boundary.
+    ///
+    /// **Sibling pairs, not lone people.** Built from unrelated singletons the
+    /// model is not identified at all: a single person's relationship matrix is
+    /// `[1]`, so the inherited part and the residual part land in the same
+    /// entry of the same covariance and `a^2` is indistinguishable from a share
+    /// of `sigma_m2`. Five parameters mapped into a 2 x 2 marginal covariance,
+    /// and the three tests standing on that fixture were reading whatever the
+    /// optimiser happened to settle on along a ridge. A relatedness of a half
+    /// puts the inherited part in the between-person block where the residual
+    /// never reaches, which is what separates them.
+    ///
+    /// Simulated from `a = 0.6`, `b = 0.4`, `c' = 0.2`, `d = 0.7` and
+    /// `sigma_m2 = 0.5`, with a measurement error variance of 0.15 and an
+    /// outcome threshold at nought. Thirty pairs is far too few to recover
+    /// those, and the fit does not: what it does is rest nowhere near a bound,
+    /// which is the property these tests need.
     fn interior_fit_model() -> LatentMediationModel {
-        const OBSERVATIONS: [(f64, i8); 10] = [
-            (0.079_049_024_394_060_85, 0),
-            (0.384_264_427_030_968_64, 1),
-            (-0.288_858_813_914_036, 0),
-            (1.505_519_311_654_784_5, 1),
-            (0.856_146_192_031_015_6, 0),
-            (-0.045_028_307_478_389_76, 0),
-            (-1.561_815_005_120_057_9, 0),
-            (1.089_970_373_527_701_3, 1),
-            (-0.281_806_711_439_217_37, 0),
-            (1.882_544_097_959_577_8, 1),
+        const PAIRS: [(f64, f64, i8, i8); 30] = [
+            (-0.08282784138088012, 0.26802892826039726, 1, 0),
+            (0.25322082473694985, -0.18964827470717113, 1, 1),
+            (-0.14072122602678067, -0.9022125046279234, 1, 1),
+            (0.331392185287071, 0.010349386355413492, 0, 1),
+            (-1.048363528916788, -0.3485365832613779, 0, 0),
+            (0.5047665711259867, -1.2470348109541682, 1, 0),
+            (-1.1062487471835987, -0.2684741338051279, 0, 0),
+            (-1.4299581505069032, 1.3060750046031124, 0, 1),
+            (1.5008049872019524, 1.225282364980799, 1, 0),
+            (-0.30488424803884895, 0.06684704974291189, 1, 1),
+            (0.16852013659788687, 0.5893754550811636, 1, 1),
+            (1.2651567251209639, 1.1470468456700214, 0, 0),
+            (-0.6437747348199891, 1.3802712081875428, 1, 1),
+            (1.1926559709699625, 1.5125849408870362, 1, 0),
+            (-1.6464480067684932, 0.2658903215879136, 0, 0),
+            (2.786297905420202, 0.9098438625099914, 1, 1),
+            (-1.6955985537376808, -0.38654681252361195, 0, 0),
+            (-0.12320881743046785, 1.4186175207823108, 0, 1),
+            (-0.9121708112429951, -0.4448063581868663, 1, 0),
+            (0.47071654440743044, -0.5513290881611519, 0, 0),
+            (0.10238137619183614, -0.3540606248910682, 1, 0),
+            (-1.5085477748479115, 1.2435425989031084, 1, 1),
+            (-1.7820932050863112, -0.5950919145385647, 0, 0),
+            (0.7679299626526825, -0.5786531691296782, 1, 0),
+            (-0.7105234677466052, -0.3398486707361705, 1, 1),
+            (1.4052737287154982, 0.8997100523677989, 0, 0),
+            (0.23191934129530503, -0.37910458302398303, 1, 0),
+            (0.16461411933015033, 0.32501373165343317, 1, 1),
+            (-1.1527201796582238, -0.3383321524532854, 1, 1),
+            (-1.1550307717970465, 0.17843661702569025, 1, 0),
         ];
-        let families = OBSERVATIONS
+        let families = PAIRS
             .into_iter()
-            .map(|(measurement, status)| LatentMediationFamilyInput {
-                relationship: vec![vec![1.0]],
-                latent_mean: vec![0.0; 2],
-                mediator_measurement: vec![Some(measurement)],
-                mediator_measurement_error_variance: vec![Some(0.15)],
-                mediator_proxy_status: vec![None],
-                outcome_status: vec![Some(status)],
-                mediator_threshold: vec![0.0],
-                outcome_threshold: vec![0.0],
-                mediator_proxy_sensitivity: vec![0.8],
-                mediator_proxy_specificity: vec![0.85],
+            .map(|(first, second, first_status, second_status)| LatentMediationFamilyInput {
+                relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                latent_mean: vec![0.0; 4],
+                mediator_measurement: vec![Some(first), Some(second)],
+                mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+                mediator_proxy_status: vec![None, None],
+                outcome_status: vec![Some(first_status), Some(second_status)],
+                mediator_threshold: vec![0.0, 0.0],
+                outcome_threshold: vec![0.0, 0.0],
+                mediator_proxy_sensitivity: vec![0.8, 0.8],
+                mediator_proxy_specificity: vec![0.85, 0.85],
                 ascertainment: "population_unconditioned".to_owned(),
                 proband_index: None,
             })

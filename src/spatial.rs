@@ -1321,6 +1321,7 @@ impl SpatialModel {
 /// # Errors
 ///
 /// Returns a stable code for a coordinate outside its range.
+#[cfg(any(feature = "python", test))]
 pub fn pairwise_haversine_km(
     latitude: &[f64],
     longitude: &[f64],
@@ -1355,6 +1356,7 @@ pub fn pairwise_haversine_km(
 }
 
 /// Mean spherical Earth radius, in kilometres.
+#[cfg(any(feature = "python", test))]
 pub const EARTH_RADIUS_KM: f64 = 6_371.008_8;
 
 /// splitmix64, so that any bootstrap can be reproduced from its seed alone.

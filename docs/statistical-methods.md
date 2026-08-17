@@ -95,6 +95,23 @@ Near zero, the one-trait profile interval is conservative because the fitted
 maximum is constrained to `[0,1]`. This increases coverage and reduces power;
 uniformly narrowing the interval would under-cover at interior values.
 
+### An interval reports how many of its own evaluations failed
+
+Every profile interval returns `profile_failures` beside its endpoints: the
+number of points along the way where the constrained fit could not be made, or
+stopped without converging.
+
+The count matters because of what is done with such a point. A failure is
+unknown ground, not ground the data ruled out, so the interval is widened over
+it. Read the other way -- as an infinite deviance, or as a likelihood that had
+fallen below the threshold -- a failure looks exactly like the crossing the
+bisection is searching for, and the search stops there. That returns an
+interval narrower than the data support, with the same confident endpoints as
+a real crossing and nothing to distinguish the two. Widening instead can only
+be conservative, and `profile_failures` says how much of the answer rests on
+points that did not come back. Nought is the ordinary case and means the
+endpoints are crossings throughout.
+
 ### Fixed effects are not comparable across parameterisations
 
 A covariate p-value depends on how the design is written. An uncentred age term
@@ -489,6 +506,23 @@ the larger of the two p-values, which is exactly level `alpha` and conservative,
 most so near `a = b = 0` where both parts hold at once. `a` sits on a boundary
 under its null and takes the even mixture; `b` is interior and takes an ordinary
 chi-square on one.
+
+### The reference for `a = 0` depends on where the null fit rests
+
+The loading `a` is non-negative, so its null sits on a bound and takes the even
+mixture of a point mass at nought and chi-square on one. That reference assumes
+`a` is the only parameter on a bound. Where the outcome loading `d` rests on
+its bound as well -- a trait with little inherited outcome variance, which is
+not rare -- the fit sits on a corner of the cone rather than a face and the
+mixture is the wrong reference. Because the union rule reports whichever part
+is larger, a wrong loading p-value becomes the reported one whenever it binds,
+so the test refuses with `LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO` rather than
+answering.
+
+Both fits are asked, not just the free one. The reference belongs to the null,
+and `d` can be comfortably positive with `a` free and fall to nought once `a`
+is held there -- which is precisely the corner the guard exists to catch, and
+the free fit alone reports nothing about it.
 
 ### The point estimate of `a b` is weaker than the test of it
 

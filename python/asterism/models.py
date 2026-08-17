@@ -193,7 +193,7 @@ class ComponentModel:
         other.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level = _core.component_interval(
+        lower, upper, at_lower, at_upper, level, failures = _core.component_interval(
             self._matrices, self._x, y, component, reml
         )
         return {
@@ -204,6 +204,7 @@ class ComponentModel:
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": level,
+            "profile_failures": failures,
         }
 
     def equality_test(
@@ -361,7 +362,7 @@ class BivariateModel:
         if quantity not in self.QUANTITIES:
             raise ValueError("BIVARIATE_QUANTITY_UNKNOWN")
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level = _core.bivariate_interval(
+        lower, upper, at_lower, at_upper, level, failures = _core.bivariate_interval(
             self._k, self._observed, self._design, y, quantity, reml
         )
         return {
@@ -370,6 +371,7 @@ class BivariateModel:
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": level,
+            "profile_failures": failures,
         }
 
     def test(
@@ -798,7 +800,7 @@ class GxeModel:
                 f"quantity must be heritability or correlation, not {quantity!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
-        estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
+        estimate, lower, upper, at_lower, at_upper, failures = _core.gxe_interval(
             self._relationship, self._environment, self._design, y,
             self._surface, quantity, float(first), float(second), self._shape, reml,
         )
@@ -813,6 +815,7 @@ class GxeModel:
             "upper_at_bound": at_upper,
             "level": 0.95,
             "estimator": "reml" if reml else "ml",
+            "profile_failures": failures,
         }
 
 
@@ -1211,7 +1214,7 @@ class LiabilityModel:
 
     def interval(self) -> dict[str, Any]:
         """A 95 per cent profile interval for the liability heritability."""
-        estimate, lower, upper, at_lower, at_upper = _core.liability_interval(
+        estimate, lower, upper, at_lower, at_upper, failures = _core.liability_interval(
             self._relationship, self._status, self._design
         )
         return {
@@ -1221,6 +1224,7 @@ class LiabilityModel:
             "lower_at_bound": at_lower,
             "upper_at_bound": at_upper,
             "level": 0.95,
+            "profile_failures": failures,
         }
 
     def test(self) -> dict[str, Any]:

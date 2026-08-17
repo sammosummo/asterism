@@ -168,7 +168,7 @@ pub fn gxe_interval(
     second: f64,
     shape: f64,
     reml: bool,
-) -> PyResult<(f64, f64, f64, bool, bool)> {
+) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
     let model = build(&relationship, &environment, &design, surface, shape)?;
     let wanted = match quantity {
         "heritability" => Reported::Heritability { at: first },
@@ -188,5 +188,6 @@ pub fn gxe_interval(
         got.upper,
         got.lower_at_bound,
         got.upper_at_bound,
+        got.profile_failures,
     ))
 }

@@ -794,6 +794,11 @@ pub struct LiabilityInterval {
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// Chi-square on one degree of freedom at 0.95.
@@ -842,9 +847,18 @@ impl LiabilityModel {
         // are computed the same way.
         let at_estimate = self.fit_holding(Some(estimate))?.loglik;
         let threshold = at_estimate - 0.5 * CHI2_ONE_95;
-        let outside = |value: f64| {
-            self.fit_holding(Some(value))
-                .map_or(true, |fit| fit.loglik < threshold)
+        // **A fit that failed, or stopped without converging, is not a
+        // likelihood that fell away.** Counted as outside, either looked like
+        // ground the data had ruled out and the bisection stepped inward, so
+        // the interval came back narrower than the data support and said
+        // nothing about it. Both are covered instead, and counted.
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |value: f64| match self.fit_holding(Some(value)) {
+            Ok(fit) if fit.converged => fit.loglik < threshold,
+            _ => {
+                failures.set(failures.get() + 1);
+                false
+            }
         };
         let (lower, lower_at_bound) = if outside(0.0) {
             (bisect(0.0, estimate, &outside), false)
@@ -863,6 +877,7 @@ impl LiabilityModel {
             lower_at_bound,
             upper_at_bound,
             level: 0.95,
+            profile_failures: failures.get(),
         })
     }
 }

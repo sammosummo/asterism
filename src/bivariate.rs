@@ -1812,7 +1812,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         quantity: &str,
         reml: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+    ) -> PyResult<(f64, f64, bool, bool, f64, usize)> {
         let wanted = match quantity {
             "h2_first" => super::Reported::HeritabilityFirst,
             "h2_second" => super::Reported::HeritabilitySecond,
@@ -1837,6 +1837,7 @@ mod python {
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
+            interval.profile_failures,
         ))
     }
 
@@ -1901,6 +1902,11 @@ pub struct ProfileInterval {
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// Which reported quantity an interval is for. These are parameters in this
@@ -2246,16 +2252,26 @@ impl BivariateModel {
 
         // Deviance at a value: how much log-likelihood is given up by holding
         // the quantity there. Infinite where the value cannot be supported.
-        let deviance = |value: f64| -> f64 {
+        let deviance = |value: f64| -> Option<f64> {
             self.profile_at(y, reml, quantity, value)
-                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+                .map(|ll| 2.0 * (maximum - ll))
         };
 
-        let endpoint = |bound: f64| -> (f64, bool) {
-            if deviance(bound) <= CHI2_ONE_DF_95 {
+        // **A profile that could not be evaluated is not a likelihood that fell
+        // away.** Read as an infinite deviance it looked like ground the data
+        // had ruled out, so the bisection stepped inward and the interval came
+        // back narrower than the data support, with nothing to show for it.
+        let mut failures = 0usize;
+        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
+            match deviance(bound) {
+                None => {
+                    *failures += 1;
+                    return (bound, true);
+                }
                 // The threshold is never reached: the endpoint is the bound and
                 // the interval is limited by the parameter space, not the data.
-                return (bound, true);
+                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
+                Some(_) => {}
             }
             let (mut inside, mut outside) = (fitted, bound);
             for _ in 0..80 {
@@ -2263,24 +2279,28 @@ impl BivariateModel {
                 if (outside - inside).abs() <= 1e-9 {
                     break;
                 }
-                if deviance(middle) <= CHI2_ONE_DF_95 {
-                    inside = middle;
-                } else {
-                    outside = middle;
+                match deviance(middle) {
+                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
+                    Some(_) => outside = middle,
+                    None => {
+                        *failures += 1;
+                        inside = middle;
+                    }
                 }
             }
             (0.5 * (inside + outside), false)
         };
 
         let (bottom, top) = quantity.range();
-        let (lower, lower_limited) = endpoint(bottom);
-        let (upper, upper_limited) = endpoint(top);
+        let (lower, lower_limited) = endpoint(bottom, &mut failures);
+        let (upper, upper_limited) = endpoint(top, &mut failures);
         Ok(ProfileInterval {
             lower,
             upper,
             lower_limited,
             upper_limited,
             level: 0.95,
+            profile_failures: failures,
         })
     }
 }

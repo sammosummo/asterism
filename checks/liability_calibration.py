@@ -120,7 +120,7 @@ def one(job):
         out["p_value"] = None
     if scenario == "heritable":
         try:
-            estimate, lower, upper, at_lower, at_upper = _core.liability_interval(
+            estimate, lower, upper, at_lower, at_upper, _ = _core.liability_interval(
                 relationship, status, design
             )
             out["interval"] = {

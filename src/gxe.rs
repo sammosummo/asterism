@@ -989,6 +989,11 @@ pub struct GxeInterval {
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// Chi-square on one degree of freedom at 0.95, the profile's threshold.
@@ -1211,9 +1216,18 @@ impl GxeModel {
                 Surface::RandomRegression => (-1.0, 1.0),
             },
         };
-        let outside = |v: f64| {
-            self.profile_objective(&scaled, reml, quantity, v, &start)
-                .is_none_or(|value| value < threshold)
+        // **A profile that could not be evaluated is not a likelihood that
+        // fell away.** Counted as outside, a failure looked like ground the
+        // data had ruled out and the bisection stepped inward, so the interval
+        // came back narrower than the data support and said nothing about it.
+        // A failure is covered instead, and counted.
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |v: f64| match self.profile_objective(&scaled, reml, quantity, v, &start) {
+            None => {
+                failures.set(failures.get() + 1);
+                false
+            }
+            Some(value) => value < threshold,
         };
         let (lower, lower_at_bound) = if outside(floor) {
             (bisect(floor, estimate, &outside), false)
@@ -1232,6 +1246,7 @@ impl GxeModel {
             lower_at_bound,
             upper_at_bound,
             level: 0.95,
+            profile_failures: failures.get(),
         })
     }
 }

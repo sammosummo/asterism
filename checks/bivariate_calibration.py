@@ -128,7 +128,7 @@ def coverage(k: np.ndarray) -> dict:
         whole = True
         for quantity in QUANTITIES:
             try:
-                lower, upper, _, _, _ = _core.bivariate_interval(
+                lower, upper, _, _, _, _ = _core.bivariate_interval(
                     k, observed, design, y, quantity, True
                 )
             except Exception:

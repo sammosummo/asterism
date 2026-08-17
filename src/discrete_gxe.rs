@@ -985,6 +985,13 @@ impl DiscreteGxeModel {
                 },
             )
             .ok()
+            // **A fit that stopped without converging is not a likelihood
+            // either.** Its value is wherever the optimiser happened to halt,
+            // which is at or below the profile maximum, so accepting it makes
+            // the likelihood look to have fallen when it may not have --
+            // narrowing the interval for the same reason a refused fit would
+            // have narrowed it, and just as invisibly.
+            .filter(|fit| fit.converged)
             .map(|fit| fit.loglik)
         };
         // The profile at the estimate must be reachable, or nothing below it is.

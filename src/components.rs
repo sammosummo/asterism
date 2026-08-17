@@ -616,6 +616,11 @@ pub struct ComponentInterval {
     pub lower_limited: bool,
     pub upper_limited: bool,
     pub level: f64,
+    /// How many profile evaluations could not be made. A failure is unknown
+    /// ground, not ground the data ruled out, so the interval is widened over
+    /// it rather than narrowed; a non-zero count says the endpoints rest partly
+    /// on evaluations that did not come back.
+    pub profile_failures: usize,
 }
 
 /// A likelihood ratio test of one component against no variance at all.
@@ -945,14 +950,26 @@ impl ComponentModel {
         let maximum = self
             .profile_objective(&scaled, reml, component, fitted)
             .ok_or("COMPONENTS_PROFILE_MAXIMUM_FAILED")?;
-        let deviance = |proportion: f64| -> f64 {
+        let deviance = |proportion: f64| -> Option<f64> {
             self.profile_objective(&scaled, reml, component, proportion)
-                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
+                .map(|ll| 2.0 * (maximum - ll))
         };
 
-        let endpoint = |bound: f64| -> (f64, bool) {
-            if deviance(bound) <= CHI2_ONE_DF_95 {
-                return (bound, true);
+        // **A profile that could not be evaluated is not a likelihood that fell
+        // away.** Read as an infinite deviance it looked like ground the data
+        // had ruled out, so the bisection stepped inward and the interval came
+        // back narrower than the data support -- confidently, and with nothing
+        // to show it had happened. A failure is now covered rather than cut
+        // away, and counted so a reader can see it.
+        let mut failures = 0usize;
+        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
+            match deviance(bound) {
+                None => {
+                    *failures += 1;
+                    return (bound, true);
+                }
+                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
+                Some(_) => {}
             }
             let (mut inside, mut outside) = (fitted, bound);
             for _ in 0..80 {
@@ -960,23 +977,27 @@ impl ComponentModel {
                 if (outside - inside).abs() <= 1e-9 {
                     break;
                 }
-                if deviance(middle) <= CHI2_ONE_DF_95 {
-                    inside = middle;
-                } else {
-                    outside = middle;
+                match deviance(middle) {
+                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
+                    Some(_) => outside = middle,
+                    None => {
+                        *failures += 1;
+                        inside = middle;
+                    }
                 }
             }
             (0.5 * (inside + outside), false)
         };
 
-        let (lower, lower_limited) = endpoint(0.0);
-        let (upper, upper_limited) = endpoint(1.0 - 1e-9);
+        let (lower, lower_limited) = endpoint(0.0, &mut failures);
+        let (upper, upper_limited) = endpoint(1.0 - 1e-9, &mut failures);
         Ok(ComponentInterval {
             lower,
             upper,
             lower_limited,
             upper_limited,
             level: 0.95,
+            profile_failures: failures,
         })
     }
 
@@ -1327,7 +1348,7 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         component: usize,
         reml: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+    ) -> PyResult<(f64, f64, bool, bool, f64, usize)> {
         let model = build(&matrices, &design)?;
         let interval = model
             .profile_interval(&response(&y), reml, component)
@@ -1338,6 +1359,7 @@ mod python {
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
+            interval.profile_failures,
         ))
     }
 

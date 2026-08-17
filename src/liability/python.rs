@@ -55,7 +55,7 @@ pub fn liability_interval(
     relationship: PyReadonlyArray2<'_, f64>,
     status: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
-) -> PyResult<(f64, f64, f64, bool, bool)> {
+) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
     let got = build(&relationship, &status, &design)?
         .heritability_interval()
         .map_err(PyValueError::new_err)?;
@@ -65,6 +65,7 @@ pub fn liability_interval(
         got.upper,
         got.lower_at_bound,
         got.upper_at_bound,
+        got.profile_failures,
     ))
 }
 

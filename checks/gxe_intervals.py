@@ -117,7 +117,7 @@ def one(job):
     out = {"surface": surface, "intervals": {}}
     for quantity, first, second in TRUE_VALUES[surface]:
         try:
-            estimate, lower, upper, at_lower, at_upper = _core.gxe_interval(
+            estimate, lower, upper, at_lower, at_upper, _ = _core.gxe_interval(
                 RELATIONSHIP, Z, DESIGN, y, surface, quantity, first, second, True
             )
             out["intervals"][f"{quantity}@{first}"] = {
