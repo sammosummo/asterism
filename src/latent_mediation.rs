@@ -1798,8 +1798,9 @@ fn log_bivariate_rectangle(
     };
     let mut low = anchor;
     let mut high = anchor;
+    let at_anchor = log_integrand(anchor)?;
     for direction in [1.0_f64, -1.0] {
-        let mut previous = log_integrand(anchor)?;
+        let mut previous = at_anchor;
         let mut step = 1.0;
         let mut reached = anchor;
         for _ in 0..CLIMB_STEPS {
@@ -1823,6 +1824,12 @@ fn log_bivariate_rectangle(
     }
     let golden = 0.5 * (5.0_f64.sqrt() - 1.0);
     for _ in 0..120 {
+        // Stop once the bracket is at the resolution of the numbers in it.
+        // Running the full count regardless spent most of its evaluations
+        // splitting an interval that had already collapsed.
+        if high - low <= 1.0e-13 * (1.0 + high.abs().max(low.abs())) {
+            break;
+        }
         let first = high - golden * (high - low);
         let second = low + golden * (high - low);
         if log_integrand(first)? < log_integrand(second)? {
