@@ -156,6 +156,7 @@ class LatentMediationModel:
         proband_indices: list[Any] = []
         mediator_designs: list[list[list[Any]]] = []
         outcome_designs: list[list[list[Any]]] = []
+        outcome_prevalences: list[list[Any]] = []
 
         for family in families:
             if not isinstance(family, Mapping):
@@ -220,6 +221,14 @@ class LatentMediationModel:
                     family, "mediator_threshold", size, scalar=True
                 )
             )
+            outcome_prevalences.append(
+                _sequence(
+                    _field(family, "outcome_prevalence", default=[]),
+                    "LATENT_MEDIATION_OUTCOME_PREVALENCE_NOT_A_SEQUENCE",
+                    numeric=True,
+                    allow_none=True,
+                )
+            )
             outcome_thresholds.append(
                 _person_vector(
                     family,
@@ -267,6 +276,7 @@ class LatentMediationModel:
             qmc_points,
             mediator_designs,
             outcome_designs,
+            outcome_prevalences,
         )
 
     def evaluate(
@@ -347,6 +357,7 @@ def simulate(
     mediator_coefficients: Sequence[float] | None = None,
     outcome_design: Sequence[Sequence[float]] | None = None,
     outcome_coefficients: Sequence[float] | None = None,
+    outcome_prevalence: float | Sequence[float | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Draw families from the model, for calibration, coverage and power work.
 
@@ -408,6 +419,7 @@ def simulate(
             [float(v) for v in (mediator_coefficients or [])],
             [list(map(float, row)) for row in (outcome_design or [])],
             [float(v) for v in (outcome_coefficients or [])],
+            [None if v is None else float(v) for v in spread(outcome_prevalence)],
             [float(v) for v in spread(mediator_threshold)],
             [float(v) for v in spread(outcome_threshold)],
             [None if v is None else float(v) for v in spread(measurement_error_variance)],

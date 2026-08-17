@@ -79,6 +79,22 @@ pub struct LatentMediationFamilyInput {
     pub outcome_status: Vec<Option<i8>>,
     pub mediator_threshold: Vec<f64>,
     pub outcome_threshold: Vec<f64>,
+    /// Where given, the population rate of the outcome for this person, and the
+    /// threshold is derived from it at every evaluation instead of being taken
+    /// from `outcome_threshold`.
+    ///
+    /// **This is what makes the outcome age-indexed.** Dementia risk is
+    /// dominated by age, and what is known about a person of 72 is the rate at
+    /// 72, not a cut on a liability scale that has not been estimated yet. The
+    /// cut depends on the outcome's variance, which depends on the parameters
+    /// being fitted, so a caller who wanted to supply one would have to know
+    /// the answer first. Given the rate, the model does that conversion itself,
+    /// at each step, and the rate stays the thing that was actually known.
+    ///
+    /// This is a prevalent mapping and not a survival model: it says what
+    /// fraction of people that age are cases, not what hazard they faced
+    /// getting there.
+    pub outcome_prevalence: Vec<Option<f64>>,
     pub mediator_proxy_sensitivity: Vec<f64>,
     pub mediator_proxy_specificity: Vec<f64>,
     pub ascertainment: String,
@@ -102,6 +118,7 @@ struct LatentMediationFamily {
     discrete_target_indices: Vec<usize>,
     mediator_threshold: Vec<f64>,
     outcome_threshold: Vec<f64>,
+    outcome_prevalence: Vec<Option<f64>>,
     mediator_proxy_sensitivity: Vec<f64>,
     mediator_proxy_specificity: Vec<f64>,
     ascertainment: Ascertainment,
@@ -1010,6 +1027,24 @@ impl LatentMediationFamily {
             .chain(observed_outcome.iter().map(|(index, _)| size + *index))
             .collect();
 
+        // An empty rate vector means nobody has one, which is the ordinary
+        // case; anything else must name every person so that a short list
+        // cannot silently apply to the wrong ones.
+        let outcome_prevalence = if input.outcome_prevalence.is_empty() {
+            vec![None; size]
+        } else if input.outcome_prevalence.len() == size {
+            input.outcome_prevalence.clone()
+        } else {
+            return Err("LATENT_MEDIATION_OUTCOME_PREVALENCE_WRONG_LENGTH");
+        };
+        if outcome_prevalence
+            .iter()
+            .flatten()
+            .any(|rate| !(*rate > 0.0 && *rate < 1.0))
+        {
+            return Err("LATENT_MEDIATION_OUTCOME_PREVALENCE_INVALID");
+        }
+
         let mediator_terms = design_width(&input.mediator_design, size)?;
         let outcome_terms = design_width(&input.outcome_design, size)?;
         let mut design = DMatrix::zeros(2 * size, mediator_terms + outcome_terms);
@@ -1034,6 +1069,7 @@ impl LatentMediationFamily {
             discrete_target_indices,
             mediator_threshold: input.mediator_threshold,
             outcome_threshold: input.outcome_threshold,
+            outcome_prevalence: outcome_prevalence.clone(),
             mediator_proxy_sensitivity: input.mediator_proxy_sensitivity,
             mediator_proxy_specificity: input.mediator_proxy_specificity,
             ascertainment,
@@ -1052,6 +1088,34 @@ impl LatentMediationFamily {
         Ok(&self.latent_mean + &self.design * DVector::from_column_slice(coefficients))
     }
 
+    /// The outcome cut each person is judged against.
+    ///
+    /// Where a population rate was given, the cut is derived from it and this
+    /// family's own outcome variance, which is what a rate means: the point
+    /// beyond which that fraction of people lie. Where it was not, the supplied
+    /// cut stands. The variance is read from the covariance rather than assumed
+    /// to be one, so an inbred person's cut is their own.
+    fn outcome_cuts(&self, covariance: &DMatrix<f64>) -> Result<Vec<f64>, &'static str> {
+        let size = self.relationship.nrows();
+        let mut cuts = self.outcome_threshold.clone();
+        for person in 0..size {
+            let Some(rate) = self.outcome_prevalence[person] else {
+                continue;
+            };
+            let variance = covariance[(size + person, size + person)];
+            if !(variance > 0.0) || !variance.is_finite() {
+                return Err("LATENT_MEDIATION_OUTCOME_VARIANCE_INVALID");
+            }
+            let standardised = if rate <= 0.5 {
+                inverse_log_normal_sf(rate.ln())?
+            } else {
+                -inverse_log_normal_sf((-rate).ln_1p())?
+            };
+            cuts[person] = standardised * variance.sqrt();
+        }
+        Ok(cuts)
+    }
+
     fn evaluate(
         &self,
         covariance: &DMatrix<f64>,
@@ -1059,6 +1123,7 @@ impl LatentMediationFamily {
         coefficients: &[f64],
     ) -> Result<LatentMediationFamilyEvaluation, &'static str> {
         let latent_mean = self.mean_under(coefficients)?;
+        let outcome_cuts = self.outcome_cuts(covariance)?;
         let size = self.relationship.nrows();
         let conditional = condition_on_mediator_measurements(
             &self.discrete_target_indices,
@@ -1103,7 +1168,7 @@ impl LatentMediationFamily {
                 upper.push(bounds.1);
             }
             for &(index, status) in &self.observed_outcome {
-                let bounds = status_bounds(status, self.outcome_threshold[index]);
+                let bounds = status_bounds(status, outcome_cuts[index]);
                 lower.push(bounds.0);
                 upper.push(bounds.1);
             }
@@ -1143,7 +1208,7 @@ impl LatentMediationFamily {
                     return Err("LATENT_MEDIATION_ASCERTAINMENT_VARIANCE_INVALID");
                 }
                 let standardised =
-                    (self.outcome_threshold[proband] - latent_mean[latent_index]) / variance.sqrt();
+                    (outcome_cuts[proband] - latent_mean[latent_index]) / variance.sqrt();
                 (normal_sf(standardised)?, "condition_on_named_proband_case")
             }
         };
@@ -2297,6 +2362,10 @@ impl Stream {
 #[derive(Clone, Debug)]
 pub struct LatentMediationDesign {
     pub relationship: Vec<Vec<f64>>,
+    /// Where given, the population rate of the outcome for this person; the cut
+    /// is derived from it and the outcome variance the truth implies, so a
+    /// campaign can be age-indexed the same way an analysis is.
+    pub outcome_prevalence: Vec<Option<f64>>,
     /// Covariates acting on the latent mediator, one row per person, and the
     /// coefficients to draw them with. Empty for none.
     pub mediator_design: Vec<Vec<f64>>,
@@ -2362,6 +2431,7 @@ pub fn simulate(
         design.mediator_proxy_sensitivity.len(),
         design.mediator_proxy_specificity.len(),
         design.observe_outcome.len(),
+        design.outcome_prevalence.len(),
     ];
     if lengths.iter().any(|length| *length != size)
         || design.relationship.iter().any(|row| row.len() != size)
@@ -2386,6 +2456,7 @@ pub fn simulate(
     let relationship = DMatrix::from_fn(size, size, |row, column| design.relationship[row][column]);
     let covariance = directional_covariance(&relationship, parameters)?;
     let factor = covariance
+        .clone()
         .cholesky()
         .ok_or("LATENT_MEDIATION_COVARIANCE_NOT_POSITIVE_DEFINITE")?
         .l();
@@ -2409,6 +2480,23 @@ pub fn simulate(
         }
     }
 
+    // The cuts the truth implies, by the same rule the likelihood uses.
+    let cuts = {
+        let mut cuts = design.outcome_threshold.clone();
+        for person in 0..size {
+            if let Some(rate) = design.outcome_prevalence[person] {
+                let variance = covariance[(size + person, size + person)];
+                let standardised = if rate <= 0.5 {
+                    inverse_log_normal_sf(rate.ln())?
+                } else {
+                    -inverse_log_normal_sf((-rate).ln_1p())?
+                };
+                cuts[person] = standardised * variance.sqrt();
+            }
+        }
+        cuts
+    };
+
     let mut stream = Stream(seed);
     let mut drawn = Vec::with_capacity(families);
     for _ in 0..families {
@@ -2421,7 +2509,7 @@ pub fn simulate(
             // Process-major, mediator block first, as the covariance is built.
             let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
             let latent = &factor * draw + DVector::from_column_slice(&shift);
-            let case = |person: usize| latent[size + person] > design.outcome_threshold[person];
+            let case = |person: usize| latent[size + person] > cuts[person];
             if let Some(proband) = conditioned
                 && !case(proband)
             {
@@ -2461,6 +2549,7 @@ pub fn simulate(
                 outcome_status: outcome,
                 mediator_threshold: design.mediator_threshold.clone(),
                 outcome_threshold: design.outcome_threshold.clone(),
+                outcome_prevalence: design.outcome_prevalence.clone(),
                 mediator_proxy_sensitivity: design.mediator_proxy_sensitivity.clone(),
                 mediator_proxy_specificity: design.mediator_proxy_specificity.clone(),
                 ascertainment: design.ascertainment.clone(),
@@ -2575,6 +2664,118 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A rate is the thing that is known about a person of a given age, and the
+    /// cut it implies moves with the parameters. Simulating from a rate must
+    /// produce that rate, whatever the outcome variance happens to be, which a
+    /// fixed cut cannot do.
+    #[test]
+    fn a_population_rate_produces_that_rate_at_any_variance() {
+        for (label, parameters) in [
+            (
+                "ordinary",
+                LatentMediationParameters {
+                    a: 0.6,
+                    b: 0.4,
+                    c_prime: 0.2,
+                    d: 0.7,
+                    sigma_m2: 0.5,
+                },
+            ),
+            (
+                "a much larger outcome variance",
+                LatentMediationParameters {
+                    a: 0.6,
+                    b: 1.5,
+                    c_prime: 1.2,
+                    d: 1.8,
+                    sigma_m2: 0.9,
+                },
+            ),
+        ] {
+            for rate in [0.05_f64, 0.3, 0.8] {
+                let design = LatentMediationDesign {
+                    outcome_prevalence: vec![Some(rate), Some(rate)],
+                    mediator_design: Vec::new(),
+                    mediator_coefficients: Vec::new(),
+                    outcome_design: Vec::new(),
+                    outcome_coefficients: Vec::new(),
+                    relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                    mediator_threshold: vec![0.0, 0.0],
+                    // Ignored wherever a rate is given, and set to something
+                    // plainly wrong so that using it would show.
+                    outcome_threshold: vec![99.0, 99.0],
+                    mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+                    observe_mediator_proxy: vec![false, false],
+                    mediator_proxy_sensitivity: vec![0.8, 0.8],
+                    mediator_proxy_specificity: vec![0.85, 0.85],
+                    observe_outcome: vec![true, true],
+                    ascertainment: "population_unconditioned".to_owned(),
+                    proband_index: None,
+                };
+                let families = simulate(&design, parameters, 40_000, 11).expect("draws");
+                let cases = families
+                    .iter()
+                    .filter(|family| family.outcome_status[0] == Some(1))
+                    .count() as f64
+                    / families.len() as f64;
+                let error = (rate * (1.0 - rate) / families.len() as f64).sqrt();
+                assert!(
+                    (cases - rate).abs() < 4.0 * error,
+                    "{label} at a rate of {rate}: drew {cases}"
+                );
+            }
+        }
+    }
+
+    /// Two people the same in every way but their age face different cuts, and
+    /// the model reads their statuses against their own.
+    #[test]
+    fn people_of_different_ages_are_judged_against_their_own_rates() {
+        let parameters = LatentMediationParameters {
+            a: 0.6,
+            b: 0.4,
+            c_prime: 0.2,
+            d: 0.7,
+            sigma_m2: 0.5,
+        };
+        let family = |prevalence: Vec<Option<f64>>| LatentMediationFamilyInput {
+            outcome_prevalence: prevalence,
+            relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+            latent_mean: vec![0.0; 4],
+            mediator_design: Vec::new(),
+            outcome_design: Vec::new(),
+            mediator_measurement: vec![Some(0.2), Some(-0.1)],
+            mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+            mediator_proxy_status: vec![None, None],
+            outcome_status: vec![Some(1), Some(0)],
+            mediator_threshold: vec![0.0, 0.0],
+            outcome_threshold: vec![0.0, 0.0],
+            mediator_proxy_sensitivity: vec![0.8, 0.8],
+            mediator_proxy_specificity: vec![0.85, 0.85],
+            ascertainment: "population_unconditioned".to_owned(),
+            proband_index: None,
+        };
+        // A case at 60, where the rate is low, is more surprising than a case
+        // at 85, where it is high, so the same statuses are less likely.
+        let young = LatentMediationModel::build(vec![family(vec![Some(0.01), Some(0.01)])], 256)
+            .expect("model")
+            .evaluate(parameters)
+            .expect("likelihood")
+            .log_likelihood;
+        let old = LatentMediationModel::build(vec![family(vec![Some(0.25), Some(0.25)])], 256)
+            .expect("model")
+            .evaluate(parameters)
+            .expect("likelihood")
+            .log_likelihood;
+        assert!(young < old, "young {young} against old {old}");
+
+        // And a rate outside nought and one is refused rather than converted.
+        assert_eq!(
+            LatentMediationModel::build(vec![family(vec![Some(0.0), Some(0.5)])], 256).err(),
+            Some("LATENT_MEDIATION_OUTCOME_PREVALENCE_INVALID")
+        );
+    }
+
     /// A covariate the model can estimate rather than one somebody had to
     /// remove beforehand. Regressing age out of hearing first treats an
     /// estimated mean as a known one, and the variance components inherit the
@@ -2591,6 +2792,7 @@ mod tests {
         // One covariate on each process, taking a different value for each
         // person so it is not confounded with the family mean.
         let design = LatentMediationDesign {
+            outcome_prevalence: vec![None, None],
             mediator_design: vec![vec![-1.0], vec![1.0]],
             mediator_coefficients: vec![0.8],
             outcome_design: vec![vec![-1.0], vec![1.0]],
@@ -2631,6 +2833,7 @@ mod tests {
     #[test]
     fn a_model_with_covariates_refuses_to_be_evaluated_without_them() {
         let design = LatentMediationDesign {
+            outcome_prevalence: vec![None, None],
             mediator_design: vec![vec![1.0], vec![-1.0]],
             mediator_coefficients: vec![0.3],
             outcome_design: Vec::new(),
@@ -2684,6 +2887,7 @@ mod tests {
         // The mediator measured almost exactly, so the measurements stand in
         // for the latent mediator itself.
         let design = LatentMediationDesign {
+            outcome_prevalence: vec![None, None],
             mediator_design: Vec::new(),
             mediator_coefficients: Vec::new(),
             outcome_design: Vec::new(),
@@ -2758,6 +2962,7 @@ mod tests {
     #[test]
     fn conditioning_on_a_proband_draws_families_that_have_one() {
         let design = LatentMediationDesign {
+            outcome_prevalence: vec![None, None],
             mediator_design: Vec::new(),
             mediator_coefficients: Vec::new(),
             outcome_design: Vec::new(),
@@ -3014,6 +3219,7 @@ mod tests {
 
     fn singleton(mediator_measurement: Option<f64>) -> LatentMediationFamilyInput {
         LatentMediationFamilyInput {
+            outcome_prevalence: Vec::new(),
             relationship: vec![vec![1.0]],
             latent_mean: vec![0.0, 0.0],
             mediator_design: Vec::new(),
@@ -3033,6 +3239,7 @@ mod tests {
 
     fn dyad() -> LatentMediationFamilyInput {
         LatentMediationFamilyInput {
+            outcome_prevalence: Vec::new(),
             relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
             latent_mean: vec![0.0; 4],
             mediator_design: Vec::new(),
@@ -3067,6 +3274,7 @@ mod tests {
             .into_iter()
             .map(
                 |(mediator_measurement, status)| LatentMediationFamilyInput {
+                    outcome_prevalence: Vec::new(),
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
                     mediator_design: Vec::new(),
@@ -3149,6 +3357,7 @@ mod tests {
             .into_iter()
             .map(
                 |(first, second, first_status, second_status)| LatentMediationFamilyInput {
+                    outcome_prevalence: Vec::new(),
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
                     mediator_design: Vec::new(),

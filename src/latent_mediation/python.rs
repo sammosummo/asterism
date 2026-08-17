@@ -87,7 +87,8 @@ impl PyLatentMediationCore {
         proband_indices,
         qmc_points,
         mediator_designs,
-        outcome_designs
+        outcome_designs,
+        outcome_prevalences
     ))]
     #[allow(clippy::too_many_arguments)]
     fn _build(
@@ -106,6 +107,7 @@ impl PyLatentMediationCore {
         qmc_points: &Bound<'_, PyAny>,
         mediator_designs: &Bound<'_, PyAny>,
         outcome_designs: &Bound<'_, PyAny>,
+        outcome_prevalences: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         for value in [
             relationships,
@@ -119,6 +121,7 @@ impl PyLatentMediationCore {
             qmc_points,
             mediator_designs,
             outcome_designs,
+            outcome_prevalences,
         ] {
             reject_boolean_tree(value, "LATENT_MEDIATION_NUMERIC_BOOLEAN")?;
         }
@@ -130,6 +133,7 @@ impl PyLatentMediationCore {
         let relationships: Vec<Vec<Vec<f64>>> = relationships.extract()?;
         let mediator_designs: Vec<Vec<Vec<f64>>> = mediator_designs.extract()?;
         let outcome_designs: Vec<Vec<Vec<f64>>> = outcome_designs.extract()?;
+        let outcome_prevalences: Vec<Vec<Option<f64>>> = outcome_prevalences.extract()?;
         let latent_means: Vec<Vec<f64>> = latent_means.extract()?;
         let mediator_measurements: Vec<Vec<Option<f64>>> = mediator_measurements.extract()?;
         let mediator_measurement_error_variances: Vec<Vec<Option<f64>>> =
@@ -165,6 +169,7 @@ impl PyLatentMediationCore {
                 relationship: relationships[index].clone(),
                 mediator_design: mediator_designs[index].clone(),
                 outcome_design: outcome_designs[index].clone(),
+                outcome_prevalence: outcome_prevalences[index].clone(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
                 mediator_measurement_error_variance: mediator_measurement_error_variances[index]
@@ -437,6 +442,7 @@ fn fit_dict<'py>(
     mediator_coefficients,
     outcome_design,
     outcome_coefficients,
+    outcome_prevalence,
     mediator_threshold,
     outcome_threshold,
     mediator_measurement_error_variance,
@@ -461,6 +467,7 @@ pub fn latent_mediation_simulate<'py>(
     mediator_coefficients: Vec<f64>,
     outcome_design: Vec<Vec<f64>>,
     outcome_coefficients: Vec<f64>,
+    outcome_prevalence: Vec<Option<f64>>,
     mediator_threshold: Vec<f64>,
     outcome_threshold: Vec<f64>,
     mediator_measurement_error_variance: Vec<Option<f64>>,
@@ -484,6 +491,7 @@ pub fn latent_mediation_simulate<'py>(
         mediator_coefficients,
         outcome_design,
         outcome_coefficients,
+        outcome_prevalence,
         mediator_threshold,
         outcome_threshold,
         mediator_measurement_error_variance,
@@ -519,6 +527,7 @@ pub fn latent_mediation_simulate<'py>(
         item.set_item("outcome_status", family.outcome_status)?;
         item.set_item("mediator_threshold", family.mediator_threshold)?;
         item.set_item("outcome_threshold", family.outcome_threshold)?;
+        item.set_item("outcome_prevalence", family.outcome_prevalence)?;
         item.set_item(
             "mediator_proxy_sensitivity",
             family.mediator_proxy_sensitivity,
