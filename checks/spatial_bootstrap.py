@@ -47,16 +47,14 @@ Run with:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import os
-
 import numpy as np
-from scipy import stats
-
 from asterism import _core
+from scipy import stats
 
 PAIRS = 100
 SPACING_KM = 3.0
@@ -220,9 +218,9 @@ def main() -> int:
         f"{test.statistic:.4f}, p = {test.pvalue:.3f}."
     )
     print(
-        f"  This is reported, not required. A bootstrap p-value from a statistic\n"
-        f"  with an atom is valid without being uniform, and validity is what the\n"
-        f"  rejection rates above test."
+        "  This is reported, not required. A bootstrap p-value from a statistic\n"
+        "  with an atom is valid without being uniform, and validity is what the\n"
+        "  rejection rates above test."
     )
 
     if failures:

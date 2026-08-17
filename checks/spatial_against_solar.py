@@ -50,13 +50,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+import asterism
 import numpy as np
 
-import asterism
-
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 # SOLAR prints seven significant figures for its parameters, and the variances
 # here are order one. The tolerances follow that printed precision rather than a

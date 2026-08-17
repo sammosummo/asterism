@@ -30,10 +30,9 @@ from __future__ import annotations
 import json
 import sys
 
+import asterism
 import numpy as np
 from scipy.stats import chi2
-
-import asterism
 
 RELATIVE_TOLERANCE = 1e-2
 MASS_TOLERANCE = 1e-9

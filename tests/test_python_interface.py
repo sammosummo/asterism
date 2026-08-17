@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import asterism
 import numpy as np
 import pytest
-
-import asterism
 
 
 def sibling_relationship(pairs: int) -> np.ndarray:

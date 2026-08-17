@@ -43,16 +43,15 @@ import sys
 import time
 
 import numpy as np
-from scipy import stats
-
 from asterism import _core
+from scipy import stats
 
 FAMILIES, PER_FAMILY = 30, 6
 INTERVAL_REPLICATES = 300
 TEST_REPLICATES = 400
 LEVELS = (0.01, 0.05, 0.10)
 
-TRUTH = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+TRUTH = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
 QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
 
 
@@ -110,17 +109,17 @@ def coverage(k: np.ndarray) -> dict:
                 TRUTH["rg"],
                 TRUTH["re"],
                 phenotypic(TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"]),
-            ),
+            ), strict=True,
         )
     )
 
-    contained = {q: 0 for q in QUANTITIES}
+    contained = dict.fromkeys(QUANTITIES, 0)
     # Each quantity is counted over the replicates where *its own* interval was
     # computed. Sharing one denominator across all four is wrong: a replicate
     # that fails on the third interval has already contributed to the first two,
     # so their numerators advance while the shared denominator does not, and the
     # ratio can exceed one. It did -- 1.040 -- which is how this was found.
-    attempted = {q: 0 for q in QUANTITIES}
+    attempted = dict.fromkeys(QUANTITIES, 0)
     complete = 0
     started = time.perf_counter()
     for replicate in range(INTERVAL_REPLICATES):

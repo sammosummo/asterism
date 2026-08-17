@@ -60,7 +60,6 @@ import sys
 import time
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 200
@@ -69,7 +68,7 @@ INTERVAL_REPLICATES = 200
 TEST_REPLICATES = 300
 LEVELS = (0.01, 0.05, 0.10)
 
-TRUTH = dict(additive=0.4, household=0.2, residual=0.4)
+TRUTH = {"additive": 0.4, "household": 0.2, "residual": 0.4}
 NAMES = ("additive", "household", "residual")
 
 
@@ -115,8 +114,8 @@ def draw(n: int, shares: dict, seed: int) -> np.ndarray:
 
 
 def coverage(relationship, household, design, n) -> dict:
-    contained = {name: 0 for name in NAMES[:2]}
-    attempted = {name: 0 for name in NAMES[:2]}
+    contained = dict.fromkeys(NAMES[:2], 0)
+    attempted = dict.fromkeys(NAMES[:2], 0)
     complete = 0
     started = time.perf_counter()
     for replicate in range(INTERVAL_REPLICATES):
@@ -150,11 +149,11 @@ def boundary(relationship, household, design, n, present: bool) -> dict:
     if not present:
         # No household effect at all; its share goes to the residual so the
         # total still comes to one.
-        shares = dict(
-            additive=TRUTH["additive"],
-            household=0.0,
-            residual=TRUTH["residual"] + TRUTH["household"],
-        )
+        shares = {
+            "additive": TRUTH["additive"],
+            "household": 0.0,
+            "residual": TRUTH["residual"] + TRUTH["household"],
+        }
     p_values, refused = [], 0
     started = time.perf_counter()
     for replicate in range(TEST_REPLICATES):

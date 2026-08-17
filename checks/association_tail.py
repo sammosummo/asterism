@@ -46,9 +46,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 from asterism import _core
 
 DATABASE = Path("~/MathiasLab/staging/studies/existing/safs/data/SAFS.db").expanduser()

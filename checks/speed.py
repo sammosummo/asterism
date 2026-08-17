@@ -26,13 +26,12 @@ import tempfile
 import time
 from pathlib import Path
 
+import asterism
 import numpy as np
 
-import asterism
-
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import RUN, SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import RUN, SEX
 
 
 def build(directory: Path, families: int, seed: int):
@@ -105,7 +104,7 @@ def main() -> int:
                 raise SystemExit(f"SOLAR produced no result at n = {n}")
 
             started = time.perf_counter()
-            k, order = asterism.relationship_matrix(ids, father, mother, keep=ids)
+            k, _order = asterism.relationship_matrix(ids, father, mother, keep=ids)
             built = time.perf_counter()
             model = asterism.prepare(x, k)
             prepared = time.perf_counter()

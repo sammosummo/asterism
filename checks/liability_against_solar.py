@@ -33,13 +33,11 @@ from pathlib import Path
 from statistics import NormalDist
 
 import numpy as np
-
-import asterism
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 RUN = """load pedigree ped.csv
 load phenotypes phen.csv

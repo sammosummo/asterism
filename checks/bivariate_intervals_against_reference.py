@@ -41,11 +41,10 @@ import time
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-import bivariate_reference as reference  # noqa: E402
+import bivariate_reference as reference
 
 # Two bisections stopping at different tolerances, over two different
 # optimisers. Agreement to a thousandth on a quantity that runs from -1 to 1 is
@@ -74,7 +73,7 @@ def simulate(families: int, per_family: int, seed: int):
         relationship[block, block] = 0.5
     np.fill_diagonal(relationship, 1.0)
 
-    truth = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
     genetic = np.array(
         [
             [truth["h1"], truth["rg"] * np.sqrt(truth["h1"] * truth["h2"])],

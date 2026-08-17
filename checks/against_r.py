@@ -21,9 +21,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 # The estimates are optimiser-bounded, so the tolerance is 1e-6 relative. The
 # log-likelihood is compared as a difference rather than a level for the reason

@@ -80,7 +80,6 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 250
@@ -268,11 +267,11 @@ def main() -> int:
                         else "power" if in_family
                         else "power_wrong_family"
                     ),
-                    "rejection": {str(level): rate for level, rate in zip(LEVELS, rates)},
+                    "rejection": {str(level): rate for level, rate in zip(LEVELS, rates, strict=True)},
                     "atom_at_one": atom,
                 }
                 marks = []
-                for level, rate in zip(LEVELS, rates):
+                for level, rate in zip(LEVELS, rates, strict=True):
                     if not is_null:
                         marks.append(f"{rate:>10.3f}")
                         continue

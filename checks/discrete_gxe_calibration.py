@@ -44,9 +44,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 DATABASE = Path("~/MathiasLab/staging/studies/existing/safs/data/SAFS.db").expanduser()
 REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "400"))
@@ -220,10 +219,10 @@ def main() -> int:
             recorded[scenario][null] = {
                 "computed": len(have),
                 "judged_as": "level" if level_check else "power",
-                "rejection": {str(l): r for l, r in zip(LEVELS, rates)},
+                "rejection": {str(l): r for l, r in zip(LEVELS, rates, strict=True)},
             }
             marks = []
-            for level, rate in zip(LEVELS, rates):
+            for level, rate in zip(LEVELS, rates, strict=True):
                 if not level_check:
                     marks.append(f"{rate:>10.3f}")
                     continue

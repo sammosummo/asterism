@@ -27,9 +27,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 ACCEPTED_SKAT_VERSION = "2.2.5"
 # SKAT reads its own tail by Davies' inversion at an accuracy near 1e-6, so
@@ -40,17 +39,17 @@ RELATIVE_TOLERANCE = 1e-4
 FAMILIES, SIBS, VARIANTS = 50, 4, 20
 REPLICATES = 12
 
-SCRIPT = """
+SCRIPT = f"""
 suppressMessages(library(SKAT))
 a <- commandArgs(trailingOnly=TRUE)
-stopifnot(identical(as.character(packageVersion("SKAT")), "%s"))
+stopifnot(identical(as.character(packageVersion("SKAT")), "{ACCEPTED_SKAT_VERSION}"))
 G <- as.matrix(read.table(a[1])); Phi <- as.matrix(read.table(a[2]))
 y <- scan(a[3], quiet=TRUE); w <- scan(a[4], quiet=TRUE)
 obj <- SKAT_NULL_emmaX(y ~ 1, K = Phi)
 out <- SKAT(G, obj, kernel="linear.weighted", weights=w, method="davies",
             r.corr=as.numeric(a[5]), is_check_genotype=FALSE)
 cat(out$p.value, "\\n")
-""" % ACCEPTED_SKAT_VERSION
+"""
 
 
 def simulate(replicate: int, effect: float):
@@ -144,7 +143,7 @@ def main() -> int:
         np.savetxt(directory / "Phi.txt", relationship)
         np.savetxt(directory / "y.txt", y)
         np.savetxt(directory / "w.txt", weights)
-        for correlation, ours in zip(correlations, family["p_values"]):
+        for correlation, ours in zip(correlations, family["p_values"], strict=True):
             finished = subprocess.run(
                 ["Rscript", str(directory / "famskat.R"),
                  str(directory / "G.txt"), str(directory / "Phi.txt"),

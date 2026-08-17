@@ -39,7 +39,6 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 250
@@ -157,7 +156,7 @@ def main() -> int:
             f"{'binomial 95%':>20}{'of':>6}{'at a bound':>12}"
         )
         recorded[surface] = {}
-        for (quantity, first, second), truth in TRUE_VALUES[surface].items():
+        for (quantity, first, _second), truth in TRUE_VALUES[surface].items():
             key = f"{quantity}@{first}"
             have = [r["intervals"][key] for r in got if r["intervals"][key] is not None]
             if not have:

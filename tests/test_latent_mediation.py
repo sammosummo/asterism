@@ -373,7 +373,7 @@ def test_fit_dominates_every_fixed_start() -> None:
         for family in families
         for value, error in zip(
             family["mediator_measurement"],
-            family["mediator_measurement_error_variance"],
+            family["mediator_measurement_error_variance"], strict=True,
         )
         if value is not None and error is not None
     ]

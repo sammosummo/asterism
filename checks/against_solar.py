@@ -29,11 +29,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+import asterism
 import numpy as np
 
-import asterism
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
+from against_r import extended_family, roster
 
 # SOLAR prints seven significant figures, so that is the most agreement it can
 # demonstrate. The 1e-6 relative tolerance is at the edge of what is observable

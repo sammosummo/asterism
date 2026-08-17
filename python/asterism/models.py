@@ -14,17 +14,16 @@ comes from the same compiled code, and this only names it.
 
 from __future__ import annotations
 
-from typing import Any
-
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
 from . import _core
 
 __all__ = [
-    "ComponentModel",
     "BivariateModel",
+    "ComponentModel",
     "SpatialModel",
     "kinship_classes",
 ]
@@ -128,7 +127,7 @@ class ComponentModel:
             # standard errors from the diagonal of (X' V^-1 X)^-1.
             "fixed_effects": [
                 {"estimate": e, "standard_error": s}
-                for e, s in zip(effects, errors)
+                for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -139,7 +138,7 @@ class ComponentModel:
             mean_diagonal_contributions = [
                 variance * mean_diagonal
                 for variance, mean_diagonal in zip(
-                    variances[:-1], self._structured_mean_diagonals
+                    variances[:-1], self._structured_mean_diagonals, strict=True
                 )
             ]
             mean_diagonal_contributions.append(variances[-1])
@@ -287,7 +286,7 @@ class ComponentModel:
                 "level": 0.95,
             }
             for c, (deviation, lower, upper, at_lower, at_upper, p_value, statistic)
-            in zip(classes, rows)
+            in zip(classes, rows, strict=True)
         ]
 
     def test(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
@@ -472,7 +471,7 @@ class SpatialModel:
             # within-range ones plus the spread of the estimates across ranges.
             "fixed_effects": [
                 {"estimate": e, "standard_error": s}
-                for e, s in zip(effects, errors)
+                for e, s in zip(effects, errors, strict=True)
             ],
             "decay_per_km": None if integrated else lam,
             "half_distance_km": None if integrated else half,
@@ -486,7 +485,7 @@ class SpatialModel:
             mean_diagonal_contributions = [
                 variance * mean_diagonal
                 for variance, mean_diagonal in zip(
-                    variances[: len(self._fixed)], self._fixed_mean_diagonals
+                    variances[: len(self._fixed)], self._fixed_mean_diagonals, strict=True
                 )
             ]
             mean_diagonal_contributions.extend(variances[len(self._fixed) :])
@@ -719,7 +718,7 @@ class GxeModel:
                 list(correlations[row * width:(row + 1) * width]) for row in range(width)
             ],
             "fixed_effects": [
-                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors)
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -922,7 +921,7 @@ class DiscreteGxeModel:
             "heritability": list(heritability),
             "genetic_correlation": correlation,
             "fixed_effects": [
-                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors)
+                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -1374,5 +1373,5 @@ def kinship_classes(
         "matrices": [np.ascontiguousarray(m) for m in matrices],
         "order": order,
         "class_names": names,
-        "pairs": dict(zip(names, pairs)),
+        "pairs": dict(zip(names, pairs, strict=True)),
     }

@@ -20,6 +20,29 @@ dev = [
   "pytest>=8",
   "scipy>=1.15",
   "maturin>=1.10,<2",
+  "ruff>=0.14",
+]
+
+# The Rust half is held to clippy's pedantic set. This is the same idea for the
+# Python half, which had no gate at all.
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+  # Line length is left to the formatter.
+  "E501",
+  # The prose here is British English and uses en and em dashes deliberately.
+  # These rules read them as ambiguous look-alikes for a hyphen.
+  "RUF002",
+  "RUF003",
+  # Statistical notation is short on purpose, the same reason the Rust half
+  # allows single-character bindings: `l` is a Cholesky factor, not a stray.
+  "E741",
+  # A named lambda beside the equation it implements reads better than a nested
+  # `def` in the middle of a numerical routine.
+  "E731",
 ]
 
 [tool.maturin]

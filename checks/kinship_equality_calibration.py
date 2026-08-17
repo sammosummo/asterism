@@ -41,9 +41,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 DATABASE = Path(
     "~/MathiasLab/staging/studies/existing/safs/data/SAFS.db"
@@ -177,10 +176,10 @@ def main() -> int:
             rates = [float(np.mean([v <= level for v in have])) for level in LEVELS]
             recorded[scenario][label] = {
                 "computed": len(have),
-                "rejection": {str(l): r for l, r in zip(LEVELS, rates)},
+                "rejection": {str(l): r for l, r in zip(LEVELS, rates, strict=True)},
             }
             marks = []
-            for level, rate in zip(LEVELS, rates):
+            for level, rate in zip(LEVELS, rates, strict=True):
                 if not is_null:
                     marks.append(f"{rate:>10.3f}")
                     continue

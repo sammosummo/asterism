@@ -36,7 +36,6 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-
 from asterism import _core
 
 WORKERS = int(os.environ.get("ASTERISM_WORKERS", "3"))
@@ -145,7 +144,7 @@ def main() -> int:
     print(
         f"Class-weighted kinship, REML. {N} people, every true weight "
         f"{TRUE_WEIGHT}.\nPairs per class: "
-        + ", ".join(f"{n} {c}" for c, n in zip(CLASS_NAMES, PAIRS))
+        + ", ".join(f"{n} {c}" for c, n in zip(CLASS_NAMES, PAIRS, strict=True))
         + ".\n"
     )
     started = time.perf_counter()

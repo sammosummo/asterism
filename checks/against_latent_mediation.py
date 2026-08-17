@@ -24,7 +24,6 @@ from itertools import product
 from pathlib import Path
 from typing import Any
 
-
 LOW_DIMENSIONAL_ABSOLUTE_TOLERANCE = 2.0e-8
 CENTRAL_DIFFERENCE_TOLERANCE = 3.0e-6
 DETERMINISTIC_TOLERANCE = 0.0

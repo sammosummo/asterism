@@ -38,12 +38,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 # SOLAR prints seven significant figures, so that is the most agreement it can
 # demonstrate. The tolerance is set to what its printing supports rather than to
@@ -194,7 +193,7 @@ def main() -> int:
     if shutil.which("solar") is None:
         raise SystemExit("solar is not on the path. This check fails rather than skips.")
 
-    truth = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
     families, seed = 25, 411
     with tempfile.TemporaryDirectory() as temporary_directory:
         directory = Path(temporary_directory)

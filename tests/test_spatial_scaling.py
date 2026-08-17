@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 
 def _spatial_problem() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

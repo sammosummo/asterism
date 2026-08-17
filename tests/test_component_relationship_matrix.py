@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 
 def _paired_gene_matrix(

@@ -33,15 +33,15 @@ from typing import Any
 import numpy as np
 
 from ._core import PreparedModel, __version__
-from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from ._core import relationship as _relationship
+from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from .latent_mediation import LatentMediationModel
 from .models import (
+    AssociationModel,
     BivariateModel,
     ComponentModel,
-    AssociationModel,
-    GxeModel,
     DiscreteGxeModel,
+    GxeModel,
     LiabilityModel,
     SpatialModel,
     VariantSetModel,
@@ -49,21 +49,21 @@ from .models import (
 )
 
 __all__ = [
-    "PreparedModel",
-    "prepare",
-    "weighted_chi2_upper_tail",
-    "relationship_matrix",
-    "ComponentModel",
-    "BivariateModel",
     "AssociationModel",
-    "GxeModel",
+    "BivariateModel",
+    "ComponentModel",
     "DiscreteGxeModel",
-    "LiabilityModel",
+    "GxeModel",
     "LatentMediationModel",
+    "LiabilityModel",
+    "PreparedModel",
     "SpatialModel",
     "VariantSetModel",
-    "kinship_classes",
     "__version__",
+    "kinship_classes",
+    "prepare",
+    "relationship_matrix",
+    "weighted_chi2_upper_tail",
 ]
 
 

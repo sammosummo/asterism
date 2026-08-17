@@ -32,14 +32,12 @@ Run with:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import os
-
 import numpy as np
-
 from asterism import _core
 
 PAIRS = 150
@@ -53,7 +51,7 @@ WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
 INTEGRATED = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
 MODE = "integrated" if INTEGRATED else "profile"
 
-TRUTH = dict(additive=0.35, spatial=0.25, residual=0.40, decay_per_km=0.02)
+TRUTH = {"additive": 0.35, "spatial": 0.25, "residual": 0.40, "decay_per_km": 0.02}
 TRUE_HALF_KM = np.log(2) / TRUTH["decay_per_km"]
 
 
@@ -121,7 +119,7 @@ def one(index: int) -> dict | None:
 
 
 def main() -> int:
-    relationship, distance, design, n = structure()
+    _relationship, _distance, _design, n = structure()
     print(
         f"Spatial intervals, REML, {MODE}. {PAIRS} sibling pairs, n = {n}, "
         f"{SPACING_KM:.0f} km apart.\n"

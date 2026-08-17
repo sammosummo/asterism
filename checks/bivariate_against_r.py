@@ -31,7 +31,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 # `regress` reports variance components; the comparison is on the quantities
@@ -125,7 +124,7 @@ def main() -> int:
         relationship[block, block] = 0.5
     np.fill_diagonal(relationship, 1.0)
 
-    truth = dict(h1=0.6, h2=0.35, rg=0.55, re=0.25)
+    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
     sa = np.array([[truth["h1"], truth["rg"] * np.sqrt(truth["h1"] * truth["h2"])],
                    [truth["rg"] * np.sqrt(truth["h1"] * truth["h2"]), truth["h2"]]])
     se = np.array([[1 - truth["h1"], truth["re"] * np.sqrt((1 - truth["h1"]) * (1 - truth["h2"]))],

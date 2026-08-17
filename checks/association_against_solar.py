@@ -34,12 +34,11 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-
 from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
-from against_r import extended_family, roster  # noqa: E402
-from against_solar import SEX  # noqa: E402
+from against_r import extended_family, roster
+from against_solar import SEX
 
 RUN = """load pedigree ped.csv
 load phenotypes phen.csv
@@ -161,7 +160,7 @@ def main() -> int:
                 k, design, y, markers, "refitted", None
             )
             _, _, held, _ = _core.association_sweep(k, design, y, markers, "held", None)
-            r_effect, r_error, _, r_ratio, r_p, _, r_code = refitted[0]
+            r_effect, _r_error, _, r_ratio, r_p, _, r_code = refitted[0]
             h_effect, _, h_wald, _, h_p, _, h_code = held[0]
             if r_code or h_code:
                 raise SystemExit(f"Asterism refused the marker: {r_code or h_code}")

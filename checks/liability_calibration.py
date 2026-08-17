@@ -37,13 +37,12 @@ import os
 import sqlite3
 import sys
 import time
-from statistics import NormalDist
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-
-import numpy as np
+from statistics import NormalDist
 
 import asterism
+import numpy as np
 from asterism import _core
 
 DATABASE = Path(
