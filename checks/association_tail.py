@@ -146,7 +146,7 @@ def one(index: int):
     factor = STATE["factor"]
     n = design.shape[0]
     y = factor @ np.random.default_rng(640_000 + index).standard_normal(n)
-    _, _, rows = _core.association_sweep(relationship, design, y, markers, "held")
+    _, _, rows, _ = _core.association_sweep(relationship, design, y, markers, "held")
     return [row[4] for row in rows if not row[5]]
 
 

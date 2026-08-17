@@ -1881,11 +1881,23 @@ fn log_bivariate_rectangle(
     if !(width > 0.0) {
         return Ok(f64::NEG_INFINITY);
     }
+    // **How much rounding the integrand carries depends on how large its
+    // exponent is.** `shifted` is `exp(g(x) - g(peak))`, and `g` is computed to
+    // a relative accuracy of an epsilon, so its absolute error is an epsilon of
+    // its own size and the exponential inherits that as relative noise. At a
+    // correlation of -0.999999 the exponent runs to a million and the noise is
+    // 2e-10 rather than 2e-16. The request stays where it is -- an ordinary
+    // rectangle should still be answered to 1e-13 -- and the noise is passed
+    // in separately, so the quadrature stops at its own rounding rather than
+    // subdividing to its depth limit and refusing an answer that is perfectly
+    // well defined.
+    let noise = f64::EPSILON * log_peak.abs().max(1.0);
     let quadrature = adaptive_simpson(
         &shifted,
         left_edge,
         right_edge,
         1.0e-13 * width.max(1.0e-6),
+        noise,
         32,
     )?;
     if !(quadrature.value > 0.0) {
@@ -1978,6 +1990,8 @@ fn bivariate_normal_cdf(first: f64, second: f64, correlation: f64) -> Result<f64
         0.0,
         correlation.asin(),
         BIVARIATE_ABSOLUTE_TOLERANCE / 8.0,
+        // An ordinary integrand on the ordinary scale, so an epsilon.
+        f64::EPSILON,
         24,
     )?;
     let probability = independent + quadrature.value;
@@ -2013,6 +2027,10 @@ fn adaptive_simpson<F>(
     lower: f64,
     upper: f64,
     tolerance: f64,
+    // The relative rounding the integrand itself carries. An ordinary
+    // integrand carries an epsilon; one built from a large exponent carries an
+    // epsilon of that exponent.
+    noise: f64,
     maximum_depth: usize,
 ) -> Result<QuadratureResult, &'static str>
 where
@@ -2031,6 +2049,7 @@ where
         upper: f64,
         estimate: f64,
         tolerance: f64,
+        noise: f64,
         depth: usize,
     ) -> Result<QuadratureResult, &'static str>
     where
@@ -2051,7 +2070,7 @@ where
         // refusing, which is the worst of both -- it spends the most work
         // exactly where it will fail, and a likelihood that declines to be
         // evaluated stops an optimiser dead.
-        let rounding = 16.0 * f64::EPSILON * (left.abs() + right.abs());
+        let rounding = 16.0 * noise * (left.abs() + right.abs());
         if error.abs() <= (15.0 * tolerance).max(rounding) {
             Ok(QuadratureResult {
                 value: left + right + error / 15.0,
@@ -2060,9 +2079,24 @@ where
         } else if depth == 0 {
             Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_DID_NOT_CONVERGE")
         } else {
-            let left_result = recurse(function, lower, midpoint, left, tolerance / 2.0, depth - 1)?;
-            let right_result =
-                recurse(function, midpoint, upper, right, tolerance / 2.0, depth - 1)?;
+            let left_result = recurse(
+                function,
+                lower,
+                midpoint,
+                left,
+                tolerance / 2.0,
+                noise,
+                depth - 1,
+            )?;
+            let right_result = recurse(
+                function,
+                midpoint,
+                upper,
+                right,
+                tolerance / 2.0,
+                noise,
+                depth - 1,
+            )?;
             Ok(QuadratureResult {
                 value: left_result.value + right_result.value,
                 estimated_error: left_result.estimated_error + right_result.estimated_error,
@@ -2079,7 +2113,15 @@ where
     if !estimate.is_finite() {
         return Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_NOT_FINITE");
     }
-    recurse(function, lower, upper, estimate, tolerance, maximum_depth)
+    recurse(
+        function,
+        lower,
+        upper,
+        estimate,
+        tolerance,
+        noise,
+        maximum_depth,
+    )
 }
 
 #[cfg(feature = "python")]
@@ -2185,6 +2227,46 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A rectangle at a correlation of nearly minus one, where both
+    /// coordinates are asked to be large and they can barely both be. The
+    /// exponent runs to a million, so the integrand carries a millionfold more
+    /// rounding than an ordinary one; asking it for a fixed 1e-13 made the
+    /// quadrature subdivide to its depth limit and refuse an answer that is
+    /// perfectly well defined.
+    #[test]
+    fn a_nearly_opposed_rectangle_is_answered_to_the_precision_available() {
+        // Checked against a sixty-digit evaluation of the same integral.
+        let truth = -1_000_022.907_899_968_9;
+        let value =
+            log_bivariate_rectangle(&[1.0, 1.0], &[f64::INFINITY, f64::INFINITY], -0.999_999)
+                .expect("rectangle");
+        // An epsilon of the exponent is the best available, and that is 2e-10
+        // of a million.
+        assert!((value - truth).abs() < 1.0e-3, "{value} against {truth}");
+        // It must also sit under the bound from `X + Y`, which is tight here.
+        let bound = log_bivariate_geometry_upper_bound(
+            &[1.0, 1.0],
+            &[f64::INFINITY, f64::INFINITY],
+            -0.999_999,
+        )
+        .expect("bound");
+        assert!(value <= bound, "{value} is above the bound {bound}");
+    }
+
+    /// The inverse of the log upper tail must undo it at any depth, including
+    /// where the ordinary scale has long since underflowed.
+    #[test]
+    fn the_inverse_log_tail_undoes_it_far_beyond_the_ordinary_scale() {
+        for point in [0.0_f64, 1.0, 37.295_08, 316.206_656, 14_142.134_883] {
+            let target = log_normal_sf(point).expect("tail");
+            let recovered = inverse_log_normal_sf(target).expect("inverse");
+            assert!(
+                (recovered - point).abs() <= 1.0e-9 * point.max(1.0),
+                "{point} came back as {recovered}"
+            );
+        }
+    }
+
     /// The inverse of the log upper tail must undo it, wherever the tail is.
     #[test]
     fn the_inverse_log_tail_undoes_the_log_tail() {
@@ -2557,7 +2639,7 @@ mod tests {
 
     #[test]
     fn adaptive_simpson_refuses_depth_exhaustion() {
-        let error = adaptive_simpson(&|value| value.powi(4), 0.0, 1.0, 1.0e-16, 0)
+        let error = adaptive_simpson(&|value| value.powi(4), 0.0, 1.0, 1.0e-16, 0.0, 0)
             .expect_err("an exhausted error budget must not be returned as success");
         assert_eq!(
             error,
