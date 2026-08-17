@@ -480,14 +480,37 @@ most so near `a = b = 0` where both parts hold at once. `a` sits on a boundary
 under its null and takes the even mixture; `b` is interior and takes an ordinary
 chi-square on one.
 
-**The scale of `b` needs a continuous outcome to be pinned down.** The outcome
-*innovation* variance is fixed at one, not the outcome variance, so where every
-outcome is binary the likelihood constrains `b` only through a threshold
-crossing. `a` is pinned by the continuous mediator measurement and `b` is not,
-and in a small binary-outcome design the point estimate of `a b` can run far
-from the truth while the test correctly declines to claim mediation. Read the
-two parts beside the combined p-value: a large `a b` beside a `b` that no
-constrained fit can reject is the shape this takes. At least one continuous mediator measurement
+### The point estimate of `a b` is weaker than the test of it
+
+**The outcome has no continuous form in this interface.** A mediator may be
+measured continuously, or observed through a fallible binary proxy, but the
+outcome is only ever a status: `1[Y > threshold]`. The outcome *innovation*
+variance is fixed at one rather than the outcome variance, so the only thing
+constraining the scale of `Y`, and with it `b`, is how often the threshold is
+crossed. `a` is pinned by the continuous mediator measurement; `b` is not.
+
+Measured on a deliberately small design — 36 people, 12 families of three,
+outcomes binary — the point estimate ran away while the test held:
+
+| truth | `a b` estimated | p(a=0) | p(b=0) | p(a b = 0) |
+| --- | --- | --- | --- | --- |
+| a=0.7, b=0.6 (a b = 0.42) | +7.79 | 0.018 | 0.742 | 0.742 |
+| a=0, b=0.6 (a b = 0) | +0.54 | 0.397 | 0.136 | 0.397 |
+| a=0.7, b=0 (a b = 0) | **-2459** | 0.008 | 0.123 | 0.123 |
+
+Every p-value is the right side of 0.05: the two true nulls are not rejected,
+and the one real mediation is not claimed either, because `b` could not be
+established from 36 binary outcomes. **The test is a likelihood ratio and does
+not depend on the estimate**, which is why it survives a point estimate of
+minus two thousand.
+
+The practical reading. Report the two parts beside the combined p-value; a
+large `a b` next to a `b` that no constrained fit can reject is what a loose
+scale looks like. Treat `a b` as a direction rather than a magnitude unless the
+outcome is common enough, and the sample large enough, for the threshold to
+carry real information about the scale. And note the ceiling this puts on the
+design: a continuous outcome would pin `b` directly, and this interface cannot
+accept one. At least one continuous mediator measurement
 across all families is required by `fit()` to anchor the mediator scale.
 Fixed-point `evaluate()` can still evaluate a fully specified parameter point
 without that anchor.
