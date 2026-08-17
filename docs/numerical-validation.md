@@ -192,11 +192,31 @@ three synthetic tests, including p-values `3.32e-7` and `6.36e-20`. The held
 mode was more conservative for large effects (`4.53e-7` and `1.58e-18` on
 those examples), motivating selective refitting.
 
-In 3.6 million null tests on 30,000 real markers across 120 simulated
-responses, observed/expected tail-count ratios were 1.024 at 0.01, 1.040 at
-0.001, 1.125 at `1e-4`, and 1.361 at `1e-5`; between-response variation was
-used because linked markers are not independent. The experiment did not reach
-genome-wide `5e-8` calibration, which would require vastly more null tests.
+In 10 million null tests on 50,000 real markers across 200 simulated responses
+on the real pedigree, crossings ran at 522 per draw below 0.01 where 500 were
+expected, and the genomic inflation factor was 1.036. Between-response variation
+is used rather than a binomial band, because linked markers are not independent
+and the measured scatter runs two to three times the binomial one. The
+experiment does not reach genome-wide `5e-8`, which would need of order ten
+billion null tests.
+
+**That excess is mostly the covariance model, not the test.** Three things were
+measured to establish it. It is not driven by rare markers: split by minor
+allele frequency the ratio is 0.98 between 0.01 and 0.02 and 1.07 above 0.10,
+which is the opposite of the usual cause and means a frequency filter would not
+remove it. It is not the held-variance approximation: refitting the components
+for every marker gives an inflation factor of 1.0087 against held's 1.0079 on
+the same data. What does remove it is permuting each marker across people --
+which keeps its allele frequency exactly and destroys any correspondence between
+a genotype and how closely two people are actually related. That takes the
+inflation factor from 1.0188 to 1.0071, about sixty per cent of the excess.
+
+So the larger part is the pedigree kinship failing to describe the relatedness
+the real genotypes carry, which is why it is largest for common markers: those
+carry most of that signal. A genomic relationship matrix, rather than a pedigree
+one, is what would close it. The remaining `1.007` is the test's own, from
+reading a statistic with estimated variance components against a chi-square.
+The check reports both separately and judges only the second.
 
 ## Variant-set score test
 

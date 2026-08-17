@@ -292,6 +292,31 @@ analysis is not performed. This tends to bias the held test toward the null,
 especially for large-effect markers. Multiple-testing correction, allele
 coding, missingness, and marker quality are outside the model.
 
+### Which relationship matrix a scan should use
+
+**A pedigree kinship is not enough for an association scan, and the shortfall
+has been measured.** A pedigree kinship gives the probability two people share
+an allele by descent, averaged over meioses that have already happened. Real
+genotypes carry the relatedness that actually resulted, which scatters about
+that average. A marker whose genotype tracks the difference is a marker the
+covariance model has not accounted for, and the test reads the leftover as
+signal.
+
+On the real pedigree with real markers and no marker effect anywhere, this puts
+the genomic inflation factor at 1.036. Permuting each marker across people --
+keeping its allele frequency and removing its relation to who is related to whom
+-- takes that to 1.007, so about sixty per cent of the excess is this and not the
+test. It is largest for common markers, which carry the most of the signal, and
+a frequency filter therefore does not help: the ratio is 0.98 for the rarest
+markers and 1.07 for the commonest. Refitting the variance components for every
+marker does not help either.
+
+So use a genomic relationship matrix, or a kinship estimated from the genotypes,
+for a scan. `prepare` and `AssociationModel` take any finite symmetric
+positive-semidefinite matrix, so this is a choice of input and not a change of
+model. A pedigree kinship remains the right thing for heritability, where the
+question is about descent rather than about what a particular marker tracks.
+
 When screening with `refit_below`, set the screen well above the threshold you
 will report against. The held statistic is conservative, so a marker can have a
 refitted p below your threshold while its held p sits above it. Ten times the
