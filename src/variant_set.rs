@@ -247,6 +247,15 @@ pub struct VariantSetFamily {
     pub trustworthy: bool,
 }
 
+/// Below this a p-value is transformed as `1/(p pi)`, which is the same number
+/// as the tangent without the cancellation it suffers near a right angle.
+const SMALL_TANGENT: f64 = 1e-6;
+/// The range a p-value is held to before combining. The lower end is only
+/// underflow protection; the upper end is a statement that p-values above it
+/// are not told apart, which is what stops one of them annihilating the rest.
+const SMALLEST_COMBINED: f64 = 1e-300;
+const LARGEST_COMBINED: f64 = 1.0 - 1e-6;
+
 /// Combine dependent p-values by the Cauchy method.
 ///
 /// The average of `tan((1/2 - p) pi)` is Cauchy in its tail whatever the
@@ -261,10 +270,25 @@ fn cauchy_combination(p_values: &[f64]) -> f64 {
     let count = p_values.len() as f64;
     let mut total = 0.0;
     for p in p_values {
-        let p = p.clamp(1e-300, 1.0 - 1e-16);
+        // **Both ends of the transform run away, and only one of them should.**
+        // `tan((1/2 - p) pi)` goes to plus infinity as `p` falls and to minus
+        // infinity as `p` rises to one, so a single member at exactly one
+        // annihilates the rest: six members at 1e-8 combine to 1e-8, and the
+        // same six beside one member at 1.0 combine to 0.9999999999999989 -- a
+        // set with overwhelming signal reported as nothing.
+        //
+        // A clamp of `1 - 1e-16` does not help, because that rounds to the
+        // nearest double below one and its tangent is still -2e15. The upper
+        // end is therefore held at `1 - 1e-6`, which says that p-values above
+        // that are not distinguished from each other. Nothing is lost: they all
+        // mean the same thing, which is no evidence, and the method is meant to
+        // be led by its smallest members rather than shouted down by its
+        // largest. A statistic of exactly nought reaches here as a p-value of
+        // exactly one, so this is an ordinary input and not a corner.
+        let p = p.clamp(SMALLEST_COMBINED, LARGEST_COMBINED);
         // `tan((1/2 - p) pi)` loses its accuracy as the argument nears a
         // right angle, and `1/(p pi)` is the same number without that.
-        total += if p < 1e-6 {
+        total += if p < SMALL_TANGENT {
             1.0 / (p * std::f64::consts::PI)
         } else {
             ((0.5 - p) * std::f64::consts::PI).tan()
@@ -519,6 +543,27 @@ mod tests {
         );
         assert!(family.p_value <= worst + 1e-12);
         assert!((0.0..=1.0).contains(&family.p_value));
+    }
+
+    /// One member with nothing to report must not annihilate the rest. The
+    /// transform runs to minus infinity as a p-value approaches one, so a
+    /// single member at exactly one used to drag a set with overwhelming
+    /// signal to a combined p-value of one.
+    #[test]
+    fn a_member_with_no_evidence_does_not_silence_the_others() {
+        let strong = vec![1e-8; 6];
+        let combined = super::cauchy_combination(&strong);
+        assert!(combined < 1e-7, "six strong members combined to {combined}");
+
+        let mut with_silent = strong.clone();
+        with_silent.push(1.0);
+        let combined = super::cauchy_combination(&with_silent);
+        assert!(
+            combined < 1e-6,
+            "one member at p = 1 dragged the combination to {combined}"
+        );
+        // It should still cost something, since a member found nothing.
+        assert!(combined > 1e-8);
     }
 
     /// A correlation of one is the burden end, which the rank-one root already

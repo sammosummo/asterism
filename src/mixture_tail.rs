@@ -61,11 +61,17 @@ const WEIGHT_FLOOR: f64 = 1e-12;
 /// Two weights within this relative distance are treated as equal, which lets
 /// the exact chi-square answer be used.
 const EQUAL_TOLERANCE: f64 = 1e-12;
-const RELATIVE_TOLERANCE: f64 = 1e-12;
+// A p-value is never read to twelve figures, and the alternating series has to
+// run a long way to settle that far. Ten is past anything downstream uses.
+const RELATIVE_TOLERANCE: f64 = 1e-10;
 const MAXIMUM_SEGMENTS: usize = 40_000;
 /// Below this the inversion is losing too many digits to cancellation for the
 /// answer to mean anything, and the caller is told so rather than shown it.
 const CANCELLATION_FLOOR: f64 = 1e-11;
+/// How many panels a band is split into. They double in width from the band
+/// start, so this many covers a dynamic range of 2^40 -- far more than the
+/// widest band a plausible statistic produces.
+const BAND_PANELS: usize = 40;
 
 const GAUSS_NODES: [f64; 20] = [
     -0.993_128_599_185_094_9,
@@ -149,6 +155,74 @@ fn integrand(t: f64, weights: &[f64], q: f64) -> f64 {
     phase(t, weights, q).sin() * (-log_amplitude(t, weights)).exp() / t
 }
 
+
+/// Integrate one band with a fixed Gauss-Legendre rule.
+fn gauss_panel(lower: f64, upper: f64, weights: &[f64], q: f64) -> f64 {
+    let middle = 0.5 * (lower + upper);
+    let half = 0.5 * (upper - lower);
+    GAUSS_NODES
+        .iter()
+        .zip(GAUSS_WEIGHTS)
+        .map(|(node, weight)| weight * integrand(middle + half * node, weights, q))
+        .sum::<f64>()
+        * half
+}
+
+/// Integrate one band on panels that are graded towards its start.
+///
+/// **A band is not automatically narrow.** Its width is set by where the phase
+/// next crosses a multiple of pi, which for a small statistic is far away. The
+/// integrand meanwhile is flat near the origin -- it tends to `sum(lambda) - q`
+/// there rather than diverging -- and only decays once the amplitude `rho`
+/// starts to grow, at around `1 / (2 max(lambda))`. So a wide band holds nearly
+/// all of its mass in a small part of itself, and one fixed rule spread across
+/// the whole of it puts almost no nodes where the function actually is.
+///
+/// The error that causes is not subtle: it made the returned survival function
+/// *increase* with the statistic across the range where bands are widest, which
+/// is impossible for a survival function and is what this grading fixes.
+///
+/// Panels double in width from the band start, so the resolution is fine where
+/// the integrand lives and coarse where it has already decayed, at a fixed cost
+/// rather than a recursive one.
+fn graded_band(lower: f64, upper: f64, weights: &[f64], q: f64, fine: f64) -> f64 {
+    let width = upper - lower;
+    if !(width > 0.0) {
+        return 0.0;
+    }
+    // Grade only as far as the band is actually wider than the scale the
+    // integrand varies on. A narrow band needs one panel, and most bands are
+    // narrow: their width is about `pi / q`, so grading every band to the same
+    // depth would spend forty panels resolving a function that is smooth
+    // across the whole of it.
+    let panels = if width <= fine {
+        1
+    } else {
+        ((width / fine).log2().ceil() as usize + 1).clamp(1, BAND_PANELS)
+    };
+    if panels == 1 {
+        return gauss_panel(lower, upper, weights, q);
+    }
+    let mut total = 0.0;
+    let mut edge = lower;
+    for panel in 0..panels {
+        // Widths 2^-K, 2^-K, 2^-(K-1), ... of the band, summing to the whole.
+        let share = if panel == 0 {
+            0.5f64.powi(panels as i32 - 1)
+        } else {
+            0.5f64.powi((panels - panel) as i32)
+        };
+        let next = if panel == panels - 1 {
+            upper
+        } else {
+            edge + width * share
+        };
+        total += gauss_panel(edge, next, weights, q);
+        edge = next;
+    }
+    total
+}
+
 /// `P(sum_j weights_j * chi2_1 > q)`.
 ///
 /// # Errors
@@ -212,15 +286,27 @@ pub fn weighted_chi2_upper_tail(q: f64, weights: &[f64]) -> Result<MixtureTail, 
     let mut total = 0.0_f64;
     let mut lower = 0.0_f64;
     let mut band = (phase(1e-14, &kept, q) / std::f64::consts::PI).floor();
-    let mut step = (0.5 / q.max(1.0)).min(0.5);
+    // The phase turns over on the scale where the amplitude starts to grow, so
+    // the first probe must be fine enough to see that; thereafter the phase
+    // falls at rate `q`, making a band about `pi / q` wide. A probe is never
+    // allowed past an eighth of that, so it cannot step over a whole band, and
+    // it grows geometrically until it does -- which is what lets a small
+    // statistic, whose first crossing sits at `r pi / (4 q)`, be reached at
+    // all. Fixed steps could not: they left the integral unevaluated and the
+    // answer at one half.
+    let largest = kept.iter().fold(0.0_f64, |a, b| a.max(*b));
+    let first_probe = (0.25 / largest).min(0.5);
+    let widest_probe = (std::f64::consts::PI / q / 8.0).max(first_probe);
+    let mut step = first_probe;
     let mut last_term = f64::INFINITY;
     let mut segments = 0usize;
 
     while segments < MAXIMUM_SEGMENTS {
         let mut upper = lower;
         let mut crossed = false;
-        for _ in 0..4_000 {
-            let next = upper + step;
+        let mut probe = step;
+        for _ in 0..8_000 {
+            let next = upper + probe;
             if !next.is_finite() {
                 break;
             }
@@ -239,25 +325,19 @@ pub fn weighted_chi2_upper_tail(q: f64, weights: &[f64]) -> Result<MixtureTail, 
                 break;
             }
             upper = next;
+            probe = (probe * 1.05).min(widest_probe);
         }
         if !crossed {
             break;
         }
 
-        let middle = 0.5 * (lower + upper);
-        let half = 0.5 * (upper - lower);
-        let term: f64 = GAUSS_NODES
-            .iter()
-            .zip(GAUSS_WEIGHTS)
-            .map(|(node, weight)| weight * integrand(middle + half * node, &kept, q))
-            .sum::<f64>()
-            * half;
+        let term = graded_band(lower, upper, &kept, q, first_probe);
         total += term;
         last_term = term.abs();
         segments += 1;
 
         band = (phase(upper + 1e-13, &kept, q) / std::f64::consts::PI).floor();
-        step = (upper - lower).max(step).min(1.0);
+        step = (upper - lower).max(step).min(widest_probe);
         lower = upper;
 
         let running = (0.5 + total / std::f64::consts::PI).abs().max(f64::MIN_POSITIVE);
@@ -285,8 +365,6 @@ mod tests {
     use super::weighted_chi2_upper_tail;
     use crate::deviance::chi2_upper_tail;
 
-#[cfg(feature = "python")]
-pub mod python;
 
     /// Equal weights are an ordinary chi-square, and a single weight is one
     /// scaled. Both are taken exactly rather than integrated.
@@ -330,16 +408,59 @@ pub mod python;
     }
 
     /// A probability falls as the statistic grows, whatever the weights.
+    ///
+    /// **The small end of this range is the point.** An earlier version of
+    /// this test started at `q = 0.5` and passed while the tail was rising
+    /// with `q` below that -- the bands are widest there, and a single
+    /// quadrature rule across a wide band misses where the integrand lives.
     #[test]
     fn the_tail_decreases_and_stays_a_probability() {
         let weights = [5.0, 2.0, 1.0, 0.5];
         let mut previous = 1.0;
-        for q in [0.5, 2.0, 8.0, 20.0, 50.0] {
+        for q in [
+            1e-5, 1e-4, 0.001, 0.005, 0.01, 0.05, 0.1, 0.3, 0.5, 2.0, 8.0, 20.0, 50.0,
+        ] {
             let got = weighted_chi2_upper_tail(q, &weights).expect("valid");
             assert!((0.0..=1.0).contains(&got.probability));
             assert!(got.probability < previous, "not decreasing at q = {q}");
             previous = got.probability;
         }
+    }
+
+    /// Scaling the statistic and every weight together cannot change the
+    /// answer, since `P(Q > q)` and `P(cQ > cq)` are the same statement.
+    ///
+    /// This needs no external reference, which is what makes it worth having:
+    /// it caught the tail returning exactly one half -- the value it takes when
+    /// the integral is never evaluated at all -- once the scaling pushed the
+    /// first phase crossing beyond where the search reached.
+    #[test]
+    fn rescaling_the_whole_problem_changes_nothing() {
+        let base = [3.0_f64, 2.0, 1.0];
+        let reference = weighted_chi2_upper_tail(20.0, &base).expect("valid");
+        for scale in [1e2, 1.0, 1e-2, 1e-4, 1e-6, 1e-8] {
+            let scaled: Vec<f64> = base.iter().map(|w| w * scale).collect();
+            let got = weighted_chi2_upper_tail(20.0 * scale, &scaled).expect("valid");
+            assert!(
+                (got.probability - reference.probability).abs() < 1e-12,
+                "scale {scale}: {} against {}",
+                got.probability,
+                reference.probability
+            );
+            assert!(got.trustworthy, "scale {scale} was not trustworthy");
+        }
+    }
+
+    /// A statistic far below the weights is nearly certain to be exceeded, and
+    /// one far above them is not. Both ends were wrong before the bands were
+    /// graded: the small end returned a half and the large end a rising curve.
+    #[test]
+    fn the_two_ends_of_the_range_are_the_right_way_round() {
+        let weights = [5.0, 2.0, 1.0, 0.5];
+        let tiny = weighted_chi2_upper_tail(1e-6, &weights).expect("valid");
+        assert!(tiny.probability > 0.999, "{}", tiny.probability);
+        let huge = weighted_chi2_upper_tail(400.0, &weights).expect("valid");
+        assert!(huge.probability < 1e-6, "{}", huge.probability);
     }
 
     /// Numerical residue from an eigendecomposition is dropped, and a
