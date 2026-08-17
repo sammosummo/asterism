@@ -1000,6 +1000,58 @@ class VariantSetModel:
         """Score one set."""
         return self.scan([root])[0]
 
+    def scan_family(
+        self,
+        roots: Sequence[Any],
+        correlations: Sequence[float] = (0.0, 0.01, 0.04, 0.09, 0.25, 0.5, 0.9),
+    ) -> list[dict[str, Any]]:
+        """Score every set across a family of assumptions, and combine them.
+
+        Two tests bet on different truths about a set. A **burden** test
+        assumes every variant pushes the trait the same way and adds them into
+        one score: powerful when true, blind when half raise the trait and half
+        lower it, because they cancel. A **variance-component** test assumes
+        nothing about direction and asks only whether the effects are more
+        scattered than chance allows: robust to a mixture, weaker when they
+        genuinely agree.
+
+        They are two ends of one dial, and ``correlations`` is that dial — the
+        assumed correlation between variant effects, nought giving the
+        variance-component test and approaching one giving burden.
+
+        **Taking the best of several tests inflates a p-value unless the
+        looking is paid for.** These tests are strongly dependent, being one
+        score read under different assumptions, so the combination is the
+        Cauchy method, whose tail is right whatever the dependence.
+        ``strongest_correlation`` comes back because it says something about
+        the set, but reporting its p-value alone would be exactly the inflation
+        this exists to avoid: report ``p_value``.
+
+        The same mechanism combines across weightings, which is the honest
+        answer to a weight being an arbitrary choice: run several and combine,
+        rather than fitting one, which the null does not identify.
+        """
+        prepared = [
+            np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
+            for r in roots
+        ]
+        for root in prepared:
+            if root.ndim != 2:
+                raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
+        records = _core.variant_set_family_scan(
+            self._backgrounds, self._design, self._y, prepared,
+            [float(c) for c in correlations], self._reml,
+        )
+        return [dict(r) for r in records]
+
+    def test_family(
+        self,
+        root: Any,
+        correlations: Sequence[float] = (0.0, 0.01, 0.04, 0.09, 0.25, 0.5, 0.9),
+    ) -> dict[str, Any]:
+        """Score one set across the family."""
+        return self.scan_family([root], correlations)[0]
+
 
 class LiabilityModel:
     """One binary trait on a pedigree, through a liability threshold.

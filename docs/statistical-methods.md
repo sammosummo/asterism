@@ -354,6 +354,51 @@ small pre-specified set of weightings and combining them is the honest course.
 Nothing here corrects for testing many sets, and a set nobody in the roster
 carries is refused rather than returned as a statistic of nought.
 
+### One dial from variance component to burden
+
+Two tests bet on different truths about a set. A **burden** test assumes every
+variant pushes the trait the same way, adds them into one score, and tests
+that: powerful when true, and blind when half the variants raise the trait and
+half lower it, because they cancel in the sum. A **variance-component** test
+assumes nothing about direction and asks only whether the effects are more
+scattered than chance allows: robust to a mixture, weaker when they genuinely
+agree.
+
+They are two ends of one dial. Assume the variant effects have correlation
+`rho` with each other, so their covariance is `(1-rho) I + rho 11'`. Then
+
+```text
+Q_rho  = (1 - rho) s's + rho (1's)^2,      s = Z' P y
+lambda = eigenvalues of R^(1/2) (Z' P Z) R^(1/2),   R = (1-rho) I + rho 11'
+```
+
+with `rho = 0` the variance-component test and `rho` approaching one the burden
+test. Both come from the same `s` and `Z' P Z`, so a whole family costs one
+decomposition per value rather than one fit per value.
+
+Neither end dominates. Simulated at 300 people with a twenty-variant set,
+power at nominal 0.05:
+
+| truth | variance component | near burden | combined |
+| --- | --- | --- | --- |
+| nothing (level) | 0.0435 | 0.0490 | 0.0450 |
+| all one direction | 0.428 | 0.738 | 0.715 |
+| mixed directions | 0.730 | 0.167 | 0.683 |
+
+**Taking whichever test came out best inflates a p-value unless the looking is
+paid for.** These tests are strongly dependent, being one score read under
+different assumptions, so the members are combined by the Cauchy method, whose
+tail is correct whatever the dependence between them. The combined test holds
+its level and lands near the winner in both directions, which is the point.
+
+The correlation whose test came out strongest is reported because it describes
+the set, but it is a description and not an estimate, and reporting its p-value
+alone would be exactly the inflation the combination prevents.
+
+The same mechanism combines across **weightings**, which is the honest response
+to a weight being an arbitrary choice: run a few pre-specified ones and combine
+them, rather than fitting one, which the null does not identify.
+
 ## The tail of a weighted sum of chi-squares
 
 A score test for one variance component gives a statistic distributed as

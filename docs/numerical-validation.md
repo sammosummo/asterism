@@ -201,6 +201,22 @@ furthest wrong: the likelihood ratio rejected 0.020 against a nominal 0.05,
 seven binomial standard errors low. The score test, whose reference is computed
 from the kernel's own eigenvalues, sits on nominal.
 
+Every member of the correlation family reproduces SKAT's own `r.corr` to
+`4e-7`, and the combination sits above its best member, which is the price of
+having looked at several.
+
+Across 2,000 null replicates the combined family test rejected 0.0450 at a
+nominal 0.05 and 0.0095 at 0.01. Against alternatives, at 600 replicates each,
+it recovers most of whichever single test was right:
+
+| truth | variance component | near burden | combined |
+| --- | --- | --- | --- |
+| all one direction | 0.428 | 0.738 | 0.715 |
+| mixed directions | 0.730 | 0.167 | 0.683 |
+
+The median strongest correlation was 0.50 where the variants agreed and 0.00
+where they did not, which is the dial finding the truth it was pointed at.
+
 ## The weighted chi-square tail
 
 Checked against Ruben's series expansion, which writes the statistic as a

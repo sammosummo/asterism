@@ -165,14 +165,12 @@ impl VariantSetModel {
         &self.variances
     }
 
-    /// Test one variant set, given `Z = G W`: the dosages with their column
-    /// weights already applied, one row per person and one column per variant.
-    ///
-    /// # Errors
-    ///
-    /// Returns a stable code where the matrix is the wrong shape, is not
-    /// finite, or carries nothing to test.
-    pub fn test(&self, kernel_root: &DMatrix<f64>) -> Result<VariantSetTest, &'static str> {
+    /// The projected score `s = Z' P y` and the middle matrix `M = Z' P Z`,
+    /// which every value of `rho` below is built from.
+    fn projected(
+        &self,
+        kernel_root: &DMatrix<f64>,
+    ) -> Result<(DVector<f64>, DMatrix<f64>), &'static str> {
         if kernel_root.nrows() != self.rows {
             return Err("VARIANT_SET_ROOT_WRONG_SHAPE");
         }
@@ -187,12 +185,7 @@ impl VariantSetModel {
         if kernel_root.iter().all(|v| *v == 0.0) {
             return Err("VARIANT_SET_NO_CARRIERS");
         }
-
-        // Q = || Z' P y ||^2
-        let projected_root = kernel_root.transpose() * &self.residual;
-        let statistic = projected_root.dot(&projected_root);
-
-        // M = Z' P Z = Z' V0^-1 Z - (X' V0^-1 Z)' (X' V0^-1 X)^-1 (X' V0^-1 Z)
+        let score = kernel_root.transpose() * &self.residual;
         let weighted_root = self.covariance.solve_matrix(kernel_root);
         let cross = self.design.transpose() * &weighted_root;
         let mut middle = kernel_root.transpose() * &weighted_root;
@@ -200,8 +193,24 @@ impl VariantSetModel {
         // Symmetry is exact in theory and drifts in arithmetic; the
         // decomposition below assumes it, so it is imposed rather than hoped for.
         let symmetric = (&middle + &middle.transpose()) * 0.5;
+        Ok((score, symmetric))
+    }
 
-        let decomposition = SymmetricEigen::new(symmetric);
+    /// Test one variant set, given `Z = G W`: the dosages with their column
+    /// weights already applied, one row per person and one column per variant.
+    ///
+    /// This is the variance-component test, which assumes nothing about the
+    /// direction of the variant effects. For a set where they might all push
+    /// the same way, see [`Self::test_family`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the matrix is the wrong shape, is not
+    /// finite, or carries nothing to test.
+    pub fn test(&self, kernel_root: &DMatrix<f64>) -> Result<VariantSetTest, &'static str> {
+        let (score, middle) = self.projected(kernel_root)?;
+        let statistic = score.dot(&score);
+        let decomposition = SymmetricEigen::new(middle);
         let mut eigenvalues: Vec<f64> = decomposition
             .eigenvalues
             .iter()
@@ -217,6 +226,156 @@ impl VariantSetModel {
             eigenvalues,
             tail_method: tail.method,
             trustworthy: tail.trustworthy,
+        })
+    }
+}
+
+/// One variant set tested across a family of assumptions about how its
+/// variants act together, and the combination of those tests.
+#[derive(Clone, Debug)]
+pub struct VariantSetFamily {
+    /// The assumed correlation between variant effects, in the order tested.
+    /// Nought assumes nothing about direction; one assumes they all act alike.
+    pub correlations: Vec<f64>,
+    pub tests: Vec<VariantSetTest>,
+    /// The correlation whose test came out strongest. It is a description of
+    /// this data set and not an estimate of anything.
+    pub strongest_correlation: f64,
+    /// The combined p-value, which is what to report.
+    pub p_value: f64,
+    /// False where any member of the family was itself unreadable.
+    pub trustworthy: bool,
+}
+
+/// Combine dependent p-values by the Cauchy method.
+///
+/// The average of `tan((1/2 - p) pi)` is Cauchy in its tail whatever the
+/// dependence between the tests, which is what makes this usable here: the
+/// members of a `rho` family are strongly dependent, being the same score read
+/// under different assumptions, and no ordinary combination survives that.
+///
+/// The transformation is written as `1/(p pi)` for small `p`, which is the same
+/// number without the cancellation `tan` suffers as its argument approaches a
+/// right angle.
+fn cauchy_combination(p_values: &[f64]) -> f64 {
+    let count = p_values.len() as f64;
+    let mut total = 0.0;
+    for p in p_values {
+        let p = p.clamp(1e-300, 1.0 - 1e-16);
+        // `tan((1/2 - p) pi)` loses its accuracy as the argument nears a
+        // right angle, and `1/(p pi)` is the same number without that.
+        total += if p < 1e-6 {
+            1.0 / (p * std::f64::consts::PI)
+        } else {
+            ((0.5 - p) * std::f64::consts::PI).tan()
+        };
+    }
+    let mean = total / count;
+    // The upper tail of a standard Cauchy. Written as `1/2 - atan(x)/pi` it
+    // cancels badly once the answer is small: at p = 1e-9 that loses eight of
+    // the sixteen digits. The identity `atan(1/x)/pi` is the same number with
+    // no subtraction in it, so it is used wherever the statistic is above one.
+    if mean > 1.0 {
+        (1.0 / mean).atan() / std::f64::consts::PI
+    } else {
+        0.5 - mean.atan() / std::f64::consts::PI
+    }
+}
+
+impl VariantSetModel {
+    /// Test one variant set across a family of assumptions, and combine them.
+    ///
+    /// Two tests bet on different truths about a set, and neither wins in
+    /// general. A **burden** test assumes every variant pushes the trait the
+    /// same way, adds them into one score and tests that: powerful when true,
+    /// and blind when half the variants raise the trait and half lower it,
+    /// because they cancel in the sum. A **variance-component** test assumes
+    /// nothing about direction and asks only whether the effects are more
+    /// scattered than chance allows: robust to mixed directions, weaker when
+    /// they genuinely do agree.
+    ///
+    /// They are the two ends of one dial. `correlations` is that dial: the
+    /// assumed correlation between variant effects, nought giving the
+    /// variance-component test and one the burden test.
+    ///
+    /// **Taking the best of several tests inflates a p-value unless the
+    /// looking is paid for**, and the members of this family are strongly
+    /// dependent, being one score read under different assumptions. The
+    /// combination is therefore the Cauchy method, whose tail is right
+    /// whatever the dependence. `strongest_correlation` is reported because it
+    /// says something about the set, but it is a description and not an
+    /// estimate: reporting its p-value alone would be the inflation this
+    /// exists to avoid.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the set cannot be tested, or where a
+    /// correlation lies outside `[0, 1)`. One is excluded because the burden
+    /// end is reached exactly by the rank-one root and needs no dial.
+    pub fn test_family(
+        &self,
+        kernel_root: &DMatrix<f64>,
+        correlations: &[f64],
+    ) -> Result<VariantSetFamily, &'static str> {
+        if correlations.is_empty() {
+            return Err("VARIANT_SET_NO_CORRELATIONS");
+        }
+        if correlations
+            .iter()
+            .any(|r| !r.is_finite() || *r < 0.0 || *r >= 1.0)
+        {
+            return Err("VARIANT_SET_CORRELATION_OUTSIDE_UNIT");
+        }
+        let (score, middle) = self.projected(kernel_root)?;
+        let variants = score.len();
+        let ones = DVector::from_element(variants, 1.0);
+        let summed = score.sum();
+        let plain = score.dot(&score);
+
+        let mut tests = Vec::with_capacity(correlations.len());
+        for &rho in correlations {
+            // Q_rho = (1 - rho) s's + rho (1's)^2, the same score read under a
+            // different assumption about how the effects agree.
+            let statistic = (1.0 - rho) * plain + rho * summed * summed;
+            // The effects now have covariance (1-rho) I + rho 11', whose
+            // square root is a scaled identity plus a rank-one piece.
+            let scale = (1.0 - rho).sqrt();
+            let corner = ((1.0 - rho + variants as f64 * rho).sqrt() - scale) / variants as f64;
+            let root = DMatrix::<f64>::identity(variants, variants) * scale
+                + &ones * ones.transpose() * corner;
+            let transformed = &root * &middle * &root;
+            let symmetric = (&transformed + &transformed.transpose()) * 0.5;
+            let decomposition = SymmetricEigen::new(symmetric);
+            let mut eigenvalues: Vec<f64> = decomposition
+                .eigenvalues
+                .iter()
+                .copied()
+                .map(|value| value.max(0.0))
+                .collect();
+            eigenvalues.sort_by(|a, b| b.partial_cmp(a).expect("finite eigenvalues"));
+            let tail = weighted_chi2_upper_tail(statistic, &eigenvalues)?;
+            tests.push(VariantSetTest {
+                statistic,
+                p_value: tail.probability,
+                eigenvalues,
+                tail_method: tail.method,
+                trustworthy: tail.trustworthy,
+            });
+        }
+
+        let p_values: Vec<f64> = tests.iter().map(|t| t.p_value).collect();
+        let strongest = p_values
+            .iter()
+            .enumerate()
+            .min_by(|a, b| a.1.partial_cmp(b.1).expect("finite p-values"))
+            .map(|(index, _)| correlations[index])
+            .expect("nonempty family");
+        Ok(VariantSetFamily {
+            correlations: correlations.to_vec(),
+            trustworthy: tests.iter().all(|t| t.trustworthy),
+            strongest_correlation: strongest,
+            p_value: cauchy_combination(&p_values),
+            tests,
         })
     }
 }
@@ -315,6 +474,89 @@ mod tests {
             "a design column left a statistic of {}",
             test.statistic
         );
+    }
+
+    /// Nought must reproduce the plain variance-component test exactly: it is
+    /// the same assumption written a second way.
+    #[test]
+    fn a_correlation_of_nought_is_the_plain_test() {
+        let (relationship, design, people) = roster(15, 4);
+        let y = response(people, 21);
+        let model = VariantSetModel::build(&[relationship], &design, &y, true).expect("fits");
+        let root = DMatrix::from_fn(people, 6, |i, j| ((i * 7 + j * 11) % 3) as f64);
+        let plain = model.test(&root).expect("tests");
+        let family = model.test_family(&root, &[0.0]).expect("tests");
+        assert!((family.tests[0].statistic - plain.statistic).abs() < 1e-9);
+        assert!((family.tests[0].p_value - plain.p_value).abs() < 1e-12);
+    }
+
+    /// The combination must not be better than the best test it combines --
+    /// that would be the inflation it exists to prevent -- and must not be
+    /// worse than the worst, which would make looking pointless.
+    #[test]
+    fn the_combination_costs_something_and_not_everything() {
+        let (relationship, design, people) = roster(20, 4);
+        let y = response(people, 33);
+        let model = VariantSetModel::build(&[relationship], &design, &y, true).expect("fits");
+        let root = DMatrix::from_fn(people, 8, |i, j| ((i * 3 + j * 5) % 4) as f64);
+        let family = model
+            .test_family(&root, &[0.0, 0.04, 0.25, 0.5, 0.9])
+            .expect("tests");
+        let best = family
+            .tests
+            .iter()
+            .map(|t| t.p_value)
+            .fold(f64::INFINITY, f64::min);
+        let worst = family
+            .tests
+            .iter()
+            .map(|t| t.p_value)
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            family.p_value >= best - 1e-12,
+            "combined {} beat its best member {best}",
+            family.p_value
+        );
+        assert!(family.p_value <= worst + 1e-12);
+        assert!((0.0..=1.0).contains(&family.p_value));
+    }
+
+    /// A correlation of one is the burden end, which the rank-one root already
+    /// reaches exactly, so the dial stops short of it rather than dividing by
+    /// nought.
+    #[test]
+    fn the_dial_stops_short_of_one() {
+        let (relationship, design, people) = roster(10, 4);
+        let y = response(people, 9);
+        let model = VariantSetModel::build(&[relationship], &design, &y, true).expect("fits");
+        let root = DMatrix::from_fn(people, 4, |i, j| ((i + j) % 3) as f64);
+        assert_eq!(
+            model.test_family(&root, &[1.0]).err(),
+            Some("VARIANT_SET_CORRELATION_OUTSIDE_UNIT")
+        );
+        assert_eq!(
+            model.test_family(&root, &[]).err(),
+            Some("VARIANT_SET_NO_CORRELATIONS")
+        );
+        // The burden end proper: one column, which is the summed score.
+        let summed = DMatrix::from_fn(people, 1, |i, _| {
+            (0..4).map(|j| ((i + j) % 3) as f64).sum::<f64>()
+        });
+        let burden = model.test(&summed).expect("tests");
+        assert_eq!(burden.tail_method, "exact_single_weight");
+    }
+
+    /// The Cauchy combination of identical p-values is that p-value: combining
+    /// a test with itself learns nothing and must cost nothing.
+    #[test]
+    fn combining_a_test_with_itself_changes_nothing() {
+        for p in [0.5_f64, 0.05, 1e-4, 1e-9] {
+            let combined = super::cauchy_combination(&[p, p, p]);
+            assert!(
+                (combined - p).abs() <= 1e-9 * p.max(1e-12),
+                "combining {p} with itself gave {combined}"
+            );
+        }
     }
 
     /// Malformed input is refused rather than quietly reshaped.

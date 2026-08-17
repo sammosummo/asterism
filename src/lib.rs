@@ -39,7 +39,7 @@ pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
-pub use variant_set::{VariantSetModel, VariantSetTest};
+pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -113,6 +113,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         variant_set::python::variant_set_scan,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        variant_set::python::variant_set_family_scan,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;

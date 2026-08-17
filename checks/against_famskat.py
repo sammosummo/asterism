@@ -129,6 +129,49 @@ def main() -> int:
                     f"{theirs:.6e}, relative {relative:.2e}"
                 )
 
+    # Every member of the correlation family must reproduce SKAT's own
+    # r.corr, which is the identical quantity under a different name.
+    family_compared = []
+    correlations = [0.0, 0.04, 0.25, 0.5, 0.9]
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        (directory / "famskat.R").write_text(SCRIPT)
+        genotypes, relationship, y, weights, people = simulate(77, 0.30)
+        family = asterism.VariantSetModel(
+            [relationship], np.ones((people, 1)), y
+        ).test_family(genotypes * weights, correlations)
+        np.savetxt(directory / "G.txt", genotypes)
+        np.savetxt(directory / "Phi.txt", relationship)
+        np.savetxt(directory / "y.txt", y)
+        np.savetxt(directory / "w.txt", weights)
+        for correlation, ours in zip(correlations, family["p_values"]):
+            finished = subprocess.run(
+                ["Rscript", str(directory / "famskat.R"),
+                 str(directory / "G.txt"), str(directory / "Phi.txt"),
+                 str(directory / "y.txt"), str(directory / "w.txt"), str(correlation)],
+                capture_output=True, text=True, timeout=600,
+            )
+            if finished.returncode != 0:
+                raise SystemExit(f"famSKAT failed at rho={correlation}")
+            theirs = float(finished.stdout.strip())
+            relative = abs(ours - theirs) / max(theirs, 1e-300)
+            family_compared.append(
+                {"correlation": correlation, "asterism": ours,
+                 "famskat": theirs, "relative": relative}
+            )
+            if relative > RELATIVE_TOLERANCE:
+                failures.append(
+                    f"rho={correlation}: {ours:.6e} against {theirs:.6e}, "
+                    f"relative {relative:.2e}"
+                )
+    # Combining cannot beat the best test it combines: that would be the
+    # inflation the combination exists to prevent.
+    if family["p_value"] < min(family["p_values"]) - 1e-12:
+        failures.append(
+            f"the combination {family['p_value']:.6e} beat its best member "
+            f"{min(family['p_values']):.6e}"
+        )
+
     worst = max(c["relative"] for c in compared)
     if failures:
         print("NOT AGREED:")
@@ -145,6 +188,13 @@ def main() -> int:
         "replicates": REPLICATES,
         "worst_relative_difference": worst,
         "comparisons": compared,
+        "correlation_family": {
+            "compared": family_compared,
+            "combined": family["p_value"],
+            "best_single": min(family["p_values"]),
+            "strongest_correlation": family["strongest_correlation"],
+            "note": "the combination sits above its best member, which is the price of looking",
+        },
     }, indent=2))
     print(
         f"\nThe two implementations agree to {worst:.1e} relative across "
