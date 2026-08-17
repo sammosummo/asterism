@@ -469,7 +469,25 @@ directly and `proband_index` must be absent. With
 probability of exceeding their outcome threshold.
 
 The vertical estimand is `a b`, whose null is the union of `a=0` and `b=0`; the
-horizontal estimand is `c_prime`. At least one continuous mediator measurement
+horizontal estimand is `c_prime`.
+
+**The union null is why a single likelihood ratio has no reference here**, and
+why the test is an intersection-union: `a b = 0` holds whenever the mediator
+carries no inherited signal or the mediator does not reach the outcome, and
+those are different models. Rejecting only when both parts are rejected gives
+the larger of the two p-values, which is exactly level `alpha` and conservative,
+most so near `a = b = 0` where both parts hold at once. `a` sits on a boundary
+under its null and takes the even mixture; `b` is interior and takes an ordinary
+chi-square on one.
+
+**The scale of `b` needs a continuous outcome to be pinned down.** The outcome
+*innovation* variance is fixed at one, not the outcome variance, so where every
+outcome is binary the likelihood constrains `b` only through a threshold
+crossing. `a` is pinned by the continuous mediator measurement and `b` is not,
+and in a small binary-outcome design the point estimate of `a b` can run far
+from the truth while the test correctly declines to claim mediation. Read the
+two parts beside the combined p-value: a large `a b` beside a `b` that no
+constrained fit can reject is the shape this takes. At least one continuous mediator measurement
 across all families is required by `fit()` to anchor the mediator scale.
 Fixed-point `evaluate()` can still evaluate a fully specified parameter point
 without that anchor.

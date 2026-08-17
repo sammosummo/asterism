@@ -157,6 +157,22 @@ differ, the correlation test rejected 0.990 and the equal-variance test stayed
 at level (0.062); where only the genetic scale differs, the equal-variance test
 rejected 0.998 and the correlation test stayed at level (0.042).
 
+## Gene by discrete environment: the correlation interval
+
+400 replicates at 600 people in sibships of four, 95 per cent profile
+intervals for the genetic correlation:
+
+| true correlation | coverage | reached a bound | median width |
+| --- | --- | --- | --- |
+| 0.3 | 0.958 | 0.138 | 0.682 |
+| 0.6 | 0.955 | 0.490 | 0.623 |
+| 0.9 | 0.995 | 0.940 | 0.389 |
+
+Coverage is nominal away from the bound and conservative against it. At a true
+correlation of 0.9, 94 per cent of intervals reach one: they cover, but they do
+not pin the value down, and an interval that reaches its bound is reported as
+having done so for that reason.
+
 ## Binary liability
 
 Against native SOLAR, liability heritability differed by at most 0.0134, or
