@@ -47,7 +47,6 @@ import numpy as np
 
 import asterism
 
-
 # ----------------------------------------------------------------- the deposit
 
 def data_directory() -> Path:
@@ -76,7 +75,13 @@ def read_table(path: Path) -> list[dict[str, str]]:
     ]
 
 
-MISSING = {"", "NA", ".", "0"}
+# What an empty cell looks like in the phenotype files. Nought is a real value
+# in every one of them — lifetime breeding success is nought for over half the
+# females — so it is never read as missing here.
+MISSING = {"", "NA", "."}
+
+# The pedigree file additionally writes an unknown parent as nought.
+MISSING_PARENT = MISSING | {"0"}
 
 
 def read_pedigree(path: Path) -> tuple[list[str], list[str | None], list[str | None], list[str]]:
@@ -97,8 +102,8 @@ def read_pedigree(path: Path) -> tuple[list[str], list[str | None], list[str | N
     mother: list[str | None] = []
     invented = []
     for row in rows:
-        sire = None if row["FATHER"] in MISSING else row["FATHER"]
-        dam = None if row["MOTHER"] in MISSING else row["MOTHER"]
+        sire = None if row["FATHER"] in MISSING_PARENT else row["FATHER"]
+        dam = None if row["MOTHER"] in MISSING_PARENT else row["MOTHER"]
         if sire is None and dam is not None:
             sire = f"#sire{len(invented):04d}"
             invented.append(sire)
@@ -109,6 +114,52 @@ def read_pedigree(path: Path) -> tuple[list[str], list[str | None], list[str | N
     father.extend([None] * len(invented))
     mother.extend([None] * len(invented))
     return ids, father, mother, recorded
+
+
+def tabular_relationship(path: Path) -> tuple[np.ndarray, dict[str, int]]:
+    """The relationship matrix by the textbook recursion, for checking against.
+
+    Written out longhand and depending on nothing in Asterism, so that the
+    invented sires above are verified rather than trusted: a_ii is one plus half
+    the relationship between the parents, and a_ij for j already placed is the
+    average of the two parents' relationships to j, with an unknown parent
+    contributing nothing.
+    """
+    rows = read_table(path)
+    ids = [row["ID"] for row in rows]
+    position = {name: i for i, name in enumerate(ids)}
+    sire = [None if r["FATHER"] in MISSING_PARENT else position[r["FATHER"]] for r in rows]
+    dam = [None if r["MOTHER"] in MISSING_PARENT else position[r["MOTHER"]] for r in rows]
+
+    placed: set[int] = set()
+    order: list[int] = []
+    waiting = list(range(len(ids)))
+    while waiting:
+        again = []
+        for i in waiting:
+            if (sire[i] is None or sire[i] in placed) and (dam[i] is None or dam[i] in placed):
+                order.append(i)
+                placed.add(i)
+            else:
+                again.append(i)
+        if len(again) == len(waiting):
+            raise ValueError("the pedigree has a loop")
+        waiting = again
+
+    n = len(ids)
+    a = np.zeros((n, n))
+    for k, i in enumerate(order):
+        s, d = sire[i], dam[i]
+        earlier = order[:k]
+        row = np.zeros(n)
+        if s is not None:
+            row += 0.5 * a[s]
+        if d is not None:
+            row += 0.5 * a[d]
+        a[i, earlier] = row[earlier]
+        a[earlier, i] = row[earlier]
+        a[i, i] = 1.0 + (0.5 * a[s, d] if (s is not None and d is not None) else 0.0)
+    return a, position
 
 
 def read_overlap(path: Path, order: list[str]) -> np.ndarray:
@@ -270,8 +321,17 @@ SCALES = {
 }
 
 
-def build(trait: str, scale: str | None, directory: Path):
-    """Everything one trait needs: response, design, and the component matrices."""
+def build(trait: str, scale: str | None, directory: Path,
+          unknown_mother: str = "drop", overlap: str | None = None):
+    """Everything one trait needs: response, design, and the component matrices.
+
+    ``unknown_mother`` decides what happens to a female whose own mother is not
+    recorded. ``drop`` removes the record, which is what ASReml does with a
+    missing level of a random factor. ``own`` gives her a maternal level of her
+    own, so she contributes nothing to the maternal covariance but keeps her
+    record. ``shared`` puts every such female in one level together, which
+    asserts a common mother they are not known to have.
+    """
     spec = TRAITS[trait]
     rows = read_table(directory / spec["file"])
 
@@ -279,11 +339,11 @@ def build(trait: str, scale: str | None, directory: Path):
     known = set(recorded)
 
     # Records are dropped only where the model cannot be written down for them:
-    # a missing response, a missing fixed effect, an animal with no pedigree
-    # record, or an unknown mother when a maternal term is fitted.
-    needed = [spec["response"], spec["year"], spec["mother"]] + [
-        name for name, _ in spec["terms"]
-    ]
+    # a missing response, a missing fixed effect, or an animal with no pedigree
+    # record. The unknown mothers are handled separately.
+    needed = [spec["response"], spec["year"]] + [name for name, _ in spec["terms"]]
+    if unknown_mother == "drop":
+        needed = needed + [spec["mother"]]
     kept = []
     dropped = {"missing_field": 0, "not_in_pedigree": 0}
     for row in rows:
@@ -295,6 +355,13 @@ def build(trait: str, scale: str | None, directory: Path):
             continue
         kept.append(row)
 
+    maternal = []
+    for i, row in enumerate(kept):
+        label = row[spec["mother"]]
+        if label in MISSING:
+            label = "#nomother" if unknown_mother == "shared" else f"#nomother{i}"
+        maternal.append(label)
+
     animals = sorted({row[spec["animal"]] for row in kept})
     relationship, order = asterism.relationship_matrix(
         ped_ids, father, mother, keep=animals
@@ -303,7 +370,9 @@ def build(trait: str, scale: str | None, directory: Path):
     position = {name: i for i, name in enumerate(order)}
     index = np.array([position[row[spec["animal"]]] for row in kept])
 
-    overlap_full = read_overlap(directory / spec["overlap"], recorded)
+    overlap_file = {"spring": "sproverlap.grm", "rut": "ruthroverlap.grm"}.get(
+        overlap, spec["overlap"])
+    overlap_full = read_overlap(directory / overlap_file, recorded)
     where = {name: i for i, name in enumerate(recorded)}
     overlap_rows = np.array([where[row[spec["animal"]]] for row in kept])
 
@@ -315,7 +384,7 @@ def build(trait: str, scale: str | None, directory: Path):
     matrices = {
         "a": expand(relationship, index),
         "year": incidence([row[spec["year"]] for row in kept]),
-        "m": incidence([row[spec["mother"]] for row in kept]),
+        "m": incidence(maternal),
     }
     if spec["permanent"]:
         matrices["pe"] = incidence([row[spec["animal"]] for row in kept])
@@ -345,8 +414,10 @@ def fit(matrices: dict[str, np.ndarray], names: list[str], x, y) -> dict:
     }
 
 
-def report(trait: str, scale: str | None, directory: Path) -> dict:
-    spec, kept, y, x, matrices, dropped, n_animals = build(trait, scale, directory)
+def report(trait: str, scale: str | None, directory: Path,
+           unknown_mother: str = "drop", overlap: str | None = None) -> dict:
+    spec, kept, y, x, matrices, dropped, n_animals = build(
+        trait, scale, directory, unknown_mother, overlap)
     none = fit(matrices, ORDER_NONE, x, y)
     overlap = fit(matrices, ORDER_OVERLAP, x, y)
     chisq = 2.0 * (overlap["loglik"] - none["loglik"])
@@ -385,6 +456,8 @@ def report(trait: str, scale: str | None, directory: Path) -> dict:
     return {
         "trait": trait,
         "scale": scale or spec["scale"],
+        "unknown_mother": unknown_mother,
+        "overlap_matrix": overlap or spec["overlap"],
         "records": len(kept),
         "females": n_animals,
         "dropped": dropped,
@@ -396,20 +469,51 @@ def report(trait: str, scale: str | None, directory: Path) -> dict:
     }
 
 
+def check_pedigree(directory: Path, every: int = 7) -> dict:
+    """Asterism's relationship matrix against the longhand recursion.
+
+    The invented sires are the one step here that no published number covers, so
+    they get their own check. A spread-out sample of the pedigree keeps the
+    comparison small without letting it sit in one family.
+    """
+    reference, position = tabular_relationship(directory / "DeerPed.ped")
+    ped_ids, father, mother, recorded = read_pedigree(directory / "DeerPed.ped")
+    keep = recorded[::every]
+    built, order = asterism.relationship_matrix(ped_ids, father, mother, keep=keep)
+    index = np.array([position[name] for name in order])
+    gap = float(np.abs(np.asarray(built) - reference[np.ix_(index, index)]).max())
+    inbred = int((np.diag(reference) > 1.0 + 1e-12).sum())
+    print(f"\n  pedigree: {len(order)} deer compared against the longhand "
+          f"recursion, largest difference {gap:.3e}")
+    print(f"            {inbred} of {len(position)} animals inbred, "
+          f"diagonal up to {np.diag(reference).max():.4f}")
+    if gap > 1e-10:
+        raise SystemExit("the invented sires do not reproduce the tabular method")
+    return {"deer_compared": len(order), "largest_difference": gap, "inbred": inbred}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trait", action="append", choices=sorted(TRAITS))
+    parser.add_argument("--overlap", choices=["spring", "rut"],
+                        help="override which home range overlap matrix is used")
+    parser.add_argument("--skip-pedigree-check", action="store_true")
     parser.add_argument("--scale", choices=sorted(SCALES))
+    parser.add_argument("--unknown-mother", default="drop",
+                        choices=["drop", "own", "shared"],
+                        help="what to do with a female whose mother is not recorded")
     parser.add_argument("--evidence", action="store_true",
                         help="write the record to evidence/")
     arguments = parser.parse_args()
 
     directory = data_directory()
     traits = arguments.trait or ["lbs", "bw", "rhr", "shr"]
-    print(f"Red deer of Rum, against Stopher et al. (2012) Table 2.")
+    print("Red deer of Rum, against Stopher et al. (2012) Table 2.")
     print(f"Data: {directory}")
 
-    records = [report(trait, arguments.scale, directory) for trait in traits]
+    pedigree = None if arguments.skip_pedigree_check else check_pedigree(directory)
+    records = [report(trait, arguments.scale, directory, arguments.unknown_mother,
+                      arguments.overlap) for trait in traits]
 
     if arguments.evidence:
         out = (Path(__file__).resolve().parents[1] / "evidence"
@@ -417,6 +521,7 @@ def main() -> None:
         out.write_text(json.dumps({
             "source": "Stopher et al. 2012 Evolution 66(8):2411-2426",
             "data": "Dryad doi:10.5061/dryad.jf04r362",
+            "pedigree_check": pedigree,
             "records": records,
         }, indent=2, default=float) + "\n")
         print(f"\nwrote {out}")
