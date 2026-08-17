@@ -200,23 +200,36 @@ and the measured scatter runs two to three times the binomial one. The
 experiment does not reach genome-wide `5e-8`, which would need of order ten
 billion null tests.
 
-**That excess is mostly the covariance model, not the test.** Three things were
-measured to establish it. It is not driven by rare markers: split by minor
-allele frequency the ratio is 0.98 between 0.01 and 0.02 and 1.07 above 0.10,
-which is the opposite of the usual cause and means a frequency filter would not
-remove it. It is not the held-variance approximation: refitting the components
-for every marker gives an inflation factor of 1.0087 against held's 1.0079 on
-the same data. What does remove it is permuting each marker across people --
-which keeps its allele frequency exactly and destroys any correspondence between
-a genotype and how closely two people are actually related. That takes the
-inflation factor from 1.0188 to 1.0071, about sixty per cent of the excess.
+**About half that excess is the covariance model rather than the test.** Three
+things were measured to establish it. It is not driven by rare markers: split by
+minor allele frequency the ratio is 0.98 between 0.01 and 0.02 and 1.07 above
+0.10, the opposite of the usual cause, so a frequency filter would not remove
+it. It is not the held-variance approximation: refitting the components for
+every marker gives an inflation factor of 1.0087 against held's 1.0079 on the
+same data. What does remove it is permuting each marker across people, which
+keeps its allele frequency exactly and destroys any correspondence between a
+genotype and how closely two people are actually related.
 
-So the larger part is the pedigree kinship failing to describe the relatedness
-the real genotypes carry, which is why it is largest for common markers: those
-carry most of that signal. A genomic relationship matrix, rather than a pedigree
-one, is what would close it. The remaining `1.007` is the test's own, from
-reading a statistic with estimated variance components against a chi-square.
-The check reports both separately and judges only the second.
+Over the same 10 million tests, per draw:
+
+| threshold | real markers | permuted | expected |
+| --- | --- | --- | --- |
+| `0.01` | 522.14 | 510.43 | 500 |
+| `0.001` | 53.28 | 51.83 | 50 |
+| `1e-4` | 5.44 | 5.13 | 5 |
+
+So of the 22 excess crossings per draw at `0.01`, permuting removes about 12.
+That part is the pedigree kinship failing to describe the relatedness the real
+genotypes carry, which is why it is largest for common markers: those carry most
+of that signal. A genomic relationship matrix, rather than a pedigree one, is
+what would close it.
+
+The remaining two per cent is the test's own, from reading a statistic with
+estimated variance components against a chi-square. It is marginal at 200 draws
+-- 510.43 against a ceiling of 509.9 -- and has gone by `1e-4`, so it does not
+threaten a scan at genome-wide thresholds, but it is worth knowing before
+quoting a p-value near `0.01`. The check reports both parts separately and
+judges only this one.
 
 ## Variant-set score test
 
