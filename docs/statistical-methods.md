@@ -303,13 +303,13 @@ covariance model has not accounted for, and the test reads the leftover as
 signal.
 
 On the real pedigree with real markers and no marker effect anywhere, this puts
-the genomic inflation factor at 1.036. Permuting each marker across people --
-keeping its allele frequency and removing its relation to who is related to whom
--- takes that to 1.007, so about sixty per cent of the excess is this and not the
-test. It is largest for common markers, which carry the most of the signal, and
-a frequency filter therefore does not help: the ratio is 0.98 for the rarest
-markers and 1.07 for the commonest. Refitting the variance components for every
-marker does not help either.
+the crossings below `0.01` at 522 per draw where 500 are expected. Permuting each
+marker across people -- keeping its allele frequency and removing its relation to
+who is related to whom -- brings that to 510, so about half the excess is this
+and not the test. It is largest for common markers, which carry the most of the
+signal, and a frequency filter therefore does not help: the ratio is 0.98 for
+the rarest markers and 1.07 for the commonest. Refitting the variance components
+for every marker does not help either.
 
 So use a genomic relationship matrix, or a kinship estimated from the genotypes,
 for a scan. `prepare` and `AssociationModel` take any finite symmetric
