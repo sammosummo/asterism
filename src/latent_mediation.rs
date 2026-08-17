@@ -125,7 +125,11 @@ pub struct LatentMediationEvaluation {
     pub families: Vec<LatentMediationFamilyEvaluation>,
 }
 
-type TransformedPoint = [f64; FIT_DIMENSION];
+/// A point the optimiser works in: the five structural coordinates, and then
+/// one per covariate coefficient. The structural five keep their transforms
+/// and their bounds; the coefficients are plain and unbounded, because a
+/// covariate's effect has no sign or scale the model insists on.
+type TransformedPoint = Vec<f64>;
 
 /// A converged maximum-likelihood fit of the latent mediation model.
 #[derive(Clone, Debug)]
@@ -146,7 +150,7 @@ struct FitCandidate {
     integration: LatentMediationEvaluation,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct InwardPenalty {
     anchor: TransformedPoint,
     base: f64,
@@ -164,11 +168,11 @@ impl InwardPenalty {
 
     /// A finite penalty whose derivative always points away from the valid
     /// anchor, so the corresponding descent direction points back inward.
-    fn value_and_gradient(self, point: &[f64]) -> (f64, Vec<f64>) {
+    fn value_and_gradient(&self, point: &[f64]) -> (f64, Vec<f64>) {
         let mut distance = 1.0;
-        let mut gradient = Vec::with_capacity(FIT_DIMENSION);
-        for (value, anchor) in point.iter().zip(self.anchor) {
-            let delta = *value - anchor;
+        let mut gradient = Vec::with_capacity(point.len());
+        for (value, anchor) in point.iter().zip(&self.anchor) {
+            let delta = *value - *anchor;
             let radius = delta.hypot(1.0);
             distance += radius - 1.0;
             gradient.push(self.strength * delta / radius);
@@ -274,19 +278,27 @@ impl LatentMediationModel {
     /// # Errors
     ///
     /// Returns a stable `LATENT_MEDIATION_*` code, as [`Self::fit`] does.
+    /// How many covariate coefficients the fit carries. Nought until a family
+    /// supplies a design, at which point the optimiser's point grows by that
+    /// many plain, unbounded coordinates.
+    fn coefficient_count(&self) -> usize {
+        0
+    }
+
     pub fn fit_holding(&self, held: &[usize]) -> Result<LatentMediationFit, &'static str> {
         if held.iter().any(|index| *index >= FIT_DIMENSION) {
             return Err("LATENT_MEDIATION_HELD_COORDINATE_INVALID");
         }
         let mediator_scale_squared = self.mediator_scale_squared()?;
-        let bounds = transformed_bounds_holding(held)?;
+        let coefficients = self.coefficient_count();
+        let bounds = transformed_bounds_holding(held, coefficients)?;
         let mut best_converged: Option<FitCandidate> = None;
         let mut best_unresolved: Option<f64> = None;
         // The most recent underlying failure, so a fit in which nothing
         // converged reports its cause rather than only the fact.
         let mut last_error: Option<&'static str> = None;
 
-        for mut start in deterministic_starts() {
+        for mut start in deterministic_starts(coefficients) {
             for &index in held {
                 start[index] = 0.0;
             }
@@ -295,24 +307,37 @@ impl LatentMediationModel {
             else {
                 continue;
             };
-            let penalty = InwardPenalty::new(start, initial_objective);
+            let penalty = InwardPenalty::new(start.clone(), initial_objective);
             let value_of = |candidate: &[f64]| {
-                solver_value_and_gradient(self, candidate, mediator_scale_squared, &bounds, penalty)
-                    .0
+                solver_value_and_gradient(
+                    self,
+                    candidate,
+                    mediator_scale_squared,
+                    &bounds,
+                    &penalty,
+                )
+                .0
             };
             let gradient_of = |candidate: &[f64]| {
-                solver_value_and_gradient(self, candidate, mediator_scale_squared, &bounds, penalty)
-                    .1
+                solver_value_and_gradient(
+                    self,
+                    candidate,
+                    mediator_scale_squared,
+                    &bounds,
+                    &penalty,
+                )
+                .1
             };
-            let mut control = OptimControl::default_for_dimension(FIT_DIMENSION);
+            let dimension = FIT_DIMENSION + coefficients;
+            let mut control = OptimControl::default_for_dimension(dimension);
             control.maxit = 500;
             // R's own default: stop once the objective settles to about 1e-9
             // relative rather than running every start to `maxit`.
             control.factr = 1.0e3;
             control.pgtol = FIT_SOLVER_PGTOL;
-            control.lmm = FIT_DIMENSION;
+            control.lmm = dimension.min(10);
             control.fnscale = initial_objective.abs().max(1.0);
-            control.parscale = vec![1.0; FIT_DIMENSION];
+            control.parscale = vec![1.0; dimension];
 
             let Ok(solution) = optim_lbfgsb_with_gradient(
                 start.to_vec(),
@@ -327,10 +352,7 @@ impl LatentMediationModel {
                 last_error = Some("LATENT_MEDIATION_SOLVER_FAILED");
                 continue;
             };
-            let Ok(transformed) = <Vec<f64> as TryInto<TransformedPoint>>::try_into(solution.par)
-            else {
-                continue;
-            };
+            let transformed: TransformedPoint = solution.par;
             let integration = match self.evaluate_transformed(&transformed, mediator_scale_squared)
             {
                 Ok(evaluation) => evaluation,
@@ -497,7 +519,7 @@ impl LatentMediationModel {
     }
 }
 
-fn transformed_bounds_holding(held: &[usize]) -> Result<Bounds, &'static str> {
+fn transformed_bounds_holding(held: &[usize], coefficients: usize) -> Result<Bounds, &'static str> {
     let mut lower = vec![
         0.0,
         f64::NEG_INFINITY,
@@ -505,7 +527,8 @@ fn transformed_bounds_holding(held: &[usize]) -> Result<Bounds, &'static str> {
         0.0,
         f64::NEG_INFINITY,
     ];
-    let mut upper = vec![f64::INFINITY; FIT_DIMENSION];
+    lower.extend(std::iter::repeat_n(f64::NEG_INFINITY, coefficients));
+    let mut upper = vec![f64::INFINITY; FIT_DIMENSION + coefficients];
     for &index in held {
         lower[index] = 0.0;
         upper[index] = 0.0;
@@ -513,14 +536,27 @@ fn transformed_bounds_holding(held: &[usize]) -> Result<Bounds, &'static str> {
     Bounds::new(lower, upper).map_err(|_| "LATENT_MEDIATION_OPTIMISER_BOUNDS_INVALID")
 }
 
-fn deterministic_starts() -> [TransformedPoint; 5] {
-    [
+fn deterministic_starts(coefficients: usize) -> Vec<TransformedPoint> {
+    let structural = [
         [0.5_f64.sqrt(), 0.0, 0.0, 0.5, 0.5_f64.ln()],
         [0.2_f64.sqrt(), 0.5, 0.5, 0.5, 0.8_f64.ln()],
         [0.2_f64.sqrt(), -0.5, -0.5, 0.5, 0.8_f64.ln()],
         [0.8_f64.sqrt(), 0.5, -0.5, 0.2, 0.2_f64.ln()],
         [0.8_f64.sqrt(), -0.5, 0.5, 0.2, 0.2_f64.ln()],
-    ]
+    ];
+    // Every start puts the covariate coefficients at nought, which is the only
+    // value that says nothing about them. Spreading the starts over the
+    // structural coordinates is what finds the several optima this likelihood
+    // has; spreading them over the coefficients too would multiply the work
+    // without adding a direction the optimiser cannot walk in.
+    structural
+        .into_iter()
+        .map(|point| {
+            let mut start = point.to_vec();
+            start.extend(std::iter::repeat_n(0.0, coefficients));
+            start
+        })
+        .collect()
 }
 
 fn transformed_parameters(
@@ -553,7 +589,7 @@ fn solver_value_and_gradient(
     point: &[f64],
     mediator_scale_squared: f64,
     bounds: &Bounds,
-    penalty: InwardPenalty,
+    penalty: &InwardPenalty,
 ) -> (f64, Vec<f64>) {
     let objective =
         |candidate: &[f64]| model.optimisation_objective(candidate, mediator_scale_squared);
@@ -3049,7 +3085,7 @@ mod tests {
     #[test]
     fn finite_difference_and_projected_kkt_respect_a_lower_bound() {
         let point = [0.0, 2.0, -1.0, 0.25, 0.4];
-        let bounds = transformed_bounds_holding(&[]).expect("bounds");
+        let bounds = transformed_bounds_holding(&[], 0).expect("bounds");
         let objective = |candidate: &[f64]| {
             Some(
                 (candidate[0] + 1.0).powi(2)
@@ -3080,7 +3116,7 @@ mod tests {
         let base = deterministic_fit_model_at_mediator_scale(1.0);
         let rescaled = deterministic_fit_model_at_mediator_scale(1.0e6);
         let point = [0.2_f64.sqrt(), 0.5, 0.5, 0.5, 0.8_f64.ln()];
-        let bounds = transformed_bounds_holding(&[]).expect("bounds");
+        let bounds = transformed_bounds_holding(&[], 0).expect("bounds");
         let base_scale = base.mediator_scale_squared().expect("base mediator scale");
         let rescaled_scale = rescaled
             .mediator_scale_squared()
