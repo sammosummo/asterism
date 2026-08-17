@@ -13,7 +13,8 @@ from typing import Any
 
 import numpy as np
 
-from ._core import LatentMediationCore, latent_mediation_simulate as _simulate
+from ._core import LatentMediationCore
+from ._core import latent_mediation_simulate as _simulate
 
 __all__ = ["LatentMediationModel"]
 
@@ -314,7 +315,7 @@ def simulate(
     seed: int,
     outcome_threshold: float | Sequence[float] = 0.0,
     mediator_threshold: float | Sequence[float] = 0.0,
-    measurement_error_variance: float | None | Sequence[float | None] = 0.15,
+    measurement_error_variance: float | Sequence[float | None] | None = 0.15,
     observe_mediator_proxy: bool | Sequence[bool] = False,
     sensitivity: float | Sequence[float] = 0.8,
     specificity: float | Sequence[float] = 0.85,
