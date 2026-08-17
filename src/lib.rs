@@ -100,6 +100,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_class::<latent_mediation::python::PyLatentMediationCore>()?;
     module.add_function(pyo3::wrap_pyfunction!(
+        latent_mediation::python::latent_mediation_simulate,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
         liability::python::liability_fit,
         module
     )?)?;

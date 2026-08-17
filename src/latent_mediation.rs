@@ -2124,6 +2124,182 @@ where
     )
 }
 
+/// A deterministic stream, so a simulated campaign can be rerun exactly.
+struct Stream(u64);
+
+impl Stream {
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn uniform(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+    }
+
+    fn normal(&mut self) -> f64 {
+        let first = self.uniform();
+        let second = self.uniform();
+        (-2.0 * first.ln()).sqrt() * (2.0 * std::f64::consts::PI * second).cos()
+    }
+}
+
+/// What one family in a simulated design looks like: who is related to whom,
+/// where their thresholds sit, and which of the three observations each person
+/// contributes.
+#[derive(Clone, Debug)]
+pub struct LatentMediationDesign {
+    pub relationship: Vec<Vec<f64>>,
+    pub mediator_threshold: Vec<f64>,
+    pub outcome_threshold: Vec<f64>,
+    /// The known error variance where the mediator is measured, and `None`
+    /// where it is not. At least one family must measure it somewhere or the
+    /// mediator scale is not identified and `fit` will say so.
+    pub mediator_measurement_error_variance: Vec<Option<f64>>,
+    /// Whether each person contributes a fallible binary reading of their true
+    /// mediator state.
+    pub observe_mediator_proxy: Vec<bool>,
+    pub mediator_proxy_sensitivity: Vec<f64>,
+    pub mediator_proxy_specificity: Vec<f64>,
+    pub observe_outcome: Vec<bool>,
+    pub ascertainment: String,
+    pub proband_index: Option<usize>,
+}
+
+/// How many redraws a proband-conditioned family is allowed before the design
+/// is called impossible. A threshold so far out that a case essentially never
+/// occurs would otherwise spin.
+const ASCERTAINMENT_ATTEMPTS: usize = 100_000;
+
+/// Draw families from the model the likelihood integrates.
+///
+/// **The same covariance construction as the fit, deliberately.** A simulator
+/// that built the covariance its own way would make a calibration measure the
+/// agreement between two constructions rather than the behaviour of the test;
+/// the construction itself is checked against an independently written
+/// evaluation elsewhere, which is where that assurance belongs.
+///
+/// Conditioning on a proband is done by drawing and redrawing until the named
+/// person is a case, which is what the model's denominator assumes and what a
+/// clinic roster actually is. Drawing unconditionally and keeping the cases
+/// would be a different design.
+///
+/// # Errors
+///
+/// Returns a stable code where the design does not describe a family, where a
+/// proband is asked for and not named, or where the ascertainment cannot be
+/// satisfied in a reasonable number of attempts.
+pub fn simulate(
+    design: &LatentMediationDesign,
+    parameters: LatentMediationParameters,
+    families: usize,
+    seed: u64,
+) -> Result<Vec<LatentMediationFamilyInput>, &'static str> {
+    validate_parameters(parameters)?;
+    let size = design.relationship.len();
+    if size == 0 {
+        return Err("LATENT_MEDIATION_DESIGN_EMPTY");
+    }
+    let lengths = [
+        design.mediator_threshold.len(),
+        design.outcome_threshold.len(),
+        design.mediator_measurement_error_variance.len(),
+        design.observe_mediator_proxy.len(),
+        design.mediator_proxy_sensitivity.len(),
+        design.mediator_proxy_specificity.len(),
+        design.observe_outcome.len(),
+    ];
+    if lengths.iter().any(|length| *length != size)
+        || design.relationship.iter().any(|row| row.len() != size)
+    {
+        return Err("LATENT_MEDIATION_DESIGN_SHAPE_INVALID");
+    }
+    let conditioned = match design.ascertainment.as_str() {
+        "population_unconditioned" => {
+            if design.proband_index.is_some() {
+                return Err("LATENT_MEDIATION_PROBAND_NOT_ALLOWED");
+            }
+            None
+        }
+        "condition_on_named_proband_case" => match design.proband_index {
+            Some(index) if index < size && design.observe_outcome[index] => Some(index),
+            Some(_) => return Err("LATENT_MEDIATION_PROBAND_INDEX_INVALID"),
+            None => return Err("LATENT_MEDIATION_PROBAND_INDEX_MISSING"),
+        },
+        _ => return Err("LATENT_MEDIATION_ASCERTAINMENT_UNKNOWN"),
+    };
+
+    let relationship = DMatrix::from_fn(size, size, |row, column| design.relationship[row][column]);
+    let covariance = directional_covariance(&relationship, parameters)?;
+    let factor = covariance
+        .cholesky()
+        .ok_or("LATENT_MEDIATION_COVARIANCE_NOT_POSITIVE_DEFINITE")?
+        .l();
+
+    let mut stream = Stream(seed);
+    let mut drawn = Vec::with_capacity(families);
+    for _ in 0..families {
+        let mut attempts = 0usize;
+        let family = loop {
+            attempts += 1;
+            if attempts > ASCERTAINMENT_ATTEMPTS {
+                return Err("LATENT_MEDIATION_ASCERTAINMENT_UNREACHABLE");
+            }
+            // Process-major, mediator block first, as the covariance is built.
+            let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
+            let latent = &factor * draw;
+            let case = |person: usize| latent[size + person] > design.outcome_threshold[person];
+            if let Some(proband) = conditioned
+                && !case(proband)
+            {
+                continue;
+            }
+            let mut measurement = vec![None; size];
+            let mut proxy = vec![None; size];
+            let mut outcome = vec![None; size];
+            for person in 0..size {
+                if let Some(variance) = design.mediator_measurement_error_variance[person] {
+                    measurement[person] = Some(latent[person] + variance.sqrt() * stream.normal());
+                }
+                if design.observe_mediator_proxy[person] {
+                    let truth = latent[person] > design.mediator_threshold[person];
+                    let right = if truth {
+                        design.mediator_proxy_sensitivity[person]
+                    } else {
+                        design.mediator_proxy_specificity[person]
+                    };
+                    let agrees = stream.uniform() < right;
+                    proxy[person] = Some(i8::from(truth == agrees));
+                }
+                if design.observe_outcome[person] {
+                    outcome[person] = Some(i8::from(case(person)));
+                }
+            }
+            break LatentMediationFamilyInput {
+                relationship: design.relationship.clone(),
+                latent_mean: vec![0.0; 2 * size],
+                mediator_measurement: measurement,
+                mediator_measurement_error_variance: design
+                    .mediator_measurement_error_variance
+                    .clone(),
+                mediator_proxy_status: proxy,
+                outcome_status: outcome,
+                mediator_threshold: design.mediator_threshold.clone(),
+                outcome_threshold: design.outcome_threshold.clone(),
+                mediator_proxy_sensitivity: design.mediator_proxy_sensitivity.clone(),
+                mediator_proxy_specificity: design.mediator_proxy_specificity.clone(),
+                ascertainment: design.ascertainment.clone(),
+                proband_index: design.proband_index,
+            };
+        };
+        drawn.push(family);
+    }
+    Ok(drawn)
+}
+
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -2227,6 +2403,126 @@ impl LatentMediationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// A simulator that does not draw from the model it is meant to check is
+    /// worse than none: a calibration built on it would measure the gap between
+    /// two constructions and call it a rejection rate. So the draws are held to
+    /// the covariance the likelihood assumes, and to the case rate its
+    /// thresholds imply.
+    #[test]
+    fn the_simulator_draws_from_the_model_the_likelihood_integrates() {
+        let parameters = LatentMediationParameters {
+            a: 0.6,
+            b: 0.4,
+            c_prime: 0.2,
+            d: 0.7,
+            sigma_m2: 0.5,
+        };
+        let relationship = vec![vec![1.0, 0.5], vec![0.5, 1.0]];
+        // The mediator measured almost exactly, so the measurements stand in
+        // for the latent mediator itself.
+        let design = LatentMediationDesign {
+            relationship: relationship.clone(),
+            mediator_threshold: vec![0.0, 0.0],
+            outcome_threshold: vec![0.3, 0.3],
+            mediator_measurement_error_variance: vec![Some(1.0e-8), Some(1.0e-8)],
+            observe_mediator_proxy: vec![false, false],
+            mediator_proxy_sensitivity: vec![0.8, 0.8],
+            mediator_proxy_specificity: vec![0.85, 0.85],
+            observe_outcome: vec![true, true],
+            ascertainment: "population_unconditioned".to_owned(),
+            proband_index: None,
+        };
+        let families = simulate(&design, parameters, 200_000, 20_260_817).expect("draws");
+
+        let matrix = DMatrix::from_fn(2, 2, |row, column| relationship[row][column]);
+        let truth = directional_covariance(&matrix, parameters).expect("covariance");
+
+        let first: Vec<f64> = families
+            .iter()
+            .map(|family| family.mediator_measurement[0].expect("measured"))
+            .collect();
+        let second: Vec<f64> = families
+            .iter()
+            .map(|family| family.mediator_measurement[1].expect("measured"))
+            .collect();
+        let count = first.len() as f64;
+        let mean_first = first.iter().sum::<f64>() / count;
+        let mean_second = second.iter().sum::<f64>() / count;
+        let variance = first
+            .iter()
+            .map(|value| (value - mean_first).powi(2))
+            .sum::<f64>()
+            / count;
+        let covariance = first
+            .iter()
+            .zip(&second)
+            .map(|(one, two)| (one - mean_first) * (two - mean_second))
+            .sum::<f64>()
+            / count;
+        // Four standard errors of the sample covariance at this size.
+        let tolerance = 4.0 * truth[(0, 0)] / count.sqrt();
+        assert!(
+            (variance - truth[(0, 0)]).abs() < tolerance,
+            "mediator variance {variance} against {}",
+            truth[(0, 0)]
+        );
+        assert!(
+            (covariance - truth[(0, 1)]).abs() < tolerance,
+            "between-sibling mediator covariance {covariance} against {}",
+            truth[(0, 1)]
+        );
+
+        // And the outcome case rate against the threshold its variance implies.
+        let cases = families
+            .iter()
+            .filter(|family| family.outcome_status[0] == Some(1))
+            .count() as f64
+            / count;
+        let outcome_sd = truth[(2, 2)].sqrt();
+        let expected = normal_sf(0.3 / outcome_sd).expect("tail");
+        assert!(
+            (cases - expected).abs() < 4.0 * (expected * (1.0 - expected) / count).sqrt(),
+            "case rate {cases} against {expected}"
+        );
+    }
+
+    /// Conditioning on a proband means every drawn family has one, and the
+    /// others are not thereby all cases.
+    #[test]
+    fn conditioning_on_a_proband_draws_families_that_have_one() {
+        let design = LatentMediationDesign {
+            relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+            mediator_threshold: vec![0.0, 0.0],
+            outcome_threshold: vec![1.5, 1.5],
+            mediator_measurement_error_variance: vec![Some(0.15), None],
+            observe_mediator_proxy: vec![false, true],
+            mediator_proxy_sensitivity: vec![0.8, 0.8],
+            mediator_proxy_specificity: vec![0.85, 0.85],
+            observe_outcome: vec![true, true],
+            ascertainment: "condition_on_named_proband_case".to_owned(),
+            proband_index: Some(0),
+        };
+        let parameters = LatentMediationParameters {
+            a: 0.6,
+            b: 0.4,
+            c_prime: 0.2,
+            d: 0.7,
+            sigma_m2: 0.5,
+        };
+        let families = simulate(&design, parameters, 5_000, 7).expect("draws");
+        assert!(families.iter().all(|f| f.outcome_status[0] == Some(1)));
+        let relatives = families
+            .iter()
+            .filter(|f| f.outcome_status[1] == Some(1))
+            .count();
+        // The relative is enriched by the shared liability but nowhere near
+        // certain; if they were all cases the conditioning would be wrong.
+        assert!(
+            relatives > 0 && relatives < families.len(),
+            "{relatives} relatives affected"
+        );
+    }
+
     /// The normal tail against a sixty-digit reference, at the depths the
     /// conditional quadrature actually visits. `statrs`'s `Normal::cdf` is
     /// wrong by about 5e-11 here, which is noise to a quadrature asking for

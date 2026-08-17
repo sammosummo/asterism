@@ -7,11 +7,14 @@
 // them by value whether or not the body consumes them. The lint cannot be
 // satisfied here without breaking the macro.
 #![allow(clippy::needless_pass_by_value)]
+// A `#[pyfunction]`'s parameter list is the Python signature, so grouping
+// arguments into a struct to shorten it would make the interface worse.
+#![allow(clippy::too_many_arguments)]
 
 use super::{
-    FIT_GRADIENT_TOLERANCE, LatentMediationEvaluation, LatentMediationFamilyEvaluation,
-    LatentMediationFamilyInput, LatentMediationFit, LatentMediationModel,
-    LatentMediationParameters,
+    FIT_GRADIENT_TOLERANCE, LatentMediationDesign, LatentMediationEvaluation,
+    LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
+    LatentMediationModel, LatentMediationParameters,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -408,5 +411,100 @@ fn fit_dict<'py>(
         warnings.push("integration_is_approximate");
     }
     output.set_item("warnings", warnings)?;
+    Ok(output)
+}
+
+/// Draw families from the model, for calibration and power work.
+///
+/// The design is one family's shape, drawn from as many times as asked. It is
+/// returned as the same dictionaries the model takes, so a campaign is
+/// `simulate` then `LatentMediationModel` with nothing in between to get wrong.
+#[pyfunction]
+#[pyo3(signature = (
+    relationship,
+    mediator_threshold,
+    outcome_threshold,
+    mediator_measurement_error_variance,
+    observe_mediator_proxy,
+    mediator_proxy_sensitivity,
+    mediator_proxy_specificity,
+    observe_outcome,
+    a,
+    b,
+    c_prime,
+    d,
+    sigma_m2,
+    families,
+    seed,
+    ascertainment="population_unconditioned",
+    proband_index=None,
+))]
+pub fn latent_mediation_simulate<'py>(
+    py: Python<'py>,
+    relationship: Vec<Vec<f64>>,
+    mediator_threshold: Vec<f64>,
+    outcome_threshold: Vec<f64>,
+    mediator_measurement_error_variance: Vec<Option<f64>>,
+    observe_mediator_proxy: Vec<bool>,
+    mediator_proxy_sensitivity: Vec<f64>,
+    mediator_proxy_specificity: Vec<f64>,
+    observe_outcome: Vec<bool>,
+    a: f64,
+    b: f64,
+    c_prime: f64,
+    d: f64,
+    sigma_m2: f64,
+    families: usize,
+    seed: u64,
+    ascertainment: &str,
+    proband_index: Option<usize>,
+) -> PyResult<Bound<'py, PyList>> {
+    let design = LatentMediationDesign {
+        relationship,
+        mediator_threshold,
+        outcome_threshold,
+        mediator_measurement_error_variance,
+        observe_mediator_proxy,
+        mediator_proxy_sensitivity,
+        mediator_proxy_specificity,
+        observe_outcome,
+        ascertainment: ascertainment.to_owned(),
+        proband_index,
+    };
+    let parameters = LatentMediationParameters {
+        a,
+        b,
+        c_prime,
+        d,
+        sigma_m2,
+    };
+    let drawn =
+        super::simulate(&design, parameters, families, seed).map_err(PyValueError::new_err)?;
+    let output = PyList::empty(py);
+    for family in drawn {
+        let item = PyDict::new(py);
+        item.set_item("relationship", family.relationship)?;
+        item.set_item("latent_mean", family.latent_mean)?;
+        item.set_item("mediator_measurement", family.mediator_measurement)?;
+        item.set_item(
+            "mediator_measurement_error_variance",
+            family.mediator_measurement_error_variance,
+        )?;
+        item.set_item("mediator_proxy_status", family.mediator_proxy_status)?;
+        item.set_item("outcome_status", family.outcome_status)?;
+        item.set_item("mediator_threshold", family.mediator_threshold)?;
+        item.set_item("outcome_threshold", family.outcome_threshold)?;
+        item.set_item(
+            "mediator_proxy_sensitivity",
+            family.mediator_proxy_sensitivity,
+        )?;
+        item.set_item(
+            "mediator_proxy_specificity",
+            family.mediator_proxy_specificity,
+        )?;
+        item.set_item("ascertainment", family.ascertainment)?;
+        item.set_item("proband_index", family.proband_index)?;
+        output.append(item)?;
+    }
     Ok(output)
 }
