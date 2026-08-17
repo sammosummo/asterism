@@ -448,6 +448,15 @@ For a family of size `n`, the public mapping contains:
 continuous measurement must also have a missing error variance. Families must
 be separate connected components and contribute independent likelihood factors.
 
+**The whole likelihood is carried on the log scale**, and the rectangle
+probabilities are summed across truth configurations by log-sum-exp rather than
+added as ordinary numbers. A family deep in the tail has every configuration
+below the smallest double, so adding them plainly would lose the sum to
+underflow however carefully each part was computed. Checked against an
+independent high-order quadrature, family log likelihoods agree to `5e-10` down
+to `-12600`, which is roughly `e^-12600` and some seventeen thousand orders
+below what an ordinary number can hold.
+
 The likelihood first conditions the latent Gaussian vector on all continuous
 mediator measurements. For every observed mediator proxy, it sums over the
 unobserved true threshold state `T_i = 1[M_i > mediator_threshold_i]`. Its

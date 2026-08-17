@@ -1001,7 +1001,14 @@ class DiscreteGxeModel:
         and that is worth knowing before it is quoted.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        estimate, lower, upper, lower_limited, upper_limited = (
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            profile_failures,
+        ) = (
             _core.discrete_gxe_correlation_interval(
                 self._relationship, self._environment, self._design, y, reml,
                 self._levels,
@@ -1013,6 +1020,7 @@ class DiscreteGxeModel:
             "upper": upper,
             "lower_limited": lower_limited,
             "upper_limited": upper_limited,
+            "profile_failures": profile_failures,
             "rule": "chi2_1",
             "estimator": "reml" if reml else "ml",
         }

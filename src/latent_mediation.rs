@@ -27,6 +27,10 @@ const BIVARIATE_ABSOLUTE_TOLERANCE: f64 = 1.0e-12;
 // relative accuracy degrades as the probability shrinks; below this scale the
 // log-scale conditional quadrature is the more accurate recipe.
 const BIVARIATE_TAIL_CROSSOVER: f64 = 1.0e-9;
+/// How far either side of a rectangle's own edge the conditional integrand is
+/// followed. Standard normal mass beyond sixty deviations is below anything
+/// binary64 carries, so this is generous wherever the rectangle sits.
+const SEARCH_WIDTH: f64 = 60.0;
 const FIT_DIMENSION: usize = 5;
 const FIT_GRADIENT_STEP: f64 = 1.0e-5;
 const FIT_GRADIENT_STABILITY_TOLERANCE: f64 = 1.0e-4;
@@ -937,7 +941,11 @@ impl LatentMediationFamily {
         )?;
 
         let truth_configurations = 1usize << self.observed_mediator_proxy.len();
-        let mut discrete_probability = 0.0;
+        // **Summed on the log scale.** The configurations are added together,
+        // and a family deep in the tail has every one of them below the
+        // smallest double, so adding them as ordinary numbers loses the whole
+        // sum to underflow however carefully each was computed.
+        let mut log_terms: Vec<f64> = Vec::with_capacity(truth_configurations);
         let mut maximum_qmc_batch_range: f64 = 0.0;
         let mut methods = BTreeSet::new();
         for configuration in 0..truth_configurations {
@@ -965,7 +973,7 @@ impl LatentMediationFamily {
 
             let rectangle = if lower.is_empty() {
                 RectangleProbability {
-                    probability: 1.0,
+                    log_probability: 0.0,
                     batch_range: 0.0,
                     method: "no_discrete_observation",
                 }
@@ -978,14 +986,14 @@ impl LatentMediationFamily {
                     qmc_points,
                 )?
             };
-            discrete_probability += measurement_weight * rectangle.probability;
+            log_terms.push(measurement_weight.ln() + rectangle.log_probability);
             maximum_qmc_batch_range = maximum_qmc_batch_range.max(rectangle.batch_range);
             methods.insert(rectangle.method.to_owned());
         }
-        if !(discrete_probability > 0.0 && discrete_probability.is_finite()) {
+        let log_discrete_probability = log_sum_exp(&log_terms);
+        if !log_discrete_probability.is_finite() {
             return Err("LATENT_MEDIATION_DISCRETE_PROBABILITY_INVALID");
         }
-        let log_discrete_probability = discrete_probability.ln();
         let log_numerator = conditional.log_continuous_density + log_discrete_probability;
 
         let (denominator, ascertainment_name) = match self.ascertainment {
@@ -1191,6 +1199,22 @@ fn condition_on_mediator_measurements(
     })
 }
 
+
+/// `ln(sum_i exp(x_i))`, taken about the largest term so that a sum every one
+/// of whose terms is below the smallest double still has a log.
+fn log_sum_exp(terms: &[f64]) -> f64 {
+    let largest = terms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !largest.is_finite() {
+        return f64::NEG_INFINITY;
+    }
+    largest
+        + terms
+            .iter()
+            .map(|value| (value - largest).exp())
+            .sum::<f64>()
+            .ln()
+}
+
 fn status_bounds(status: i8, threshold: f64) -> (f64, f64) {
     if status == 0 {
         (f64::NEG_INFINITY, threshold)
@@ -1200,7 +1224,13 @@ fn status_bounds(status: i8, threshold: f64) -> (f64, f64) {
 }
 
 struct RectangleProbability {
-    probability: f64,
+    /// **The log of the probability, not the probability.** A family deep in
+    /// the tail has a rectangle far below the smallest double, and the whole
+    /// point of computing it on the log scale is lost the moment it is
+    /// exponentiated: doing that capped the model at a log likelihood of
+    /// -744.44, which is `ln(5e-324)` and a property of binary64 rather than of
+    /// the integral.
+    log_probability: f64,
     batch_range: f64,
     method: &'static str,
 }
@@ -1230,7 +1260,7 @@ fn rectangle_probability(
         .any(|(&left, &right)| left >= right || left.is_nan() || right.is_nan())
     {
         return Ok(RectangleProbability {
-            probability: 0.0,
+            log_probability: f64::NEG_INFINITY,
             batch_range: 0.0,
             method: "empty_rectangle",
         });
@@ -1241,10 +1271,10 @@ fn rectangle_probability(
         .ok_or("LATENT_MEDIATION_RECTANGLE_COVARIANCE_NOT_POSITIVE_DEFINITE")?;
     if dimension == 1 {
         let sd = covariance[(0, 0)].sqrt();
-        let probability =
-            interval_probability((lower[0] - mean[0]) / sd, (upper[0] - mean[0]) / sd)?;
+        let log_probability =
+            log_interval_probability((lower[0] - mean[0]) / sd, (upper[0] - mean[0]) / sd)?;
         return Ok(RectangleProbability {
-            probability,
+            log_probability,
             batch_range: 0.0,
             method: "univariate_exact",
         });
@@ -1252,7 +1282,7 @@ fn rectangle_probability(
     if dimension == 2 {
         let rectangle = bivariate_rectangle(lower, upper, mean, covariance)?;
         return Ok(RectangleProbability {
-            probability: rectangle.probability,
+            log_probability: rectangle.log_probability,
             batch_range: 0.0,
             method: rectangle.method,
         });
@@ -1304,7 +1334,7 @@ fn rectangle_probability(
     }
     let estimate = replicate_estimates.iter().sum::<f64>() / QMC_REPLICATES as f64;
     Ok(RectangleProbability {
-        probability: estimate.clamp(0.0, 1.0),
+        log_probability: estimate.clamp(0.0, 1.0).ln(),
         batch_range: replicate_estimates
             .iter()
             .copied()
@@ -1452,7 +1482,7 @@ fn bivariate_rectangle(
                     return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
                 }
                 return Ok(BivariateRectangle {
-                    probability: probability.clamp(0.0, 1.0),
+                    log_probability: probability.clamp(0.0, 1.0).ln(),
                     method: "bivariate_quadrature",
                 });
             }
@@ -1471,13 +1501,13 @@ fn bivariate_rectangle(
         return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
     }
     Ok(BivariateRectangle {
-        probability: log_probability.exp().clamp(0.0, 1.0),
+        log_probability,
         method: "bivariate_tail_quadrature",
     })
 }
 
 struct BivariateRectangle {
-    probability: f64,
+    log_probability: f64,
     method: &'static str,
 }
 
@@ -1551,8 +1581,26 @@ fn log_bivariate_rectangle(
     };
     // The integrand is log-concave, so a golden-section search finds its one
     // peak; the working range clips infinite limits far beyond any mass.
-    let left_limit = outer[0].max(-60.0);
-    let right_limit = outer[1].min(60.0);
+    //
+    // **The clip is relative to the rectangle and not to the origin.** Fixing
+    // it at plus or minus sixty put a ceiling on how far into the tail a
+    // threshold could sit: a rectangle starting past sixty standard deviations
+    // out had an empty working range and returned no probability at all, which
+    // is a property of the constant rather than of the integral. Sixty either
+    // side of the rectangle's own edge carries every part of the integrand that
+    // contributes, wherever the rectangle happens to be.
+    let width = SEARCH_WIDTH;
+    let left_limit = if outer[0].is_finite() {
+        outer[0]
+    } else {
+        outer[1] - width
+    };
+    let right_limit = if outer[1].is_finite() {
+        outer[1]
+    } else {
+        left_limit + width
+    };
+    let right_limit = right_limit.min(left_limit + width);
     if left_limit >= right_limit {
         return Ok(f64::NEG_INFINITY);
     }
@@ -1820,6 +1868,19 @@ impl LatentMediationModel {
     /// fails.
     pub fn test_vertical(&self) -> Result<VerticalTest, &'static str> {
         let free = self.fit()?;
+        // **The even mixture below assumes `a` is the only parameter on a
+        // bound.** Where `d` rests on its lower bound too -- a trait with
+        // little inherited outcome variance, which is not rare -- the free fit
+        // sits on the corner of the cone rather than on a face, and the
+        // reference for the `a = 0` likelihood ratio is a different
+        // chi-bar-square. Because the intersection-union rule reports whichever
+        // part is larger, a wrong loading p-value becomes the reported one
+        // whenever it binds, so this is refused rather than answered. The fit
+        // already knows: it records exactly this in `boundary_parameters`.
+        // `ComponentModel` guards the same case and refuses for the same reason.
+        if free.boundary_parameters.contains(&"d") {
+            return Err("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO");
+        }
         let without_loading = self.fit_holding(&[0])?;
         let without_path = self.fit_holding(&[1])?;
 
@@ -1928,6 +1989,42 @@ mod tests {
                     proband_index: None,
                 },
             )
+            .collect();
+        LatentMediationModel::build(families, 256).expect("valid fit model")
+    }
+
+    /// A model whose outcome loading `d` does not rest on its bound, which the
+    /// vertical test needs: the even mixture it reads the loading against
+    /// assumes `a` is the only parameter on a boundary.
+    fn interior_fit_model() -> LatentMediationModel {
+        const OBSERVATIONS: [(f64, i8); 10] = [
+            (0.079_049_024_394_060_85, 0),
+            (0.384_264_427_030_968_64, 1),
+            (-0.288_858_813_914_036, 0),
+            (1.505_519_311_654_784_5, 1),
+            (0.856_146_192_031_015_6, 0),
+            (-0.045_028_307_478_389_76, 0),
+            (-1.561_815_005_120_057_9, 0),
+            (1.089_970_373_527_701_3, 1),
+            (-0.281_806_711_439_217_37, 0),
+            (1.882_544_097_959_577_8, 1),
+        ];
+        let families = OBSERVATIONS
+            .into_iter()
+            .map(|(measurement, status)| LatentMediationFamilyInput {
+                relationship: vec![vec![1.0]],
+                latent_mean: vec![0.0; 2],
+                mediator_measurement: vec![Some(measurement)],
+                mediator_measurement_error_variance: vec![Some(0.15)],
+                mediator_proxy_status: vec![None],
+                outcome_status: vec![Some(status)],
+                mediator_threshold: vec![0.0],
+                outcome_threshold: vec![0.0],
+                mediator_proxy_sensitivity: vec![0.8],
+                mediator_proxy_specificity: vec![0.85],
+                ascertainment: "population_unconditioned".to_owned(),
+                proband_index: None,
+            })
             .collect();
         LatentMediationModel::build(families, 256).expect("valid fit model")
     }
@@ -2172,7 +2269,7 @@ mod tests {
     /// model is nested inside the free one.
     #[test]
     fn a_held_fit_cannot_beat_the_free_one() {
-        let model = deterministic_fit_model();
+        let model = interior_fit_model();
         let free = model.fit().expect("free fit");
         for held in [0usize, 1] {
             let constrained = model.fit_holding(&[held]).expect("held fit");
@@ -2189,7 +2286,7 @@ mod tests {
     /// controls with it.
     #[test]
     fn holding_a_coordinate_puts_it_at_nought() {
-        let model = deterministic_fit_model();
+        let model = interior_fit_model();
         let without_loading = model.fit_holding(&[0]).expect("held fit");
         assert!(without_loading.parameters.a.abs() < 1e-12);
         assert!((without_loading.parameters.a * without_loading.parameters.b).abs() < 1e-12);
@@ -2199,9 +2296,25 @@ mod tests {
 
     /// The union null is rejected only when both parts are, so the p-value is
     /// the larger of the two and each part keeps its own reference.
+    /// Where the outcome loading also rests on its bound the free fit sits on
+    /// the corner of the cone rather than a face, the even mixture is the wrong
+    /// reference for the loading, and that wrong p-value would be the reported
+    /// one whenever it binds. The standing fixture is exactly such a fit, which
+    /// is the point: this is an ordinary case and not a corner.
+    #[test]
+    fn a_second_loading_on_its_bound_is_refused_rather_than_answered() {
+        let model = deterministic_fit_model();
+        assert!(model.fit().expect("fits").boundary_parameters.contains(&"d"));
+        assert_eq!(
+            model.test_vertical().err(),
+            Some("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO")
+        );
+    }
+
     #[test]
     fn the_vertical_test_takes_the_larger_part() {
-        let model = deterministic_fit_model();
+        let model = interior_fit_model();
+        assert!(model.fit().expect("fits").boundary_parameters.is_empty());
         let test = model.test_vertical().expect("tests");
         assert!((0.0..=1.0).contains(&test.p_value));
         assert!((test.p_value - test.loading_p_value.max(test.path_p_value)).abs() < 1e-15);

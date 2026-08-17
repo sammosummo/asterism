@@ -127,6 +127,17 @@ impl VariantSetModel {
         }
 
         let null = ComponentModel::build(background, design)?.fit(y, reml)?;
+        // **This null defines the projection for every set in the scan.** The
+        // component fit returns its best start whether or not that start
+        // converged, recording the fact in a flag; a null that stopped short
+        // gives a wrong covariance, hence a wrong projection, hence wrong
+        // eigenvalues and wrong p-values for every gene tested, with nothing in
+        // any of them saying so. One fit is cheap to check and thousands of
+        // results depend on it, so it is checked here rather than reported
+        // afterwards.
+        if !null.converged {
+            return Err("VARIANT_SET_NULL_DID_NOT_CONVERGE");
+        }
         // The residual variance is last, and the structured coefficients
         // precede it in the order the matrices were given.
         let mut covariance = DMatrix::<f64>::identity(rows, rows)

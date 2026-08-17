@@ -166,7 +166,7 @@ pub fn discrete_gxe_correlation_interval(
     response: PyReadonlyArray1<'_, f64>,
     reml: bool,
     levels: Option<[f64; 2]>,
-) -> PyResult<(f64, f64, f64, bool, bool)> {
+) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
     let model = build_expecting(&relationship, &environment, &design, levels)?;
     let y = super::python::response(&response);
     let interval = model
@@ -178,5 +178,6 @@ pub fn discrete_gxe_correlation_interval(
         interval.upper,
         interval.lower_limited,
         interval.upper_limited,
+        interval.profile_failures,
     ))
 }

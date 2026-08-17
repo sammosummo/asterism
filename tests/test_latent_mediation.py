@@ -180,13 +180,15 @@ def test_mixed_observations_match_reference_value() -> None:
     )
 
 
-def test_near_singular_bivariate_tail_fails_closed() -> None:
-    """Do not turn an impossible configuration into positive likelihood.
+def test_a_near_singular_bivariate_tail_is_computed_on_the_log_scale() -> None:
+    """A probability far below the smallest double still has a logarithm.
 
-    Splitting a near-perfectly correlated pair across half a standard
-    deviation has a log probability near minus sixty million: far below what
-    the ordinary scale can carry, so the model fails closed rather than
-    rounding residue up into likelihood mass.
+    Splitting a near-perfectly correlated pair across half a standard deviation
+    has a log probability near minus sixty million. This once had to fail
+    closed, because the rectangle was exponentiated back to an ordinary number
+    before it was used, and everything below `ln(5e-324)` became nought. The
+    log scale is now carried through, so the value is returned and only the
+    ordinary-scale flag says it cannot be written as a plain number.
     """
     latent_sd = math.sqrt(1.0e12 + 1.0)
     model = asterism.LatentMediationModel(
@@ -201,10 +203,10 @@ def test_near_singular_bivariate_tail_fails_closed() -> None:
             )
         ]
     )
-    with pytest.raises(
-        ValueError, match="LATENT_MEDIATION_DISCRETE_PROBABILITY_INVALID"
-    ):
-        model.evaluate(a=0.0, b=0.0, c_prime=1.0e6, d=0.0, sigma_m2=0.7)
+    record = model.evaluate(a=0.0, b=0.0, c_prime=1.0e6, d=0.0, sigma_m2=0.7)
+    assert record["log_likelihood"] < -1e7
+    assert math.isfinite(record["log_likelihood"])
+    assert record["ordinary_scale_representable"] is False
 
 
 def test_feasible_near_singular_bivariate_is_approximate() -> None:

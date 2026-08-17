@@ -55,6 +55,9 @@ const GENETIC_SECOND: usize = 1;
 const RESIDUAL_FIRST: usize = 2;
 const RESIDUAL_SECOND: usize = 3;
 const CORRELATION: usize = 4;
+/// The bisection stops once the bracket is this narrow, rather than always
+/// running its full count on a bracket that closed long before.
+const ENDPOINT_TOLERANCE: f64 = 1e-7;
 
 /// A fitted discrete gene-by-environment model.
 #[derive(Clone, Debug)]
@@ -929,6 +932,11 @@ pub struct DiscreteGxeInterval {
     /// between a wide answer and no answer.
     pub lower_limited: bool,
     pub upper_limited: bool,
+    /// How many profile fits could not be evaluated while the endpoints were
+    /// found. Any at all means part of the range was covered rather than
+    /// searched, so the interval is wider than the likelihood alone would make
+    /// it, and something about the problem is worth looking at.
+    pub profile_failures: usize,
 }
 
 impl DiscreteGxeModel {
@@ -985,23 +993,45 @@ impl DiscreteGxeModel {
         // Walk outward from the estimate to each bound, bisecting where the
         // likelihood crosses. A bound reached without crossing is reported as
         // reached rather than as an endpoint.
-        let endpoint = |bound: f64| -> (f64, bool) {
-            let at_bound = profile(bound);
-            if at_bound.is_none_or(|value| value >= target) {
-                return (bound, true);
+        // **A fit that fails is not a likelihood that fell away.** Both arrive
+        // here as the absence of a number, and reading them alike sends the
+        // bracket the wrong way: a failure inside the bracket would move the
+        // outer edge inwards exactly as a genuine drop does, returning a
+        // confidently narrow interval that under-covers, while the same failure
+        // at the bound widens to it. A failure is now treated the way the bound
+        // already treats it -- as ground the interval must still cover -- and
+        // counted, so a caller can see that something could not be evaluated
+        // rather than being told a narrower answer than the data support.
+        let mut failures = 0usize;
+        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
+            match profile(bound) {
+                None => {
+                    *failures += 1;
+                    return (bound, true);
+                }
+                Some(value) if value >= target => return (bound, true),
+                Some(_) => {}
             }
             let (mut inside, mut outside) = (estimate, bound);
             for _ in 0..80 {
+                if (outside - inside).abs() < ENDPOINT_TOLERANCE {
+                    break;
+                }
                 let middle = 0.5 * (inside + outside);
                 match profile(middle) {
                     Some(value) if value >= target => inside = middle,
-                    _ => outside = middle,
+                    Some(_) => outside = middle,
+                    None => {
+                        // Unknown, so widen rather than narrow, and say so.
+                        *failures += 1;
+                        inside = middle;
+                    }
                 }
             }
             (0.5 * (inside + outside), false)
         };
-        let (lower, lower_limited) = endpoint(-1.0);
-        let (upper, upper_limited) = endpoint(1.0);
+        let (lower, lower_limited) = endpoint(-1.0, &mut failures);
+        let (upper, upper_limited) = endpoint(1.0, &mut failures);
 
         Ok(DiscreteGxeInterval {
             estimate,
@@ -1009,6 +1039,7 @@ impl DiscreteGxeModel {
             upper,
             lower_limited,
             upper_limited,
+            profile_failures: failures,
         })
     }
 }
