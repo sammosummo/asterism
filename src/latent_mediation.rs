@@ -20,6 +20,13 @@ const TOLERANCE: f64 = 1.0e-10;
 const RELATIONSHIP_PSD_FLOOR: f64 = -1.0e-9;
 const MAXIMUM_OBSERVED_MEDIATOR_PROXY: usize = 12;
 const MAXIMUM_DISCRETE_DIMENSION: usize = 25;
+/// How many data sets a simulated reference rests on. Two hundred puts the
+/// smallest p-value it can return at about 0.005, which is finer than the
+/// levels this test is read at and coarser than pretending to more.
+const BOOTSTRAP_REPLICATES: usize = 200;
+/// Fixed, so the same data give the same p-value. A reference that moved
+/// between runs would be a reference nobody could check.
+const BOOTSTRAP_SEED: u64 = 20_260_817;
 // Below this absolute scale, the corner-difference recipe cannot distinguish
 // a probability from numerical zero and the log-scale conditional quadrature
 // takes over.
@@ -219,6 +226,11 @@ impl InwardPenalty {
 #[derive(Clone, Debug)]
 pub struct LatentMediationModel {
     families: Vec<LatentMediationFamily>,
+    /// The families as they were given. Kept so a null can be simulated with
+    /// the same shapes -- the same relationships, thresholds, rates, designs
+    /// and pattern of what was observed on whom -- which is what a parametric
+    /// bootstrap of this model needs and what nothing else can reconstruct.
+    inputs: Vec<LatentMediationFamilyInput>,
     qmc_points: usize,
 }
 
@@ -239,12 +251,13 @@ impl LatentMediationModel {
             return Err("LATENT_MEDIATION_QMC_POINTS_INVALID");
         }
         let mut families = Vec::with_capacity(inputs.len());
-        for input in inputs {
-            let family = LatentMediationFamily::build(input)?;
+        for input in &inputs {
+            let family = LatentMediationFamily::build(input.clone())?;
             families.push(family);
         }
         Ok(Self {
             families,
+            inputs,
             qmc_points,
         })
     }
@@ -1306,6 +1319,106 @@ fn design_width(design: &[Vec<f64>], size: usize) -> Result<usize, &'static str>
         return Err("LATENT_MEDIATION_DESIGN_NOT_FINITE");
     }
     Ok(terms)
+}
+
+/// Draw a fresh data set with the same shapes as this one, from given truth.
+///
+/// **The shapes are kept and only the observations are redrawn**: the same
+/// relationships, thresholds or rates, designs, ascertainment, and the same
+/// pattern of who was measured and who was asked about. That is what makes the
+/// result a sample from the null this model was fitted under rather than from
+/// some other study.
+fn resimulate(
+    inputs: &[LatentMediationFamilyInput],
+    parameters: LatentMediationParameters,
+    coefficients: &[f64],
+    stream: &mut Stream,
+) -> Result<Vec<LatentMediationFamilyInput>, &'static str> {
+    let mut drawn = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let size = input.relationship.len();
+        let relationship =
+            DMatrix::from_fn(size, size, |row, column| input.relationship[row][column]);
+        let covariance = directional_covariance(&relationship, parameters)?;
+        let factor = covariance
+            .clone()
+            .cholesky()
+            .ok_or("LATENT_MEDIATION_COVARIANCE_NOT_POSITIVE_DEFINITE")?
+            .l();
+
+        // The mean the covariates put each person at, and the cuts the truth
+        // implies, by the same rules the likelihood uses.
+        let mediator_terms = design_width(&input.mediator_design, size)?;
+        let outcome_terms = design_width(&input.outcome_design, size)?;
+        if coefficients.len() != mediator_terms + outcome_terms {
+            return Err("LATENT_MEDIATION_COEFFICIENT_COUNT_WRONG");
+        }
+        let mut shift = vec![0.0; 2 * size];
+        let mut cuts = input.outcome_threshold.clone();
+        for person in 0..size {
+            for term in 0..mediator_terms {
+                shift[person] += input.mediator_design[person][term] * coefficients[term];
+            }
+            for term in 0..outcome_terms {
+                shift[size + person] +=
+                    input.outcome_design[person][term] * coefficients[mediator_terms + term];
+            }
+            shift[person] += input.latent_mean[person];
+            shift[size + person] += input.latent_mean[size + person];
+            let rate = input.outcome_prevalence.get(person).copied().flatten();
+            if let Some(rate) = rate {
+                let variance = covariance[(size + person, size + person)];
+                let standardised = if rate <= 0.5 {
+                    inverse_log_normal_sf(rate.ln())?
+                } else {
+                    -inverse_log_normal_sf((-rate).ln_1p())?
+                };
+                cuts[person] = standardised * variance.sqrt();
+            }
+        }
+
+        let conditioned = if input.ascertainment == "condition_on_named_proband_case" {
+            input.proband_index
+        } else {
+            None
+        };
+        let mut attempts = 0usize;
+        let family = loop {
+            attempts += 1;
+            if attempts > ASCERTAINMENT_ATTEMPTS {
+                return Err("LATENT_MEDIATION_ASCERTAINMENT_UNREACHABLE");
+            }
+            let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
+            let latent = &factor * draw + DVector::from_column_slice(&shift);
+            let case = |person: usize| latent[size + person] > cuts[person];
+            if let Some(proband) = conditioned
+                && !case(proband)
+            {
+                continue;
+            }
+            let mut next = input.clone();
+            for person in 0..size {
+                next.mediator_measurement[person] = input.mediator_measurement[person]
+                    .and(input.mediator_measurement_error_variance[person])
+                    .map(|variance| latent[person] + variance.sqrt() * stream.normal());
+                next.mediator_proxy_status[person] =
+                    input.mediator_proxy_status[person].map(|_| {
+                        let truth = latent[person] > input.mediator_threshold[person];
+                        let right = if truth {
+                            input.mediator_proxy_sensitivity[person]
+                        } else {
+                            input.mediator_proxy_specificity[person]
+                        };
+                        i8::from(truth == (stream.uniform() < right))
+                    });
+                next.outcome_status[person] =
+                    input.outcome_status[person].map(|_| i8::from(case(person)));
+            }
+            break next;
+        };
+        drawn.push(family);
+    }
+    Ok(drawn)
 }
 
 fn directional_covariance(
@@ -2578,9 +2691,66 @@ pub struct VerticalTest {
     /// The p-value for `a b = 0`, which is the larger of the two above.
     pub p_value: f64,
     pub rule: &'static str,
+    /// Which reference the loading's p-value was read against. The even mixture
+    /// where the loading is the only parameter on a bound, and a reference
+    /// simulated from the fitted null where it is not -- because there the
+    /// mixture's assumption fails and no table replaces it.
+    pub loading_reference: &'static str,
+    /// How many simulated data sets the reference rests on, and nought where
+    /// none were needed.
+    pub bootstrap_replicates: usize,
 }
 
 impl LatentMediationModel {
+    /// A p-value for `a = 0` read against a reference simulated under the
+    /// fitted null, for use where the even mixture's assumption fails.
+    ///
+    /// Data sets are drawn from the null fit with the same family shapes, each
+    /// is fitted free and held, and the observed deviance is placed among
+    /// theirs. The count is the usual `(1 + exceedances) / (1 + usable)`, which
+    /// never returns nought -- a p-value of nought from a finite number of
+    /// draws would be a claim the draws cannot support.
+    ///
+    /// **A replicate that will not fit is left out of the count rather than
+    /// counted as a non-exceedance**, which would push the p-value down. How
+    /// many were left out is returned, because a reference resting on a third
+    /// of what was asked for is a different thing from one resting on all of
+    /// it.
+    fn bootstrapped_loading_p_value(
+        &self,
+        observed: f64,
+        null: &LatentMediationFit,
+        replicates: usize,
+    ) -> Result<(f64, usize), &'static str> {
+        let mut stream = Stream(BOOTSTRAP_SEED);
+        let mut exceedances = 0usize;
+        let mut usable = 0usize;
+        for _ in 0..replicates {
+            let Ok(drawn) = resimulate(
+                &self.inputs,
+                null.parameters,
+                &null.coefficients,
+                &mut stream,
+            ) else {
+                continue;
+            };
+            let Ok(model) = Self::build(drawn, self.qmc_points) else {
+                continue;
+            };
+            let (Ok(free), Ok(held)) = (model.fit(), model.fit_holding(&[0])) else {
+                continue;
+            };
+            usable += 1;
+            if crate::deviance::deviance(free.log_likelihood, held.log_likelihood) >= observed {
+                exceedances += 1;
+            }
+        }
+        if usable * 2 < replicates {
+            return Err("LATENT_MEDIATION_BOOTSTRAP_TOO_FEW_USABLE");
+        }
+        Ok(((1 + exceedances) as f64 / (1 + usable) as f64, usable))
+    }
+
     /// Test the vertical estimand `a b` against nought.
     ///
     /// **The null is a union, not a point.** `a b = 0` holds whenever the
@@ -2610,6 +2780,25 @@ impl LatentMediationModel {
     /// Returns a stable `LATENT_MEDIATION_*` code where any of the three fits
     /// fails.
     pub fn test_vertical(&self) -> Result<VerticalTest, &'static str> {
+        self.test_vertical_with(BOOTSTRAP_REPLICATES)
+    }
+
+    /// The same test, saying how many data sets a simulated reference may rest
+    /// on where one is needed.
+    ///
+    /// **Two hundred is right for an answer and wrong for a campaign.** Each
+    /// replicate is two more fits, so a test that needs the simulated reference
+    /// costs a few hundred fits rather than three, and a calibration run of
+    /// four hundred such tests is days rather than hours. Fewer replicates
+    /// coarsen the smallest p-value the reference can return -- fifty puts it
+    /// near 0.02 -- which is the honest trade and is reported as
+    /// `bootstrap_replicates` either way.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code, as [`Self::test_vertical`]
+    /// does.
+    pub fn test_vertical_with(&self, replicates: usize) -> Result<VerticalTest, &'static str> {
         let free = self.fit()?;
         // **The even mixture below assumes `a` is the only parameter on a
         // bound.** Where `d` rests on its lower bound too -- a trait with
@@ -2629,13 +2818,22 @@ impl LatentMediationModel {
         // fall to nought once `a` is held there, which is the corner the guard
         // exists to catch and the free fit alone reports nothing about. Either
         // fit resting on `d` is enough to refuse.
-        if free.boundary_parameters.contains(&"d") {
-            return Err("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO");
-        }
+        //
+        // **Refusing was the only honest answer while there was no other
+        // reference; there is one now.** The corner is not rare: under `a = 0`
+        // the inherited covariance carries the loading only through `a` and
+        // `a(ab + c')`, so with `a` at nought the direct path and the outcome
+        // loading enter it as `c'^2 + d^2` and nothing separates them. The fit
+        // puts the whole of it in one and leaves the other at its bound, and
+        // that happened in half of ten replicates at 200 and 400 sibling pairs.
+        // A test unavailable half the time under one of its own nulls is not a
+        // test anybody can plan around. So where the corner arises the
+        // reference is simulated from the fitted null instead of assumed, which
+        // is what `SpatialModel` already does for a statistic whose reference
+        // the theory does not supply.
         let without_loading = self.fit_holding(&[0])?;
-        if without_loading.boundary_parameters.contains(&"d") {
-            return Err("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO");
-        }
+        let cornered = free.boundary_parameters.contains(&"d")
+            || without_loading.boundary_parameters.contains(&"d");
         let without_path = self.fit_holding(&[1])?;
 
         let loading_statistic =
@@ -2644,9 +2842,21 @@ impl LatentMediationModel {
             crate::deviance::deviance(free.log_likelihood, without_path.log_likelihood);
         // `a` rests on its lower bound under its null, so half the mass of the
         // reference sits at nought; `b` is interior and takes the whole of it.
-        let loading_p_value = crate::deviance::p_value(loading_statistic, |t| {
-            0.5 * crate::deviance::chi2_upper_tail(t, 1.0)
-        });
+        // Where the outcome loading is on a bound too, that even mixture is the
+        // wrong reference and one is simulated instead.
+        let (loading_p_value, reference, bootstrap) = if cornered {
+            let (value, used) =
+                self.bootstrapped_loading_p_value(loading_statistic, &without_loading, replicates)?;
+            (value, "parametric_bootstrap_under_the_fitted_null", used)
+        } else {
+            (
+                crate::deviance::p_value(loading_statistic, |t| {
+                    0.5 * crate::deviance::chi2_upper_tail(t, 1.0)
+                }),
+                "even_mixture_of_a_point_mass_and_chi_square_on_one",
+                0,
+            )
+        };
         let path_p_value =
             crate::deviance::p_value(path_statistic, |t| crate::deviance::chi2_upper_tail(t, 1.0));
 
@@ -2657,6 +2867,8 @@ impl LatentMediationModel {
             path_p_value,
             p_value: loading_p_value.max(path_p_value),
             rule: "intersection_union_of_boundary_and_interior",
+            loading_reference: reference,
+            bootstrap_replicates: bootstrap,
         })
     }
 }
@@ -3651,7 +3863,7 @@ mod tests {
     /// one whenever it binds. The standing fixture is exactly such a fit, which
     /// is the point: this is an ordinary case and not a corner.
     #[test]
-    fn a_second_loading_on_its_bound_is_refused_rather_than_answered() {
+    fn a_second_loading_on_its_bound_gets_a_simulated_reference() {
         let model = deterministic_fit_model();
         assert!(
             model
@@ -3660,10 +3872,32 @@ mod tests {
                 .boundary_parameters
                 .contains(&"d")
         );
+        let test = model.test_vertical().expect("tests");
+        // The even mixture assumes the loading is the only parameter on a
+        // bound. Here it is not, so the reference is simulated instead of
+        // assumed, and the record says which was used rather than leaving a
+        // reader to guess.
         assert_eq!(
-            model.test_vertical().err(),
-            Some("LATENT_MEDIATION_ANOTHER_LOADING_AT_ZERO")
+            test.loading_reference,
+            "parametric_bootstrap_under_the_fitted_null"
         );
+        assert!(test.bootstrap_replicates > 0);
+        assert!((0.0..=1.0).contains(&test.loading_p_value));
+        // Never nought: a finite number of draws cannot support that claim.
+        assert!(test.loading_p_value > 0.0);
+        assert!(test.p_value >= test.loading_p_value - 1e-15);
+    }
+
+    /// The ordinary case keeps the cheap reference: simulating one where the
+    /// theory supplies it would cost hundreds of fits for the same answer.
+    #[test]
+    fn an_interior_outcome_loading_keeps_the_even_mixture() {
+        let test = interior_fit_model().test_vertical().expect("tests");
+        assert_eq!(
+            test.loading_reference,
+            "even_mixture_of_a_point_mass_and_chi_square_on_one"
+        );
+        assert_eq!(test.bootstrap_replicates, 0);
     }
 
     #[test]

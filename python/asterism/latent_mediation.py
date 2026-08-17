@@ -297,7 +297,7 @@ class LatentMediationModel:
             sigma_m2=sigma_m2,
         )
 
-    def test_vertical(self) -> dict[str, Any]:
+    def test_vertical(self, *, bootstrap_replicates: int = 200) -> dict[str, Any]:
         """Test the vertical estimand ``a * b`` against nought.
 
         **The null is a union, not a point.** ``a * b = 0`` holds whenever the
@@ -323,7 +323,7 @@ class LatentMediationModel:
         this null with nothing being mediated, and no likelihood separates
         those two stories.
         """
-        return self._core.test_vertical()
+        return self._core.test_vertical(bootstrap_replicates)
 
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.

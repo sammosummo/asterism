@@ -274,12 +274,21 @@ impl PyLatentMediationCore {
     }
 
     /// Test the vertical estimand `a b` against nought.
-    #[pyo3(signature = ())]
-    fn test_vertical<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let test = self.model.test_vertical().map_err(code)?;
+    #[pyo3(signature = (bootstrap_replicates=200))]
+    fn test_vertical<'py>(
+        &self,
+        py: Python<'py>,
+        bootstrap_replicates: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let test = self
+            .model
+            .test_vertical_with(bootstrap_replicates)
+            .map_err(code)?;
         let out = PyDict::new(py);
         out.set_item("p_value", test.p_value)?;
         out.set_item("rule", test.rule)?;
+        out.set_item("loading_reference", test.loading_reference)?;
+        out.set_item("bootstrap_replicates", test.bootstrap_replicates)?;
         out.set_item("loading_statistic", test.loading_statistic)?;
         out.set_item("loading_p_value", test.loading_p_value)?;
         out.set_item("path_statistic", test.path_statistic)?;
