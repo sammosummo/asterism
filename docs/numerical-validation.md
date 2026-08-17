@@ -52,6 +52,21 @@ separately.
 
 ## Several components and kinship classes
 
+Against native SOLAR under ML at `n=350` with six fixed effects, a model with
+kinship, a second supplied matrix, and residual agreed on all three variances
+to about `5e-7` and on the log-likelihood to `4e-7` after the `n/2 log(2 pi)`
+constant SOLAR omits. Until this check the component family had no comparison
+against another package at all; its second matrix is a spatial kernel with the
+decay rate held fixed, which makes it an ordinary known matrix.
+
+**SOLAR cannot be used this way for a matrix whose covariance crosses
+pedigrees.** It evaluates the likelihood one pedigree at a time, so only the
+within-pedigree blocks of a supplied matrix contribute, and the rest are
+discarded without warning — `matrix debug` still reports the whole file. Handed
+the dense kernel, SOLAR returns its within-pedigree answer bit for bit, while
+the two implementations then differ by 0.28 and 0.35 in a variance. The check
+asserts this rather than describing it, so the limit stays measured.
+
 For additive, household, and residual covariance at `n=400`, 95% coverage of
 the additive and household mean-diagonal proportions was 0.945 and 0.955. A
 zero-household test rejected 0.051 at nominal 0.05, and power for a household
@@ -78,6 +93,15 @@ at 0.984 and 0.976 in 250 simulations. However, 98.4% of half-distance
 intervals reached a bound, demonstrating poor range identification. Integrating
 over the range and then bootstrapping also held its level: rejection was 0.0575
 at nominal 0.05 across 400 data sets.
+
+At a fixed decay rate the covariance here is exactly a component model with one
+more matrix, so the comparison recorded under "Several components" externally
+checks this model's covariance assembly and likelihood. What it does not reach
+is what makes the model spatial: no external comparison exists for covariance
+that crosses pedigrees, because SOLAR discards precisely that, and none exists
+for estimating the decay rate, because it enters the covariance non-linearly.
+Those two, and the bootstrap, rest on simulation against this package's own
+generator.
 
 ## Gene by environment, continuous and discrete
 
@@ -272,6 +296,7 @@ absent:
 uv run --no-project python checks/against_r.py
 uv run --no-project python checks/bivariate_against_r.py
 uv run --no-project python checks/against_solar.py
+uv run --no-project python checks/spatial_against_solar.py
 uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
