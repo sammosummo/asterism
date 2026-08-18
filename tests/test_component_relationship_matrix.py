@@ -60,6 +60,7 @@ def test_fit_contains_only_numerical_model_fields():
         "converged",
         "stop_code",
         "stop_message",
+        "polished",
         "estimator",
         "mean_diagonal_component_contributions",
         "mean_diagonal_total",
@@ -90,6 +91,10 @@ def test_the_fit_says_why_the_search_stopped_as_well_as_whether_it_converged():
     assert record["stop_code"] in {0, 1}
     assert isinstance(record["stop_message"], str)
     assert record["stop_message"]
+    # A well-conditioned fit meets the gradient test first time, so the polish
+    # has nothing to do and says so.
+    assert record["converged"]
+    assert record["polished"] is False
 
 
 def test_fit_uses_explicit_scale_dependent_coefficient_names():

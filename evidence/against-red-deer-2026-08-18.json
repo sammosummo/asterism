@@ -33,6 +33,7 @@
         "scaled_gradient": 2.40635033132339e-09,
         "stop_code": 0,
         "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "polished": false,
         "components": [
           "a",
           "year",
@@ -55,6 +56,7 @@
         "scaled_gradient": 1.5039055086975e-08,
         "stop_code": 0,
         "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "polished": false,
         "components": [
           "a",
           "year",
@@ -113,6 +115,7 @@
         "scaled_gradient": 6.425800307628759e-09,
         "stop_code": 0,
         "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "polished": false,
         "components": [
           "a",
           "pe",
@@ -137,6 +140,7 @@
         "scaled_gradient": 7.926804212261501e-09,
         "stop_code": 0,
         "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "polished": false,
         "components": [
           "a",
           "pe",
@@ -184,19 +188,20 @@
       "design_columns": 8,
       "no_spatial": {
         "variances": {
-          "a": 0.16576878905047143,
+          "a": 0.16576877363993645,
           "pe": 0.0,
-          "year": 0.016540154632244487,
-          "m": 0.08143244439696201,
-          "residual": 0.2659687714055869
+          "year": 0.016540090513667307,
+          "m": 0.08143242962776318,
+          "residual": 0.2659687073729218
         },
-        "sum": 0.5297101594852648,
-        "h2_percent": 31.294243858104196,
-        "loglik": -3585.8860893890806,
-        "converged": false,
-        "scaled_gradient": 1.4531934774074689e-06,
-        "stop_code": 0,
-        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "sum": 0.5297100011542887,
+        "h2_percent": 31.294250302752538,
+        "loglik": -3585.886089388909,
+        "converged": true,
+        "scaled_gradient": 4.0507253697496697e-08,
+        "stop_code": 52,
+        "stop_message": "ERROR: ABNORMAL_TERMINATION_IN_LNSRCH",
+        "polished": true,
         "components": [
           "a",
           "pe",
@@ -209,18 +214,19 @@
         "variances": {
           "a": 0.0,
           "pe": 0.0,
-          "year": 0.012788612062109342,
-          "m": 0.006890848458214923,
-          "s": 0.6022966548020474,
-          "residual": 0.2601070706185236
+          "year": 0.01278860685010216,
+          "m": 0.006890854549199327,
+          "s": 0.6022966546116512,
+          "residual": 0.26010707626248647
         },
-        "sum": 0.8820831859408953,
+        "sum": 0.8820831922734391,
         "h2_percent": 0.0,
-        "loglik": -3200.2174838360465,
+        "loglik": -3200.21748383603,
         "converged": false,
-        "scaled_gradient": 4.620440378795779e-07,
-        "stop_code": 0,
-        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "scaled_gradient": 1.57774138243157e-07,
+        "stop_code": 52,
+        "stop_message": "ERROR: ABNORMAL_TERMINATION_IN_LNSRCH",
+        "polished": true,
         "components": [
           "a",
           "pe",
@@ -230,7 +236,7 @@
           "residual"
         ]
       },
-      "likelihood_ratio": 771.337211106068,
+      "likelihood_ratio": 771.3372111057579,
       "published": {
         "none": {
           "pe": 0.0,
@@ -281,6 +287,7 @@
         "scaled_gradient": 1.4312144079233018e-08,
         "stop_code": 0,
         "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "polished": false,
         "components": [
           "a",
           "pe",
@@ -291,20 +298,21 @@
       },
       "with_overlap": {
         "variances": {
-          "a": 0.002039297609473151,
+          "a": 0.0020392985889918975,
           "pe": 0.0,
-          "year": 0.007996782279374372,
+          "year": 0.007996782817756513,
           "m": 0.0,
-          "s": 0.4927855203515232,
-          "residual": 0.207122460597373
+          "s": 0.4927855203784238,
+          "residual": 0.20712246144616103
         },
-        "sum": 0.7099440608377436,
-        "h2_percent": 0.2872476469578113,
-        "loglik": -3263.608577999702,
-        "converged": false,
-        "scaled_gradient": 1.1619225427582325e-07,
-        "stop_code": 0,
-        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "sum": 0.7099440632313333,
+        "h2_percent": 0.2872477839606073,
+        "loglik": -3263.6085779996824,
+        "converged": true,
+        "scaled_gradient": 8.863680218329704e-08,
+        "stop_code": 52,
+        "stop_message": "ERROR: ABNORMAL_TERMINATION_IN_LNSRCH",
+        "polished": true,
         "components": [
           "a",
           "pe",
@@ -314,7 +322,7 @@
           "residual"
         ]
       },
-      "likelihood_ratio": 1300.4422369390923,
+      "likelihood_ratio": 1300.4422369391314,
       "published": {
         "none": {
           "pe": 0.0,

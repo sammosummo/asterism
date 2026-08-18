@@ -6,8 +6,8 @@ returns a dictionary with named fields rather than a tuple whose meaning has to
 be remembered.
 
 **This layer exists because the compiled bindings are positional.**
-`_core.component_fit` returns ten values in a fixed order and
-`_core.spatial_fit` eight more, and reading the fourth of ten correctly every
+`_core.component_fit` returns eleven values in a fixed order and
+`_core.spatial_fit` eight more, and reading the fourth of eleven correctly every
 time is not a reasonable thing to ask of an analysis script. Nothing here computes anything: every number
 comes from the same compiled code, and this only names it.
 """
@@ -119,6 +119,7 @@ class ComponentModel:
             errors,
             stop_code,
             stop_message,
+            polished,
         ) = _core.component_fit(self._matrices, self._x, y, reml)
         record = {
             "variances": list(variances),
@@ -143,6 +144,11 @@ class ComponentModel:
             # report `converged: False`. Read the two together.
             "stop_code": stop_code,
             "stop_message": stop_message,
+            # True where the gradient test failed on the first search and a
+            # second was run from that point with the objective tolerance off.
+            # It fires nowhere else, so `False` here means this is the fit the
+            # package gave before the polish existed, to the last bit.
+            "polished": polished,
             "estimator": "reml" if reml else "ml",
         }
         if self._structured_mean_diagonals is not None:

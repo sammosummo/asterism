@@ -418,6 +418,7 @@ def fit(matrices: dict[str, np.ndarray], names: list[str], x, y) -> dict:
         # measurement that says which of the two is happening.
         "stop_code": record["stop_code"],
         "stop_message": record["stop_message"],
+        "polished": record["polished"],
         "components": present + ["residual"],
     }
 
