@@ -1,0 +1,342 @@
+{
+  "source": "Stopher et al. 2012 Evolution 66(8):2411-2426",
+  "data": "Dryad doi:10.5061/dryad.jf04r362",
+  "pedigree_check": {
+    "deer_compared": 579,
+    "largest_difference": 0.0,
+    "inbred": 339
+  },
+  "records": [
+    {
+      "trait": "lbs",
+      "scale": "log10p1",
+      "unknown_mother": "drop",
+      "overlap_matrix": "sproverlap.grm",
+      "records": 761,
+      "females": 761,
+      "dropped": {
+        "missing_field": 41,
+        "not_in_pedigree": 12
+      },
+      "design_columns": 5,
+      "no_spatial": {
+        "variances": {
+          "a": 0.007051049992852327,
+          "year": 0.07577829954669657,
+          "m": 0.008591005370568741,
+          "residual": 0.10273927079174508
+        },
+        "sum": 0.1941596257018627,
+        "h2_percent": 3.6315737462738014,
+        "loglik": -312.0217414044814,
+        "converged": true,
+        "scaled_gradient": 2.40635033132339e-09,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "year",
+          "m",
+          "residual"
+        ]
+      },
+      "with_overlap": {
+        "variances": {
+          "a": 0.0,
+          "year": 0.03919276117354354,
+          "m": 0.0026628946887635846,
+          "s": 0.04494681894307782,
+          "residual": 0.07593119550135485
+        },
+        "sum": 0.1627336703067398,
+        "h2_percent": 0.0,
+        "loglik": -221.23749585478618,
+        "converged": true,
+        "scaled_gradient": 1.5039055086975e-08,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "likelihood_ratio": 181.56849109939049,
+      "published": {
+        "a": null,
+        "none": {
+          "a": 0.009,
+          "year": 0.077,
+          "m": 0.007,
+          "residual": 0.103,
+          "h2": 4.592,
+          "sum": 0.196
+        },
+        "overlap": {
+          "a": 0.0,
+          "year": 0.04,
+          "m": 0.003,
+          "s": 0.045,
+          "residual": 0.076,
+          "h2": 0.0,
+          "sum": 0.164
+        },
+        "chisq": 185.6
+      }
+    },
+    {
+      "trait": "bw",
+      "scale": "raw",
+      "unknown_mother": "drop",
+      "overlap_matrix": "sproverlap.grm",
+      "records": 1920,
+      "females": 493,
+      "dropped": {
+        "missing_field": 139,
+        "not_in_pedigree": 26
+      },
+      "design_columns": 9,
+      "no_spatial": {
+        "variances": {
+          "a": 0.5248086651731722,
+          "pe": 0.04710313722861846,
+          "year": 0.08002240286508501,
+          "m": 0.05340066902222521,
+          "residual": 0.7779067140072751
+        },
+        "sum": 1.4832415882963759,
+        "h2_percent": 35.38254788122263,
+        "loglik": -2783.4000781363957,
+        "converged": true,
+        "scaled_gradient": 6.425800307628759e-09,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "residual"
+        ]
+      },
+      "with_overlap": {
+        "variances": {
+          "a": 0.3778913324104997,
+          "pe": 0.10006344635654643,
+          "year": 0.08198775282026444,
+          "m": 0.04812728077434546,
+          "s": 0.12554519312792564,
+          "residual": 0.775758882206568
+        },
+        "sum": 1.5093738876961496,
+        "h2_percent": 25.036297201835033,
+        "loglik": -2769.6443523808002,
+        "converged": true,
+        "scaled_gradient": 7.926804212261501e-09,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "likelihood_ratio": 27.5114515111909,
+      "published": {
+        "none": {
+          "pe": 0.049,
+          "a": 0.53,
+          "year": 0.081,
+          "m": 0.046,
+          "residual": 0.783,
+          "h2": 35.594,
+          "sum": 1.489
+        },
+        "overlap": {
+          "pe": 0.082,
+          "a": 0.402,
+          "year": 0.107,
+          "m": 0.038,
+          "s": 0.088,
+          "residual": 0.782,
+          "h2": 26.818,
+          "sum": 1.499
+        },
+        "chisq": null
+      }
+    },
+    {
+      "trait": "rhr",
+      "scale": "log",
+      "unknown_mother": "drop",
+      "overlap_matrix": "ruthroverlap.grm",
+      "records": 4092,
+      "females": 575,
+      "dropped": {
+        "missing_field": 198,
+        "not_in_pedigree": 54
+      },
+      "design_columns": 8,
+      "no_spatial": {
+        "variances": {
+          "a": 0.16576878905047143,
+          "pe": 0.0,
+          "year": 0.016540154632244487,
+          "m": 0.08143244439696201,
+          "residual": 0.2659687714055869
+        },
+        "sum": 0.5297101594852648,
+        "h2_percent": 31.294243858104196,
+        "loglik": -3585.8860893890806,
+        "converged": false,
+        "scaled_gradient": 1.4531934774074689e-06,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "residual"
+        ]
+      },
+      "with_overlap": {
+        "variances": {
+          "a": 0.0,
+          "pe": 0.0,
+          "year": 0.012788612062109342,
+          "m": 0.006890848458214923,
+          "s": 0.6022966548020474,
+          "residual": 0.2601070706185236
+        },
+        "sum": 0.8820831859408953,
+        "h2_percent": 0.0,
+        "loglik": -3200.2174838360465,
+        "converged": false,
+        "scaled_gradient": 4.620440378795779e-07,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "likelihood_ratio": 771.337211106068,
+      "published": {
+        "none": {
+          "pe": 0.0,
+          "a": 0.168,
+          "year": 0.017,
+          "m": 0.084,
+          "residual": 0.265,
+          "h2": 31.31,
+          "sum": 0.534
+        },
+        "overlap": {
+          "pe": 0.0,
+          "a": 0.001,
+          "year": 0.013,
+          "m": 0.006,
+          "s": 0.598,
+          "residual": 0.26,
+          "h2": 0.114,
+          "sum": 0.878
+        },
+        "chisq": 785.8
+      }
+    },
+    {
+      "trait": "shr",
+      "scale": "log",
+      "unknown_mother": "drop",
+      "overlap_matrix": "sproverlap.grm",
+      "records": 4945,
+      "females": 854,
+      "dropped": {
+        "missing_field": 201,
+        "not_in_pedigree": 64
+      },
+      "design_columns": 12,
+      "no_spatial": {
+        "variances": {
+          "a": 0.19594241672219737,
+          "pe": 0.0,
+          "year": 0.011549677637171336,
+          "m": 0.015780528151647596,
+          "residual": 0.22189144031339378
+        },
+        "sum": 0.44516406282441007,
+        "h2_percent": 44.01577599930492,
+        "loglik": -3913.829696469248,
+        "converged": true,
+        "scaled_gradient": 1.4312144079233018e-08,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "residual"
+        ]
+      },
+      "with_overlap": {
+        "variances": {
+          "a": 0.002039297609473151,
+          "pe": 0.0,
+          "year": 0.007996782279374372,
+          "m": 0.0,
+          "s": 0.4927855203515232,
+          "residual": 0.207122460597373
+        },
+        "sum": 0.7099440608377436,
+        "h2_percent": 0.2872476469578113,
+        "loglik": -3263.608577999702,
+        "converged": false,
+        "scaled_gradient": 1.1619225427582325e-07,
+        "stop_code": 0,
+        "stop_message": "CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH",
+        "components": [
+          "a",
+          "pe",
+          "year",
+          "m",
+          "s",
+          "residual"
+        ]
+      },
+      "likelihood_ratio": 1300.4422369390923,
+      "published": {
+        "none": {
+          "pe": 0.0,
+          "a": 0.193,
+          "year": 0.012,
+          "m": 0.017,
+          "residual": 0.22,
+          "h2": 43.666,
+          "sum": 0.442
+        },
+        "overlap": {
+          "pe": 0.0,
+          "a": 0.002,
+          "year": 0.008,
+          "m": 0.0,
+          "s": 0.487,
+          "residual": 0.206,
+          "h2": 0.284,
+          "sum": 0.703
+        },
+        "chisq": 1313.2
+      }
+    }
+  ]
+}

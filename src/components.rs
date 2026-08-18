@@ -54,7 +54,32 @@ pub struct ComponentFit {
     pub loglik: f64,
     pub converged: bool,
     pub scaled_gradient: f64,
+    /// Why the search stopped, in the search's own words rather than ours.
+    /// Nought means one of its tolerances fired; one means it ran out of
+    /// iterations; anything else is an error inside the optimiser.
+    ///
+    /// **This is not the same question as `converged`.** The search stops on
+    /// `factr`, a relative reduction in the objective, and `converged` is
+    /// decided afterwards on the recomputed projected gradient. Down a long
+    /// flat valley the objective settles well before the gradient does, so a
+    /// fit can stop cleanly here and still be reported as not converged. Read
+    /// the two together: a fit that ran out of iterations and a fit whose
+    /// objective settled early are different faults wanting different answers,
+    /// and without this they cannot be told apart.
+    pub stop_code: i32,
+    /// The optimiser's own message for `stop_code`, kept verbatim.
+    pub stop_message: String,
     pub estimator: &'static str,
+}
+
+/// The best start so far, and what the search said when it stopped there.
+struct Best {
+    negative_loglik: f64,
+    par: Vec<f64>,
+    fixed_effects: Vec<f64>,
+    converged: bool,
+    stop_code: i32,
+    stop_message: String,
 }
 
 struct Evaluation {
@@ -490,7 +515,7 @@ impl ComponentModel {
             starts.push(s);
         }
 
-        let mut best: Option<(f64, Vec<f64>, Vec<f64>, bool)> = None;
+        let mut best: Option<Best> = None;
         for start in starts {
             let value_of = |candidate: &[f64]| -> f64 {
                 self.evaluate_with_signs(candidate, &scaled, reml, false, signed)
@@ -547,18 +572,31 @@ impl ComponentModel {
             let scaled_gradient = projected / at.negative_loglik.abs().max(1.0);
             if best
                 .as_ref()
-                .is_none_or(|(value, _, _, _)| at.negative_loglik < *value)
+                .is_none_or(|b| at.negative_loglik < b.negative_loglik)
             {
-                best = Some((
-                    at.negative_loglik,
-                    solution.par.clone(),
-                    at.fixed_effects.clone(),
-                    scaled_gradient < 1e-7,
-                ));
+                best = Some(Best {
+                    negative_loglik: at.negative_loglik,
+                    par: solution.par.clone(),
+                    fixed_effects: at.fixed_effects.clone(),
+                    converged: scaled_gradient < 1e-7,
+                    // Kept rather than discarded. The search's own verdict is
+                    // the only evidence that separates a fit which ran out of
+                    // iterations from one whose objective settled early, and
+                    // nothing outside the fit can recover it.
+                    stop_code: solution.convergence,
+                    stop_message: solution.message.clone(),
+                });
             }
         }
 
-        let (negative, par, beta, converged) = best.ok_or("COMPONENTS_NO_START_CONVERGED")?;
+        let Best {
+            negative_loglik: negative,
+            par,
+            fixed_effects: beta,
+            converged,
+            stop_code,
+            stop_message,
+        } = best.ok_or("COMPONENTS_NO_START_CONVERGED")?;
         let at = self
             .evaluate_with_signs(&par, &scaled, reml, true, signed)
             .ok_or("COMPONENTS_OPTIMUM_NOT_EVALUABLE")?;
@@ -607,6 +645,8 @@ impl ComponentModel {
             loglik,
             converged,
             scaled_gradient: projected / negative.abs().max(1.0),
+            stop_code,
+            stop_message,
             estimator: if reml { "reml" } else { "ml" },
         })
     }
@@ -1261,7 +1301,18 @@ mod python {
         design: PyReadonlyArray2<'_, f64>,
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
-    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, bool, Vec<f64>, Vec<f64>)> {
+    ) -> PyResult<(
+        Vec<f64>,
+        Vec<f64>,
+        f64,
+        f64,
+        f64,
+        bool,
+        Vec<f64>,
+        Vec<f64>,
+        i32,
+        String,
+    )> {
         let model = build(&matrices, &design)?;
         let fit = model
             .fit(&response(&y), reml)
@@ -1275,6 +1326,8 @@ mod python {
             fit.converged,
             fit.fixed_effects,
             fit.fixed_effect_errors,
+            fit.stop_code,
+            fit.stop_message,
         ))
     }
 

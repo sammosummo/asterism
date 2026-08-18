@@ -410,6 +410,14 @@ def fit(matrices: dict[str, np.ndarray], names: list[str], x, y) -> dict:
         "loglik": record["loglik"],
         "converged": record["converged"],
         "scaled_gradient": record["scaled_gradient"],
+        # The search's own reason for stopping, which is a different question
+        # from `converged`: that is decided afterwards on the projected
+        # gradient. Nought means a tolerance fired, one means it ran out of
+        # iterations. Three of the eight fits here report `converged: false`
+        # while landing within 0.006 of the published table, and this is the
+        # measurement that says which of the two is happening.
+        "stop_code": record["stop_code"],
+        "stop_message": record["stop_message"],
         "components": present + ["residual"],
     }
 
@@ -419,8 +427,11 @@ def report(trait: str, scale: str | None, directory: Path,
     spec, kept, y, x, matrices, dropped, n_animals = build(
         trait, scale, directory, unknown_mother, overlap)
     none = fit(matrices, ORDER_NONE, x, y)
-    overlap = fit(matrices, ORDER_OVERLAP, x, y)
-    chisq = 2.0 * (overlap["loglik"] - none["loglik"])
+    # Not `overlap`: that name is already the matrix being used, and assigning
+    # the fitted record to it put a whole fit dictionary in the evidence file
+    # under `overlap_matrix` in place of the word "spring" or "rut".
+    with_overlap = fit(matrices, ORDER_OVERLAP, x, y)
+    chisq = 2.0 * (with_overlap["loglik"] - none["loglik"])
 
     print(f"\n{'=' * 78}")
     print(f"{trait.upper()}  {len(kept)} records on {n_animals} females"
@@ -431,7 +442,7 @@ def report(trait: str, scale: str | None, directory: Path,
 
     for label, fitted, published in (
         ("no spatial effect", none, spec["published"]["none"]),
-        ("home range overlap", overlap, spec["published"]["overlap"]),
+        ("home range overlap", with_overlap, spec["published"]["overlap"]),
     ):
         print(f"\n  {label}")
         print(f"    {'':<10}{'asterism':>11}{'published':>11}{'difference':>12}")
@@ -447,7 +458,11 @@ def report(trait: str, scale: str | None, directory: Path,
         print(f"    {'h2 %':<10}{fitted['h2_percent']:>11.3f}{published['h2']:>11.3f}"
               f"{fitted['h2_percent'] - published['h2']:>12.3f}")
         if not fitted["converged"]:
-            print("    DID NOT CONVERGE")
+            reason = {0: "a tolerance fired", 1: "ran out of iterations"}.get(
+                fitted["stop_code"], "the optimiser reported an error")
+            print(f"    GRADIENT TEST NOT MET (scaled gradient "
+                  f"{fitted['scaled_gradient']:.2e}; the search stopped because "
+                  f"{reason}, code {fitted['stop_code']})")
 
     want = spec["published"]["chisq"]
     print(f"\n  likelihood ratio for adding overlap: {chisq:.1f} on 1 df"
@@ -463,7 +478,7 @@ def report(trait: str, scale: str | None, directory: Path,
         "dropped": dropped,
         "design_columns": int(x.shape[1]),
         "no_spatial": none,
-        "with_overlap": overlap,
+        "with_overlap": with_overlap,
         "likelihood_ratio": chisq,
         "published": spec["published"],
     }

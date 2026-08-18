@@ -115,6 +115,23 @@ and `1.45e-06`; the five successes run `2.41e-09` to `1.50e-08`, so the two
 groups are cleanly separated rather than straddling the threshold. Until this
 is reconciled, read `scaled_gradient` rather than `converged`.
 
+The fit now also reports `stop_code` and `stop_message`, which are the search's
+own reason for stopping rather than ours, and they turn that account from an
+inference into a measurement. **All eight fits stop the same way — `factr`
+fires — and not one stops on `pgtol` or runs out of iterations:**
+
+    CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH
+
+So the gradient the flag tests is never a criterion the search pursues, in any
+of the eight. The five that pass do so because their gradient happened already
+to be small when the objective settled, not because anything drove it there.
+That is worth stating plainly: on this family the flag currently reports a
+property of the valley's shape rather than a property of the search. It also
+identifies the remedy exactly, since `factr` is the only thing stopping the
+three short. Adding the two fields moved no number — every variance in
+`evidence/against-red-deer-2026-08-18.json` matches the run before it to
+`0.000e+00`.
+
 For additive, household, and residual covariance at `n=400`, 95% coverage of
 the additive and household mean-diagonal proportions was 0.945 and 0.955. A
 zero-household test rejected 0.051 at nominal 0.05, and power for a household
