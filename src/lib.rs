@@ -16,6 +16,7 @@ mod gxe;
 mod kinship_classes;
 mod latent_mediation;
 mod liability;
+mod mixed_bivariate;
 mod mixture_tail;
 mod prepared;
 mod relationship;
@@ -36,6 +37,7 @@ pub use latent_mediation::{
     simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
+pub use mixed_bivariate::{MixedBivariateFit, MixedBivariateModel, TraitData, TraitKind};
 pub use tobit::{Censoring, TobitFit, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
