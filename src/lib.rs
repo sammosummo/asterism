@@ -29,9 +29,10 @@ pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
-    LatentMediationDesign, LatentMediationEvaluation, LatentMediationFamilyEvaluation,
-    LatentMediationFamilyInput, LatentMediationFit, LatentMediationModel,
-    LatentMediationParameters, VerticalTest, simulate as simulate_latent_mediation,
+    HorizontalTest, LatentMediationDesign, LatentMediationEvaluation,
+    LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
+    LatentMediationModel, LatentMediationParameters, VerticalTest,
+    simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};

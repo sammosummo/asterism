@@ -325,6 +325,30 @@ class LatentMediationModel:
         """
         return self._core.test_vertical(bootstrap_replicates)
 
+    def test_horizontal(self) -> dict[str, Any]:
+        """Test the horizontal estimand ``c_prime`` against nought.
+
+        **The null is a point, not a union**, which is what makes this the
+        simpler of the two tests. The direct inherited effect is a single
+        signed coordinate -- an effect outside measured hearing may run either
+        way -- so it is interior, and the ordinary chi-square on one degree of
+        freedom is the whole of the reference. There is no boundary mixture to
+        choose and no simulated reference, so this costs two fits rather than
+        the few hundred the vertical test can cost.
+
+        **It refuses where the mediator loading is at nought.** There the
+        inherited covariance carries the direct path and the outcome loading
+        only as ``c'^2 + d^2``, the two rotate freely against each other, and a
+        p-value would report which of the pair the optimiser happened to pick.
+        Both the free and the held fit are checked, because the loading can be
+        positive when free and fall to its bound once the direct path is held.
+
+        A refusal here is the answer, not a gap: a horizontal component that
+        fails its identification diagnostics is not separately estimable, which
+        is a different statement from its being nought.
+        """
+        return self._core.test_horizontal()
+
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.
 

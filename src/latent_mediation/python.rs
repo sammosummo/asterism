@@ -296,6 +296,18 @@ impl PyLatentMediationCore {
         Ok(out)
     }
 
+    /// Test the horizontal estimand `c_prime` against nought.
+    #[pyo3(signature = ())]
+    fn test_horizontal<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let test = self.model.test_horizontal().map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("p_value", test.p_value)?;
+        out.set_item("rule", test.rule)?;
+        out.set_item("reference", test.reference)?;
+        out.set_item("statistic", test.statistic)?;
+        Ok(out)
+    }
+
     /// Fit the five structural parameters with the fixed ML recipe.
     #[pyo3(signature = ())]
     fn fit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

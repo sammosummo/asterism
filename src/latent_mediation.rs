@@ -2701,6 +2701,19 @@ pub struct VerticalTest {
     pub bootstrap_replicates: usize,
 }
 
+/// A test of the horizontal estimand `c_prime` against nought.
+#[derive(Clone, Debug)]
+pub struct HorizontalTest {
+    /// The deviance for the direct path `c_prime = 0`.
+    pub statistic: f64,
+    pub p_value: f64,
+    pub rule: &'static str,
+    /// Which reference the p-value was read against. Unlike the loading, this
+    /// one never varies: the direct path is signed and interior, so there is no
+    /// boundary case to detect and no simulated reference to fall back on.
+    pub reference: &'static str,
+}
+
 impl LatentMediationModel {
     /// A p-value for `a = 0` read against a reference simulated under the
     /// fitted null, for use where the even mixture's assumption fails.
@@ -2869,6 +2882,60 @@ impl LatentMediationModel {
             rule: "intersection_union_of_boundary_and_interior",
             loading_reference: reference,
             bootstrap_replicates: bootstrap,
+        })
+    }
+
+    /// Test the horizontal estimand `c_prime` against nought.
+    ///
+    /// **This one is simple, and it is worth saying why, because its twin is
+    /// not.** The vertical estimand is a product, so its null is a union of two
+    /// models and one likelihood ratio has no reference across it. The
+    /// horizontal estimand is a single coordinate. Its null is a point, the
+    /// coordinate is signed and interior -- an inherited effect outside
+    /// measured hearing may run either way -- and the ordinary chi-square on
+    /// one degree of freedom is the whole of the reference. There is no
+    /// boundary mixture to choose and no simulated reference to fall back on.
+    ///
+    /// **What it cannot do is separate the two paths where the loading is at
+    /// nought.** With `a = 0` the inherited covariance carries the direct path
+    /// and the outcome loading only as `c'^2 + d^2`, so the two rotate freely
+    /// against each other and the likelihood is flat along that rotation. A
+    /// p-value read there would be a statement about which of the pair the
+    /// optimiser happened to put the variance in. Both fits are asked, because
+    /// the loading can be comfortably positive when free and fall to nought
+    /// once the direct path is held, and the free fit alone reports nothing
+    /// about that.
+    ///
+    /// Refusing is the honest answer here rather than a gap to be filled later.
+    /// The application says as much already: a horizontal component that fails
+    /// its identification diagnostics is reported as not separately estimable,
+    /// never as nought.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where either fit fails, or
+    /// `LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO` where the loading
+    /// rests on its bound in either of them.
+    pub fn test_horizontal(&self) -> Result<HorizontalTest, &'static str> {
+        let free = self.fit()?;
+        if !free.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+        let without_direct = self.fit_holding(&[2])?;
+        if !without_direct.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+
+        let statistic =
+            crate::deviance::deviance(free.log_likelihood, without_direct.log_likelihood);
+        let p_value =
+            crate::deviance::p_value(statistic, |t| crate::deviance::chi2_upper_tail(t, 1.0));
+
+        Ok(HorizontalTest {
+            statistic,
+            p_value,
+            rule: "likelihood_ratio_on_the_interior_direct_path",
+            reference: "chi_square_on_one",
         })
     }
 }
@@ -3853,6 +3920,51 @@ mod tests {
         assert!((without_loading.parameters.a * without_loading.parameters.b).abs() < 1e-12);
         let without_path = model.fit_holding(&[1]).expect("held fit");
         assert!(without_path.parameters.b.abs() < 1e-12);
+        let without_direct = model.fit_holding(&[2]).expect("held fit");
+        assert!(without_direct.parameters.c_prime.abs() < 1e-12);
+    }
+
+    /// The horizontal estimand is one signed interior coordinate, so its test
+    /// is the deviance against holding it at nought, read against an ordinary
+    /// chi-square on one. Nothing about it varies with the data: unlike the
+    /// loading, there is no bound for it to rest on, so there is no second
+    /// reference to choose between and none to simulate.
+    #[test]
+    fn the_horizontal_test_reads_an_interior_coordinate_against_chi_square() {
+        let model = interior_fit_model();
+        let free = model.fit().expect("free fit");
+        let without_direct = model.fit_holding(&[2]).expect("held fit");
+        let test = model.test_horizontal().expect("tests");
+
+        assert_eq!(test.reference, "chi_square_on_one");
+        assert_eq!(test.rule, "likelihood_ratio_on_the_interior_direct_path");
+        assert!(
+            (test.statistic
+                - crate::deviance::deviance(free.log_likelihood, without_direct.log_likelihood))
+            .abs()
+                < 1e-12,
+            "the statistic is not the deviance it claims to be"
+        );
+        assert!(test.statistic >= -1e-9, "a nested fit beat the free one");
+        assert!((0.0..=1.0).contains(&test.p_value), "p-value out of range");
+    }
+
+    /// With the loading at nought the direct path and the outcome loading enter
+    /// the inherited covariance only as `c'^2 + d^2`, so nothing separates
+    /// them and the test must refuse rather than report which of the pair the
+    /// optimiser happened to fill.
+    #[test]
+    fn the_horizontal_test_refuses_where_the_loading_is_on_its_bound() {
+        let model = interior_fit_model();
+        // Holding the loading at nought is exactly the unidentified case, so
+        // the fit taken there must report the horizontal decomposition as
+        // unavailable. That flag is what the test refuses on.
+        let without_loading = model.fit_holding(&[0]).expect("held fit");
+        assert!(
+            !without_loading.horizontal_identified,
+            "a fit with the loading at nought claimed the horizontal was identified"
+        );
+        assert!(without_loading.boundary_parameters.contains(&"a"));
     }
 
     /// The union null is rejected only when both parts are, so the p-value is
