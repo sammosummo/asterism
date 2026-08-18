@@ -20,6 +20,7 @@ mod mixture_tail;
 mod prepared;
 mod relationship;
 mod spatial;
+mod tobit;
 mod variant_set;
 
 pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
@@ -35,6 +36,7 @@ pub use latent_mediation::{
     simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
+pub use tobit::{Censoring, TobitFit, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};

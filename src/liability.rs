@@ -239,7 +239,7 @@ impl LiabilityModel {
 
     /// The log probability that one family's liabilities fall where its
     /// statuses say they do.
-    fn region_log_probability(
+    pub(crate) fn region_log_probability(
         mean: &[f64],
         sign: &[f64],
         covariance: &DMatrix<f64>,
