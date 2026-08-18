@@ -1,0 +1,28 @@
+{
+  "what": "the censored likelihood against R's censReg, with no relatedness",
+  "date": "2026-08-18",
+  "people": 4000,
+  "censored": 1131,
+  "limit": 6.5,
+  "truth": {
+    "intercept": 5.0,
+    "slope": 1.5,
+    "sigma": 2.0
+  },
+  "asterism": {
+    "intercept": 5.041098979575119,
+    "slope": 1.4979265994231103,
+    "sigma": 1.9988708836953637,
+    "loglik": -6928.176400552411
+  },
+  "censreg": {
+    "intercept": 5.041098993982,
+    "slope": 1.497926613739,
+    "sigma": 1.998870874523,
+    "loglik": -6928.176400568907
+  },
+  "worst_relative_difference": 9.557136814038294e-09,
+  "tolerance": 0.001,
+  "passed": true,
+  "failures": []
+}

@@ -26,6 +26,8 @@ __all__ = [
     "ComponentModel",
     "SpatialModel",
     "kinship_classes",
+    "mixed_bivariate_fit",
+    "tobit_fit",
 ]
 
 
@@ -1374,4 +1376,129 @@ def kinship_classes(
         "order": order,
         "class_names": names,
         "pairs": dict(zip(names, pairs, strict=True)),
+    }
+
+
+def tobit_fit(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """Fit one trait whose measurement stops at a limit.
+
+    ``censoring`` is 0 where the value was measured, 1 where it lies at or
+    above its limit, and 2 where it lies at or below it. **The status is given
+    rather than inferred**, because a censored value can carry the same number
+    as a measured one — extended high-frequency audiometry records several
+    limits within one frequency, and measured values coincide with them.
+
+    ``value`` is read only where the status says measured, and ``limit`` only
+    where it does not.
+
+    The heritability that comes back is the heritability of the *complete*
+    variable — the number you would have had if the instrument reached far
+    enough. It is comparable with an ordinary heritability of an uncensored
+    trait, and not with one fitted to values where the censored ones were
+    replaced by the limit. It is maximum likelihood, never REML, so it must not
+    be placed beside a REML heritability as though the two were the same.
+    """
+    (
+        heritability,
+        total_variance,
+        fixed_effects,
+        loglik,
+        converged,
+        scaled_gradient,
+        censored_share,
+        largest_family,
+    ) = _core.tobit_fit(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "heritability": heritability,
+        "total_variance": total_variance,
+        "fixed_effects": fixed_effects,
+        "loglik": loglik,
+        "converged": converged,
+        "scaled_gradient": scaled_gradient,
+        "censored_share": censored_share,
+        "largest_family": largest_family,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_fit(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+) -> dict[str, Any]:
+    """Fit two traits whose measurements need not be of the same kind.
+
+    Each trait is a dictionary with ``kind`` (``"continuous"``, ``"binary"`` or
+    ``"censored"``), ``value``, ``censoring`` and ``limit``. For a binary trait
+    a censoring code of 1 is a case, and the limit is nought because the
+    threshold is carried by the intercept.
+
+    **A binary trait's variance is fixed at one** and comes back as one, because
+    only the sign of a liability is ever seen. Its heritability is therefore a
+    liability heritability, while a continuous or censored trait's is not; the
+    two must not be read as the same quantity. The genetic correlation is
+    unaffected, which is what makes a mixed pair worth fitting.
+    """
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        if each["kind"] not in kinds:
+            raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+    (
+        heritability,
+        total_variance,
+        genetic_correlation,
+        residual_correlation,
+        first_effects,
+        second_effects,
+        loglik,
+        converged,
+        scaled_gradient,
+        largest_family,
+    ) = _core.mixed_bivariate_fit(
+        np.ascontiguousarray(relationship, dtype=float),
+        first_kind,
+        first_value,
+        first_censoring,
+        first_limit,
+        second_kind,
+        second_value,
+        second_censoring,
+        second_limit,
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "heritability": heritability,
+        "total_variance": total_variance,
+        "genetic_correlation": genetic_correlation,
+        "residual_correlation": residual_correlation,
+        "fixed_effects": [first_effects, second_effects],
+        "loglik": loglik,
+        "converged": converged,
+        "scaled_gradient": scaled_gradient,
+        "largest_family": largest_family,
+        "kinds": [first["kind"], second["kind"]],
+        "estimator": "ml",
     }

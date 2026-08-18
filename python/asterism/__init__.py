@@ -46,6 +46,8 @@ from .models import (
     SpatialModel,
     VariantSetModel,
     kinship_classes,
+    mixed_bivariate_fit,
+    tobit_fit,
 )
 
 __all__ = [
@@ -62,8 +64,10 @@ __all__ = [
     "__version__",
     "align",
     "kinship_classes",
+    "mixed_bivariate_fit",
     "prepare",
     "relationship_matrix",
+    "tobit_fit",
     "weighted_chi2_upper_tail",
 ]
 

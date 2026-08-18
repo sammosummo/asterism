@@ -129,6 +129,11 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         variant_set::python::variant_set_family_scan,
         module
     )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(tobit::python::tobit_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_fit,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;
