@@ -2859,6 +2859,27 @@ pub struct VerticalTest {
     pub bootstrap_replicates: usize,
 }
 
+/// A 97.5 per cent confidence set for the vertical estimand.
+#[derive(Clone, Debug)]
+pub struct VerticalSet {
+    pub estimate: f64,
+    /// `None` where the profile never fell away on that side within the range
+    /// searched.
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
+    /// Whether nought is in the set, decided by the intersection-union test
+    /// rather than by the profile: at nought the null is a union of two models
+    /// and one likelihood ratio has no reference across it.
+    pub contains_zero: bool,
+    /// True where the set spans nought but excludes it, so it is two pieces
+    /// rather than one. The application requires such a set to be retained
+    /// rather than reported as the interval that contains both.
+    pub disjoint: bool,
+    pub level: f64,
+    pub profile_failures: usize,
+    pub searched_to: f64,
+}
+
 /// A 97.5 per cent confidence set for the horizontal estimand.
 #[derive(Clone, Debug)]
 pub struct HorizontalSet {
@@ -3114,6 +3135,116 @@ impl LatentMediationModel {
             p_value,
             rule: "likelihood_ratio_on_the_interior_direct_path",
             reference: "chi_square_on_one",
+        })
+    }
+
+    /// The largest log likelihood attainable with the vertical estimand held
+    /// at a value.
+    ///
+    /// The estimand is a product, so holding it is a curve rather than a
+    /// coordinate: for each loading the path is fixed at `value / loading`.
+    /// The profile is the best point on that curve, found by scanning the
+    /// loading and taking the largest. A scan rather than a search because the
+    /// curve can have more than one local best, and a search that found the
+    /// wrong one would narrow the set silently.
+    fn vertical_profile(&self, value: f64, failures: &std::cell::Cell<usize>) -> f64 {
+        const SCAN: usize = 24;
+        let mut best = f64::NEG_INFINITY;
+        for step in 1..=SCAN {
+            // The loading is non-negative and the path is `value / loading`,
+            // so a loading near nought sends the path to infinity. The scan
+            // starts away from it for that reason.
+            let loading = 0.05 + (step as f64) * (1.5 / SCAN as f64);
+            let path = value / loading;
+            match self.fit_holding_at(&[(0, loading), (1, path)]) {
+                Ok(fit) => best = best.max(fit.log_likelihood),
+                Err(_) => failures.set(failures.get() + 1),
+            }
+        }
+        best
+    }
+
+    /// A 97.5 per cent confidence set for the vertical estimand, by inverting
+    /// the test.
+    ///
+    /// **Nought is decided differently from everywhere else, and has to be.**
+    /// Away from nought, holding the estimand is one constraint and the
+    /// likelihood ratio has an ordinary chi-square reference. At nought the
+    /// null is a union -- the loading is nought, or the path is, or both -- and
+    /// no single ratio spans it, so membership there is decided by the
+    /// intersection-union test the model already carries.
+    ///
+    /// That is what allows the set to come back in two pieces: the profile may
+    /// admit values either side of nought while the union test excludes nought
+    /// itself. The application requires such a set to be retained as two
+    /// pieces rather than reported as the interval covering both, and
+    /// `disjoint` says when that has happened.
+    ///
+    /// An end that does not close within the range searched is reported open.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails or the range is not a
+    /// positive distance.
+    pub fn vertical_set(
+        &self,
+        searched_to: f64,
+        bootstrap_replicates: usize,
+    ) -> Result<VerticalSet, &'static str> {
+        if !(searched_to > 0.0) || !searched_to.is_finite() {
+            return Err("LATENT_MEDIATION_SEARCH_RANGE_INVALID");
+        }
+        let free = self.fit()?;
+        let estimate = free.parameters.a * free.parameters.b;
+        let failures = std::cell::Cell::new(0usize);
+
+        let peak = self.vertical_profile(estimate, &failures);
+        if !peak.is_finite() {
+            return Err("LATENT_MEDIATION_VERTICAL_PROFILE_UNAVAILABLE");
+        }
+        // Chi-square on one degree of freedom at 0.975.
+        let threshold = peak - 0.5 * 5.023_886_187_353_339;
+        let outside = |value: f64| self.vertical_profile(value, &failures) < threshold;
+
+        let lower = if outside(estimate - searched_to) {
+            Some(crate::liability::bisect(
+                estimate - searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        let upper = if outside(estimate + searched_to) {
+            Some(crate::liability::bisect(
+                estimate + searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+
+        // Nought belongs to the union test, not to the profile.
+        let contains_zero = match self.test_vertical_with(bootstrap_replicates) {
+            Ok(test) => test.p_value > 1.0 - 0.975,
+            Err(_) => {
+                failures.set(failures.get() + 1);
+                true // a test that could not be made has not excluded anything
+            }
+        };
+        let spans_zero = lower.is_none_or(|low| low <= 0.0)
+            && upper.is_none_or(|high| high >= 0.0);
+
+        Ok(VerticalSet {
+            estimate,
+            lower,
+            upper,
+            contains_zero,
+            disjoint: spans_zero && !contains_zero,
+            level: 0.975,
+            profile_failures: failures.get(),
+            searched_to,
         })
     }
 
@@ -3663,6 +3794,62 @@ mod tests {
     /// that did not close is reported open rather than at the edge of the
     /// search, which is what the application means by retaining an unbounded
     /// set.
+    /// The vertical confidence set is coherent, and decides nought by the
+    /// union test rather than by the profile.
+    ///
+    /// The estimand is a product, so the set is built by profiling along the
+    /// curve where the product is held. Nought is the one point where that
+    /// cannot be done, because the null there is a union of two models. The
+    /// check is that the two decisions are made by the right instruments and
+    /// that the flags agree with the ends.
+    #[test]
+    fn the_vertical_set_decides_nought_by_the_union_test() {
+        let model = interior_fit_model();
+        let got = model.vertical_set(1.0, 0).expect("a set");
+        assert!((got.level - 0.975).abs() < 1e-12);
+
+        if let (Some(low), Some(high)) = (got.lower, got.upper) {
+            assert!(
+                low <= got.estimate && got.estimate <= high,
+                "the estimate {} is outside its own set [{low}, {high}]",
+                got.estimate
+            );
+        }
+
+        // Whether nought is in the set must be what the union test says, not
+        // what the profile says, because at nought the profile has no
+        // reference.
+        let union = model.test_vertical_with(0).expect("the union test");
+        assert_eq!(
+            got.contains_zero,
+            union.p_value > 0.025,
+            "membership of nought disagrees with the intersection-union test"
+        );
+
+        // Two pieces exactly when the ends span nought and the union test
+        // excludes it.
+        let spans = got.lower.is_none_or(|low| low <= 0.0)
+            && got.upper.is_none_or(|high| high >= 0.0);
+        assert_eq!(
+            got.disjoint,
+            spans && !got.contains_zero,
+            "the disjoint flag disagrees with the ends and the union test"
+        );
+    }
+
+    /// A vertical search range that is not a positive distance is refused.
+    #[test]
+    fn a_vertical_search_range_must_be_a_positive_distance() {
+        let model = interior_fit_model();
+        for bad in [0.0, -2.0, f64::NAN] {
+            assert_eq!(
+                model.vertical_set(bad, 0).err(),
+                Some("LATENT_MEDIATION_SEARCH_RANGE_INVALID"),
+                "a range of {bad} was accepted"
+            );
+        }
+    }
+
     #[test]
     fn the_horizontal_set_is_where_the_profile_falls_away() {
         let model = interior_fit_model();
