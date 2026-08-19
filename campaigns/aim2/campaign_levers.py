@@ -108,7 +108,14 @@ LEVERS = [
     "drop acoustic units",
     # The naive version of "recruit more": half of everything again.
     "sample x1.5",
+    # The same people and the same dementia rate, graded rather than diagnosed.
+    "staged outcome",
 ]
+
+# CDR 1, 2 and 3 as shares of the dementia rate, and a questionable band the
+# same size as that rate. Chosen so "CDR 1 or worse" is exactly the binary rate
+# the other levers use, leaving the grading as the only difference.
+SEVERITY = (0.56, 0.31, 0.13)
 
 _D = {}
 
@@ -146,6 +153,8 @@ def design(lever: str):
         # rest share a unit with an enrolled relative.
         ordered = [rows for rows in ordered
                    if not (loaded["role"][rows] == ACOUSTIC).all()]
+    elif lever == "staged outcome":
+        pass  # handled below, where the shares need the prevalence
     elif lever == "sample x1.5":
         # Every second unit, not the first half. The units are grouped by type,
         # so the first half holds no ascertained families at all -- taking it
@@ -153,7 +162,18 @@ def design(lever: str):
         # then reported that recruiting more does very little.
         ordered = ordered + ordered[::2]
 
+    # Stages per person, built from their own dementia rate so the grading is
+    # age-indexed the same way the rate is.
+    staged = []
+    if lever == "staged outcome":
+        for rate in prevalence:
+            questionable = float(rate)
+            shares = [1.0 - float(rate) - questionable, questionable]
+            shares.extend(float(rate) * part for part in SEVERITY)
+            staged.append(shares)
+
     _D[key] = {
+        "staged": staged,
         "relationship": loaded["relationship"],
         "age": age,
         "role": loaded["role"],
@@ -179,7 +199,16 @@ def one(job):
             relationship=matrix,
             **TRUTHS[truth], **FIXED, families=1,
             seed=800_000 + 7_919 * replicate + 13 * u,
-            outcome_prevalence=[float(p) for p in d["prevalence"][rows]],
+            # None rather than an empty list: the wrapper expands a scalar or
+            # None per person, and a zero-length sequence fails its shape check.
+            outcome_prevalence=(
+                None if d["staged"]
+                else [float(p) for p in d["prevalence"][rows]]),
+            outcome_category_prevalence=(
+                [d["staged"][r] for r in rows] if d["staged"] else None),
+            # CDR 1 or worse is a case, which is category two of five and the
+            # same roster the binary arm conditions on.
+            ascertainment_category=2 if d["staged"] else None,
             observe_outcome=[True] * size,
             measurement_error_variance=[d["error"]] * size,
             observe_mediator_proxy=[False] * size,
@@ -190,7 +219,9 @@ def one(job):
         ))
 
     out = {"lever": lever, "truth": truth, "replicate": replicate}
-    out["cases"] = sum(1 for f in families for v in f["outcome_status"] if v)
+    case_from = 2 if d["staged"] else 1
+    out["cases"] = sum(1 for f in families for v in f["outcome_status"]
+                       if v is not None and v >= case_from)
     out["people"] = sum(len(f["outcome_status"]) for f in families)
     model = asterism.LatentMediationModel(families, qmc_points=QMC_POINTS)
     try:
