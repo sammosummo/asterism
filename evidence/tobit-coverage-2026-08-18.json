@@ -1,0 +1,129 @@
+{
+  "what": "coverage of the censored model's profile interval",
+  "date": "2026-08-18",
+  "pairs": 300,
+  "replicates": 300,
+  "nominal": 0.95,
+  "true_variance": 4.0,
+  "cells": {
+    "h2=0.0 censored=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 294,
+      "coverage": 0.98,
+      "clopper_pearson": [
+        0.9569789173264831,
+        0.9926258379982736
+      ],
+      "mean_width": 0.23651727016483903,
+      "within_nominal": true,
+      "at_boundary": true
+    },
+    "h2=0.0 censored=0.25": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 293,
+      "coverage": 0.9766666666666667,
+      "clopper_pearson": [
+        0.9525174349702181,
+        0.9905684979382053
+      ],
+      "mean_width": 0.24701534021689578,
+      "within_nominal": true,
+      "at_boundary": true
+    },
+    "h2=0.0 censored=0.5": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 295,
+      "coverage": 0.9833333333333333,
+      "clopper_pearson": [
+        0.9615362550350036,
+        0.9945667946848947
+      ],
+      "mean_width": 0.28200302903904717,
+      "within_nominal": true,
+      "at_boundary": true
+    },
+    "h2=0.3 censored=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 283,
+      "coverage": 0.9433333333333334,
+      "clopper_pearson": [
+        0.910819595565837,
+        0.9666466884833154
+      ],
+      "mean_width": 0.42124340600201987,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.3 censored=0.25": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 283,
+      "coverage": 0.9433333333333334,
+      "clopper_pearson": [
+        0.910819595565837,
+        0.9666466884833154
+      ],
+      "mean_width": 0.4434355203378244,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.3 censored=0.5": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 287,
+      "coverage": 0.9566666666666667,
+      "clopper_pearson": [
+        0.9270385357797178,
+        0.9767281589953176
+      ],
+      "mean_width": 0.4877198965408648,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.5 censored=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 286,
+      "coverage": 0.9533333333333334,
+      "clopper_pearson": [
+        0.9229401618936413,
+        0.974255350532769
+      ],
+      "mean_width": 0.42169687191209515,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.5 censored=0.25": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 285,
+      "coverage": 0.95,
+      "clopper_pearson": [
+        0.9188726428292358,
+        0.9717487980315036
+      ],
+      "mean_width": 0.4519243834842162,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.5 censored=0.5": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 280,
+      "coverage": 0.9333333333333333,
+      "clopper_pearson": [
+        0.8989143547885917,
+        0.9588059837861013
+      ],
+      "mean_width": 0.5125776835605942,
+      "within_nominal": true,
+      "at_boundary": false
+    }
+  },
+  "passed": true,
+  "failures": []
+}

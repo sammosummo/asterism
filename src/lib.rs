@@ -37,7 +37,10 @@ pub use latent_mediation::{
     simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
-pub use mixed_bivariate::{MixedBivariateFit, MixedBivariateModel, TraitData, TraitKind};
+pub use mixed_bivariate::{
+    GENETIC_CORRELATION, HERITABILITY_ONE, HERITABILITY_TWO, MixedBivariateFit,
+    MixedBivariateInterval, MixedBivariateModel, RESIDUAL_CORRELATION, TraitData, TraitKind,
+};
 pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
@@ -136,6 +139,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         mixed_bivariate::python::mixed_bivariate_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_interval,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;

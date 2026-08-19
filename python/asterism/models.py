@@ -27,6 +27,7 @@ __all__ = [
     "SpatialModel",
     "kinship_classes",
     "mixed_bivariate_fit",
+    "mixed_bivariate_interval",
     "tobit_fit",
     "tobit_interval",
 ]
@@ -1554,5 +1555,70 @@ def tobit_interval(
         "level": level,
         "profile_failures": profile_failures,
         "censored_share": censored_share,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_interval(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+    coordinate: str = "genetic_correlation",
+) -> dict[str, Any]:
+    """A 95 per cent profile-likelihood interval for one bivariate coordinate.
+
+    ``coordinate`` is ``"heritability_one"``, ``"heritability_two"``,
+    ``"genetic_correlation"`` or ``"residual_correlation"``.
+
+    **The variances have no interval on purpose.** A binary trait's is fixed at
+    one because a liability has no scale of its own, so an interval on it would
+    describe that assumption rather than the data.
+
+    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    coordinate's own bound — nought or one for a heritability, minus one or one
+    for a correlation — rather than where the profile fell away. An end on a
+    bound means the data did not rule that end out, which is a different
+    statement from the interval stopping there.
+    """
+    coordinates = {
+        "heritability_one": 0,
+        "heritability_two": 1,
+        "genetic_correlation": 4,
+        "residual_correlation": 5,
+    }
+    if coordinate not in coordinates:
+        raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL")
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+    (
+        what, estimate, lower, upper,
+        lower_at_bound, upper_at_bound, level, profile_failures,
+    ) = _core.mixed_bivariate_interval(
+        np.ascontiguousarray(relationship, dtype=float),
+        first_kind, first_value, first_censoring, first_limit,
+        second_kind, second_value, second_censoring, second_limit,
+        np.ascontiguousarray(design, dtype=float),
+        coordinates[coordinate],
+    )
+    return {
+        "what": what,
+        "estimate": estimate,
+        "lower": lower,
+        "upper": upper,
+        "lower_at_bound": lower_at_bound,
+        "upper_at_bound": upper_at_bound,
+        "level": level,
+        "profile_failures": profile_failures,
         "estimator": "ml",
     }

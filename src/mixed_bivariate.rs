@@ -100,6 +100,34 @@ pub struct MixedBivariateFit {
     pub largest_family: usize,
 }
 
+/// Chi-square on one degree of freedom at 0.95.
+const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+
+/// Which coordinate an interval is for. The variances are deliberately absent:
+/// a binary trait's is fixed at one and means nothing, so an interval on it
+/// would be an interval on an assumption.
+pub const HERITABILITY_ONE: usize = 0;
+pub const HERITABILITY_TWO: usize = 1;
+pub const GENETIC_CORRELATION: usize = 4;
+pub const RESIDUAL_CORRELATION: usize = 5;
+
+/// A profile-likelihood interval for one coordinate.
+#[derive(Clone, Debug)]
+pub struct MixedBivariateInterval {
+    pub what: &'static str,
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the end sits on the coordinate's own bound rather than where
+    /// the profile fell away -- the data did not rule that end out.
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+    /// Profile fits that failed or did not converge. Each widened the interval
+    /// rather than narrowing it, which is the safe direction.
+    pub profile_failures: usize,
+}
+
 /// Two traits, one relationship matrix, a measurement kind for each.
 pub struct MixedBivariateModel {
     relationship: DMatrix<f64>,
@@ -351,6 +379,85 @@ impl MixedBivariateModel {
     ///
     /// Returns a stable code where no start converges.
     pub fn fit(&self) -> Result<MixedBivariateFit, &'static str> {
+        self.fit_holding(None)
+    }
+
+    /// A 95 per cent profile-likelihood interval for one coordinate.
+    ///
+    /// Only the two heritabilities and the two correlations are available. A
+    /// binary trait's variance is fixed at one because a liability has no
+    /// scale, so an interval on it would describe an assumption rather than
+    /// the data.
+    ///
+    /// The maximum is taken from the held fit at the estimate, and a profile
+    /// fit that failed counts as inside so that failures widen the interval
+    /// rather than narrowing it -- both for the reasons `LiabilityModel`
+    /// records.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code for an unavailable coordinate, or where the free
+    /// fit fails.
+    pub fn profile_interval(
+        &self,
+        coordinate: usize,
+    ) -> Result<MixedBivariateInterval, &'static str> {
+        let (what, low_bound, high_bound) = match coordinate {
+            HERITABILITY_ONE => ("heritability_one", 0.0, 1.0),
+            HERITABILITY_TWO => ("heritability_two", 0.0, 1.0),
+            GENETIC_CORRELATION => ("genetic_correlation", -1.0, 1.0),
+            RESIDUAL_CORRELATION => ("residual_correlation", -1.0, 1.0),
+            _ => return Err("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL"),
+        };
+        let free = self.fit()?;
+        let estimate = match coordinate {
+            HERITABILITY_ONE => free.heritability[0],
+            HERITABILITY_TWO => free.heritability[1],
+            GENETIC_CORRELATION => free.genetic_correlation,
+            _ => free.residual_correlation,
+        };
+        let at_estimate = self.fit_holding(Some((coordinate, estimate)))?.loglik;
+        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
+
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |value: f64| match self.fit_holding(Some((coordinate, value))) {
+            Ok(fit) if fit.converged => fit.loglik < threshold,
+            _ => {
+                failures.set(failures.get() + 1);
+                false
+            }
+        };
+        let (lower, lower_at_bound) = if outside(low_bound) {
+            (crate::liability::bisect(low_bound, estimate, &outside), false)
+        } else {
+            (low_bound, true)
+        };
+        let (upper, upper_at_bound) = if outside(high_bound) {
+            (crate::liability::bisect(high_bound, estimate, &outside), false)
+        } else {
+            (high_bound, true)
+        };
+        Ok(MixedBivariateInterval {
+            what,
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+            profile_failures: failures.get(),
+        })
+    }
+
+    /// Fit with one coordinate held, or everything free where `held` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no start converges.
+    pub fn fit_holding(
+        &self,
+        held: Option<(usize, f64)>,
+    ) -> Result<MixedBivariateFit, &'static str> {
         let columns = self.design.ncols();
         let free = self.variance_is_free();
         // h1, h2, log s1, log s2, rho_g, rho_e, then the two sets of effects.
@@ -372,6 +479,16 @@ impl MixedBivariateModel {
         upper[4] = 1.0;
         lower[5] = -1.0;
         upper[5] = 1.0;
+        if let Some((coordinate, value)) = held {
+            if coordinate >= 6 {
+                return Err("MIXED_BIVARIATE_HELD_COORDINATE_INVALID");
+            }
+            if value < lower[coordinate] || value > upper[coordinate] {
+                return Err("MIXED_BIVARIATE_HELD_VALUE_OUT_OF_RANGE");
+            }
+            lower[coordinate] = value;
+            upper[coordinate] = value;
+        }
 
         // A starting scale from whatever was measured, per trait.
         let mut start_variance = [0.0_f64; 2];
@@ -430,6 +547,9 @@ impl MixedBivariateModel {
             start[3] = start_variance[1].ln();
             start[4] = rho;
             start[5] = rho;
+            if let Some((coordinate, value)) = held {
+                start[coordinate] = value;
+            }
             start[6] = start_mean[0];
             start[6 + columns] = start_mean[1];
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
@@ -673,6 +793,81 @@ mod tests {
             (fit.genetic_correlation - truth).abs() < 0.30,
             "the genetic correlation came back {} against a true {truth}",
             fit.genetic_correlation
+        );
+    }
+
+    /// The genetic correlation's interval reaches where the likelihood falls
+    /// away, and contains the truth it was simulated from.
+    ///
+    /// The deviance cost at each end is checked rather than assumed. An
+    /// interval can look entirely reasonable and sit somewhere the profile
+    /// never crossed.
+    #[test]
+    fn the_genetic_correlation_interval_is_where_the_profile_falls_away() {
+        let pairs = 400;
+        let relationship = sib_relationship(pairs);
+        let truth = 0.5_f64;
+        let values = simulate(pairs, [0.5, 0.5], [1.0, 2.0], truth, 0.1, 20_260_822);
+        let design = DMatrix::from_element(2 * pairs, 1, 1.0);
+        let model = MixedBivariateModel::build(
+            &relationship,
+            continuous(&values[0]),
+            continuous(&values[1]),
+            &design,
+        )
+        .expect("builds");
+
+        let got = model.profile_interval(GENETIC_CORRELATION).expect("intervals");
+        assert_eq!(got.what, "genetic_correlation");
+        assert!(
+            got.lower <= got.estimate && got.estimate <= got.upper,
+            "the estimate {} is outside its own interval [{}, {}]",
+            got.estimate, got.lower, got.upper
+        );
+        assert!(
+            got.lower <= truth && truth <= got.upper,
+            "the interval [{}, {}] misses the true {truth}",
+            got.lower, got.upper
+        );
+
+        let peak = model
+            .fit_holding(Some((GENETIC_CORRELATION, got.estimate)))
+            .expect("held fit")
+            .loglik;
+        for (name, end, at_bound) in [
+            ("lower", got.lower, got.lower_at_bound),
+            ("upper", got.upper, got.upper_at_bound),
+        ] {
+            if at_bound {
+                continue;
+            }
+            let there = model
+                .fit_holding(Some((GENETIC_CORRELATION, end)))
+                .expect("held fit")
+                .loglik;
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - CHI2_ONE_95).abs() < 0.05,
+                "the {name} end costs {cost} in deviance, not {CHI2_ONE_95}"
+            );
+        }
+    }
+
+    /// A coordinate with no interval says so rather than inventing one.
+    #[test]
+    fn a_variance_has_no_interval() {
+        let pairs = 40;
+        let relationship = sib_relationship(pairs);
+        let values = simulate(pairs, [0.5, 0.5], [1.0, 1.0], 0.2, 0.0, 17);
+        let design = DMatrix::from_element(2 * pairs, 1, 1.0);
+        let model = MixedBivariateModel::build(
+            &relationship, continuous(&values[0]), continuous(&values[1]), &design)
+            .expect("builds");
+        // Coordinates two and three are the variances, one of which is fixed
+        // at one whenever a trait is binary.
+        assert_eq!(
+            model.profile_interval(2).err(),
+            Some("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL")
         );
     }
 

@@ -96,3 +96,46 @@ pub fn mixed_bivariate_fit(
         fit.largest_family,
     ))
 }
+
+/// A 95 per cent profile-likelihood interval for one coordinate.
+///
+/// `coordinate` is 0 or 1 for the two heritabilities, 4 for the genetic
+/// correlation and 5 for the residual one. The variances have no interval: a
+/// binary trait's is fixed at one, so one would describe an assumption.
+#[pyfunction]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn mixed_bivariate_interval(
+    relationship: PyReadonlyArray2<'_, f64>,
+    first_kind: i64,
+    first_value: PyReadonlyArray1<'_, f64>,
+    first_censoring: PyReadonlyArray1<'_, i64>,
+    first_limit: PyReadonlyArray1<'_, f64>,
+    second_kind: i64,
+    second_value: PyReadonlyArray1<'_, f64>,
+    second_censoring: PyReadonlyArray1<'_, i64>,
+    second_limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    coordinate: usize,
+) -> PyResult<(String, f64, f64, f64, bool, bool, f64, usize)> {
+    let a = relationship.as_array();
+    let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
+    let x = design.as_array();
+    let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+    let first = trait_from(first_kind, &first_value, &first_censoring, &first_limit)?;
+    let second = trait_from(second_kind, &second_value, &second_censoring, &second_limit)?;
+
+    let got = MixedBivariateModel::build(&a, first, second, &x)
+        .map_err(PyValueError::new_err)?
+        .profile_interval(coordinate)
+        .map_err(PyValueError::new_err)?;
+    Ok((
+        got.what.to_string(),
+        got.estimate,
+        got.lower,
+        got.upper,
+        got.lower_at_bound,
+        got.upper_at_bound,
+        got.level,
+        got.profile_failures,
+    ))
+}

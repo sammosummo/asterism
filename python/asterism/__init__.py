@@ -47,6 +47,7 @@ from .models import (
     VariantSetModel,
     kinship_classes,
     mixed_bivariate_fit,
+    mixed_bivariate_interval,
     tobit_fit,
     tobit_interval,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "align",
     "kinship_classes",
     "mixed_bivariate_fit",
+    "mixed_bivariate_interval",
     "prepare",
     "relationship_matrix",
     "tobit_fit",
