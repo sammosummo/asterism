@@ -6,6 +6,7 @@
 //! `docs/statistical-methods.md`.
 
 mod association;
+mod autoregressive;
 mod bivariate;
 mod blocks;
 mod components;
@@ -24,6 +25,7 @@ mod spatial;
 mod variant_set;
 
 pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
+pub use autoregressive::{AutoregressiveFit, AutoregressiveModel};
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
 pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
@@ -55,6 +57,14 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         bivariate::bivariate_objective,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        autoregressive::python::autoregressive_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        autoregressive::python::autoregressive_cells,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(bivariate::bivariate_fit, module)?)?;

@@ -38,6 +38,7 @@ from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from .latent_mediation import LatentMediationModel
 from .models import (
     AssociationModel,
+    AutoregressiveModel,
     BivariateModel,
     ComponentModel,
     DiscreteGxeModel,
@@ -50,6 +51,7 @@ from .models import (
 
 __all__ = [
     "AssociationModel",
+    "AutoregressiveModel",
     "BivariateModel",
     "ComponentModel",
     "DiscreteGxeModel",
