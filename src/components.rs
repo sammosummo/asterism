@@ -54,7 +54,38 @@ pub struct ComponentFit {
     pub loglik: f64,
     pub converged: bool,
     pub scaled_gradient: f64,
+    /// Why the search stopped, in the search's own words rather than ours.
+    /// Nought means one of its tolerances fired; one means it ran out of
+    /// iterations; anything else is an error inside the optimiser.
+    ///
+    /// **This is not the same question as `converged`.** The search stops on
+    /// `factr`, a relative reduction in the objective, and `converged` is
+    /// decided afterwards on the recomputed projected gradient. Down a long
+    /// flat valley the objective settles well before the gradient does, so a
+    /// fit can stop cleanly here and still be reported as not converged. Read
+    /// the two together: a fit that ran out of iterations and a fit whose
+    /// objective settled early are different faults wanting different answers,
+    /// and without this they cannot be told apart.
+    pub stop_code: i32,
+    /// The optimiser's own message for `stop_code`, kept verbatim.
+    pub stop_message: String,
+    /// True where the gradient test failed on the first search and a second was
+    /// run from that point with the objective tolerance switched off. It fires
+    /// nowhere else, so a fit reporting `false` here is the fit the package
+    /// gave before the polish existed, to the last bit.
+    pub polished: bool,
     pub estimator: &'static str,
+}
+
+/// The best start so far, and what the search said when it stopped there.
+struct Best {
+    negative_loglik: f64,
+    par: Vec<f64>,
+    fixed_effects: Vec<f64>,
+    converged: bool,
+    scaled_gradient: f64,
+    stop_code: i32,
+    stop_message: String,
 }
 
 struct Evaluation {
@@ -490,16 +521,39 @@ impl ComponentModel {
             starts.push(s);
         }
 
-        let mut best: Option<(f64, Vec<f64>, Vec<f64>, bool)> = None;
+        let value_of = |candidate: &[f64]| -> f64 {
+            self.evaluate_with_signs(candidate, &scaled, reml, false, signed)
+                .map_or(1e30, |e| e.negative_loglik)
+        };
+        let gradient_of = |candidate: &[f64]| -> Vec<f64> {
+            self.evaluate_with_signs(candidate, &scaled, reml, true, signed)
+                .map_or_else(|| vec![0.0; count], |e| e.gradient)
+        };
+        // The convergence test is the projected gradient recomputed here, not
+        // the optimiser's own word for it: a component resting on nought has a
+        // one-sided derivative and is converged when that derivative pushes
+        // outward, which an unprojected norm calls a failure.
+        let reading = |at: &Evaluation, par: &[f64]| -> f64 {
+            let projected = at
+                .gradient
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if signed.contains(&k) {
+                        // No bound to rest on, so no projection.
+                        *g
+                    } else if resting_on_zero(par[k]) {
+                        g.min(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / at.negative_loglik.abs().max(1.0)
+        };
+
+        let mut best: Option<Best> = None;
         for start in starts {
-            let value_of = |candidate: &[f64]| -> f64 {
-                self.evaluate_with_signs(candidate, &scaled, reml, false, signed)
-                    .map_or(1e30, |e| e.negative_loglik)
-            };
-            let gradient_of = |candidate: &[f64]| -> Vec<f64> {
-                self.evaluate_with_signs(candidate, &scaled, reml, true, signed)
-                    .map_or_else(|| vec![0.0; count], |e| e.gradient)
-            };
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;
             };
@@ -508,13 +562,26 @@ impl ComponentModel {
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; count];
             // R's own default: stop once the objective has settled to about
-            // 1e-9 relative. At nought the search ran to `maxit` every time,
-            // factorising a dense covariance per evaluation for nothing.
+            // 1e-9 relative.
+            //
+            // **Kept, but not for the reason first written here.** That said
+            // the search ran to `maxit` every time at nought, and measured on
+            // the red deer it does not: with `factr` off, all eight fits
+            // terminate in the line search after 2 to 102 further objective
+            // evaluations, none of them near the limit. The reason to keep it
+            // is cost against benefit. Running every fit that way costs 98 per
+            // cent more objective evaluations across the eight -- each one a
+            // dense covariance factorisation -- and on three of them buys
+            // nothing at all, the estimates coming back identical. The largest
+            // fit in the set spends a quarter as long again to return exactly
+            // what it already had. So the extra search is worth making only
+            // where the gradient test has failed, which is what the polish
+            // below does.
             control.factr = 1.0e3;
             control.pgtol = 1e-9;
             control.lmm = count.min(10);
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -525,40 +592,104 @@ impl ComponentModel {
             if !at.negative_loglik.is_finite() {
                 continue;
             }
-            // The convergence test is the projected gradient recomputed here,
-            // not the optimiser's own word for it: a component resting on nought
-            // has a one-sided derivative and is converged when that derivative
-            // pushes outward, which an unprojected norm calls a failure.
-            let projected = at
-                .gradient
-                .iter()
-                .enumerate()
-                .map(|(k, g)| {
-                    if signed.contains(&k) {
-                        // No bound to rest on, so no projection.
-                        *g
-                    } else if resting_on_zero(solution.par[k]) {
-                        g.min(0.0)
-                    } else {
-                        *g
-                    }
-                })
-                .fold(0.0f64, |worst, g| worst.max(g.abs()));
-            let scaled_gradient = projected / at.negative_loglik.abs().max(1.0);
+            let scaled_gradient = reading(&at, &solution.par);
             if best
                 .as_ref()
-                .is_none_or(|(value, _, _, _)| at.negative_loglik < *value)
+                .is_none_or(|b| at.negative_loglik < b.negative_loglik)
             {
-                best = Some((
-                    at.negative_loglik,
-                    solution.par.clone(),
-                    at.fixed_effects.clone(),
-                    scaled_gradient < 1e-7,
-                ));
+                best = Some(Best {
+                    negative_loglik: at.negative_loglik,
+                    par: solution.par.clone(),
+                    fixed_effects: at.fixed_effects.clone(),
+                    converged: scaled_gradient < 1e-7,
+                    scaled_gradient,
+                    // Kept rather than discarded. The search's own verdict is
+                    // the only evidence that separates a fit which ran out of
+                    // iterations from one whose objective settled early, and
+                    // nothing outside the fit can recover it.
+                    stop_code: solution.convergence,
+                    stop_message: solution.message.clone(),
+                });
             }
         }
 
-        let (negative, par, beta, converged) = best.ok_or("COMPONENTS_NO_START_CONVERGED")?;
+        // Where the gradient test fails, search once more from the point
+        // already found with the objective tolerance switched off.
+        //
+        // **This is a measurement rather than a guess.** Every one of the eight
+        // red deer fits stops with `REL_REDUCTION_OF_F <= FACTR*EPSMCH` and not
+        // one stops on `pgtol`, so the gradient the test reads is never a
+        // criterion the search pursued; the fits that pass do so because their
+        // gradient happened already to be small when the objective settled.
+        // Taking `factr` out leaves `pgtol` to decide, and `pgtol` is a
+        // relative-gradient test at `1e-9` -- a hundredfold tighter than the
+        // `1e-7` the flag asks for -- so a search that stops on it passes
+        // comfortably.
+        //
+        // It fires only where the flag already reports failure, so every fit
+        // that passes today is untouched to the last bit and no calibration
+        // moves. The extra budget is small and the result is kept only if it
+        // is better on both counts, so the worst case is the cost of 200 more
+        // iterations and the same answer as before.
+        //
+        // **The returned point is checked rather than trusted, and on this
+        // problem it has to be.** All three polished deer fits end with
+        // `ERROR: ABNORMAL_TERMINATION_IN_LNSRCH` -- L-BFGS-B saying its line
+        // search can make no further progress in double precision -- and none
+        // reaches `pgtol`. Two of the three pass the gradient test anyway and
+        // the third improves threefold, so the abnormal ending is the shape of
+        // the likelihood rather than a fault. Accepting only a point that is no
+        // worse on the objective and strictly better on the gradient is what
+        // makes taking a result from an errored search safe: it either improves
+        // or it is discarded.
+        let mut polished = false;
+        if let Some(current) = best.as_ref()
+            && !current.converged
+            && let Ok(bounds) = Bounds::new(lower.clone(), upper.clone())
+        {
+            let mut control = OptimControl::default_for_dimension(count);
+            control.maxit = 200;
+            control.fnscale = value_of(&current.par).abs().max(1.0);
+            control.parscale = vec![1.0; count];
+            control.factr = 0.0;
+            control.pgtol = 1e-9;
+            control.lmm = count.min(10);
+            if let Ok(again) = optim_lbfgsb_with_gradient(
+                current.par.clone(),
+                bounds,
+                &value_of,
+                &gradient_of,
+                control,
+            ) && let Some(at) = self.evaluate_with_signs(&again.par, &scaled, reml, true, signed)
+                && at.negative_loglik.is_finite()
+                // Not worse on the objective and better on the gradient. A
+                // longer search that wandered is refused rather than reported.
+                && at.negative_loglik <= current.negative_loglik
+                && reading(&at, &again.par) < current.scaled_gradient
+            {
+                let scaled_gradient = reading(&at, &again.par);
+                polished = true;
+                best = Some(Best {
+                    negative_loglik: at.negative_loglik,
+                    par: again.par.clone(),
+                    fixed_effects: at.fixed_effects.clone(),
+                    converged: scaled_gradient < 1e-7,
+                    scaled_gradient,
+                    stop_code: again.convergence,
+                    stop_message: again.message.clone(),
+                });
+            }
+        }
+
+        let Best {
+            negative_loglik: negative,
+            par,
+            fixed_effects: beta,
+            converged,
+            scaled_gradient: _,
+            stop_code,
+            stop_message,
+        } = best.ok_or("COMPONENTS_NO_START_CONVERGED")?;
         let at = self
             .evaluate_with_signs(&par, &scaled, reml, true, signed)
             .ok_or("COMPONENTS_OPTIMUM_NOT_EVALUABLE")?;
@@ -607,6 +738,9 @@ impl ComponentModel {
             loglik,
             converged,
             scaled_gradient: projected / negative.abs().max(1.0),
+            stop_code,
+            stop_message,
+            polished,
             estimator: if reml { "reml" } else { "ml" },
         })
     }
@@ -1261,7 +1395,19 @@ mod python {
         design: PyReadonlyArray2<'_, f64>,
         y: PyReadonlyArray1<'_, f64>,
         reml: bool,
-    ) -> PyResult<(Vec<f64>, Vec<f64>, f64, f64, f64, bool, Vec<f64>, Vec<f64>)> {
+    ) -> PyResult<(
+        Vec<f64>,
+        Vec<f64>,
+        f64,
+        f64,
+        f64,
+        bool,
+        Vec<f64>,
+        Vec<f64>,
+        i32,
+        String,
+        bool,
+    )> {
         let model = build(&matrices, &design)?;
         let fit = model
             .fit(&response(&y), reml)
@@ -1275,6 +1421,9 @@ mod python {
             fit.converged,
             fit.fixed_effects,
             fit.fixed_effect_errors,
+            fit.stop_code,
+            fit.stop_message,
+            fit.polished,
         ))
     }
 
@@ -1848,6 +1997,36 @@ mod tests {
         );
         let total: f64 = fit.proportions.iter().sum();
         assert!((total - 1.0).abs() < 1e-12, "proportions sum to {total}");
+    }
+
+    /// The fit says why the search stopped, and whether it had to search twice.
+    ///
+    /// **These are three different questions and the package used to answer
+    /// one.** `converged` is a projected-gradient test recomputed after the
+    /// search; `stop_code` is the search's own reason for stopping, which is
+    /// `factr` -- the objective settling -- on every red deer fit and never
+    /// `pgtol`; and `polished` says whether the second search with `factr`
+    /// switched off had to run. A well-conditioned problem like this one meets
+    /// the gradient test first time, so the polish must not fire: if it ever
+    /// does here, it is firing on fits it was built to leave alone.
+    #[test]
+    fn the_fit_says_why_the_search_stopped_and_whether_it_ran_twice() {
+        let (a, h, design, y) = small();
+        let model = ComponentModel::build(&[a, h], &design).expect("valid");
+        let fit = model.fit(&y, true).expect("fits");
+        assert!(fit.converged, "|g| = {}", fit.scaled_gradient);
+        assert!(
+            !fit.polished,
+            "the polish fired on a fit that already met the gradient test"
+        );
+        // Nought is a tolerance firing, one is running out of iterations.
+        assert!(
+            fit.stop_code == 0 || fit.stop_code == 1,
+            "unexpected stop code {}: {}",
+            fit.stop_code,
+            fit.stop_message
+        );
+        assert!(!fit.stop_message.is_empty());
     }
 
     /// With one component this is the model `prepared.rs` fits, by a slower

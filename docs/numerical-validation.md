@@ -88,9 +88,17 @@ pedigree and phenotypes (Dryad `doi:10.5061/dryad.jf04r362`). Refitting all
 four in `checks/against_red_deer.py` reproduces its Table 2: spring home range
 heritability of 44.02% against a published 43.67, falling to 0.29% against 0.28
 once overlap is in the model, and the rut's 31.29% against 31.31 falling to
-0.00% against 0.11. No variance component differs by more than 0.006, and the
-likelihood ratios for adding overlap come to 1300.4 and 771.3 against 1313.2
-and 785.8. This is the only external check the component family has against
+0.00% against 0.11. The likelihood ratios for adding overlap come to 1300.4 and
+771.3 against 1313.2 and 785.8.
+
+**Six of the eight fits agree to within 0.006 on every variance component. Birth
+weight is the exception and it is worth naming rather than averaging away**: it
+differs by up to 0.007 without overlap and by 0.038 with it, the largest being
+the overlap variance itself at 0.126 against a published 0.088. That trait is
+the one the paper itself flags as unstable, and every difference is inside one
+published standard error, but "no component differs by more than 0.006" is a
+claim about the other three traits and this document used to make it about all
+four. This is the only external check the component family has against
 matrices it did not build, on covariance that crosses families throughout —
 which is exactly what the SOLAR comparison above cannot reach.
 
@@ -114,6 +122,47 @@ problem of the eight, spring home range at 4,945 records, converges at
 and `1.45e-06`; the five successes run `2.41e-09` to `1.50e-08`, so the two
 groups are cleanly separated rather than straddling the threshold. Until this
 is reconciled, read `scaled_gradient` rather than `converged`.
+
+The fit now also reports `stop_code` and `stop_message`, which are the search's
+own reason for stopping rather than ours, and they turn that account from an
+inference into a measurement. **All eight fits stop the same way — `factr`
+fires — and not one stops on `pgtol` or runs out of iterations:**
+
+    CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH
+
+So the gradient the flag tests is never a criterion the search pursues, in any
+of the eight. The five that pass do so because their gradient happened already
+to be small when the objective settled, not because anything drove it there.
+That is worth stating plainly: on this family the flag reports a property of the
+valley's shape rather than a property of the search. It also identifies the
+remedy exactly, since `factr` is the only thing stopping the three short.
+
+**So where the gradient test fails, the fit now searches once more from the
+point already found with `factr` switched off, and reports `polished: true`.**
+It fires nowhere else, so every fit that passed before is untouched to the last
+bit — measured, not asserted: the five unpolished deer fits reproduce the
+unpolished run to `0.000e+00` on every component.
+
+| trait | model | gradient before | gradient after | converged |
+| --- | --- | --- | --- | --- |
+| rhr | no spatial | 1.453e-06 | 4.051e-08 | no → **yes** |
+| rhr | with overlap | 4.620e-07 | 1.578e-07 | no → no |
+| shr | with overlap | 1.162e-07 | 8.864e-08 | no → **yes** |
+
+**And the second search says something the first could not.** All three end the
+same way:
+
+    ERROR: ABNORMAL_TERMINATION_IN_LNSRCH
+
+which is L-BFGS-B reporting that its line search can no longer make progress in
+double precision. Not one reaches `pgtol`. So the remaining failure is not a
+budget that ran out or a search that gave up early — 1.578e-07 is near the
+numerical floor for that problem, and a `1e-7` threshold is asking for slightly
+more precision than the likelihood affords there. Because the returned point is
+checked rather than trusted — kept only if the objective is no worse and the
+projected gradient strictly better — an abnormal termination costs the fit
+nothing; it either improves or is discarded. A `polished: true` beside a
+`stop_code` of 52 is that, and is expected rather than alarming.
 
 For additive, household, and residual covariance at `n=400`, 95% coverage of
 the additive and household mean-diagonal proportions was 0.945 and 0.955. A

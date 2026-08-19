@@ -58,11 +58,43 @@ def test_fit_contains_only_numerical_model_fields():
         "loglik",
         "scaled_gradient",
         "converged",
+        "stop_code",
+        "stop_message",
+        "polished",
         "estimator",
         "mean_diagonal_component_contributions",
         "mean_diagonal_total",
         "mean_diagonal_proportions",
     }
+
+
+def test_the_fit_says_why_the_search_stopped_as_well_as_whether_it_converged():
+    """The two are different questions and the answer to one is not the other.
+
+    The search stops on `factr`, a relative reduction in the objective.
+    `converged` is decided afterwards on the recomputed projected gradient.
+    Down a flat valley the first happens well before the second, so a fit can
+    stop cleanly and still be reported as not converged -- which is what three
+    of the eight red deer fits do while landing within 0.006 of a published
+    table. Without the search's own code the two cannot be told apart, and this
+    holds it in place.
+    """
+    pairs = 20
+    matrix = _paired_gene_matrix(pairs)
+    rng = np.random.default_rng(4104)
+    y = np.repeat(rng.standard_normal(pairs), 2) + rng.standard_normal(2 * pairs)
+
+    record = asterism.ComponentModel([matrix], np.ones((2 * pairs, 1))).fit(y)
+
+    # Nought is a tolerance firing, one is running out of iterations, and
+    # anything else is the optimiser reporting an error.
+    assert record["stop_code"] in {0, 1}
+    assert isinstance(record["stop_message"], str)
+    assert record["stop_message"]
+    # A well-conditioned fit meets the gradient test first time, so the polish
+    # has nothing to do and says so.
+    assert record["converged"]
+    assert record["polished"] is False
 
 
 def test_fit_uses_explicit_scale_dependent_coefficient_names():

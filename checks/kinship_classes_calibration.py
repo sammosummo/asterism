@@ -100,25 +100,42 @@ TRUE_PROPORTIONS = [v / sum(TRUE_COEFFICIENTS) for v in TRUE_COEFFICIENTS]
 
 def one(index: int) -> dict | None:
     y = FACTOR @ np.random.default_rng(620_000 + index).standard_normal(N)
-    # `component_fit` returns eight values, and unpacking six of them raised on
+    # `component_fit` returns eleven values, and unpacking six of them raised on
     # every replicate. A bare `except` then turned each into a dropped result,
     # so the coverage and bias figures below were computed from an empty list
     # while the check exited nought. The failure is now named and no longer
     # swallowed: a genuinely unfittable replicate is still dropped, but a
     # mistake in this file is not.
+    #
+    # The two leading underscores on the tail catch the same trap a second
+    # time: unpacking a fixed count here means every future addition to the
+    # compiled tuple silently empties this check again, and a wrong length
+    # raises `ValueError` -- the same exception a real refusal to fit raises,
+    # which is why it went unnoticed. `ComponentModel.fit` returns a named
+    # dictionary and does not have this problem; this check predates it.
     try:
-        (
-            variances,
-            proportions,
-            _total,
-            _loglik,
-            _gradient,
-            _converged,
-            _fixed_effects,
-            _fixed_effect_errors,
-        ) = _core.component_fit(MATRICES, DESIGN, y, True)
+        got = _core.component_fit(MATRICES, DESIGN, y, True)
     except ValueError:
         return None
+    if len(got) != 11:
+        raise SystemExit(
+            f"`component_fit` returned {len(got)} values, not the eleven this "
+            "check unpacks. Update the unpacking below rather than letting "
+            "every replicate be dropped."
+        )
+    (
+        variances,
+        proportions,
+        _total,
+        _loglik,
+        _gradient,
+        _converged,
+        _fixed_effects,
+        _fixed_effect_errors,
+        _stop_code,
+        _stop_message,
+        _polished,
+    ) = got
     if variances[0] <= 0:
         return None
     out = {
