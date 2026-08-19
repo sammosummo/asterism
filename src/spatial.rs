@@ -38,6 +38,8 @@ use faer::{Mat, Side};
 use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
+use crate::convergence::{self, TOLERANCE};
+
 /// The factorisation of one dense covariance, and what the likelihood needs
 /// from it.
 ///
@@ -111,6 +113,11 @@ pub struct SpatialFit {
     pub fixed_effect_errors: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
+    /// True where the gradient test failed on the first search and a second
+    /// was run from that point with the objective tolerance switched off. It
+    /// fires nowhere else, so `false` means this is the fit the package gave
+    /// before the polish existed, to the last bit.
+    pub polished: bool,
     pub scaled_gradient: f64,
     pub estimator: &'static str,
 }
@@ -525,16 +532,36 @@ impl SpatialModel {
             starts.push(small);
         }
 
+        let value_of = |candidate: &[f64]| -> f64 {
+            self.evaluate(candidate, &scaled, reml, false)
+                .map_or(1e30, |e| e.negative_loglik)
+        };
+        let gradient_of = |candidate: &[f64]| -> Vec<f64> {
+            self.evaluate(candidate, &scaled, reml, true)
+                .map_or_else(|| vec![0.0; count], |e| e.gradient)
+        };
+        // The projected gradient the flag reads, scaled by the log-likelihood.
+        // A parameter resting on a bound is converged when its one-sided
+        // derivative pushes outward, which an unprojected norm calls a failure.
+        let reading = |gradient: &[f64], par: &[f64], negative: f64| -> f64 {
+            let projected = gradient
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if par[k] <= lower[k] {
+                        g.min(0.0)
+                    } else if par[k] >= upper[k] {
+                        g.max(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / negative.abs().max(1.0)
+        };
+
         let mut best: Option<(f64, Vec<f64>, Vec<f64>)> = None;
         for start in starts {
-            let value_of = |candidate: &[f64]| -> f64 {
-                self.evaluate(candidate, &scaled, reml, false)
-                    .map_or(1e30, |e| e.negative_loglik)
-            };
-            let gradient_of = |candidate: &[f64]| -> Vec<f64> {
-                self.evaluate(candidate, &scaled, reml, true)
-                    .map_or_else(|| vec![0.0; count], |e| e.gradient)
-            };
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;
             };
@@ -555,7 +582,7 @@ impl SpatialModel {
             control.pgtol = 1e-8;
             control.lmm = count.min(10);
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -571,27 +598,43 @@ impl SpatialModel {
             }
         }
 
-        let (negative, par, beta) = best.ok_or("SPATIAL_NO_START_CONVERGED")?;
-        let at = self
+        let (mut negative, mut par, mut beta) = best.ok_or("SPATIAL_NO_START_CONVERGED")?;
+        let mut at = self
             .evaluate(&par, &scaled, reml, true)
             .ok_or("SPATIAL_OPTIMUM_NOT_EVALUABLE")?;
-        let projected = at
-            .gradient
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                let at_lower = par[k] <= lower[k];
-                let at_upper = par[k] >= upper[k];
-                if at_lower {
-                    g.min(0.0)
-                } else if at_upper {
-                    g.max(0.0)
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / negative.abs().max(1.0);
+        let mut scaled_gradient = reading(&at.gradient, &par, negative);
+
+        // Where the gradient test fails, search once more with the objective
+        // tolerance switched off. It fires nowhere else, so every fit that
+        // passes today is untouched. See `convergence` for the measurements.
+        let mut polished = false;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &par,
+                negative,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    self.evaluate(candidate, &scaled, reml, true).map(|e| {
+                        (
+                            e.negative_loglik,
+                            reading(&e.gradient, candidate, e.negative_loglik),
+                        )
+                    })
+                },
+            )
+            && let Some(again) = self.evaluate(&better.par, &scaled, reml, true)
+        {
+            polished = true;
+            negative = better.negative_loglik;
+            par = better.par;
+            beta.clone_from(&again.fixed_effects);
+            scaled_gradient = better.scaled_gradient;
+            at = again;
+        }
 
         let variances: Vec<f64> = par[..count - 1].iter().map(|v| v * variance).collect();
         let raw_coefficient_total: f64 = variances.iter().sum();
@@ -623,7 +666,8 @@ impl SpatialModel {
                 })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
-            converged: scaled_gradient < 1e-6,
+            converged: scaled_gradient < TOLERANCE,
+            polished,
             scaled_gradient,
             estimator: if reml { "reml" } else { "ml" },
         })
@@ -810,16 +854,17 @@ impl SpatialModel {
             },
         ];
 
+        let value_of = |c: &[f64]| -> f64 {
+            self.evaluate_integrated(c, &scaled, reml, false)
+                .map_or(1e30, |e| e.negative_loglik)
+        };
+        let gradient_of = |c: &[f64]| -> Vec<f64> {
+            self.evaluate_integrated(c, &scaled, reml, true)
+                .map_or_else(|| vec![0.0; count], |e| e.gradient)
+        };
+
         let mut best: Option<(f64, Vec<f64>, Vec<f64>)> = None;
         for start in starts {
-            let value_of = |c: &[f64]| -> f64 {
-                self.evaluate_integrated(c, &scaled, reml, false)
-                    .map_or(1e30, |e| e.negative_loglik)
-            };
-            let gradient_of = |c: &[f64]| -> Vec<f64> {
-                self.evaluate_integrated(c, &scaled, reml, true)
-                    .map_or_else(|| vec![0.0; count], |e| e.gradient)
-            };
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;
             };
@@ -831,7 +876,7 @@ impl SpatialModel {
             control.pgtol = 1e-8;
             control.lmm = count.min(10);
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -847,23 +892,58 @@ impl SpatialModel {
             }
         }
 
-        let (negative, par, beta) = best.ok_or("SPATIAL_NO_START_CONVERGED")?;
-        let at = self
+        let integrated_reading = |gradient: &[f64], par: &[f64], negative: f64| -> f64 {
+            let projected = gradient
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if crate::components::resting_on_zero(par[k]) {
+                        g.min(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / negative.abs().max(1.0)
+        };
+
+        let (mut negative, mut par, mut beta) = best.ok_or("SPATIAL_NO_START_CONVERGED")?;
+        let mut at = self
             .evaluate_integrated(&par, &scaled, reml, true)
             .ok_or("SPATIAL_OPTIMUM_NOT_EVALUABLE")?;
-        let projected = at
-            .gradient
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                if crate::components::resting_on_zero(par[k]) {
-                    g.min(0.0)
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / negative.abs().max(1.0);
+        let mut scaled_gradient = integrated_reading(&at.gradient, &par, negative);
+
+        // As in the estimated-range fit above: one more search where the
+        // gradient test failed, and nowhere else.
+        let mut polished = false;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &par,
+                negative,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    self.evaluate_integrated(candidate, &scaled, reml, true)
+                        .map(|e| {
+                            (
+                                e.negative_loglik,
+                                integrated_reading(&e.gradient, candidate, e.negative_loglik),
+                            )
+                        })
+                },
+            )
+            && let Some(again) = self.evaluate_integrated(&better.par, &scaled, reml, true)
+        {
+            polished = true;
+            negative = better.negative_loglik;
+            par = better.par;
+            beta.clone_from(&again.fixed_effects);
+            scaled_gradient = better.scaled_gradient;
+            at = again;
+        }
 
         let variances: Vec<f64> = par.iter().map(|v| v * variance).collect();
         let raw_coefficient_total: f64 = variances.iter().sum();
@@ -897,7 +977,8 @@ impl SpatialModel {
                 })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
-            converged: scaled_gradient < 1e-6,
+            converged: scaled_gradient < TOLERANCE,
+            polished,
             scaled_gradient,
             estimator: if reml { "reml" } else { "ml" },
         })
@@ -1543,6 +1624,7 @@ mod python {
         f64,
         f64,
         bool,
+        bool,
         Vec<f64>,
         Vec<f64>,
     )> {
@@ -1563,6 +1645,7 @@ mod python {
             fit.loglik,
             fit.scaled_gradient,
             fit.converged,
+            fit.polished,
             fit.fixed_effects,
             fit.fixed_effect_errors,
         ))
@@ -1816,6 +1899,10 @@ mod tests {
             fit.scaled_gradient
         );
         assert!(
+            !fit.polished,
+            "the polish fired on a fit that already met the gradient test"
+        );
+        assert!(
             fit.raw_coefficient_proportions[1] > 0.02,
             "the spatial raw coefficient proportion came out at {} on data simulated with one",
             fit.raw_coefficient_proportions[1]
@@ -1932,6 +2019,10 @@ mod tests {
             fit.converged,
             "did not converge, |g| = {}",
             fit.scaled_gradient
+        );
+        assert!(
+            !fit.polished,
+            "the polish fired on a fit that already met the gradient test"
         );
         assert!(
             fit.raw_coefficient_proportions[1] > 0.02,

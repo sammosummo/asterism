@@ -89,6 +89,8 @@
 use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
+use crate::convergence::TOLERANCE;
+
 use crate::blocks::family_blocks;
 use crate::deviance::chi2_one_df_upper_tail;
 
@@ -975,7 +977,12 @@ impl BivariateModel {
         start: [f64; PARAMETERS],
         reml: bool,
     ) -> Result<Option<OptimisationCandidate>, &'static str> {
-        const TOLERANCE: f64 = 1e-7;
+        // A search control, not the convergence test. This model already
+        // searches with the objective tolerance off, so `pgtol` is what stops
+        // it, and loosening that would change where it stops rather than only
+        // what it reports. The flag itself reads `convergence::TOLERANCE` with
+        // every other family.
+        const SEARCH_GRADIENT: f64 = 1e-7;
         let bounds = state.bounds()?;
         let mut x = state.pack(&start);
         for (index, value) in x.iter_mut().enumerate() {
@@ -1050,7 +1057,7 @@ impl BivariateModel {
         // Ask the dependency for a tighter raw projected score than Asterism's
         // scaled criterion. Their norms are not identical, so using the public
         // threshold here left a few deterministic stress cases just above it.
-        control.pgtol = TOLERANCE * 0.1;
+        control.pgtol = SEARCH_GRADIENT * 0.1;
         control.lmm = dimension;
         let Ok(solution) = optim_lbfgsb_with_gradient(
             x,

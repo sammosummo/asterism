@@ -120,8 +120,8 @@ estimate is right and the flag is wrong. It is not a size effect — the largest
 problem of the eight, spring home range at 4,945 records, converges at
 `1.43e-08` in one of its two models. The failures run `1.16e-07`, `4.62e-07`
 and `1.45e-06`; the five successes run `2.41e-09` to `1.50e-08`, so the two
-groups are cleanly separated rather than straddling the threshold. Until this
-is reconciled, read `scaled_gradient` rather than `converged`.
+groups are cleanly separated rather than straddling the threshold. This is now reconciled, at one threshold shared by every
+model family, and `converged` can be read again.
 
 The fit now also reports `stop_code` and `stop_message`, which are the search's
 own reason for stopping rather than ours, and they turn that account from an
@@ -136,6 +136,28 @@ to be small when the objective settled, not because anything drove it there.
 That is worth stating plainly: on this family the flag reports a property of the
 valley's shape rather than a property of the search. It also identifies the
 remedy exactly, since `factr` is the only thing stopping the three short.
+
+**One threshold, `1e-6`, in every family.** It was seven different numbers
+spanning a factor of a hundred, none with a recorded reason. Measured, the
+families do not differ: across 63 real GOBS fits every one reaches about
+`1e-08` when allowed to, the reachable floors spanning `7.68e-09` to
+`2.69e-08`. What separated them in what the flag saw was `factr`, which
+inflates the reported gradient nearly thirtyfold in the spatial model and under
+twice in the component model.
+
+`1e-6` passes every fit measured here, the worst case anywhere being the deer's
+rut home range with overlap at `1.578e-07`. `1e-7` fails that fit outright and
+buys nothing: starving the search on purpose produced 165 fits, 92 of them
+genuinely short of the optimum, and exactly one landed between `1e-7` and
+`1e-6` — its estimate wrong by a millionth of a variance share.
+
+**That starving measurement also says what the number means.** The worst error
+in a variance share runs about ten times the reported gradient, and it holds
+across six orders of magnitude; every starved fit above `1e-5` was caught. So a
+fit reporting `1e-6` is right to about `1e-5` in any share it quotes, and one
+reporting `1e-3` may be wrong in the second decimal place. The latent mediation
+model keeps its own `1e-5` deliberately, because there the number accepts or
+discards a start rather than reporting a flag.
 
 **So where the gradient test fails, the fit now searches once more from the
 point already found with `factr` switched off, and reports `polished: true`.**

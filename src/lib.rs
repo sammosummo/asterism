@@ -9,6 +9,7 @@ mod association;
 mod bivariate;
 mod blocks;
 mod components;
+mod convergence;
 mod dense;
 mod deviance;
 mod discrete_gxe;
