@@ -562,8 +562,21 @@ impl ComponentModel {
             control.fnscale = value_of(&start).abs().max(1.0);
             control.parscale = vec![1.0; count];
             // R's own default: stop once the objective has settled to about
-            // 1e-9 relative. At nought the search ran to `maxit` every time,
-            // factorising a dense covariance per evaluation for nothing.
+            // 1e-9 relative.
+            //
+            // **Kept, but not for the reason first written here.** That said
+            // the search ran to `maxit` every time at nought, and measured on
+            // the red deer it does not: with `factr` off, all eight fits
+            // terminate in the line search after 2 to 102 further objective
+            // evaluations, none of them near the limit. The reason to keep it
+            // is cost against benefit. Running every fit that way costs 98 per
+            // cent more objective evaluations across the eight -- each one a
+            // dense covariance factorisation -- and on three of them buys
+            // nothing at all, the estimates coming back identical. The largest
+            // fit in the set spends a quarter as long again to return exactly
+            // what it already had. So the extra search is worth making only
+            // where the gradient test has failed, which is what the polish
+            // below does.
             control.factr = 1.0e3;
             control.pgtol = 1e-9;
             control.lmm = count.min(10);
