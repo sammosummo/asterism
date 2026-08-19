@@ -1,0 +1,369 @@
+<title>Is Aim 2 Powered?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  /* Palette taken from the clinical audiogram: cool paper, plotting blue for
+     the right ear, plotting red for the left. The neutrals carry a blue bias
+     so they sit with the accent rather than beside it. */
+  :root {
+    --ground: #F1F4F7;
+    --surface: #FFFFFF;
+    --surface-sunk: #E8EDF2;
+    --ink: #14202A;
+    --ink-soft: #55677A;
+    --ink-faint: #8698A8;
+    --accent: #1F5C8B;
+    --accent-soft: #DCE7F0;
+    --warn: #A6392F;
+    --warn-soft: #F5E2DF;
+    --ok: #2F6F5E;
+    --rule: #D3DCE4;
+    --shadow: 0 1px 2px rgba(20, 32, 42, .05), 0 8px 24px rgba(20, 32, 42, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1720;
+      --surface: #161F29;
+      --surface-sunk: #1D2833;
+      --ink: #E7EEF4;
+      --ink-soft: #94A6B6;
+      --ink-faint: #6B7E8F;
+      --accent: #74AAD8;
+      --accent-soft: #1B2E3F;
+      --warn: #E08A7C;
+      --warn-soft: #35211E;
+      --ok: #63B49B;
+      --rule: #26333F;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F1720;
+    --surface: #161F29;
+    --surface-sunk: #1D2833;
+    --ink: #E7EEF4;
+    --ink-soft: #94A6B6;
+    --ink-faint: #6B7E8F;
+    --accent: #74AAD8;
+    --accent-soft: #1B2E3F;
+    --warn: #E08A7C;
+    --warn-soft: #35211E;
+    --ok: #63B49B;
+    --rule: #26333F;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 53rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 2.5rem) 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.6rem;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .72rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: Spectral, Georgia, serif;
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.5vw, 3.1rem);
+    line-height: 1.1;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: .5rem 0 0;
+  }
+
+  .standfirst {
+    font-family: Spectral, Georgia, serif;
+    font-size: clamp(1.08rem, 2.2vw, 1.3rem);
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 40ch;
+    margin: .9rem 0 0;
+  }
+
+  h2 {
+    font-family: Spectral, Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.4rem, 3vw, 1.75rem);
+    line-height: 1.22;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+    margin: 0;
+    padding-bottom: .5rem;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  h3 {
+    font-family: "Source Sans 3", sans-serif;
+    font-weight: 600;
+    font-size: 1.02rem;
+    letter-spacing: .01em;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+  p { margin: 0; max-width: 66ch; }
+  strong { font-weight: 600; }
+
+  /* The verdict sits before anything else because this page exists to answer
+     one question and the reader should not have to hunt for it. */
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 5px solid var(--warn);
+    border-radius: 3px;
+    padding: 1.5rem 1.6rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+  }
+  .verdict p { max-width: 60ch; }
+  .verdict .big {
+    font-family: Spectral, Georgia, serif;
+    font-size: 1.32rem;
+    line-height: 1.35;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .fig { background: var(--surface); padding: 1.05rem 1.1rem; }
+  .fig dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .fig dd {
+    margin: .35rem 0 0;
+    font-family: Spectral, Georgia, serif;
+    font-size: 1.85rem;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+  }
+  .fig dd.plain { color: var(--ink); }
+  .fig .sub {
+    display: block;
+    font-family: "Source Sans 3", sans-serif;
+    font-size: .78rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+    margin-top: .3rem;
+    line-height: 1.4;
+  }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  caption {
+    text-align: left;
+    padding: .95rem 1.1rem .7rem;
+    font-size: .87rem;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+    max-width: 62ch;
+  }
+  th, td { padding: .58rem .95rem; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 500;
+    font-size: .69rem;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-sunk);
+  }
+  tbody td { border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: "IBM Plex Mono", monospace; font-size: .87rem; }
+  td.lead { font-weight: 600; }
+  .peak { color: var(--accent); font-weight: 600; }
+  .weak { color: var(--warn); font-weight: 600; }
+
+  .pill {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .66rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: .12rem .45rem;
+    border-radius: 2px;
+    background: var(--accent-soft);
+    color: var(--ok);
+    border: 1px solid currentColor;
+  }
+
+  .note {
+    background: var(--surface-sunk);
+    border-radius: 3px;
+    padding: 1.15rem 1.25rem;
+    font-size: .93rem;
+    color: var(--ink-soft);
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+  }
+  .note strong { color: var(--ink); }
+
+  ul { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .5rem; max-width: 64ch; }
+  li::marker { color: var(--ink-faint); }
+
+  code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .86em;
+    background: var(--surface-sunk);
+    padding: .08em .32em;
+    border-radius: 2px;
+  }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.2rem;
+    font-size: .84rem;
+    color: var(--ink-faint);
+    max-width: 64ch;
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Polygenic mediation R01 &middot; Aim 2 &middot; 19 August 2026</p>
+    <h1>Is Aim&nbsp;2 powered?</h1>
+    <p class="standfirst">Simulated level and power for the latent mediation test, on the improved design with the family-history recruitment route.</p>
+  </header>
+
+  <div class="verdict">
+    <p class="eyebrow">The answer</p>
+    <p class="big">No &mdash; not at 80 per cent, anywhere in the plausible range. The best case is 55 per cent, and the direct-path test is weaker still.</p>
+    <p>Every null cell holds its level, so these figures are readable rather than an artefact of a broken test. What they say is that 1,600 people detects mediation about half the time when the mediated effect is at the top of the range considered, and detects a direct path almost never.</p>
+  </div>
+
+  <dl class="figures">
+    <div class="fig"><dt>People</dt><dd class="plain">1,600</dd><span class="sub">671 family units, 807 over 65</span></div>
+    <div class="fig"><dt>Dementia cases</dt><dd class="plain">257</dd><span class="sub">mean across replicates</span></div>
+    <div class="fig"><dt>Best power</dt><dd>54.5%</dd><span class="sub">audiograms, &theta;<sub>v</sub> = 0.24</span></div>
+    <div class="fig"><dt>For 80 per cent</dt><dd>&times;1.7</dd><span class="sub">about 2,700 people</span></div>
+  </dl>
+
+  <section>
+    <h2>Level first</h2>
+    <p>A power figure read off a test that over-rejects is not a power figure, so the null cells were run at the same replicate count as the alternatives and read before anything else. The vertical estimand is a product, so its null is a union &mdash; the loading is nought, or the path is &mdash; and a test can hold against one branch and not the other. Both branches are here, and so is the direct-path null, which the first campaign never measured at all.</p>
+
+    <div class="scroller">
+      <table>
+        <caption>Rejection at .025 under each null, 200 replicates per cell. Nominal is .025; the tolerance is two Monte&nbsp;Carlo standard errors.</caption>
+        <thead>
+          <tr><th scope="col">Null</th><th scope="col">Arm</th><th scope="col">Vertical</th><th scope="col">Horizontal</th><th scope="col"></th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="lead">Loading nought <span class="sub"></span></td><td>ABR only</td><td class="num">0.020</td><td class="num">&mdash;</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">Path nought</td><td>ABR only</td><td class="num">0.025</td><td class="num">&mdash;</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">Path nought</td><td>audiogram</td><td class="num">0.035</td><td class="num">&mdash;</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">Both nought</td><td>ABR only</td><td class="num">0.010</td><td class="num">0.015</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">Both nought</td><td>audiogram</td><td class="num">0.040</td><td class="num">0.030</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">No direct path, mediation real</td><td>ABR only</td><td class="num">&mdash;</td><td class="num">0.025</td><td><span class="pill">holds</span></td></tr>
+          <tr><td class="lead">No direct path, mediation real</td><td>audiogram</td><td class="num">&mdash;</td><td class="num">0.030</td><td><span class="pill">holds</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <p><strong>The last two rows are the adversarial ones.</strong> They set the direct path to nought while the mediated effect is real and large. A direct-path test that borrowed evidence from the mediated path would over-reject there. It sits at nominal, so it does not.</p>
+      <p><strong>The loading-nought cell is conservative by construction.</strong> With the loading on its boundary the reference is simulated rather than assumed, and at 50 draws the smallest p-value it can return is near 0.02 &mdash; so rejection needs none of 50 draws to exceed. That is why it comes in at 0.020, and it means the vertical power below is, if anything, slightly understated.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the design buys</h2>
+    <p>Power against the mediated effect &theta;<sub>v</sub> = <em>ab</em>, in two measurement arms. Probands either give a binary, misclassified ABR &mdash; the protocol for people too impaired for behavioural audiometry &mdash; or a full audiogram. The pair brackets the severity question without having to know what fraction falls each way.</p>
+
+    <div class="scroller">
+      <table>
+        <caption>Rejection at .025 under a real mediation, 200 replicates per cell. Monte&nbsp;Carlo error is about &plusmn;.035 at the top of the range.</caption>
+        <thead>
+          <tr><th scope="col">&theta;<sub>v</sub></th><th scope="col">ABR only</th><th scope="col">Audiogram</th><th scope="col">Sample for 80% (audiogram)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="lead num">0.06</td><td class="num">0.055</td><td class="num">0.080</td><td class="num">&times;13.8</td></tr>
+          <tr><td class="lead num">0.12</td><td class="num">0.070</td><td class="num">0.160</td><td class="num">&times;6.1</td></tr>
+          <tr><td class="lead num">0.18</td><td class="num">0.230</td><td class="num">0.335</td><td class="num">&times;2.9</td></tr>
+          <tr><td class="lead num">0.24</td><td class="num">0.455</td><td class="num peak">0.545</td><td class="num">&times;1.7</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Reaching 80 per cent at the most favourable effect needs roughly <strong>1.7&times; the sample with audiograms (about 2,700 people)</strong> or <strong>2.1&times; with ABR alone (about 3,350)</strong>. The multiplier comes from the non-centrality implied by each observed power, which assumes the likelihood ratio behaves as a chi-square &mdash; reasonable away from the union null, and stated here as the approximation it is.</p>
+
+    <div class="note">
+      <p><strong>Audiograms are worth about 1.2&times; more per person, not the 2.7&times; the small-effect cells appear to show.</strong> At &theta;<sub>v</sub> = 0.12 the ABR arm's power is 0.070 &plusmn; 0.018, far too imprecise to invert into a non-centrality; the apparent advantage there is noise. At 0.24, where power is measured well, the real advantage is modest. Widening audiometry coverage helps, but adding people is the lever that closes the gap.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The finding that matters more than the power</h2>
+    <p>Across every cell where the true direct path is 0.2 &mdash; comparable in size to the mediated effect it is meant to be told apart from &mdash; the direct-path test rejects between <strong class="weak">0.06 and 0.12</strong>. That is close to no power at all.</p>
+    <p>Aim&nbsp;2's central claim is separating vertical from horizontal pleiotropy. On these numbers the study detects mediation about half the time and detects a direct path essentially never, which means a null result on the direct path would carry almost no information. This is consistent with the direct path being poorly identified in this model &mdash; the same reason its confidence set has to be able to report itself unbounded rather than pretend to a value.</p>
+    <p>This is a design-level limitation rather than a technical footnote, and it is better confronted before the application goes in than in a summary statement.</p>
+  </section>
+
+  <section>
+    <h2>What stands behind the numbers</h2>
+    <ul>
+      <li><strong>Real families, not synthetic ones.</strong> 671 units from the Acoustic pedigrees and the family-history route, with age-specific dementia risk rather than one rate for everybody; every status observed, since a fifty-year-old with a clean CDR is a known non-case.</li>
+      <li><strong>Ascertainment cannot bias the estimands.</strong> Recruiting through an affected proband contributes exactly <code>families &times; log(1/prevalence)</code> to the log likelihood &mdash; verified at four prevalences &mdash; and a constant cannot move a maximum. It holds for one named proband with a threshold fixed from known prevalence, and would not if the threshold were estimated.</li>
+      <li><strong>The fast integrator agrees with the accurate one, and does not drift as families grow.</strong> Sequential truncation against quasi-Monte&nbsp;Carlo on fitted estimands and p-values, at the sizes the design actually contains. The worry was that an approximation conditioning one dimension at a time would decay in larger families. It does not: the disagreement shows no trend with size, and the worst of it is at size three, not at size eight. On the mediated estimand it runs 1&times;10<sup>&minus;2</sup> at size three (about 4 per cent of one standard error), 6&times;10<sup>&minus;4</sup> at six, and 1&times;10<sup>&minus;5</sup> at eight, the largest unit in the design, where the mediation p-value is identical to machine precision. Every difference is far below the &plusmn;.011 Monte&nbsp;Carlo noise these rejection rates already carry. It runs 300&ndash;350&times; faster (590&nbsp;s against 2&nbsp;s at size eight), which is what makes the real pedigrees usable at all.</li>
+      <li><strong>Refusals are counted, never dropped.</strong> Between 2 and 7 replicates per cell of 200; they stay in the denominator, so a refusal counts against power rather than quietly improving it.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What would change these numbers</h2>
+    <ul>
+      <li><strong>Sample size.</strong> The clearest lever: 2,700&ndash;3,350 people for 80 per cent at &theta;<sub>v</sub> = 0.24.</li>
+      <li><strong>A finer reference for the boundary null.</strong> 50 draws makes the loading-nought branch conservative. More draws would recover some power at real cost in compute.</li>
+      <li><strong>Nothing here rescues the direct-path test.</strong> Its weakness is identification, not sample size alone, so more people would improve it only slowly.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Simulated on Medusa, 12 power cells and 6 level cells, 200 replicates each, on the design settled 18 August 2026. Three boundary-null cells were still running when this was written; they test the conservative branch and are not expected to change the picture. Power figures are indicative to about &plusmn;3.5 percentage points from Monte&nbsp;Carlo error alone.</p>
+  </footer>
+
+</div>
