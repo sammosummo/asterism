@@ -73,10 +73,25 @@ if stated - UTRGV_SUBAWARD != 2_348_382:
     problems.append("the implied earlier San Antonio figure is wrong")
 want("2,348,382", "implied earlier figure")
 
-# A second research assistant, quoted as roughly $508,000.
-second_ra = 322_820 * (1 + SA_FA)
-if abs(second_ra - 508_000) > 1_000:
-    problems.append(f"a second assistant is {second_ra:,.0f}, not roughly 508,000")
+# The Year 5 saving, and the package arithmetic beside it.
+y5_direct, y5_total = 202_423, 318_816
+if abs(y5_direct * (1 + SA_FA) - y5_total) > 1:
+    problems.append("the Year 5 saving does not reconcile at 57.5% F&A")
+want("318,816", "Year 5 saving with F&A")
+want("202,423", "Year 5 saving direct")
+net_direct = added_directs - y5_direct
+net_total = increment - y5_total
+if abs(net_direct + 133_673) > 1 or abs(net_total + 210_535) > 1:
+    problems.append(f"the package nets to {net_direct:,.0f} direct and "
+                    f"{net_total:,.0f} with F&A, not the stated figures")
+want("133,673", "package net direct")
+want("210,535", "package net with F&A")
+if abs(y5_total / 2 - 159_408) > 1:
+    problems.append("halving the Year 5 lines is not about $159,000")
+
+# Accrual under the two timelines.
+if abs(750 / 4 - 187.5) > 1e-9 or abs(750 / 5 - 150) > 1e-9:
+    problems.append("the accrual arithmetic under the two timelines is wrong")
 
 # Recruitment rates.
 if 750 / 4 != 187.5 or 1000 / 4 != 250:
