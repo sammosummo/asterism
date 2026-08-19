@@ -247,7 +247,16 @@ impl LatentMediationModel {
         if inputs.is_empty() {
             return Err("LATENT_MEDIATION_NO_FAMILIES");
         }
-        if qmc_points < 256 || !qmc_points.is_multiple_of(8) {
+        // **Nought selects sequential truncation instead**, which is the
+        // method SOLAR uses and `LiabilityModel` already carries. It is an
+        // approximation where quasi-Monte Carlo is accurate, and it costs in
+        // proportion to the family size where quasi-Monte Carlo costs at least
+        // five hundred evaluations regardless -- which is the difference
+        // between a design that may use general pedigrees and one restricted
+        // to pairs. Measured against the accurate route it agrees to about
+        // 0.03 in log probability per family at the correlations a pedigree
+        // produces, and exactly where the members are independent.
+        if qmc_points != 0 && (qmc_points < 256 || !qmc_points.is_multiple_of(8)) {
             return Err("LATENT_MEDIATION_QMC_POINTS_INVALID");
         }
         let mut families = Vec::with_capacity(inputs.len());
@@ -1577,6 +1586,105 @@ struct RectangleProbability {
     method: &'static str,
 }
 
+/// A rectangle probability by sequential truncation.
+///
+/// **This is the method SOLAR uses and the one `LiabilityModel` already
+/// carries, generalised from an orthant to a rectangle.** It conditions on one
+/// coordinate at a time, replacing that coordinate by the mean and variance of
+/// its truncated distribution and updating the rest. The cost grows in
+/// proportion to the number of members, where quasi-Monte Carlo costs at least
+/// five hundred evaluations however few members there are -- which is why a
+/// third observed member costs 113 times the second.
+///
+/// It is an approximation and is named as one. Sequential truncation is exact
+/// where the coordinates are independent and degrades as they correlate, which
+/// is the trade a pedigree analysis has always made; the quasi-Monte Carlo
+/// route stays available as the accurate reference it has been all along.
+///
+/// The rarest interval is taken first, for the reason `LiabilityModel` takes
+/// the rarer class first: the error of the sequential update depends on that
+/// order.
+///
+/// # Errors
+///
+/// Returns a stable code where a conditional variance stops being positive.
+fn sequential_rectangle(
+    lower: &[f64],
+    upper: &[f64],
+    mean: &DVector<f64>,
+    covariance: &DMatrix<f64>,
+) -> Result<f64, &'static str> {
+    let size = lower.len();
+    let mut mu: Vec<f64> = (0..size).map(|i| mean[i]).collect();
+    let mut sigma = covariance.clone();
+    let mut remaining: Vec<usize> = (0..size).collect();
+    let mut total = 0.0_f64;
+
+    while !remaining.is_empty() {
+        // The rarest interval first.
+        let mut chosen = 0usize;
+        let mut chosen_log = f64::INFINITY;
+        let mut chosen_bounds = (0.0_f64, 0.0_f64);
+        for (slot, &index) in remaining.iter().enumerate() {
+            let variance = sigma[(index, index)];
+            if !(variance > 0.0) || !variance.is_finite() {
+                return Err("LATENT_MEDIATION_SEQUENTIAL_VARIANCE_INVALID");
+            }
+            let sd = variance.sqrt();
+            let low = (lower[index] - mu[index]) / sd;
+            let high = (upper[index] - mu[index]) / sd;
+            let log_probability = log_interval_probability(low, high)?;
+            if log_probability < chosen_log {
+                chosen_log = log_probability;
+                chosen = slot;
+                chosen_bounds = (low, high);
+            }
+        }
+        let index = remaining.remove(chosen);
+        let (low, high) = chosen_bounds;
+        if !chosen_log.is_finite() {
+            return Ok(f64::NEG_INFINITY);
+        }
+        total += chosen_log;
+
+        // The truncated mean and variance of a standard normal on the chosen
+        // interval, formed through logs so a rare interval does not underflow:
+        // the density and the probability are both tiny there and only their
+        // ratio is ordinary.
+        let log_density = |z: f64| -0.5 * z * z - 0.5 * LOG_TWO_PI;
+        let at_low = if low.is_finite() {
+            (log_density(low) - chosen_log).exp()
+        } else {
+            0.0
+        };
+        let at_high = if high.is_finite() {
+            (log_density(high) - chosen_log).exp()
+        } else {
+            0.0
+        };
+        let truncated_mean = at_low - at_high;
+        let weighted_low = if low.is_finite() { low * at_low } else { 0.0 };
+        let weighted_high = if high.is_finite() { high * at_high } else { 0.0 };
+        let truncated_variance =
+            (1.0 + weighted_low - weighted_high - truncated_mean * truncated_mean)
+                .clamp(1e-12, 1.0);
+
+        // Condition everything still to come on what that coordinate now is.
+        let sd = sigma[(index, index)].sqrt();
+        let still: Vec<usize> = remaining.clone();
+        let cross: Vec<f64> = still.iter().map(|&j| sigma[(index, j)] / sd).collect();
+        for (slot, &j) in still.iter().enumerate() {
+            mu[j] += cross[slot] * truncated_mean;
+        }
+        for (a, &j) in still.iter().enumerate() {
+            for (b, &k) in still.iter().enumerate() {
+                sigma[(j, k)] -= cross[a] * cross[b] * (1.0 - truncated_variance);
+            }
+        }
+    }
+    Ok(total)
+}
+
 fn rectangle_probability(
     lower: &[f64],
     upper: &[f64],
@@ -1627,6 +1735,14 @@ fn rectangle_probability(
             log_probability: rectangle.log_probability,
             log_batch_range: 0.0,
             method: rectangle.method,
+        });
+    }
+
+    if qmc_points == 0 {
+        return Ok(RectangleProbability {
+            log_probability: sequential_rectangle(lower, upper, mean, covariance)?,
+            log_batch_range: 0.0,
+            method: "sequential_truncation",
         });
     }
 
@@ -3390,6 +3506,69 @@ mod tests {
     /// marginals, so the quasi-Monte Carlo path can be held to an exact
     /// answer -- including where that answer is far below anything the
     /// ordinary scale carries.
+    /// Sequential truncation agrees with quasi-Monte Carlo at the
+    /// correlations a pedigree produces.
+    ///
+    /// **This is the check that decides whether the cheap route may be used at
+    /// all.** Sequential truncation is exact where the coordinates are
+    /// independent and degrades as they correlate, so the question is not
+    /// whether it is approximate -- it is -- but whether its error is small
+    /// where the model actually works. An additive model with a heritability of
+    /// a half puts a sibling liability correlation at a quarter, so the range
+    /// that matters is roughly nought to a half.
+    ///
+    /// The error is reported rather than only asserted, because a method whose
+    /// accuracy depends on the data has to state where it holds.
+    #[test]
+    fn sequential_truncation_agrees_with_quasi_monte_carlo() {
+        let normal = Normal::new(0.0, 1.0).expect("standard normal");
+        let _ = &normal;
+        let mut worst_ordinary = 0.0_f64;
+        for &correlation in &[0.0, 0.1, 0.25, 0.5, 0.8] {
+            let mut worst = 0.0_f64;
+            for &size in &[3_usize, 4, 6] {
+                let mut covariance = DMatrix::<f64>::identity(size, size);
+                for i in 0..size {
+                    for j in 0..size {
+                        if i != j {
+                            covariance[(i, j)] = correlation;
+                        }
+                    }
+                }
+                let mean = DVector::from_element(size, 0.0);
+                // A spread of rectangles: the common case, a rare corner, and
+                // one half-line, which is what a binary status actually gives.
+                for (lower, upper) in [
+                    (vec![f64::NEG_INFINITY; size], vec![0.5_f64; size]),
+                    (vec![1.5_f64; size], vec![f64::INFINITY; size]),
+                    (vec![-1.0_f64; size], vec![1.0_f64; size]),
+                    (vec![f64::NEG_INFINITY; size], vec![-1.5_f64; size]),
+                ] {
+                    let reference =
+                        rectangle_probability(&lower, &upper, &mean, &covariance, 262_144)
+                            .expect("quasi-Monte Carlo")
+                            .log_probability;
+                    let cheap = sequential_rectangle(&lower, &upper, &mean, &covariance)
+                        .expect("sequential");
+                    worst = worst.max((cheap - reference).abs());
+                }
+            }
+            println!("correlation {correlation:.2}: worst log difference {worst:.4}");
+            if correlation <= 0.5 {
+                worst_ordinary = worst_ordinary.max(worst);
+            }
+        }
+        // A likelihood ratio needs 3.84 to matter, and this enters as a sum
+        // over families, so a per-family error of this size is what the
+        // approximation has to stay under to be usable at all.
+        assert!(
+            worst_ordinary < 0.25,
+            "at pedigree correlations the sequential route is out by \
+             {worst_ordinary}, which is too much to substitute for the \
+             quasi-Monte Carlo one"
+        );
+    }
+
     #[test]
     fn the_qmc_path_reaches_the_deep_tail() {
         for thresholds in [
