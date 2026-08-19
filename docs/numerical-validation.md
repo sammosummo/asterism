@@ -435,7 +435,19 @@ uv run --no-project python checks/spatial_against_solar.py
 uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
+uv run --no-project python checks/mixed_bivariate_against_solar.py
 uv run --locked --no-sync python checks/against_famskat.py
+```
+
+The censored model against R. `censReg` gives the fit with no relatives in it,
+which is the only case the two models share; `MCMCglmm` carries the relatedness
+and is compared by posterior interval rather than by point estimate, because it
+is a different estimator and agreement to a decimal would be the surprising
+outcome:
+
+```sh
+uv run --no-project python checks/tobit_against_censreg.py
+uv run --no-project python checks/tobit_against_mcmcglmm.py
 ```
 
 Against a published table rather than another package. This one needs no
@@ -460,6 +472,31 @@ uv run --no-project python checks/gxe_intervals.py
 uv run --no-project python checks/discrete_gxe_calibration.py
 uv run --no-project python checks/liability_calibration.py
 uv run --no-project python checks/association_tail.py
+uv run --no-project python checks/tobit_calibration.py
+uv run --no-project python checks/tobit_coverage.py
+uv run --no-project python checks/mixed_bivariate_calibration.py
+uv run --no-project python checks/mediation_calibration.py
+uv run --no-project python checks/mediation_ascertainment.py
+uv run --with numpy python checks/mediation_power.py
+```
+
+`mediation_power.py` answers a design question rather than checking a
+calculation: whether to enrol several offspring per adjudicated case. It is here
+because it is a simulation that has to be run and read like the rest.
+
+Measurements that set a default rather than assert a result. Both exist because
+a number in the code was chosen once and needed a reason attached:
+
+```sh
+uv run --no-project python checks/mediation_qmc_points.py
+uv run --no-project python checks/mediation_family_size_cost.py
+```
+
+Reading a real relationship matrix, which the others never do. It asserts on
+structure and agreement, never on a person:
+
+```sh
+uv run --no-project python checks/empirical_kinship_import.py
 ```
 
 Timing, which asserts nothing:
