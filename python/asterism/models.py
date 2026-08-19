@@ -28,6 +28,7 @@ __all__ = [
     "kinship_classes",
     "mixed_bivariate_fit",
     "tobit_fit",
+    "tobit_interval",
 ]
 
 
@@ -1500,5 +1501,58 @@ def mixed_bivariate_fit(
         "scaled_gradient": scaled_gradient,
         "largest_family": largest_family,
         "kinds": [first["kind"], second["kind"]],
+        "estimator": "ml",
+    }
+
+
+def tobit_interval(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """A 95 per cent profile-likelihood interval for the censored heritability.
+
+    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    parameter's own bound rather than where the profile fell away. An end on a
+    bound means **the data did not rule that end out**, which is a different
+    statement from the interval stopping there.
+
+    ``profile_failures`` counts fits along the profile that failed or did not
+    converge. Each one widened the interval rather than narrowing it, which is
+    the safe direction, but a large count means the interval rests on fewer
+    points than its width suggests.
+
+    Read ``censored_share`` beside the answer. On simulated data the model
+    recovers the truth to three quarters censored; on real extended
+    high-frequency thresholds it degrades past about half, where too little of
+    the upper tail is left to estimate a variance from.
+    """
+    (
+        estimate,
+        lower,
+        upper,
+        lower_at_bound,
+        upper_at_bound,
+        level,
+        profile_failures,
+        censored_share,
+    ) = _core.tobit_interval(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "estimate": estimate,
+        "lower": lower,
+        "upper": upper,
+        "lower_at_bound": lower_at_bound,
+        "upper_at_bound": upper_at_bound,
+        "level": level,
+        "profile_failures": profile_failures,
+        "censored_share": censored_share,
         "estimator": "ml",
     }

@@ -113,6 +113,29 @@ pub struct TobitFit {
     pub largest_family: usize,
 }
 
+/// Chi-square on one degree of freedom at 0.95.
+const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+
+/// A profile-likelihood interval for the heritability.
+#[derive(Clone, Debug)]
+pub struct TobitInterval {
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the end sits on the parameter's own bound rather than where
+    /// the profile fell away -- the data did not rule that end out.
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+    /// How many profile fits failed or did not converge. Each one widened the
+    /// interval rather than narrowing it, which is the safe direction, but a
+    /// large count means the interval rests on fewer points than it looks.
+    pub profile_failures: usize,
+    /// Reported beside the interval, because how far the model can be trusted
+    /// depends on it.
+    pub censored_share: f64,
+}
+
 /// One trait, one relationship matrix, per-observation censoring.
 pub struct TobitModel {
     relationship: DMatrix<f64>,
@@ -348,6 +371,77 @@ impl TobitModel {
     ///
     /// Returns a stable code where no start converges.
     pub fn fit(&self) -> Result<TobitFit, &'static str> {
+        self.fit_holding(None)
+    }
+
+    /// A 95 per cent profile-likelihood interval for the heritability.
+    ///
+    /// **The maximum comes from the held fit at the estimate**, not from the
+    /// free fit's own log likelihood, so that both ends of the comparison are
+    /// computed the same way and a difference between them is the profile
+    /// falling away rather than two searches disagreeing.
+    ///
+    /// **A fit that failed, or stopped without converging, is not a likelihood
+    /// that fell away.** Counting one as outside would look to the bisection
+    /// like ground the data had ruled out, and the interval would come back
+    /// narrower than the data support while saying nothing about it. They are
+    /// counted instead, and reported, and the interval widens over them.
+    ///
+    /// Read `censored_share` beside the result. The calibration in
+    /// `checks/tobit_calibration.py` recovers the truth to three quarters
+    /// censored on simulated data, but on real extended high-frequency
+    /// thresholds the model degrades past about half.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails.
+    pub fn heritability_interval(&self) -> Result<TobitInterval, &'static str> {
+        let free = self.fit()?;
+        let estimate = free.heritability;
+        let at_estimate = self.fit_holding(Some(estimate))?.loglik;
+        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
+
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |value: f64| match self.fit_holding(Some(value)) {
+            Ok(fit) if fit.converged => fit.loglik < threshold,
+            _ => {
+                failures.set(failures.get() + 1);
+                false
+            }
+        };
+        let (lower, lower_at_bound) = if outside(0.0) {
+            (crate::liability::bisect(0.0, estimate, &outside), false)
+        } else {
+            (0.0, true)
+        };
+        let (upper, upper_at_bound) = if outside(1.0) {
+            (crate::liability::bisect(1.0, estimate, &outside), false)
+        } else {
+            (1.0, true)
+        };
+        Ok(TobitInterval {
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+            profile_failures: failures.get(),
+            censored_share: self.censored_share(),
+        })
+    }
+
+    /// Fit with the heritability held, or free where `held` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no start converges.
+    pub fn fit_holding(&self, held: Option<f64>) -> Result<TobitFit, &'static str> {
+        if let Some(value) = held {
+            if !(0.0..=1.0).contains(&value) {
+                return Err("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE");
+            }
+        }
         let columns = self.design.ncols();
         let count = columns + 2;
 
@@ -370,6 +464,10 @@ impl TobitModel {
         let mut upper = vec![f64::INFINITY; count];
         lower[0] = 0.0;
         upper[0] = 1.0;
+        if let Some(value) = held {
+            lower[0] = value;
+            upper[0] = value;
+        }
 
         let value_of = |theta: &[f64]| -> f64 {
             self.loglik(theta[0], theta[1].exp(), &theta[2..])
@@ -397,7 +495,7 @@ impl TobitModel {
         let mut best: Option<(f64, Vec<f64>)> = None;
         for heritability in [0.05_f64, 0.3, 0.6] {
             let mut start = vec![0.0; count];
-            start[0] = heritability;
+            start[0] = held.unwrap_or(heritability);
             start[1] = spread.ln();
             start[2] = centre;
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
@@ -631,6 +729,60 @@ mod tests {
              {} against {} at a true {truth_variance}",
             fit.total_variance,
             naive.total_variance
+        );
+    }
+
+    /// The profile interval brackets the estimate and reaches where the
+    /// likelihood actually falls away.
+    ///
+    /// Two things are checked that a plausible-looking interval can still get
+    /// wrong: the estimate must lie inside its own interval, and holding the
+    /// heritability at either end must cost about half a chi-square on one --
+    /// which is what the interval claims about itself and is otherwise only
+    /// asserted.
+    #[test]
+    fn the_profile_interval_reaches_where_the_likelihood_falls_away() {
+        let (relationship, value, censoring, limit, design) = simulate(
+            300, 0.5, 4.0, 10.0, Some(11.0), 20_260_818);
+        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
+            .expect("builds");
+        let got = model.heritability_interval().expect("intervals");
+
+        assert!(
+            got.lower <= got.estimate && got.estimate <= got.upper,
+            "the estimate {} is outside its own interval [{}, {}]",
+            got.estimate, got.lower, got.upper
+        );
+        assert!((got.level - 0.95).abs() < 1e-12);
+
+        let peak = model.fit_holding(Some(got.estimate)).expect("held fit").loglik;
+        for (name, end, at_bound) in [
+            ("lower", got.lower, got.lower_at_bound),
+            ("upper", got.upper, got.upper_at_bound),
+        ] {
+            if at_bound {
+                continue;   // the data did not rule that end out
+            }
+            let there = model.fit_holding(Some(end)).expect("held fit").loglik;
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - CHI2_ONE_95).abs() < 0.05,
+                "the {name} end costs {cost} in deviance, not the {CHI2_ONE_95} \
+                 an interval at this level claims"
+            );
+        }
+    }
+
+    /// A heritability held outside its range is refused rather than clamped.
+    #[test]
+    fn a_held_heritability_outside_the_range_is_refused() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(40, 0.5, 1.0, 0.0, None, 3);
+        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
+            .expect("builds");
+        assert_eq!(
+            model.fit_holding(Some(1.5)).err(),
+            Some("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE")
         );
     }
 

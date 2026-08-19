@@ -68,3 +68,45 @@ pub fn tobit_fit(
         fit.largest_family,
     ))
 }
+
+/// A 95 per cent profile-likelihood interval for the heritability.
+///
+/// Returns the estimate, the two ends, whether each end sits on the
+/// parameter's own bound rather than where the profile fell away, how many
+/// profile fits failed, and the share of observations that hit a limit.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+pub fn tobit_interval(
+    relationship: PyReadonlyArray2<'_, f64>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+) -> PyResult<(f64, f64, f64, bool, bool, f64, usize, f64)> {
+    let a = relationship.as_array();
+    let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
+    let x = design.as_array();
+    let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+    let value: Vec<f64> = value.as_array().iter().copied().collect();
+    let limit: Vec<f64> = limit.as_array().iter().copied().collect();
+    let censoring: Vec<Censoring> = censoring
+        .as_array()
+        .iter()
+        .map(|c| censoring_from(*c))
+        .collect::<PyResult<_>>()?;
+
+    let got = TobitModel::build(&a, &value, &censoring, &limit, &x)
+        .map_err(PyValueError::new_err)?
+        .heritability_interval()
+        .map_err(PyValueError::new_err)?;
+    Ok((
+        got.estimate,
+        got.lower,
+        got.upper,
+        got.lower_at_bound,
+        got.upper_at_bound,
+        got.level,
+        got.profile_failures,
+        got.censored_share,
+    ))
+}

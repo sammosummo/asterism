@@ -48,6 +48,7 @@ from .models import (
     kinship_classes,
     mixed_bivariate_fit,
     tobit_fit,
+    tobit_interval,
 )
 
 __all__ = [
@@ -68,6 +69,7 @@ __all__ = [
     "prepare",
     "relationship_matrix",
     "tobit_fit",
+    "tobit_interval",
     "weighted_chi2_upper_tail",
 ]
 
