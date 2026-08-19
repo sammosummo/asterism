@@ -215,12 +215,31 @@ at nominal 0.05 across 400 data sets.
 
 At a fixed decay rate the covariance here is exactly a component model with one
 more matrix, so the comparison recorded under "Several components" externally
-checks this model's covariance assembly and likelihood. What it does not reach
-is what makes the model spatial: no external comparison exists for covariance
-that crosses pedigrees, because SOLAR discards precisely that, and none exists
-for estimating the decay rate, because it enters the covariance non-linearly.
-Those two, and the bootstrap, rest on simulation against this package's own
-generator.
+checks this model's covariance assembly and likelihood. SOLAR cannot reach any
+further: it discards covariance between pedigrees, which is precisely what a
+spatial kernel is made of.
+
+**R's `spaMM` does reach further, and now does.** It fits a Matern spatial
+random effect beside a supplied correlation matrix by REML, and it estimates
+the range itself. At `nu = 0.5` the Matern correlation is `exp(-rho d)`, which
+is this kernel exactly, and its `rho` is our decay rate in the same units.
+Across five scenarios in `checks/spatial_against_spamm.py` — a range the data
+can see, one shorter than the spacing between people, one longer than the map,
+one with no additive variance at all, and one whose field is drawn by `geoR`
+rather than by us — the two implementations agree on all three variances and
+the decay rate to a worst difference of **5.2e-06**, variances taken as shares
+of the total and the rate relative to itself.
+
+**Read that as evidence about the code and not about identification.** The
+long-range scenario is one neither implementation recovers: both return a decay
+of 0.364 where the truth is 0.002, and they agree on that wrong answer to
+2.3e-06. Agreement between two independent fitters says the covariance
+assembly, the likelihood and the range estimation are right; it says nothing
+about whether a given dataset can pin a range down, and the calibration above —
+98.4% of half-distance intervals reaching a bound — says that often it cannot.
+
+The parametric bootstrap has no counterpart in `spaMM` and remains simulation
+against this package's own generator.
 
 ## Gene by environment, continuous and discrete
 
@@ -495,14 +514,15 @@ uv run --no-project python checks/bivariate_intervals_against_reference.py
 ```
 
 Comparisons against another package. These need native SOLAR, or R with
-`regress` or `SKAT` 2.2.5, and fail rather than skip when it is
-absent:
+`regress`, `spaMM`, `geoR` or `SKAT` 2.2.5, and fail rather than skip when it
+is absent:
 
 ```sh
 uv run --no-project python checks/against_r.py
 uv run --no-project python checks/bivariate_against_r.py
 uv run --no-project python checks/against_solar.py
 uv run --no-project python checks/spatial_against_solar.py
+uv run --no-project python checks/spatial_against_spamm.py
 uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py

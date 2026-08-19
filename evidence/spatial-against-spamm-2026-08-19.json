@@ -1,0 +1,155 @@
+{
+  "what": "Asterism's spatial model against R's spaMM, decay rate included",
+  "date": "2026-08-19",
+  "comparator": "spaMM, Matern with nu fixed at 0.5, REML",
+  "tolerance": 0.0001,
+  "difference_is": "variances as a share of the total, the decay rate relative to itself",
+  "worst_difference": 5.233556746192884e-06,
+  "scenarios": [
+    {
+      "scenario": "a range the data can see",
+      "people": 240,
+      "families": 60,
+      "generator": "asterism",
+      "truth": {
+        "additive": 0.4,
+        "spatial": 0.3,
+        "residual": 0.3,
+        "decay": 0.08
+      },
+      "asterism": {
+        "additive": 0.4337592247620058,
+        "spatial": 0.32796683106495955,
+        "residual": 0.23571336182203423,
+        "decay": 0.06199008290931445
+      },
+      "spamm": {
+        "additive": 0.433759206617473,
+        "spatial": 0.327966755852528,
+        "residual": 0.2357134041482555,
+        "decay": 0.06199008437906308,
+        "loglik": -314.0934377201787
+      },
+      "worst_difference": 7.540551358787297e-08,
+      "converged": true,
+      "scaled_gradient": 3.845383258872841e-09,
+      "polished": false
+    },
+    {
+      "scenario": "a range shorter than the spacing",
+      "people": 240,
+      "families": 60,
+      "generator": "asterism",
+      "truth": {
+        "additive": 0.4,
+        "spatial": 0.3,
+        "residual": 0.3,
+        "decay": 1.5
+      },
+      "asterism": {
+        "additive": 0.45359882928551565,
+        "spatial": 0.1299432594324131,
+        "residual": 0.33148105407934636,
+        "decay": 1.0874801244882344
+      },
+      "spamm": {
+        "additive": 0.4535988570713955,
+        "spatial": 0.1299432926872027,
+        "residual": 0.3314810120878599,
+        "decay": 1.087482418629331,
+        "loglik": -321.95009262563065
+      },
+      "worst_difference": 2.109589136659064e-06,
+      "converged": true,
+      "scaled_gradient": 6.711103658372068e-09,
+      "polished": false
+    },
+    {
+      "scenario": "a range longer than the map",
+      "people": 240,
+      "families": 60,
+      "generator": "asterism",
+      "truth": {
+        "additive": 0.4,
+        "spatial": 0.3,
+        "residual": 0.3,
+        "decay": 0.002
+      },
+      "asterism": {
+        "additive": 0.3536726650258785,
+        "spatial": 0.24778610512727667,
+        "residual": 0.1905911620993663,
+        "decay": 0.3643093762419938
+      },
+      "spamm": {
+        "additive": 0.3536722498300656,
+        "spatial": 0.2477865041504418,
+        "residual": 0.1905910648385033,
+        "decay": 0.3643102189819734,
+        "loglik": -304.50600342968954
+      },
+      "worst_difference": 2.313248258555497e-06,
+      "converged": true,
+      "scaled_gradient": 3.934354125407809e-10,
+      "polished": false
+    },
+    {
+      "scenario": "no additive variance",
+      "people": 240,
+      "families": 60,
+      "generator": "asterism",
+      "truth": {
+        "additive": 0.0001,
+        "spatial": 0.5,
+        "residual": 0.5,
+        "decay": 0.08
+      },
+      "asterism": {
+        "additive": 0.0,
+        "spatial": 0.48148821303428235,
+        "residual": 0.35733714196970645,
+        "decay": 0.10608304574215022
+      },
+      "spamm": {
+        "additive": 3.573327519294124e-06,
+        "spatial": 0.4814901092900034,
+        "residual": 0.3573327519296109,
+        "decay": 0.1060832860572899,
+        "loglik": -293.80312530620114
+      },
+      "worst_difference": 5.233556746192884e-06,
+      "converged": true,
+      "scaled_gradient": 9.43563880136549e-10,
+      "polished": false
+    },
+    {
+      "scenario": "a field drawn by geoR",
+      "people": 200,
+      "families": 50,
+      "generator": "geoR",
+      "truth": {
+        "additive": 0.4,
+        "spatial": 0.3,
+        "residual": 0.3,
+        "decay": 0.08
+      },
+      "asterism": {
+        "additive": 0.6435490216712704,
+        "spatial": 0.35341390246801807,
+        "residual": 0.1700431258360095,
+        "decay": 0.07914507294839397
+      },
+      "spamm": {
+        "additive": 0.6435493336760821,
+        "spatial": 0.3534139704084085,
+        "residual": 0.1700428576274201,
+        "decay": 0.07914508751570465,
+        "loglik": -278.5778435543235
+      },
+      "worst_difference": 2.6735492225684224e-07,
+      "converged": true,
+      "scaled_gradient": 6.710339776985459e-09,
+      "polished": false
+    }
+  ]
+}
