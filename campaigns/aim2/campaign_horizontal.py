@@ -86,7 +86,6 @@ TRUTHS = {
     "direct 0.3": {"a": 0.6, "b": 0.4, "c_prime": 0.3},
     "direct 0.5": {"a": 0.6, "b": 0.4, "c_prime": 0.5},
     "direct 0.7": {"a": 0.6, "b": 0.4, "c_prime": 0.7},
-},
 }
 ARMS = ["ABR only", "audiogram"]
 
@@ -213,7 +212,7 @@ def main() -> int:
                "bootstrap": BOOTSTRAP, "cells": report},
               open(OUT, "w"), indent=2)
     print(f"\nwritten to {OUT}")
-    print("\nThe first cell has the direct path at nought, so HORIZONTAL rejection there\nis its level and must sit at or below .025. In the rest it is power, and the\nsmallest direct path that reaches a usable power is the answer being looked for.")
+    print("\nThe first cell has the direct path at nought, so HORIZONTAL rejection there\nis its level and must sit at or below .025. In the rest it is power, and the\nsmallest direct path reaching a usable power is the answer being looked for.")
     return 0
 
 
