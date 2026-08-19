@@ -157,6 +157,11 @@ class LatentMediationModel:
         mediator_designs: list[list[list[Any]]] = []
         outcome_designs: list[list[list[Any]]] = []
         outcome_prevalences: list[list[Any]] = []
+        # Per family, per person, the share in each ordered outcome category.
+        # An empty list for a person means their outcome is binary, which is
+        # what every family written before staging existed carries.
+        outcome_category_prevalences: list[list[Any]] = []
+        ascertainment_categories: list[Any] = []
 
         for family in families:
             if not isinstance(family, Mapping):
@@ -229,6 +234,23 @@ class LatentMediationModel:
                     allow_none=True,
                 )
             )
+            staged = _field(family, "outcome_category_prevalence", default=[])
+            outcome_category_prevalences.append(
+                [
+                    _sequence(
+                        person,
+                        "LATENT_MEDIATION_OUTCOME_CATEGORY_PREVALENCE_NOT_A_SEQUENCE",
+                        numeric=True,
+                    )
+                    for person in _sequence(
+                        staged,
+                        "LATENT_MEDIATION_OUTCOME_CATEGORY_PREVALENCE_NOT_A_SEQUENCE",
+                    )
+                ]
+            )
+            ascertainment_categories.append(
+                _field(family, "ascertainment_category", default=None)
+            )
             outcome_thresholds.append(
                 _person_vector(
                     family,
@@ -277,6 +299,8 @@ class LatentMediationModel:
             mediator_designs,
             outcome_designs,
             outcome_prevalences,
+            outcome_category_prevalences,
+            ascertainment_categories,
         )
 
     def evaluate(
@@ -433,6 +457,8 @@ def simulate(
     outcome_design: Sequence[Sequence[float]] | None = None,
     outcome_coefficients: Sequence[float] | None = None,
     outcome_prevalence: float | Sequence[float | None] | None = None,
+    outcome_category_prevalence: Sequence[float] | Sequence[Sequence[float]] | None = None,
+    ascertainment_category: int | None = None,
 ) -> list[dict[str, Any]]:
     """Draw families from the model, for calibration, coverage and power work.
 
@@ -511,5 +537,15 @@ def simulate(
             int(seed),
             ascertainment,
             proband_index,
+            None if outcome_category_prevalence is None else [
+                [float(share) for share in person]
+                for person in (
+                    [outcome_category_prevalence] * size
+                    if outcome_category_prevalence
+                    and not isinstance(outcome_category_prevalence[0], Sequence)
+                    else outcome_category_prevalence
+                )
+            ],
+            None if ascertainment_category is None else int(ascertainment_category),
         )
     )
