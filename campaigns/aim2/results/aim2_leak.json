@@ -1,0 +1,43 @@
+{
+  "design": "/net/lus01/home/smathias/asterism-campaign/design.npz",
+  "replicates": 200,
+  "true_vertical": 0.24,
+  "cells": {
+    "0.0": {
+      "median_vertical": 0.233211868833909,
+      "mean_vertical": 0.27926236305964386,
+      "standard_error": 0.014256358775530092,
+      "runaway": 2,
+      "refused": 1,
+      "median_horizontal": -0.019476305212907278,
+      "fitted": 199
+    },
+    "0.2": {
+      "median_vertical": 0.2522119096473542,
+      "mean_vertical": 0.27173331635373654,
+      "standard_error": 0.010120649698636353,
+      "runaway": 0,
+      "refused": 2,
+      "median_horizontal": 0.20121331315460445,
+      "fitted": 198
+    },
+    "0.4": {
+      "median_vertical": 0.26276988296797443,
+      "mean_vertical": 0.3910080727607962,
+      "standard_error": 0.0723817086365901,
+      "runaway": 3,
+      "refused": 4,
+      "median_horizontal": 0.3640939097001762,
+      "fitted": 196
+    },
+    "0.7": {
+      "median_vertical": 0.2839239152034993,
+      "mean_vertical": 0.438847722461279,
+      "standard_error": 0.08399246597123695,
+      "runaway": 5,
+      "refused": 4,
+      "median_horizontal": 0.6642645316444311,
+      "fitted": 196
+    }
+  }
+}
