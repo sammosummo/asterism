@@ -14,7 +14,11 @@ the numbers can be re-made rather than trusted.
 | `build_design.py` | Builds `design.npz` from the real pedigrees: a relationship matrix, an age, a role and a family unit per person, and **no identifiers**. |
 | `campaign.py` | The power grid — two measurement arms by six truths, one array task per cell. |
 | `campaign_level.py` | The level grid — two arms by three truths, all with the direct path at nought. |
-| `aim2_array.sbatch`, `aim2_level.sbatch` | Submit each grid to Medusa, one node and 120 workers per cell. |
+| `campaign_horizontal.py` | The direct-path grid — how large a direct path would have to be to be detectable, with the mediated effect held real throughout. |
+| `aim2_array.sbatch`, `aim2_level.sbatch`, `aim2_horizontal.sbatch` | Submit each grid to Medusa, one node and 120 workers per cell. |
+| `aim2_offspring.sbatch` | Runs `checks/mediation_power.py` at cluster scale — the offspring-per-case question, which the grant records as its one genuinely open decision. |
+| `direct_path_curve.py` | Reads the direct-path grid, level first, and reports the smallest detectable direct path. |
+| `verify_report.py` | Recomputes every rate quoted in `report.html` from the cells, because the report was written by hand from a terminal. |
 | `power_curve.py` | Turns the grid into the smallest detectable effect and the sample multiple needed for 80 per cent. |
 | `all_levels.py` | Every null cell with its Monte Carlo error, working out per cell which test it is the level *of*. |
 | `route_one_size.py` | Both integrators at one family size, for checking the cheap route against the accurate one. |
