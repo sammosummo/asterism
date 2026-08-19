@@ -39,7 +39,7 @@ pub fn liability_fit(
     relationship: PyReadonlyArray2<'_, f64>,
     status: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
-) -> PyResult<(f64, Vec<f64>, f64, bool, f64, f64, usize)> {
+) -> PyResult<(f64, Vec<f64>, f64, bool, bool, f64, f64, usize)> {
     let fit = build(&relationship, &status, &design)?
         .fit()
         .map_err(PyValueError::new_err)?;
@@ -48,6 +48,7 @@ pub fn liability_fit(
         fit.fixed_effects,
         fit.loglik,
         fit.converged,
+        fit.polished,
         fit.scaled_gradient,
         fit.prevalence,
         fit.largest_family,

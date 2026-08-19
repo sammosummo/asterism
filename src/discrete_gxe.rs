@@ -44,6 +44,8 @@
 use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
+use crate::convergence::{self, TOLERANCE};
+
 use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::chi2_upper_tail;
@@ -87,6 +89,9 @@ pub struct DiscreteGxeFit {
     pub fixed_effect_errors: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
+    /// True where the gradient test failed on the first search and a second
+    /// was run from that point with the objective tolerance switched off.
+    pub polished: bool,
     pub scaled_gradient: f64,
     pub estimator: &'static str,
     /// How many people fell in each group, because a correlation estimated
@@ -543,7 +548,7 @@ impl DiscreteGxeModel {
             control.pgtol = 1e-9;
             control.lmm = width;
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -564,31 +569,71 @@ impl DiscreteGxeModel {
                 ));
             }
         }
-        let (negative, reduced, beta, covariance) =
-            best.ok_or("DISCRETE_GXE_NO_START_CONVERGED")?;
-
-        let par = constraint.expand(&reduced);
-        let at = self
-            .evaluate(&par, &scaled, reml, true)
-            .ok_or("DISCRETE_GXE_OPTIMUM_NOT_EVALUABLE")?;
         // Judge convergence in the space the search actually moved in, and only
         // in the direction it was free to move: a gradient pushing outward
         // through a bound is resolved by the bound, not left unconverged.
-        let folded = constraint.fold(&at.gradient);
-        let projected = folded
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                if reduced[k] <= lower[k] {
-                    g.min(0.0)
-                } else if reduced[k] >= upper[k] {
-                    g.max(0.0)
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / negative.abs().max(1.0);
+        let reading = |gradient: &[f64; 5], reduced: &[f64], negative: f64| -> f64 {
+            let folded = constraint.fold(gradient);
+            let projected = folded
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if reduced[k] <= lower[k] {
+                        g.min(0.0)
+                    } else if reduced[k] >= upper[k] {
+                        g.max(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / negative.abs().max(1.0)
+        };
+
+        let (mut negative, reduced, mut beta, mut covariance) =
+            best.ok_or("DISCRETE_GXE_NO_START_CONVERGED")?;
+
+        let mut par = constraint.expand(&reduced);
+        let mut at = self
+            .evaluate(&par, &scaled, reml, true)
+            .ok_or("DISCRETE_GXE_OPTIMUM_NOT_EVALUABLE")?;
+        let mut scaled_gradient = reading(&at.gradient, &reduced, negative);
+
+        // One more search where the gradient test failed, and nowhere else.
+        // See `convergence` for why, and for what it was measured to cost.
+        let mut polished = false;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &reduced,
+                negative,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    let theta = constraint.expand(candidate);
+                    self.evaluate(&theta, &scaled, reml, true).map(|e| {
+                        (
+                            e.negative_loglik,
+                            reading(&e.gradient, candidate, e.negative_loglik),
+                        )
+                    })
+                },
+            )
+        {
+            let expanded = constraint.expand(&better.par);
+            if let Some(again) = self.evaluate(&expanded, &scaled, reml, true) {
+                polished = true;
+                negative = better.negative_loglik;
+                par = expanded;
+                beta.clone_from(&again.fixed_effects);
+                covariance.clone_from(&again.fixed_covariance);
+                scaled_gradient = better.scaled_gradient;
+                at = again;
+            }
+        }
+        let _ = &at;
 
         let observations = if reml {
             (self.rows - self.design.ncols()) as f64
@@ -616,7 +661,8 @@ impl DiscreteGxeModel {
                 })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
-            converged: scaled_gradient < 1e-6,
+            converged: scaled_gradient < TOLERANCE,
+            polished,
             scaled_gradient,
             estimator: if reml { "reml" } else { "ml" },
             counts: self.counts(),
@@ -1267,6 +1313,10 @@ mod tests {
         let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let fit = model.fit(&y, true).expect("the free model fits");
         assert!(fit.converged, "scaled gradient {}", fit.scaled_gradient);
+        assert!(
+            !fit.polished,
+            "the polish fired on a fit that already met the gradient test"
+        );
         assert!(
             fit.heritability(0) > fit.heritability(1),
             "heritabilities {} and {}",

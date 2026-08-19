@@ -27,6 +27,7 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::blocks::family_blocks;
+use crate::convergence::{self, TOLERANCE};
 use crate::deviance::{chi2_one_df_upper_tail, chi2_upper_tail};
 
 /// A fitted multi-component model.
@@ -601,7 +602,7 @@ impl ComponentModel {
                     negative_loglik: at.negative_loglik,
                     par: solution.par.clone(),
                     fixed_effects: at.fixed_effects.clone(),
-                    converged: scaled_gradient < 1e-7,
+                    converged: scaled_gradient < TOLERANCE,
                     scaled_gradient,
                     // Kept rather than discarded. The search's own verdict is
                     // the only evidence that separates a fit which ran out of
@@ -614,71 +615,40 @@ impl ComponentModel {
         }
 
         // Where the gradient test fails, search once more from the point
-        // already found with the objective tolerance switched off.
-        //
-        // **This is a measurement rather than a guess.** Every one of the eight
-        // red deer fits stops with `REL_REDUCTION_OF_F <= FACTR*EPSMCH` and not
-        // one stops on `pgtol`, so the gradient the test reads is never a
-        // criterion the search pursued; the fits that pass do so because their
-        // gradient happened already to be small when the objective settled.
-        // Taking `factr` out leaves `pgtol` to decide, and `pgtol` is a
-        // relative-gradient test at `1e-9` -- a hundredfold tighter than the
-        // `1e-7` the flag asks for -- so a search that stops on it passes
-        // comfortably.
-        //
-        // It fires only where the flag already reports failure, so every fit
-        // that passes today is untouched to the last bit and no calibration
-        // moves. The extra budget is small and the result is kept only if it
-        // is better on both counts, so the worst case is the cost of 200 more
-        // iterations and the same answer as before.
-        //
-        // **The returned point is checked rather than trusted, and on this
-        // problem it has to be.** All three polished deer fits end with
-        // `ERROR: ABNORMAL_TERMINATION_IN_LNSRCH` -- L-BFGS-B saying its line
-        // search can make no further progress in double precision -- and none
-        // reaches `pgtol`. Two of the three pass the gradient test anyway and
-        // the third improves threefold, so the abnormal ending is the shape of
-        // the likelihood rather than a fault. Accepting only a point that is no
-        // worse on the objective and strictly better on the gradient is what
-        // makes taking a result from an errored search safe: it either improves
-        // or it is discarded.
+        // already found with the objective tolerance switched off. The
+        // reasoning, the measurements behind it and why the result is checked
+        // rather than trusted are all in `convergence`.
         let mut polished = false;
         if let Some(current) = best.as_ref()
             && !current.converged
-            && let Ok(bounds) = Bounds::new(lower.clone(), upper.clone())
-        {
-            let mut control = OptimControl::default_for_dimension(count);
-            control.maxit = 200;
-            control.fnscale = value_of(&current.par).abs().max(1.0);
-            control.parscale = vec![1.0; count];
-            control.factr = 0.0;
-            control.pgtol = 1e-9;
-            control.lmm = count.min(10);
-            if let Ok(again) = optim_lbfgsb_with_gradient(
-                current.par.clone(),
-                bounds,
+            && let Some(better) = convergence::polish(
+                &current.par,
+                current.negative_loglik,
+                current.scaled_gradient,
+                &lower,
+                &upper,
                 &value_of,
                 &gradient_of,
-                control,
-            ) && let Some(at) = self.evaluate_with_signs(&again.par, &scaled, reml, true, signed)
-                && at.negative_loglik.is_finite()
-                // Not worse on the objective and better on the gradient. A
-                // longer search that wandered is refused rather than reported.
-                && at.negative_loglik <= current.negative_loglik
-                && reading(&at, &again.par) < current.scaled_gradient
-            {
-                let scaled_gradient = reading(&at, &again.par);
-                polished = true;
-                best = Some(Best {
-                    negative_loglik: at.negative_loglik,
-                    par: again.par.clone(),
-                    fixed_effects: at.fixed_effects.clone(),
-                    converged: scaled_gradient < 1e-7,
-                    scaled_gradient,
-                    stop_code: again.convergence,
-                    stop_message: again.message.clone(),
-                });
-            }
+                |candidate| {
+                    self.evaluate_with_signs(candidate, &scaled, reml, true, signed)
+                        .map(|at| (at.negative_loglik, reading(&at, candidate)))
+                },
+            )
+        {
+            let Some(at) = self.evaluate_with_signs(&better.par, &scaled, reml, true, signed)
+            else {
+                return Err("COMPONENTS_OPTIMUM_NOT_EVALUABLE");
+            };
+            polished = true;
+            best = Some(Best {
+                negative_loglik: better.negative_loglik,
+                par: better.par,
+                fixed_effects: at.fixed_effects,
+                converged: better.scaled_gradient < TOLERANCE,
+                scaled_gradient: better.scaled_gradient,
+                stop_code: better.stop_code,
+                stop_message: better.stop_message,
+            });
         }
 
         let Best {

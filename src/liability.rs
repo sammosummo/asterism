@@ -61,6 +61,8 @@
 
 use nalgebra::DMatrix;
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
+
+use crate::convergence::{self, TOLERANCE};
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::blocks::family_blocks;
@@ -99,6 +101,9 @@ pub struct LiabilityFit {
     pub fixed_effects: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
+    /// True where the gradient test failed on the first search and a second
+    /// was run from that point with the objective tolerance switched off.
+    pub polished: bool,
     pub scaled_gradient: f64,
     /// The share of people who are cases, which is what the threshold reflects.
     pub prevalence: f64,
@@ -385,7 +390,7 @@ impl LiabilityModel {
             control.pgtol = 1e-8;
             control.lmm = count;
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -394,31 +399,61 @@ impl LiabilityModel {
                 best = Some((value, solution.par));
             }
         }
-        let (negative, theta) = best.ok_or("LIABILITY_NO_START_CONVERGED")?;
+        let reading = |theta: &[f64], negative: f64| -> f64 {
+            let gradient = gradient_of(theta);
+            let projected = gradient
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if k == 0
+                        && (held.is_some()
+                            || (theta[0] <= 0.0 && *g > 0.0)
+                            || (theta[0] >= 1.0 && *g < 0.0))
+                    {
+                        0.0
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / negative.abs().max(1.0)
+        };
 
-        let gradient = gradient_of(&theta);
-        let projected = gradient
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                if k == 0
-                    && (held.is_some()
-                        || (theta[0] <= 0.0 && *g > 0.0)
-                        || (theta[0] >= 1.0 && *g < 0.0))
-                {
-                    0.0
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / negative.abs().max(1.0);
+        let (mut negative, mut theta) = best.ok_or("LIABILITY_NO_START_CONVERGED")?;
+        let mut scaled_gradient = reading(&theta, negative);
+
+        // One more search where the gradient test failed, and nowhere else.
+        // See `convergence` for why, and for what it was measured to cost.
+        let mut polished = false;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &theta,
+                negative,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    let value = value_of(candidate);
+                    value
+                        .is_finite()
+                        .then(|| (value, reading(candidate, value)))
+                },
+            )
+        {
+            polished = true;
+            negative = better.negative_loglik;
+            theta = better.par;
+            scaled_gradient = better.scaled_gradient;
+        }
 
         Ok(LiabilityFit {
             heritability: theta[0],
             fixed_effects: theta[1..].to_vec(),
             loglik: -negative,
-            converged: scaled_gradient < 1e-5,
+            converged: scaled_gradient < TOLERANCE,
+            polished,
             scaled_gradient,
             prevalence,
             estimator: "ml",
@@ -632,6 +667,10 @@ mod tests {
             fit.converged,
             "did not converge, |g| = {}",
             fit.scaled_gradient
+        );
+        assert!(
+            !fit.polished,
+            "the polish fired on a fit that already met the gradient test"
         );
         assert!(
             (fit.heritability - 0.6).abs() < 0.15,

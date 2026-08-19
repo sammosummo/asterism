@@ -476,6 +476,7 @@ class SpatialModel:
             loglik,
             gradient,
             converged,
+            polished,
             effects,
             errors,
         ) = _core.spatial_fit(self._fixed, self._distance, self._design, y, reml, integrated)
@@ -495,6 +496,11 @@ class SpatialModel:
             "loglik": loglik,
             "scaled_gradient": gradient,
             "converged": converged,
+            # True where the gradient test failed on the first search and a
+            # second was run from that point with the objective tolerance
+            # switched off. It fires nowhere else, so `False` means this is the
+            # fit the package gave before the polish existed, to the last bit.
+            "polished": polished,
             "estimator": "reml" if reml else "ml",
             "range_treatment": "integrated" if integrated else "profile",
         }
@@ -709,6 +715,7 @@ class GxeModel:
             parameters,
             loglik,
             converged,
+            polished,
             gradient,
             effects,
             errors,
@@ -740,6 +747,11 @@ class GxeModel:
             "loglik": loglik,
             "scaled_gradient": gradient,
             "converged": converged,
+            # True where the gradient test failed on the first search and a
+            # second was run from that point with the objective tolerance
+            # switched off. It fires nowhere else, so `False` means this is
+            # the fit the package gave before the polish existed.
+            "polished": polished,
             "estimator": "reml" if reml else "ml",
         }
 
@@ -925,6 +937,7 @@ class DiscreteGxeModel:
             errors,
             loglik,
             converged,
+            polished,
             gradient,
             counts,
             levels,
@@ -943,6 +956,11 @@ class DiscreteGxeModel:
             "loglik": loglik,
             "scaled_gradient": gradient,
             "converged": converged,
+            # True where the gradient test failed on the first search and a
+            # second was run from that point with the objective tolerance
+            # switched off. It fires nowhere else, so `False` means this is
+            # the fit the package gave before the polish existed.
+            "polished": polished,
             "counts": list(counts),
             "estimator": "reml" if reml else "ml",
         }
@@ -1209,6 +1227,7 @@ class LiabilityModel:
             effects,
             loglik,
             converged,
+            polished,
             gradient,
             prevalence,
             largest_family,
@@ -1222,6 +1241,10 @@ class LiabilityModel:
             "fixed_effects": list(effects),
             "loglik": loglik,
             "converged": converged,
+            # True where the gradient test failed on the first search and a
+            # second was run from that point with the objective tolerance
+            # switched off. It fires nowhere else.
+            "polished": polished,
             "scaled_gradient": gradient,
             "prevalence": prevalence,
             "largest_family": largest_family,

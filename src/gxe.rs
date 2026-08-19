@@ -72,6 +72,8 @@
 use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
+use crate::convergence::{self, TOLERANCE};
+
 use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
@@ -294,6 +296,9 @@ pub struct GxeFit {
     pub fixed_effect_errors: Vec<f64>,
     pub loglik: f64,
     pub converged: bool,
+    /// True where the gradient test failed on the first search and a second
+    /// was run from that point with the objective tolerance switched off.
+    pub polished: bool,
     pub scaled_gradient: f64,
     pub estimator: &'static str,
     /// The scale the response was standardised by, needed to put a variance
@@ -750,20 +755,21 @@ impl GxeModel {
             .collect();
         starts.dedup_by(|a, b| a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < 1e-12));
 
+        let value_of = |c: &[f64]| -> f64 {
+            let mut theta = [0.0; PARAMETERS];
+            theta[..c.len()].copy_from_slice(c);
+            self.evaluate(&theta, &scaled, reml, false)
+                .map_or(1e30, |e| e.negative_loglik)
+        };
+        let gradient_of = |c: &[f64]| -> Vec<f64> {
+            let mut theta = [0.0; PARAMETERS];
+            theta[..c.len()].copy_from_slice(c);
+            self.evaluate(&theta, &scaled, reml, true)
+                .map_or_else(|| vec![0.0; count], |e| e.gradient[..count].to_vec())
+        };
+
         let mut best: Option<BestStart> = None;
         for start in starts {
-            let value_of = |c: &[f64]| -> f64 {
-                let mut theta = [0.0; PARAMETERS];
-                theta[..c.len()].copy_from_slice(c);
-                self.evaluate(&theta, &scaled, reml, false)
-                    .map_or(1e30, |e| e.negative_loglik)
-            };
-            let gradient_of = |c: &[f64]| -> Vec<f64> {
-                let mut theta = [0.0; PARAMETERS];
-                theta[..c.len()].copy_from_slice(c);
-                self.evaluate(&theta, &scaled, reml, true)
-                    .map_or_else(|| vec![0.0; count], |e| e.gradient[..count].to_vec())
-            };
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;
             };
@@ -775,7 +781,7 @@ impl GxeModel {
             control.pgtol = 1e-8;
             control.lmm = count;
             let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
             else {
                 continue;
             };
@@ -798,26 +804,68 @@ impl GxeModel {
             }
         }
 
-        let (negative, par, beta, covariance) = best.ok_or("GXE_NO_START_CONVERGED")?;
-        let mut theta = [0.0; PARAMETERS];
-        theta[..par.len()].copy_from_slice(&par);
-        let at = self
-            .evaluate(&theta, &scaled, reml, true)
+        let reading = |gradient: &[f64], par: &[f64], negative: f64| -> f64 {
+            let projected = gradient[..count]
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if held.contains(&k) {
+                        0.0
+                    } else if lower[k] > f64::NEG_INFINITY && par[k] <= lower[k] {
+                        g.min(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()));
+            projected / negative.abs().max(1.0)
+        };
+        let widen = |c: &[f64]| {
+            let mut theta = [0.0; PARAMETERS];
+            theta[..c.len()].copy_from_slice(c);
+            theta
+        };
+
+        let (mut negative, mut par, mut beta, mut covariance) =
+            best.ok_or("GXE_NO_START_CONVERGED")?;
+        let mut at = self
+            .evaluate(&widen(&par), &scaled, reml, true)
             .ok_or("GXE_OPTIMUM_NOT_EVALUABLE")?;
-        let projected = at.gradient[..count]
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                if held.contains(&k) {
-                    0.0
-                } else if lower[k] > f64::NEG_INFINITY && par[k] <= lower[k] {
-                    g.min(0.0)
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / negative.abs().max(1.0);
+        let mut scaled_gradient = reading(&at.gradient, &par, negative);
+
+        // One more search where the gradient test failed, and nowhere else.
+        // See `convergence` for why, and for what it was measured to cost.
+        let mut polished = false;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &par,
+                negative,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    self.evaluate(&widen(candidate), &scaled, reml, true)
+                        .map(|e| {
+                            (
+                                e.negative_loglik,
+                                reading(&e.gradient, candidate, e.negative_loglik),
+                            )
+                        })
+                },
+            )
+            && let Some(again) = self.evaluate(&widen(&better.par), &scaled, reml, true)
+        {
+            polished = true;
+            negative = better.negative_loglik;
+            par = better.par;
+            beta.clone_from(&again.fixed_effects);
+            covariance.clone_from(&again.fixed_covariance);
+            scaled_gradient = better.scaled_gradient;
+            at = again;
+        }
+        let _ = &at;
 
         let observations = if reml {
             (self.rows - self.design.ncols()) as f64
@@ -838,7 +886,8 @@ impl GxeModel {
                 })
                 .unwrap_or_default(),
             loglik: -negative - observations * scale.ln(),
-            converged: scaled_gradient < 1e-6,
+            converged: scaled_gradient < TOLERANCE,
+            polished,
             scaled_gradient,
             estimator: if reml { "reml" } else { "ml" },
         })
@@ -1461,6 +1510,10 @@ mod tests {
                 "{surface:?} did not converge, |g| = {}",
                 fit.scaled_gradient
             );
+            assert!(
+                !fit.polished,
+                "the polish fired on a fit that already met the gradient test"
+            );
             let low = fit.heritability_at(-1.0);
             let high = fit.heritability_at(1.0);
             assert!(
@@ -1547,6 +1600,7 @@ mod tests {
             fixed_effect_errors: vec![],
             loglik: 0.0,
             converged: true,
+            polished: false,
             scaled_gradient: 0.0,
             estimator: "reml",
             variance_scale: 1.0,
@@ -1718,6 +1772,7 @@ mod against_the_source {
                 fixed_effect_errors: vec![],
                 loglik: 0.0,
                 converged: true,
+                polished: false,
                 scaled_gradient: 0.0,
                 estimator: "reml",
                 variance_scale: 1.0,
@@ -1765,6 +1820,7 @@ mod against_the_source {
             fixed_effect_errors: vec![],
             loglik: 0.0,
             converged: true,
+            polished: false,
             scaled_gradient: 0.0,
             estimator: "reml",
             variance_scale: 1.0,
@@ -1816,6 +1872,7 @@ mod against_the_source {
             fixed_effect_errors: vec![],
             loglik: 0.0,
             converged: true,
+            polished: false,
             scaled_gradient: 0.0,
             estimator: "reml",
             variance_scale: 1.0,
