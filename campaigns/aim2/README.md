@@ -42,8 +42,24 @@ The best case is 55 per cent, with audiograms at a mediated effect of 0.24;
 reaching 80 per cent there needs about 1.7 times the sample. Every null cell
 holds its level, so those figures are readable rather than an artefact.
 
-The more serious finding is the direct-path test: it rejects between 0.06 and
-0.12 where the true direct path is 0.2, which is close to no power at all.
-Separating vertical from horizontal pleiotropy is what Aim 2 is for, and on
-these numbers a null result on the direct path would carry almost no
-information.
+The more serious finding is the direct-path test. It rejects between 0.06 and
+0.12 where the true direct path is 0.2, so a second grid asked what size of one
+*would* be detectable:
+
+| direct path | ABR only | audiogram |
+| --- | --- | --- |
+| 0 (level) | 0.025 | 0.030 |
+| 0.3 | 0.115 | 0.155 |
+| 0.5 | 0.300 | 0.330 |
+| 0.7 | 0.500 | 0.545 |
+
+Eighty per cent is reached nowhere. The two grids then meet on a comparison that
+states the asymmetry exactly: with audiograms a direct path of 0.7 gives 0.545,
+the same power to three decimals as a mediated effect of 0.24. The two estimands
+are equally detectable only when the direct one is about 2.9 times larger —
+and they are commensurable, because the model sums them into one outcome
+loading.
+
+Separating vertical from horizontal pleiotropy is what Aim 2 is for, so this is
+a design question. It is the weak identification the family-count ladder of 18
+August found, now with a number on it.
