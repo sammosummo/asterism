@@ -17,7 +17,8 @@ for path in sorted(glob.glob(
             cells[name] = r
 
 LEVERS = ["baseline", "probands x1.5", "probands x2", "hearing precise",
-          "drop acoustic units", "sample x1.5"]
+          "drop acoustic units", "sample x1.5",
+          "staged outcome"]
 
 base = cells.get("baseline | vertical 0.24")
 print(f"{'lever':<22}{'people':>7}{'cases':>7}{'level':>9}{'power':>9}"
