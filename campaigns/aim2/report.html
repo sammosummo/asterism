@@ -375,11 +375,36 @@
 
   <section>
     <h2>What would change these numbers</h2>
-    <ul>
-      <li><strong>Sample size.</strong> The clearest lever: 2,700&ndash;3,350 people for 80 per cent at &theta;<sub>v</sub> = 0.24.</li>
-      <li><strong>A finer reference for the boundary null.</strong> 50 draws makes the loading-nought branch conservative. More draws would recover some power at real cost in compute.</li>
-      <li><strong>Nothing here rescues the direct-path test.</strong> Its weakness is identification, not sample size alone, so more people would improve it only slowly.</li>
-    </ul>
+    <p>Six changes were run on the same design, each altering exactly one thing and each carrying its own null cell under the identical change, so a lever that lifted power by lifting rejections generally would show up rather than be credited. Every level held.</p>
+
+    <div class="scroller">
+      <table>
+        <caption>Rejection at .025 under a mediated effect of 0.24, 200 replicates per cell. A change smaller than about .07 is inside the Monte&nbsp;Carlo error.</caption>
+        <thead>
+          <tr><th scope="col">Change</th><th scope="col">People</th><th scope="col">Cases</th><th scope="col">Level</th><th scope="col">Power</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="lead">as designed</td><td class="num">1,600</td><td class="num">256</td><td class="num">0.010</td><td class="num">0.520</td></tr>
+          <tr><td class="lead">stage the outcome by CDR</td><td class="num">1,600</td><td class="num">256</td><td class="num">0.005</td><td class="num peak">0.660</td></tr>
+          <tr><td class="lead">half again as many adjudicated families</td><td class="num">1,800</td><td class="num">357</td><td class="num">0.000</td><td class="num">0.695</td></tr>
+          <tr><td class="lead">half again as many people of every kind</td><td class="num">2,369</td><td class="num">373</td><td class="num">0.020</td><td class="num">0.710</td></tr>
+          <tr><td class="lead">twice as many adjudicated families</td><td class="num">2,000</td><td class="num">458</td><td class="num">0.010</td><td class="num peak">0.845</td></tr>
+          <tr><td class="lead">sharper hearing measurement</td><td class="num">1,600</td><td class="num">256</td><td class="num">0.010</td><td class="num">0.585</td></tr>
+          <tr><td class="lead">drop the Acoustic-only units</td><td class="num">1,415</td><td class="num">254</td><td class="num">0.035</td><td class="num">0.550</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>It is not more people. It is which people, and how they are graded.</strong> Twice the adjudicated families reaches 80 per cent at 2,000 people, where recruiting half again as many of everybody reaches 71 at 2,369 &mdash; three hundred and sixty-nine fewer people for thirteen more points. Staging the outcome by CDR buys fourteen points on the same 1,600 people and the same 256 cases, which makes it the cheapest change available: nobody extra is recruited and nothing is measured that is not measured already.</p>
+
+    <p>The two that bought nothing say as much as the one that bought most. Sharpening the hearing measurement moved power 0.065, barely outside the noise, because it improves the loading and the loading was never what was short. Dropping the 185 people in Acoustic-only units cost nothing measurable at all.</p>
+
+    <div class="note">
+      <p><strong>One fact explains every row.</strong> The mediation signal lives in the hearing-to-dementia covariance <em>across relatives</em>. A lone case contributes almost none of it; a case with two offspring contributes several informative pairs. That is why doubling ascertained families beats recruiting broadly, why the offspring sweep found two offspring per case beating 250 lone cases despite sixty-six fewer adjudications, and why people who bring no relatives and never become cases are close to inert for this aim.</p>
+      <p><strong>In information terms</strong> staging is 1.34 times and doubling the adjudicated families 2.02, against the 1.81 that 80 per cent needs. Staging with half again as many adjudicated families would reach it at 1,800 people. Those ratios multiply only if the two act on independent parts of the information, which is plausible &mdash; one changes who is enrolled, the other how they are graded &mdash; but it is arithmetic rather than a measurement, and the single-change figures above are the measured ones.</p>
+    </div>
+
+    <p><strong>Nothing here rescues the direct-path test.</strong> Its weakness is identification rather than sample size, so more people improve it only slowly. What would break it is an instrument &mdash; a variant affecting hearing but not dementia except through hearing &mdash; which is what Mendelian randomisation is for and belongs in a different model.</p>
   </section>
 
   <footer>
