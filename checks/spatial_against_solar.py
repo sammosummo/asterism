@@ -23,8 +23,12 @@ maximum included, so nothing warns you. Two consequences:
   than either implementation being wrong.
 
 The second part is asserted rather than described, so the limitation stays a
-tested fact. What consequently remains simulation-only is the genuinely
+tested fact. What consequently remained simulation-only was the genuinely
 cross-family spatial covariance, the estimated decay rate, and the bootstrap.
+The first two are now covered by `spatial_against_spamm.py`, which compares
+against a package that fits the same model and estimates the range itself. The
+bootstrap has no counterpart anywhere and is still simulation against our own
+generator.
 
 Run with:
 
