@@ -3835,6 +3835,29 @@ mod tests {
             spans && !got.contains_zero,
             "the disjoint flag disagrees with the ends and the union test"
         );
+
+        // Whichever ends closed have to sit where the profile actually fell
+        // away. Without this the test only checks the ends are arranged
+        // sensibly, and a set can be arranged sensibly around a crossing the
+        // search never found. The horizontal set is held to the same standard.
+        //
+        // The tolerance is 0.20 where the horizontal one is 0.05, and the
+        // reason is the profile rather than the set. Holding a product means
+        // scanning the loading and taking the best of 24 points, so the
+        // profile is itself quantised at the scan's spacing; holding a
+        // coordinate is an exact fit and is not. Tightening this without
+        // making the scan finer would be tuning the test to the answer.
+        let failures = std::cell::Cell::new(0usize);
+        let peak = model.vertical_profile(got.estimate, &failures);
+        for end in [got.lower, got.upper].into_iter().flatten() {
+            let there = model.vertical_profile(end, &failures);
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - 5.023_886_187_353_339).abs() < 0.20,
+                "an end costs {cost} in deviance, not the 5.02 a 97.5 per cent \
+                 set claims"
+            );
+        }
     }
 
     /// A vertical search range that is not a positive distance is refused.
