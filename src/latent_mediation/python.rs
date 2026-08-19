@@ -308,6 +308,61 @@ impl PyLatentMediationCore {
         Ok(out)
     }
 
+    /// A 97.5 per cent confidence set for the horizontal estimand.
+    ///
+    /// `lower` and `upper` are `None` where that end did not close within
+    /// `searched_to`. That is the point of them: an end reported as the edge of
+    /// the search would be a statement about the search rather than the data.
+    /// `unbounded` is true when neither end closed, which is what a direct path
+    /// the data cannot locate looks like.
+    #[pyo3(signature = (searched_to = 4.0))]
+    fn horizontal_set<'py>(
+        &self,
+        py: Python<'py>,
+        searched_to: f64,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let set = self.model.horizontal_set(searched_to).map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("estimate", set.estimate)?;
+        out.set_item("lower", set.lower)?;
+        out.set_item("upper", set.upper)?;
+        out.set_item("unbounded", set.unbounded)?;
+        out.set_item("level", set.level)?;
+        out.set_item("searched_to", set.searched_to)?;
+        Ok(out)
+    }
+
+    /// A 97.5 per cent confidence set for the vertical estimand.
+    ///
+    /// `contains_zero` is decided by the intersection-union test rather than by
+    /// the profile, because at nought the null is a union and one likelihood
+    /// ratio has no reference across it. `disjoint` is true where the set spans
+    /// nought but excludes it, so it is two pieces rather than one -- read it
+    /// before treating `lower` and `upper` as an interval, because the values
+    /// between them are then not all in the set.
+    #[pyo3(signature = (searched_to = 1.0, bootstrap_replicates = 200))]
+    fn vertical_set<'py>(
+        &self,
+        py: Python<'py>,
+        searched_to: f64,
+        bootstrap_replicates: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let set = self
+            .model
+            .vertical_set(searched_to, bootstrap_replicates)
+            .map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("estimate", set.estimate)?;
+        out.set_item("lower", set.lower)?;
+        out.set_item("upper", set.upper)?;
+        out.set_item("contains_zero", set.contains_zero)?;
+        out.set_item("disjoint", set.disjoint)?;
+        out.set_item("level", set.level)?;
+        out.set_item("profile_failures", set.profile_failures)?;
+        out.set_item("searched_to", set.searched_to)?;
+        Ok(out)
+    }
+
     /// Fit the five structural parameters with the fixed ML recipe.
     #[pyo3(signature = ())]
     fn fit<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {

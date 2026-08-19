@@ -349,6 +349,57 @@ class LatentMediationModel:
         """
         return self._core.test_horizontal()
 
+    def horizontal_set(self, *, searched_to: float = 4.0) -> dict[str, Any]:
+        """A 97.5 per cent confidence set for the horizontal estimand.
+
+        Built by inverting the same likelihood ratio :meth:`test_horizontal`
+        computes, at chi-square on one at 0.975 because that is what a
+        two-sided set at the Bonferroni .025 gives.
+
+        **An end that did not close is ``None``, not a number.** Reporting the
+        edge of the search would be a statement about how far the search went
+        rather than about the data. ``unbounded`` is true when neither end
+        closed, and that is the identification diagnostic in its most useful
+        form: a profile that falls away in neither direction is what a direct
+        path the data cannot locate looks like from the data's side. It sees
+        the near-boundary case that :meth:`test_horizontal` cannot, because
+        that refuses only when the loading rests exactly on its bound.
+
+        ``searched_to`` is the distance either side of the estimate that is
+        searched. Widening it costs fits and can only close an end that a
+        narrower search left open.
+        """
+        return self._core.horizontal_set(searched_to)
+
+    def vertical_set(
+        self,
+        *,
+        searched_to: float = 1.0,
+        bootstrap_replicates: int = 200,
+    ) -> dict[str, Any]:
+        """A 97.5 per cent confidence set for the vertical estimand.
+
+        **Nought is decided differently from everywhere else, and has to be.**
+        Away from nought, holding the estimand is one constraint on a curve --
+        the estimand is a product, so a held value fixes the path at the value
+        over the loading -- and the likelihood ratio has an ordinary
+        chi-square reference. At nought the null is a union, the loading is
+        nought or the path is, and no single ratio spans it, so membership
+        there comes from the intersection-union test instead.
+
+        **Read ``disjoint`` before treating ``lower`` and ``upper`` as an
+        interval.** The profile can admit values either side of nought while
+        the union test excludes nought itself, and then the set is genuinely
+        two pieces and the values between the ends are not all in it. The
+        application requires such a set to be retained rather than reported as
+        the interval that covers both.
+
+        This is the expensive one. Holding a product means scanning the loading
+        and taking the best of two dozen fits per value examined, where the
+        horizontal set needs one.
+        """
+        return self._core.vertical_set(searched_to, bootstrap_replicates)
+
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.
 
