@@ -375,12 +375,30 @@ impl LatentMediationModel {
     /// exist, no start converges, or the likelihood at the best of them cannot
     /// be evaluated.
     pub fn fit_holding(&self, held: &[usize]) -> Result<LatentMediationFit, &'static str> {
-        if held.iter().any(|index| *index >= FIT_DIMENSION) {
+        let at_nought: Vec<(usize, f64)> = held.iter().map(|&i| (i, 0.0)).collect();
+        self.fit_holding_at(&at_nought)
+    }
+
+    /// The same, with each held coordinate pinned to a value of its own.
+    ///
+    /// A profile needs coordinates held away from nought, which is what a
+    /// confidence set by inversion asks for. Holding at nought is the special
+    /// case [`Self::fit_holding`] keeps.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where a coordinate does not
+    /// exist, a value lies outside its bounds, or no start converges.
+    pub fn fit_holding_at(
+        &self,
+        held: &[(usize, f64)],
+    ) -> Result<LatentMediationFit, &'static str> {
+        if held.iter().any(|(index, _)| *index >= FIT_DIMENSION) {
             return Err("LATENT_MEDIATION_HELD_COORDINATE_INVALID");
         }
         let mediator_scale_squared = self.mediator_scale_squared()?;
         let coefficients = self.coefficient_count();
-        let bounds = transformed_bounds_holding(held, coefficients)?;
+        let bounds = transformed_bounds_holding_at(held, coefficients)?;
         let mut best_converged: Option<FitCandidate> = None;
         let mut best_unresolved: Option<f64> = None;
         // The most recent underlying failure, so a fit in which nothing
@@ -388,8 +406,8 @@ impl LatentMediationModel {
         let mut last_error: Option<&'static str> = None;
 
         for mut start in deterministic_starts(coefficients) {
-            for &index in held {
-                start[index] = 0.0;
+            for &(index, value) in held {
+                start[index] = value;
             }
             let Some(initial_objective) =
                 self.optimisation_objective(&start, mediator_scale_squared)
@@ -612,6 +630,30 @@ impl LatentMediationModel {
     }
 }
 
+fn transformed_bounds_holding_at(
+    held: &[(usize, f64)],
+    coefficients: usize,
+) -> Result<Bounds, &'static str> {
+    let mut lower = vec![
+        0.0,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+        0.0,
+        f64::NEG_INFINITY,
+    ];
+    lower.extend(std::iter::repeat_n(f64::NEG_INFINITY, coefficients));
+    let mut upper = vec![f64::INFINITY; FIT_DIMENSION + coefficients];
+    for &(index, value) in held {
+        if value < lower[index] || value > upper[index] {
+            return Err("LATENT_MEDIATION_HELD_VALUE_OUT_OF_RANGE");
+        }
+        lower[index] = value;
+        upper[index] = value;
+    }
+    Bounds::new(lower, upper).map_err(|_| "LATENT_MEDIATION_OPTIMISER_BOUNDS_INVALID")
+}
+
+#[allow(dead_code)]
 fn transformed_bounds_holding(held: &[usize], coefficients: usize) -> Result<Bounds, &'static str> {
     let mut lower = vec![
         0.0,
@@ -2817,6 +2859,26 @@ pub struct VerticalTest {
     pub bootstrap_replicates: usize,
 }
 
+/// A 97.5 per cent confidence set for the horizontal estimand.
+#[derive(Clone, Debug)]
+pub struct HorizontalSet {
+    pub estimate: f64,
+    /// `None` where the profile never fell away on that side within the range
+    /// searched. The application requires an unbounded set to be retained as
+    /// unbounded rather than reported at the edge of a search.
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
+    pub level: f64,
+    /// True where neither end is bounded. The horizontal component is then
+    /// **not separately estimable**, which is a different statement from its
+    /// being nought and is what the application requires be said.
+    pub unbounded: bool,
+    /// Profile fits that failed. Each widened the set rather than narrowing
+    /// it, which is the safe direction.
+    pub profile_failures: usize,
+    pub searched_to: f64,
+}
+
 /// A test of the horizontal estimand `c_prime` against nought.
 #[derive(Clone, Debug)]
 pub struct HorizontalTest {
@@ -3052,6 +3114,80 @@ impl LatentMediationModel {
             p_value,
             rule: "likelihood_ratio_on_the_interior_direct_path",
             reference: "chi_square_on_one",
+        })
+    }
+
+    /// A 97.5 per cent confidence set for the horizontal estimand, by
+    /// inverting the same likelihood ratio the test uses.
+    ///
+    /// **An end that does not close is reported as open, not as the edge of
+    /// the search.** The application requires flat, disjoint or unbounded sets
+    /// to be retained, and a set reported at whatever value the search stopped
+    /// at would be a statement about the search rather than the data.
+    ///
+    /// **Both ends open means the horizontal component is not separately
+    /// estimable.** That is the identification diagnostic in its most direct
+    /// form: where the likelihood does not fall away in either direction, the
+    /// data do not locate the direct path at all, and saying so is required
+    /// rather than reporting nought.
+    ///
+    /// The threshold is chi-square on one at 0.975, because a two-sided set at
+    /// that level is what inverting a test at the Bonferroni .025 gives.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails, or where the loading
+    /// rests on its bound and the decomposition is unidentified for the reason
+    /// [`Self::test_horizontal`] gives.
+    pub fn horizontal_set(&self, searched_to: f64) -> Result<HorizontalSet, &'static str> {
+        if !(searched_to > 0.0) || !searched_to.is_finite() {
+            return Err("LATENT_MEDIATION_SEARCH_RANGE_INVALID");
+        }
+        let free = self.fit()?;
+        if !free.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+        let estimate = free.parameters.c_prime;
+        let at_estimate = self
+            .fit_holding_at(&[(2, estimate)])?
+            .log_likelihood;
+        // Chi-square on one degree of freedom at 0.975.
+        let threshold = at_estimate - 0.5 * 5.023_886_187_353_339;
+
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |value: f64| match self.fit_holding_at(&[(2, value)]) {
+            Ok(fit) => fit.log_likelihood < threshold,
+            Err(_) => {
+                failures.set(failures.get() + 1);
+                false
+            }
+        };
+        let lower = if outside(estimate - searched_to) {
+            Some(crate::liability::bisect(
+                estimate - searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        let upper = if outside(estimate + searched_to) {
+            Some(crate::liability::bisect(
+                estimate + searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        Ok(HorizontalSet {
+            estimate,
+            lower,
+            upper,
+            level: 0.975,
+            unbounded: lower.is_none() && upper.is_none(),
+            profile_failures: failures.get(),
+            searched_to,
         })
     }
 }
@@ -3519,6 +3655,69 @@ mod tests {
     ///
     /// The error is reported rather than only asserted, because a method whose
     /// accuracy depends on the data has to state where it holds.
+    /// The horizontal confidence set is where the profile falls away, and it
+    /// says so when it does not fall away at all.
+    ///
+    /// Two things are checked. The estimate lies inside its own set, and each
+    /// end that closed costs the deviance a set at this level claims. An end
+    /// that did not close is reported open rather than at the edge of the
+    /// search, which is what the application means by retaining an unbounded
+    /// set.
+    #[test]
+    fn the_horizontal_set_is_where_the_profile_falls_away() {
+        let model = interior_fit_model();
+        let got = model.horizontal_set(4.0).expect("a set");
+        assert!((got.level - 0.975).abs() < 1e-12);
+
+        if let (Some(low), Some(high)) = (got.lower, got.upper) {
+            assert!(
+                low <= got.estimate && got.estimate <= high,
+                "the estimate {} is outside its own set [{low}, {high}]",
+                got.estimate
+            );
+            assert!(!got.unbounded, "a closed set was reported as unbounded");
+        } else {
+            // Not separately estimable is a legitimate answer on a small
+            // fixture, and the flag has to agree with the ends.
+            assert_eq!(
+                got.unbounded,
+                got.lower.is_none() && got.upper.is_none(),
+                "the unbounded flag disagrees with the ends"
+            );
+        }
+
+        // Whichever ends closed must sit where the likelihood actually fell.
+        let peak = model
+            .fit_holding_at(&[(2, got.estimate)])
+            .expect("held fit")
+            .log_likelihood;
+        for end in [got.lower, got.upper].into_iter().flatten() {
+            let there = model
+                .fit_holding_at(&[(2, end)])
+                .expect("held fit")
+                .log_likelihood;
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - 5.023_886_187_353_339).abs() < 0.05,
+                "an end costs {cost} in deviance, not the 5.02 a 97.5 per cent \
+                 set claims"
+            );
+        }
+    }
+
+    /// A search range that is not a positive distance is refused.
+    #[test]
+    fn a_search_range_must_be_a_positive_distance() {
+        let model = interior_fit_model();
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                model.horizontal_set(bad).err(),
+                Some("LATENT_MEDIATION_SEARCH_RANGE_INVALID"),
+                "a range of {bad} was accepted"
+            );
+        }
+    }
+
     #[test]
     fn sequential_truncation_agrees_with_quasi_monte_carlo() {
         let normal = Normal::new(0.0, 1.0).expect("standard normal");

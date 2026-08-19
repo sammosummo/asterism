@@ -31,6 +31,7 @@ pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
+    HorizontalSet,
     HorizontalTest, LatentMediationDesign, LatentMediationEvaluation,
     LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
     LatentMediationModel, LatentMediationParameters, VerticalTest,
