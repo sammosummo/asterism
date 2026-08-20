@@ -64,7 +64,7 @@
 //! heritability must not be placed beside a REML one as though the two were
 //! the same number.
 
-use nalgebra::{Cholesky, DMatrix, DVector};
+use nalgebra::{Cholesky, DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::Normal;
 
@@ -82,6 +82,12 @@ const FEWEST_MEASURED: usize = 2;
 /// be accepted as a fit: the acceptance test compares against this name rather
 /// than asking whether the objective is finite, which it always is.
 const INFEASIBLE: f64 = 1e30;
+/// How far below nought an eigenvalue of a family's relationship block may sit
+/// before the matrix is refused rather than repaired. The same floor the
+/// prepared model uses, for the same reason: rounding puts a genuine nought a
+/// little either side of itself, and anything past this is a matrix that is
+/// not a covariance.
+const EIGENVALUE_FLOOR: f64 = -1e-9;
 
 /// Which way an unmeasured value lies from its limit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +128,25 @@ pub struct TobitFit {
 
 /// Chi-square on one degree of freedom at 0.95.
 const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+/// The Self-Liang 50:50 critical value. Under a null that sits on the
+/// parameter's bound, half the reference distribution's mass is at nought, so
+/// the correct threshold is not the plain chi-square one above. ADR 0004
+/// records what the difference costs: taking an end of nought to mean the
+/// interval contains nought gives 0.977 coverage at a true heritability of
+/// nought, where this gives 0.953.
+const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
+
+/// The result of testing the heritability against nought.
+#[derive(Clone, Debug)]
+pub struct TobitTest {
+    pub statistic: f64,
+    pub p_value: f64,
+    /// The reference distribution the p-value was read against, as data on the
+    /// record rather than as a contract term.
+    pub rule: &'static str,
+    pub null_loglik: f64,
+    pub alternative_loglik: f64,
+}
 
 /// A profile-likelihood interval for the heritability.
 #[derive(Clone, Debug)]
@@ -134,6 +159,13 @@ pub struct TobitInterval {
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,
+    /// Whether a boundary point belongs to the interval, decided by the
+    /// Self-Liang mixture rather than by the end having landed on the bound.
+    /// Present only where the corresponding end is on its bound and the fit
+    /// there could be made; absent means nobody measured it, not that the
+    /// question does not apply.
+    pub contains_lower_bound: Option<bool>,
+    pub contains_upper_bound: Option<bool>,
     /// How many profile fits failed or did not converge. Each one widened the
     /// interval rather than narrowing it, which is the safe direction, but a
     /// large count means the interval rests on fewer points than it looks.
@@ -231,13 +263,33 @@ impl TobitModel {
         if measured < FEWEST_MEASURED {
             return Err("TOBIT_TOO_FEW_MEASURED_VALUES");
         }
+        // **A relationship matrix is refused as mathematics, not as
+        // provenance.** Symmetry and the off-diagonal guard above do not make a
+        // matrix a covariance: one that is not positive semi-definite reaches
+        // the search, where it surfaces only as a fit that found no feasible
+        // point. Checking it here says what is wrong while the caller can still
+        // do something about it. Per block, because that is the only form the
+        // likelihood ever factorises.
+        let blocks = family_blocks(relationship);
+        for block in &blocks {
+            let size = block.len();
+            let sub = DMatrix::from_fn(size, size, |a, b| relationship[(block[a], block[b])]);
+            let smallest = SymmetricEigen::new(sub)
+                .eigenvalues
+                .iter()
+                .fold(f64::INFINITY, |worst, value| worst.min(*value));
+            if smallest < EIGENVALUE_FLOOR {
+                return Err("TOBIT_RELATIONSHIP_NOT_PSD");
+            }
+        }
+
         Ok(Self {
             relationship: relationship.clone(),
             design: design.clone(),
             value: value.to_vec(),
             censoring: censoring.to_vec(),
             limit: limit.to_vec(),
-            blocks: family_blocks(relationship),
+            blocks,
             rows,
         })
     }
@@ -402,26 +454,63 @@ impl TobitModel {
     /// # Errors
     ///
     /// Returns a stable code where the free fit fails.
+    /// The heritability against nought.
+    ///
+    /// The null sits on the parameter's bound, so the reference is the
+    /// Self-Liang 50:50 mixture of chi-square on nought and one degrees of
+    /// freedom and not a plain chi-square. That is the same null ADR 0004
+    /// calibrates the interval's boundary point against, and the same rule the
+    /// liability model reports for the same reason.
+    ///
+    /// The statistic and the p-value both come from `deviance`, which honours
+    /// the point mass at nought: two searches that land on the same likelihood
+    /// give a deviance that is rounding rather than evidence, and that reads as
+    /// a p-value of one rather than of a half.
+    pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
+        let free = self.fit()?;
+        let null = self.fit_holding(Some(0.0))?;
+        let statistic = crate::deviance::deviance(free.loglik, null.loglik);
+        Ok(TobitTest {
+            statistic,
+            p_value: crate::deviance::p_value(statistic, |value| {
+                0.5 * crate::deviance::chi2_one_df_upper_tail(value)
+            }),
+            rule: "mixture_50_50",
+            null_loglik: null.loglik,
+            alternative_loglik: free.loglik,
+        })
+    }
+
     pub fn heritability_interval(&self) -> Result<TobitInterval, &'static str> {
         let free = self.fit()?;
         let estimate = free.heritability;
         let at_estimate = self.fit_holding(Some(estimate))?.loglik;
-        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
 
         let failures = std::cell::Cell::new(0usize);
-        let outside = |value: f64| match self.fit_holding(Some(value)) {
-            Ok(fit) if fit.converged => fit.loglik < threshold,
-            _ => {
-                failures.set(failures.get() + 1);
-                false
+        // The deviance rather than a bare verdict, because the boundary rule
+        // below needs the number and not only whether it crossed.
+        let deviance_at = |value: f64| -> Option<f64> {
+            match self.fit_holding(Some(value)) {
+                Ok(fit) if fit.converged => Some(2.0 * (at_estimate - fit.loglik)),
+                _ => {
+                    failures.set(failures.get() + 1);
+                    None
+                }
             }
         };
-        let (lower, lower_at_bound) = if outside(0.0) {
+        let outside = |value: f64| deviance_at(value).is_some_and(|d| d > CHI2_ONE_95);
+
+        // Each bound is fitted once and the answer used twice: to place the
+        // end, and to decide whether the bound itself belongs to the interval.
+        let at_zero = deviance_at(0.0);
+        let at_one = deviance_at(1.0);
+
+        let (lower, lower_at_bound) = if at_zero.is_some_and(|d| d > CHI2_ONE_95) {
             (crate::liability::bisect(0.0, estimate, &outside), false)
         } else {
             (0.0, true)
         };
-        let (upper, upper_at_bound) = if outside(1.0) {
+        let (upper, upper_at_bound) = if at_one.is_some_and(|d| d > CHI2_ONE_95) {
             (crate::liability::bisect(1.0, estimate, &outside), false)
         } else {
             (1.0, true)
@@ -433,6 +522,16 @@ impl TobitModel {
             lower_at_bound,
             upper_at_bound,
             level: 0.95,
+            contains_lower_bound: if lower == 0.0 {
+                at_zero.map(|d| d <= MIXTURE_CRIT)
+            } else {
+                None
+            },
+            contains_upper_bound: if upper == 1.0 {
+                at_one.map(|d| d <= MIXTURE_CRIT)
+            } else {
+                None
+            },
             profile_failures: failures.get(),
             censored_share: self.censored_share(),
         })
@@ -499,10 +598,18 @@ impl TobitModel {
                 .collect()
         };
 
+        // Three starts spread over the heritability, or one where it is held.
+        // A held fit pinned every start to the same value and then ran the same
+        // deterministic search three times over: the interval paid for that at
+        // each end of every bisection step.
+        let starts: &[f64] = match held {
+            Some(value) => &[value],
+            None => &[0.05, 0.3, 0.6],
+        };
         let mut best: Option<(f64, Vec<f64>)> = None;
-        for heritability in [0.05_f64, 0.3, 0.6] {
+        for &heritability in starts {
             let mut start = vec![0.0; count];
-            start[0] = held.unwrap_or(heritability);
+            start[0] = heritability;
             start[1] = spread.ln();
             start[2] = centre;
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
@@ -549,17 +656,69 @@ impl TobitModel {
 mod tests {
     use super::*;
 
+    /// Produced by the three-start code this replaced, at the same seed and
+    /// the same held value.
+    const PINNED_HELD_LOGLIK: f64 = -102.736_491_872_357_05;
+
+    /// A relationship matrix that is not a covariance is refused where the
+    /// caller can still do something about it.
+    ///
+    /// Symmetry and the off-diagonal guard do not make a matrix positive
+    /// semi-definite. A nought diagonal beside a positive off-diagonal is the
+    /// simplest case: `[[0, 0.9], [0.9, 0]]` has eigenvalues of plus and minus
+    /// 0.9, so it passed every check `build` used to make and then surfaced
+    /// only as a fit that could find no feasible point.
+    #[test]
+    fn a_relationship_matrix_that_is_not_positive_semi_definite_is_refused() {
+        let people = 2;
+        let mut relationship = DMatrix::zeros(people, people);
+        relationship[(0, 1)] = 0.9;
+        relationship[(1, 0)] = 0.9;
+
+        let value = vec![0.4, -0.2];
+        let censoring = vec![Censoring::Measured, Censoring::Measured];
+        let limit = vec![2.0; people];
+        let design = DMatrix::from_element(people, 1, 1.0);
+
+        match TobitModel::build(&relationship, &value, &censoring, &limit, &design) {
+            Err(code) => assert_eq!(code, "TOBIT_RELATIONSHIP_NOT_PSD"),
+            Ok(_) => panic!("a matrix with a negative eigenvalue was accepted as a covariance"),
+        }
+    }
+
+    /// Holding the heritability changes the cost of a fit and not its answer.
+    ///
+    /// A held fit used to build the same start three times and run the same
+    /// deterministic search over each, so the interval paid for three copies of
+    /// one answer at each end of every bisection step. The value pinned above
+    /// came from that three-start code; taking one start has to land on it
+    /// exactly rather than merely close to it.
+    #[test]
+    fn holding_a_heritability_costs_one_search_and_lands_where_three_did() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(40, 0.5, 1.0, 0.0, Some(0.75), 909);
+        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
+            .expect("the simulated matrix is a covariance");
+
+        let fit = model
+            .fit_holding(Some(0.4))
+            .expect("a held fit converges here");
+
+        assert_eq!(
+            fit.loglik, PINNED_HELD_LOGLIK,
+            "one start did not land where three identical starts did"
+        );
+    }
+
     /// A fit that never found a feasible point must say so rather than come
     /// back converged.
     ///
-    /// `build` checks that the relationship matrix is symmetric and that its
-    /// off-diagonal entries are within the guard, but it does not check that
-    /// the matrix is positive semi-definite and it does not look at the
-    /// diagonal at all. A matrix with a nought diagonal therefore reaches the
-    /// search, and holding the heritability at one makes the covariance that
-    /// matrix exactly, which will not factorise. Every start is then
-    /// infeasible -- and because a held fit builds the same start three times,
-    /// all three fail together, so no other start can rescue it.
+    /// Each family block here is positive semi-definite and singular -- both
+    /// eigenvalues of `[[0.9, 0.9], [0.9, 0.9]]` are 1.8 and nought -- so it
+    /// passes every check `build` makes, including the positive
+    /// semi-definiteness one. Holding the heritability at one makes the
+    /// covariance that matrix exactly, and a singular matrix has no Cholesky
+    /// factor, so every start is infeasible.
     ///
     /// Before the objective's infeasible value was given a name and tested
     /// against, this returned `Ok` with `converged: true` and a log likelihood
@@ -571,6 +730,8 @@ mod tests {
         let mut relationship = DMatrix::zeros(people, people);
         for family in 0..2 {
             let (a, b) = (2 * family, 2 * family + 1);
+            relationship[(a, a)] = 0.9;
+            relationship[(b, b)] = 0.9;
             relationship[(a, b)] = 0.9;
             relationship[(b, a)] = 0.9;
         }

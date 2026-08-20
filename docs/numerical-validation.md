@@ -393,6 +393,76 @@ runs cannot measure a rejection rate. No simulation presently establishes
 coverage or type-I error for the vertical estimand `a b`, so the model reports numerical diagnostics and point estimates
 without a calibrated interval or p-value.
 
+## Censored model
+
+Against R's `censReg` with no relatedness, the log likelihood and all four
+reported quantities agreed to `9.6e-9` at 4,000 people with 1,131 censored.
+With relatedness, the maximum-likelihood estimates sit inside MCMCglmm's
+posterior. Substituting the limit -- the usual practice -- returns 0.46 at a
+quarter censored and 0.31 at three quarters where the truth is 0.5; the
+censored model recovers 0.5 at every rate to three quarters.
+
+**Interval coverage, on 300 replicates of 300 sibling pairs per cell**, scored
+unconditionally with no cell dropped and no refusals:
+
+| true h² | 0% censored | 25% | 50% |
+| --- | --- | --- | --- |
+| 0.0 | 0.937 | 0.950 | 0.960 |
+| 0.3 | 0.943 | 0.943 | 0.957 |
+| 0.5 | 0.953 | 0.950 | 0.933 |
+
+All nine cells contain the nominal 0.95 in their Clopper-Pearson intervals,
+**two-sided, including the cells at nought**.
+
+Correcting the receipt of 18 August 2026, which reported 0.980, 0.977 and 0.983
+in those three cells and passed them under a one-sided rule: the interval was
+missing the Self-Liang mixture that ADR 0004 requires, so a lower end of nought
+was read as containment whatever the likelihood there said. ADR 0004 had
+already measured what that costs -- 0.977 against 0.953 -- and the censored
+model reproduced it. The mixture is now on the record as
+`contains_lower_bound` and `contains_upper_bound`, the check reads it, and the
+boundary allowance that hid the fault is gone. `evidence/tobit-coverage-2026-08-18.json`
+predates the mixture and describes a recipe the code no longer implements.
+
+## Mixed bivariate model
+
+Against native SOLAR on the binary-with-continuous pair, the worst difference
+was 0.014. Recovery of a genetic correlation of 0.4 is mildly conservative in
+every pairing, an attenuation the all-continuous control shows too, so it
+belongs to maximum likelihood rather than to the censoring.
+
+**Interval coverage for the genetic correlation, on 300 replicates of 400
+sibling pairs per cell**, each cell drawn on its own stream, scored
+unconditionally with no refusals:
+
+| pairing | ρ = 0.0 | ρ = 0.4 | ρ = 0.7 |
+| --- | --- | --- | --- |
+| continuous | 0.950 | 0.957 | 0.957 |
+| binary | 0.930 | 0.943 | 0.943 |
+| censored | 0.940 | 0.940 | 0.943 |
+
+The test against nought holds its level in the same run: 0.050, 0.070 and 0.060
+against a nominal 0.05, with power at ρ = 0.7 of 0.997, 0.950 and 0.993. Nought
+is an interior point of a correlation's range, so the reference is a plain
+chi-square on one degree of freedom and no boundary mixture applies.
+
+**This is the first measurement of that interval, and it found it broken.**
+Before the fix, one end of every correlation interval sat on its own bound
+whatever the data said, giving widths of about 1.5 on a parameter that runs
+from minus one to one. The cause was the convergence flag: it was read from a
+raw maximum-absolute gradient, neither projected onto the coordinates the
+search is free to move nor divided by the objective. A held profile fit rests
+other coordinates on their bounds, so a perfectly good constrained maximum
+reported that it had not converged, the profile discarded it as a failure, and
+a failure reads as an end the data did not rule out.
+
+The interval contradicted this model's own test, which is how it was caught: a
+replicate reporting an interval of `[-1.0000, 0.8429]` -- containing nought --
+had a deviance at nought of 29.9 and a p-value of `4.5e-08`. Projecting and
+scaling the gradient, as the liability model already did, moved that interval
+to `[0.4928, 0.8429]` and brought the two into agreement. Widths fell from
+about 1.5 to between 0.44 and 0.97.
+
 ## Scale and cost
 
 The dense routes are quadratic in memory and the fits are cubic in the largest
@@ -508,6 +578,7 @@ uv run --no-project python checks/association_tail.py
 uv run --no-project python checks/tobit_calibration.py
 uv run --no-project python checks/tobit_coverage.py
 uv run --no-project python checks/mixed_bivariate_calibration.py
+uv run --no-project python checks/mixed_bivariate_coverage.py
 uv run --no-project python checks/mediation_calibration.py
 uv run --no-project python checks/mediation_ascertainment.py
 uv run --with numpy python checks/mediation_power.py
