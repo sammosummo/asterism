@@ -6,7 +6,8 @@ reasoning for a third time, in the same direction as ADR 0007.**
 **Status:** proposed 19 August 2026, before any code for it existed. **Accepted
 20 August 2026**, once the ladder this record made a precondition had been
 climbed and the complete-data skeleton agreed with `ComponentModel`. Amended the
-same day by *What the skeleton changed* and *What censoring changed*, below.
+same day by *What the skeleton changed*, *What censoring changed* and
+*What the kernel changed*, below.
 
 > **This model has no name yet.** It is described here by what it does, because
 > naming it is deferred until it works and the name is meant to say what the
@@ -407,3 +408,75 @@ being badly posed looks like from the outside.
 a scratch harness that was deleted, because the crate's cost checks live in
 `checks/` and are reached through Python, and this model has no Python interface
 until the kernel gives it something worth calling.
+
+## What the kernel changed
+
+*Amendment, 20 August 2026, after building the covariance kernel. The decision
+above stands and one sentence in it needs qualifying.*
+
+**The kernel is optional and both halves are kept.** `build` leaves every
+covariance free; `build_on_a_line` takes the positions' coordinates and shapes
+them. That is not indecision. The kernel family sits inside the free one, so the
+free fit is the only thing that says whether the shape cost anything, and a test
+asserts the restricted fit never beats it.
+
+**ECM is now ECM.** The earlier amendment noted that with free covariances the
+joint M-step exists in closed form, so what the skeleton did was plain EM. With
+a kernel it does not: each component's maximiser is the nearest member of the
+kernel family in the same Wishart likelihood, found by a small bounded search
+over nineteen numbers with an analytic gradient, started from where that
+component already is. That is a conditional maximisation, and it is what the
+`CM` in the title of this record means. It does not have to arrive — the
+likelihood only has to rise, and starting from the current parameters guarantees
+it cannot fall — which is what makes it affordable at every iteration for every
+component.
+
+**The parameter count closes a loop.** With the kernel the fit carries 51
+variances, 6 kernel parameters and 68 fixed effects: 125, exactly the count this
+record opened with. So the gradient reading at the fixed point is 251
+evaluations against the unstructured skeleton's 1,055, and at the 130 ms
+measured earlier that is about half a minute. **It is also, to the evaluation,
+one gradient step of the route this record rejected.** ECM's whole saving is
+that it needs that once rather than once per step, and it is worth seeing the
+two quantities be the same number.
+
+### The floor and the rate are not separately estimable
+
+This record says the floor is a common factor and the exponential is the local
+decay, that a large `lambda` gives a pure factor model and a `c` of nought a
+pure distance model, and that **"the fit chooses rather than the analyst"**. The
+fit does choose. What needs saying is how weakly.
+
+Over a finite span the two parameters trade off against each other almost
+exactly. A floor of 0.35 with a rate of 0.09, and no floor at all with a rate of
+0.043, agree to within a twentieth of a correlation at every separation out to
+22 units. On data simulated from the first, at 600 people, the fit converged to
+a scaled gradient of 2.8e-08 — a genuine maximum, not a search that stopped
+early — and returned the second. The correlation it drew was right at every
+separation, within 0.05 of the truth and closer still to what a free covariance
+on the same data reported. The parameters were not; the curve was.
+
+Two things follow, and the first was already the decision here.
+
+- **The correlation comes back as a function of separation.** This record
+  already required that, on the ground that two parameters are not 136
+  estimates. The stronger ground is that the two parameters are not the
+  estimable thing at all. `RepeatedFit::correlation` is the interface and the
+  floors and rates behind it are reported for completeness rather than for
+  reading.
+- **A profile interval on a floor alone would be wide, and would not mean what
+  it looked like.** The identified quantity is the curve, so an interval belongs
+  on `corr(d)` at separations that matter and not on `c`. Nothing has been built
+  either way yet; this is a note for whoever builds it.
+
+Where the decay is fast relative to the span the two do separate. In the same
+simulation the replicate level, whose rate was 0.8 across separations starting
+at 2.1, came back at 0.88 with its floor at 0.066 against a true 0.05. So this
+is a statement about slow decay over a short line, which is the genetic
+component's case and not the replicate level's.
+
+**None of this makes the kernel the wrong model.** It buys what it was for: a
+correlation that respects the ordering of the positions, from a fit whose own
+gradient is affordable to read, containing both the factor model and the
+distance model as special cases. It simply does not license reading `c` as the
+size of a common factor.

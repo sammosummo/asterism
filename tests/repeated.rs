@@ -674,3 +674,367 @@ fn nothing_censored_takes_the_same_road_as_the_uncensored_fit() {
         assert_eq!(direct.censored_shares[position], 0.0);
     }
 }
+
+/// Positions on a line, unevenly spaced the way audiometric frequencies are on
+/// any scale anyone would put them on.
+const LINE: [f64; 6] = [0.0, 2.1, 5.0, 9.4, 14.0, 22.0];
+
+/// The correlation the kernel puts between two positions.
+fn kernel_at(floor: f64, rate: f64, separation: f64) -> f64 {
+    floor + (1.0 - floor) * (-rate * separation).exp()
+}
+
+/// A covariance in the kernel family: a scale at every position, one floor and
+/// one rate.
+fn shaped(scale: &[f64], floor: f64, rate: f64) -> DMatrix<f64> {
+    let size = scale.len();
+    DMatrix::from_fn(size, size, |i, j| {
+        scale[i] * scale[j] * kernel_at(floor, rate, (LINE[i] - LINE[j]).abs())
+    })
+}
+
+struct OnALine {
+    relationship: DMatrix<f64>,
+    design: DMatrix<f64>,
+    response: DMatrix<f64>,
+}
+
+/// Data from a model whose covariances really are in the kernel family, so
+/// that there is a right answer for the floor and the rate to be checked
+/// against.
+fn simulate_on_a_line(
+    families: usize,
+    replicates: usize,
+    genetic: &DMatrix<f64>,
+    residual: &DMatrix<f64>,
+    seed: u64,
+) -> OnALine {
+    let positions = LINE.len();
+    let a = relationship(families);
+    let people = a.nrows();
+    let rows = people * replicates;
+    let across = a
+        .clone()
+        .cholesky()
+        .expect("the relationship matrix should factorise")
+        .l();
+    let along = genetic
+        .clone()
+        .cholesky()
+        .expect("the genetic covariance should factorise")
+        .l();
+    let noise = residual
+        .clone()
+        .cholesky()
+        .expect("the residual covariance should factorise")
+        .l();
+    let mut stream = Stream(seed);
+
+    let mut design = DMatrix::<f64>::zeros(rows, 2);
+    for row in 0..rows {
+        design[(row, 0)] = 1.0;
+        design[(row, 1)] = stream.normal();
+    }
+    let mut fixed = DMatrix::<f64>::zeros(2, positions);
+    for t in 0..positions {
+        fixed[(0, t)] = 0.3 * (t as f64) - 0.5;
+        fixed[(1, t)] = 0.4 - 0.05 * (t as f64);
+    }
+    let mut response = design.clone() * fixed;
+
+    // The genetic effects are a matrix normal: correlated down the people by
+    // the relationship matrix and across the positions by the kernel.
+    let draws = DMatrix::from_fn(people, positions, |_, _| stream.normal());
+    let effects = &across * draws * along.transpose();
+    for person in 0..people {
+        for replicate in 0..replicates {
+            let row = person * replicates + replicate;
+            let own = DVector::from_fn(positions, |_, _| stream.normal());
+            let level = &noise * own;
+            for t in 0..positions {
+                response[(row, t)] += effects[(person, t)] + level[t];
+            }
+        }
+    }
+    OnALine {
+        relationship: a,
+        design,
+        response,
+    }
+}
+
+/// **A floor and a rate are not separately estimable, and the correlation they
+/// describe is.** This is a property of the kernel and not of any fit: over a
+/// finite span, a high floor with a fast decay and no floor at all with a slow
+/// one draw very nearly the same curve. Two pairs as far apart as 0.35 and
+/// nought in the floor agree to within a twentieth of a correlation everywhere
+/// a fit would look.
+///
+/// It is why the fit hands back a function rather than the two numbers behind
+/// it, and why the test below checks the function.
+#[test]
+fn a_floor_and_a_rate_trade_off_against_each_other() {
+    let mut worst: f64 = 0.0;
+    let mut separation = 0.0;
+    while separation <= LINE[LINE.len() - 1] {
+        let with_floor = kernel_at(0.35, 0.09, separation);
+        let without = kernel_at(0.0, 0.043, separation);
+        worst = worst.max((with_floor - without).abs());
+        separation += 0.1;
+    }
+    assert!(
+        worst < 0.06,
+        "the two curves differ by {worst}, which would make them tellable apart"
+    );
+}
+
+#[test]
+fn the_kernel_recovers_the_correlation_it_was_given() {
+    let replicates = 2;
+    let scale = [1.0, 1.1, 0.9, 1.2, 1.0, 0.8];
+    let (floor, rate) = (0.35, 0.09);
+    let genetic = shaped(&scale, floor, rate);
+    // The replicate level decays much faster and has almost no floor, which is
+    // what test-retest noise looks like beside a genetic effect.
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(150, replicates, &genetic, &residual, 20_260_828);
+
+    let model = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build");
+    let fit = model.fit(&data.response).expect("the fit should run");
+
+    assert!(fit.monotone, "the likelihood fell during the search");
+    assert!(
+        fit.converged,
+        "|g| = {} after {} iterations",
+        fit.scaled_gradient, fit.iterations
+    );
+    assert_eq!(fit.floors.len(), 2, "one component and the residual");
+    assert_eq!(fit.rates.len(), 2);
+
+    // **The curve, not the two numbers behind it.** The floor came back at
+    // nought and the rate at half what it was given, and the correlation is
+    // right anyway, which is the trade-off the test above pins down.
+    for separation in [2.1, 5.0, 9.4, 14.0, 22.0] {
+        let got = fit
+            .correlation(0, separation)
+            .expect("there is a kernel and a component nought");
+        let wanted = kernel_at(floor, rate, separation);
+        assert!(
+            (got - wanted).abs() < 0.08,
+            "genetic correlation at {separation}: {got} against {wanted}"
+        );
+    }
+    // The replicate level's decay is fast enough for its own two numbers to be
+    // separated, so there they can be checked directly.
+    assert!(
+        (fit.floors[1] - 0.05).abs() < 0.08,
+        "replicate floor {} against 0.05",
+        fit.floors[1]
+    );
+    assert!(
+        (fit.rates[1] - 0.8).abs() < 0.25,
+        "replicate rate {} against 0.8",
+        fit.rates[1]
+    );
+    // And the qualitative statement the two levels are there to make: what a
+    // person shares between ears reaches further across the line than what one
+    // ear carries alone.
+    assert!(
+        fit.correlation(0, 9.4).expect("a correlation")
+            > fit.correlation(1, 9.4).expect("a correlation"),
+        "the genetic level should reach further: {:?} against {:?}",
+        fit.correlation(0, 9.4),
+        fit.correlation(1, 9.4)
+    );
+
+    // The correlation is the function the two fitted numbers describe, and
+    // nothing else.
+    for separation in [0.0, 2.1, 9.4, 22.0] {
+        let got = fit.correlation(0, separation).expect("a correlation");
+        assert!((got - kernel_at(fit.floors[0], fit.rates[0], separation)).abs() < 1e-12);
+    }
+    assert!((fit.correlation(0, 0.0).expect("a correlation") - 1.0).abs() < 1e-12);
+    assert!(
+        fit.correlation(9, 1.0).is_none(),
+        "there is no component nine"
+    );
+}
+
+#[test]
+fn the_kernel_is_a_restriction_of_the_free_covariance() {
+    // The kernel family sits inside the free one, so its best fit cannot beat
+    // the free one's. If it ever did, one of the two searches would not be
+    // finding what it claims to.
+    let replicates = 2;
+    let genetic = shaped(&[1.0, 1.1, 0.9, 1.2, 1.0, 0.8], 0.35, 0.09);
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(60, replicates, &genetic, &residual, 20_260_829);
+
+    let restricted = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build")
+    .fit(&data.response)
+    .expect("the fit should run");
+
+    let free = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        LINE.len(),
+    )
+    .expect("the model should build")
+    .fit(&data.response)
+    .expect("the fit should run");
+
+    assert!(
+        restricted.loglik <= free.loglik + 1e-6,
+        "the restricted fit beat the free one: {} against {}",
+        restricted.loglik,
+        free.loglik
+    );
+    // And it should not be far behind, because the truth is in the family.
+    // Twelve parameters against forty-two, on data the kernel can express.
+    assert!(
+        free.loglik - restricted.loglik < 40.0,
+        "the kernel cost {} log units, which is more than the shape it removed",
+        free.loglik - restricted.loglik
+    );
+    assert_eq!(restricted.floors.len(), 2);
+    assert!(free.floors.is_empty());
+
+    // And the kernel should be drawing the curve the free fit found rather
+    // than one of its own. The free fit has a correlation per pair of
+    // positions; the kernel has two numbers; they should agree about the
+    // pairs.
+    let genetic = &free.component_covariances[0];
+    for (a, b) in [(0usize, 1usize), (0, 3), (0, 5), (2, 4)] {
+        let empirical = genetic[(a, b)] / (genetic[(a, a)] * genetic[(b, b)]).sqrt();
+        let curve = restricted
+            .correlation(0, LINE[b] - LINE[a])
+            .expect("there is a kernel");
+        assert!(
+            (empirical - curve).abs() < 0.12,
+            "positions {a} and {b}: free {empirical} against kernel {curve}"
+        );
+    }
+}
+
+#[test]
+fn the_kernel_contains_independence_and_finds_it() {
+    // At a floor of nought and a large rate the correlation between distinct
+    // positions is nothing, so the family contains the case where the positions
+    // have nothing to do with each other. A fit on data like that should say so
+    // rather than inventing structure.
+    let replicates = 2;
+    let independent = DMatrix::<f64>::identity(LINE.len(), LINE.len());
+    let data = simulate_on_a_line(120, replicates, &independent, &independent, 20_260_830);
+
+    let fit = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build")
+    .fit(&data.response)
+    .expect("the fit should run");
+
+    for component in 0..2 {
+        let at_one = fit.correlation(component, 2.1).expect("there is a kernel");
+        assert!(
+            at_one < 0.25,
+            "component {component} invented a correlation of {at_one} between \
+             positions that are independent"
+        );
+    }
+}
+
+#[test]
+fn a_line_the_kernel_cannot_use_is_refused() {
+    let a = relationship(4);
+    let people = a.nrows();
+    let design = DMatrix::<f64>::from_element(people * 2, 1, 1.0);
+    assert_eq!(
+        RepeatedModel::build_on_a_line(std::slice::from_ref(&a), &design, 2, &[0.0, 1.0]).err(),
+        Some("REPEATED_KERNEL_NEEDS_THREE_POSITIONS")
+    );
+    assert_eq!(
+        RepeatedModel::build_on_a_line(&[a], &design, 2, &[0.0, 1.0, 1.0]).err(),
+        Some("REPEATED_KERNEL_POSITIONS_COINCIDE")
+    );
+}
+
+#[test]
+fn the_kernel_and_censoring_work_together() {
+    // The model this was all built for: a correlation that decays along a line,
+    // and values at the far end of that line that reached a limit instead of
+    // being measured. The censoring is put where the audiogram has it -- almost
+    // none at one end, half at the other -- so the positions that matter most
+    // are the ones with the least measured in them.
+    let replicates = 2;
+    let genetic = shaped(&[1.0, 1.1, 0.9, 1.2, 1.0, 0.8], 0.35, 0.09);
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(80, replicates, &genetic, &residual, 20_260_831);
+
+    let share = [0.0, 0.0, 0.02, 0.10, 0.30, 0.50];
+    let mut known = Vec::new();
+    let mut counted = 0usize;
+    for row in 0..data.response.nrows() {
+        for position in 0..LINE.len() {
+            let value = data.response[(row, position)];
+            // Deterministic, so the pattern is the same every run: the top
+            // `share` of each position by value is what an instrument running
+            // out of output would take.
+            let cut = ((row * 7 + position * 13) % 100) as f64 / 100.0;
+            if cut < share[position] {
+                known.push(Known::Above(value - 0.3));
+                counted += 1;
+            } else {
+                known.push(Known::Value(value));
+            }
+        }
+    }
+    assert!(counted > 100, "only {counted} censored");
+
+    let fit = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build")
+    .fit_known(&known)
+    .expect("the fit should run");
+
+    assert!(
+        fit.sequential_dimension > 2,
+        "the approximation should be doing some work"
+    );
+    assert_eq!(fit.censored_shares[0], 0.0);
+    assert!(fit.censored_shares[5] > 0.4);
+    // The correlation the genetic level carries should still be the one it was
+    // given, at the positions where enough was measured to say.
+    for separation in [2.1, 9.4] {
+        let got = fit.correlation(0, separation).expect("there is a kernel");
+        let wanted = kernel_at(0.35, 0.09, separation);
+        assert!(
+            (got - wanted).abs() < 0.15,
+            "genetic correlation at {separation}: {got} against {wanted}"
+        );
+    }
+    assert!(
+        fit.correlation(0, 9.4).expect("a correlation")
+            > fit.correlation(1, 9.4).expect("a correlation"),
+        "the genetic level should still reach further than the replicate one"
+    );
+}

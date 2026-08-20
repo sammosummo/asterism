@@ -28,14 +28,41 @@
 //! is deferred until it works and the name is meant to say what the biology is
 //! supposed to be. The reasoning for the fitting route is in ADR 0010.
 //!
+//! # The covariance across positions
+//!
+//! Each `S_j` can be left free, or given the shape the positions imply:
+//!
+//! ```text
+//! S_j = D_j R_j D_j,    R_j(t, u) = c_j + (1 - c_j) exp(-lambda_j d(t, u))
+//! ```
+//!
+//! -- a free variance at every position, and one floor and one rate per
+//! component. At seventeen positions that is nineteen numbers where a free
+//! covariance is 153. [`RepeatedModel::build`] leaves them free;
+//! [`RepeatedModel::build_on_a_line`] takes the positions' coordinates and
+//! shapes them. Both are kept, because the free fit is what says whether the
+//! shape cost anything.
+//!
+//! **A floor and a rate are not separately estimable and the correlation they
+//! describe is.** Over a finite span a high floor with a fast decay and no
+//! floor at all with a slow one draw very nearly the same curve: 0.35 with a
+//! rate of 0.09 and nought with a rate of 0.043 agree to within a twentieth of
+//! a correlation everywhere a fit would look, and there is a test that says so.
+//! That is a property of the kernel and not of any one fit, and it is why
+//! [`RepeatedFit::correlation`] hands back a function of separation rather than
+//! the two numbers behind it -- and why a profile interval on a floor alone
+//! would be wide and would not mean what it looked like.
+//!
+//! Where the decay is fast relative to the span the two do separate, which is
+//! the replicate level's usual case and not the genetic one.
+//!
 //! # What is here, and what is not yet
 //!
 //! Values that reached a limit instead of being measured, values that were
-//! never measured at all, and a free covariance per component. **The covariance
-//! kernel is still to come**, so until it arrives every `S_j` is unstructured:
-//! a fit at seventeen positions estimates 153 numbers per component and nobody
-//! should read a single one of them. What is here is the machinery, and what it
-//! is for is landing on the answer where the answer is already known.
+//! never measured at all, a free or a shaped covariance per component, and the
+//! machinery to fit any of it. **What is not here is a Python interface**, or
+//! the checks against outside packages that ADR 0010 asks for before any of
+//! this is used on real data.
 //!
 //! # Censoring, and what it costs
 //!
@@ -96,10 +123,18 @@
 //! # How it is fitted
 //!
 //! Expectation-maximisation, with the person-level effects as the missing data.
-//! The complete-data problem separates into one closed form per component, so
-//! there is no search and no gradient inside the loop. That is what will make
-//! the censored version affordable: one iteration costs about one likelihood
-//! evaluation instead of 250.
+//! The complete-data problem separates into one term per component, so what is
+//! left is one small maximisation apiece rather than one large one.
+//!
+//! With free covariances each of those has a closed form -- the statistic
+//! divided by its count -- and there is no search anywhere in the loop. With a
+//! kernel each is the nearest member of the kernel family in the same Wishart
+//! likelihood, which is a bounded search over nineteen numbers with an analytic
+//! gradient, started from where that component already is. **That is what makes
+//! it a conditional maximisation rather than a maximisation**, and it is what
+//! the `CM` in ECM means. It does not have to arrive: the likelihood only has
+//! to rise, and starting from the current parameters guarantees it cannot
+//! fall.
 //!
 //! EM is a route and not a definition. The observed-data likelihood is what the
 //! fit reports; it is recomputed at every iteration so that a failure of
@@ -108,6 +143,9 @@
 //! likelihood at the point EM stopped. One number decides whether the route
 //! arrived where it claimed.
 
+mod kernel;
+
+use kernel::{Kernel, Shaped};
 use nalgebra::{DMatrix, DVector};
 use statrs::distribution::Normal;
 
@@ -187,15 +225,34 @@ const GRADIENT_CHECK_EVERY: usize = 500;
 /// exactly the case of a direction that was small rather than absent.
 const RESTING_VARIANCE: f64 = 1e-6;
 
+/// How close to a bound counts as resting on it, for the projection the
+/// gradient reading applies there. The response is standardised, so a scale or
+/// a floor this near its bound is on it in every sense that matters.
+const AT_BOUND: f64 = 1e-6;
+
 /// The step for the central differences that read the gradient at the end. The
 /// response is standardised before fitting, so the square roots this steps in
 /// are of order one and a relative and an absolute step are the same thing.
 const GRADIENT_STEP: f64 = 1e-5;
 
-/// Everything the search carries from one step to the next: a covariance per
-/// person-level component, the replicate-level covariance, and the fixed
-/// effects.
-type State = (Vec<DMatrix<f64>>, DMatrix<f64>, DMatrix<f64>);
+/// Everything the search carries from one step to the next.
+///
+/// **Where there is a kernel the shapes are the parameters and the covariances
+/// are derived from them**, not the other way round. That matters in one place
+/// and it is the place it would be easy to get wrong: the extrapolation in
+/// `accelerated_step` works on whatever this flattens to, so with a kernel it
+/// moves nineteen numbers per component along a line and lands somewhere still
+/// inside the family, rather than moving 153 and landing outside it.
+#[derive(Clone)]
+struct State {
+    sigmas: Vec<DMatrix<f64>>,
+    residual: DMatrix<f64>,
+    fixed: DMatrix<f64>,
+    /// The kernel parameters each covariance was built from, the person-level
+    /// components in order and the residual last. `None` where the covariances
+    /// are free.
+    shapes: Option<Vec<Shaped>>,
+}
 
 /// A fitted repeated-measures model.
 #[derive(Clone, Debug)]
@@ -237,6 +294,14 @@ pub struct RepeatedFit {
     /// a small reading there says less than it does elsewhere -- the same
     /// caveat [`crate::ComponentModel`] carries for a variance on its bound.
     pub scaled_gradient: f64,
+    /// Each component's correlation floor, the person-level components in
+    /// order with the replicate level last, where there is a kernel. Empty
+    /// where every covariance was left free.
+    pub floors: Vec<f64>,
+    /// Each component's decay rate, in the caller's own separations, in the
+    /// same order. **A rate means nothing without the line it was measured
+    /// on**, which is why [`RepeatedFit::correlation`] exists.
+    pub rates: Vec<f64>,
     /// The share of all observations at each position that reached a limit,
     /// counting those never measured in the denominator. **Read the estimates
     /// against it**: at a very high share the tail at that
@@ -316,6 +381,25 @@ struct Spread {
     mean: Vec<DMatrix<f64>>,
     /// `P (R - 1)` of them, one per contrast row.
     contrast: Vec<DMatrix<f64>>,
+}
+
+impl RepeatedFit {
+    /// The correlation this fit puts between two positions a given separation
+    /// apart on the caller's own line, for one component.
+    ///
+    /// **This is a function and not a matrix on purpose.** It came from two
+    /// numbers, and handing back a seventeen by seventeen matrix would invite a
+    /// reader to treat 136 of its entries as estimates when there are two.
+    ///
+    /// Components are in the order the matrices were given, with the replicate
+    /// level last. Returns `None` where the fit had no kernel, or where there
+    /// is no such component.
+    #[must_use]
+    pub fn correlation(&self, component: usize, separation: f64) -> Option<f64> {
+        let floor = *self.floors.get(component)?;
+        let rate = *self.rates.get(component)?;
+        Some(Kernel::at(floor, rate, separation.abs()))
+    }
 }
 
 /// The data as the fit works on it: standardised, and rotated in advance where
@@ -408,6 +492,9 @@ pub struct RepeatedModel {
     /// The Helmert matrix that separates a person's replicates into their mean
     /// and their contrasts.
     helmert: DMatrix<f64>,
+    /// Where the positions sit on a line, and the correlation that follows from
+    /// it. `None` leaves every covariance free, which is the skeleton.
+    kernel: Option<Kernel>,
     people: usize,
     replicates: usize,
     positions: usize,
@@ -541,6 +628,7 @@ impl RepeatedModel {
         let contrast_cross = design_contrast.transpose() * &design_contrast;
 
         Ok(Self {
+            kernel: None,
             design: design.clone(),
             matrices: matrices.to_vec(),
             blocks,
@@ -557,6 +645,36 @@ impl RepeatedModel {
             positions,
             covariates,
         })
+    }
+
+    /// Validate and prepare, with the positions on a line and a correlation
+    /// that decays along it.
+    ///
+    /// `line` is where each position sits, one value per position, in whatever
+    /// units the caller thinks in. **The crate does not choose those units.**
+    /// For an audiogram they are ERB numbers; the conversion belongs to
+    /// whoever knows the positions are frequencies.
+    ///
+    /// Every component then carries a free variance at each position and a
+    /// correlation `c + (1 - c) exp(-lambda d)` with its own `c` and `lambda`,
+    /// which is nineteen numbers at seventeen positions where a free covariance
+    /// is 153.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`RepeatedModel::build`] returns, and a stable code where the
+    /// line is not one: fewer than three positions, a value that is not finite,
+    /// or two positions at the same place.
+    pub fn build_on_a_line(
+        matrices: &[DMatrix<f64>],
+        design: &DMatrix<f64>,
+        replicates: usize,
+        line: &[f64],
+    ) -> Result<Self, &'static str> {
+        let kernel = Kernel::new(line)?;
+        let mut model = Self::build(matrices, design, replicates, kernel.positions())?;
+        model.kernel = Some(kernel);
+        Ok(model)
     }
 
     /// How many person-level components there are, not counting the residual.
@@ -637,9 +755,15 @@ impl RepeatedModel {
             known: scaled,
         };
 
-        let (mut sigmas, mut residual, mut fixed) = self.starting_values(&crude)?;
+        let mut state = self.starting_values(&crude)?;
         let mut imputed = self
-            .expectation(&prepared, &sigmas, &residual, &fixed, true)
+            .expectation(
+                &prepared,
+                &state.sigmas,
+                &state.residual,
+                &state.fixed,
+                true,
+            )
             .ok_or("REPEATED_START_NOT_EVALUABLE")?;
         let mut loglik = imputed.loglik;
         let mut monotone = true;
@@ -650,32 +774,23 @@ impl RepeatedModel {
         let mut last_reading: Option<usize> = None;
 
         while iterations < MAX_ITERATIONS {
-            let Some(((next_sigmas, next_residual, next_fixed), next_imputed)) = self
-                .accelerated_step(
-                    &prepared,
-                    &imputed,
-                    &sigmas,
-                    &residual,
-                    &fixed,
-                    &mut iterations,
-                )
+            let Some((next_state, next_imputed)) =
+                self.accelerated_step(&prepared, &imputed, &state, &mut iterations)
             else {
                 return Err("REPEATED_ITERATION_NOT_EVALUABLE");
             };
             let next_loglik = next_imputed.loglik;
             // A fall of a few units in the last place is the arithmetic and not
-            // the algorithm. Anything larger, on complete data, is this code
-            // being wrong; with censoring it may instead be the expectation
-            // step's own approximation, which ADR 0010 warns is not guaranteed
-            // to climb the likelihood it claims to maximise. Either way it is
-            // reported rather than swallowed.
+            // the algorithm. Anything larger, on complete data with free
+            // covariances, is this code being wrong; with censoring it may
+            // instead be the expectation step's own approximation, which ADR
+            // 0010 warns is not guaranteed to climb the likelihood it claims to
+            // maximise. Either way it is reported rather than swallowed.
             if next_loglik < loglik - 1e-8 * loglik.abs().max(1.0) {
                 monotone = false;
             }
             let gain = next_loglik - loglik;
-            sigmas = next_sigmas;
-            residual = next_residual;
-            fixed = next_fixed;
+            state = next_state;
             imputed = next_imputed;
             loglik = next_loglik;
             if gain <= 0.0 {
@@ -707,17 +822,13 @@ impl RepeatedModel {
                 remaining <= REMAINING_GAIN * loglik.abs().max(1.0)
             };
             if periodic || settling {
-                if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_imputed)) =
-                    self.rested(&prepared, &sigmas, &residual, &fixed, loglik)
-                {
-                    sigmas = rested_sigmas;
-                    residual = rested_residual;
-                    fixed = rested_fixed;
+                if let Some((rested, rested_imputed)) = self.rested(&prepared, &state, loglik) {
+                    state = rested;
                     loglik = rested_imputed.loglik;
                     imputed = rested_imputed;
                 }
                 scaled_gradient = self
-                    .gradient_reading(&prepared, complete, &imputed, &sigmas, &residual, &fixed)
+                    .gradient_reading(&prepared, complete, &imputed, &state)
                     .unwrap_or(f64::INFINITY);
                 last_reading = Some(iterations);
                 if scaled_gradient < TOLERANCE {
@@ -729,17 +840,13 @@ impl RepeatedModel {
         }
 
         if last_reading != Some(iterations) {
-            if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_imputed)) =
-                self.rested(&prepared, &sigmas, &residual, &fixed, loglik)
-            {
-                sigmas = rested_sigmas;
-                residual = rested_residual;
-                fixed = rested_fixed;
+            if let Some((rested, rested_imputed)) = self.rested(&prepared, &state, loglik) {
+                state = rested;
                 loglik = rested_imputed.loglik;
                 imputed = rested_imputed;
             }
             scaled_gradient = self
-                .gradient_reading(&prepared, complete, &imputed, &sigmas, &residual, &fixed)
+                .gradient_reading(&prepared, complete, &imputed, &state)
                 .unwrap_or(f64::INFINITY);
         }
 
@@ -747,16 +854,27 @@ impl RepeatedModel {
         // the scale, a fixed effect carries the scale itself, and the
         // log-likelihood carries a term per **measured** observation, because a
         // region probability is a probability and does not change with the
-        // units its limits are quoted in.
+        // units its limits are quoted in. A floor and a rate carry nothing: one
+        // is a correlation and the other is in the caller's own separations.
         let factor = variance;
-        let component_covariances: Vec<DMatrix<f64>> = sigmas.iter().map(|s| s * factor).collect();
-        let residual_covariance = &residual * factor;
+        let component_covariances: Vec<DMatrix<f64>> =
+            state.sigmas.iter().map(|s| s * factor).collect();
+        let residual_covariance = &state.residual * factor;
         let variance_shares = shares(&component_covariances, &residual_covariance);
+        let (floors, rates) = match &state.shapes {
+            Some(shapes) => (
+                shapes.iter().map(|s| s.floor).collect(),
+                shapes.iter().map(|s| s.rate).collect(),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
         Ok(RepeatedFit {
             component_covariances,
             residual_covariance,
-            fixed_effects: fixed * scale,
+            fixed_effects: state.fixed * scale,
             variance_shares,
+            floors,
+            rates,
             loglik: loglik - count * scale.ln(),
             iterations,
             monotone,
@@ -1258,7 +1376,36 @@ impl RepeatedModel {
         if share.clone().cholesky().is_none() {
             return Err("REPEATED_RESPONSE_SINGULAR");
         }
-        Ok((vec![share.clone(); self.components()], share, fixed))
+        let shapes = match &self.kernel {
+            None => None,
+            Some(kernel) => Some(
+                (0..=self.components())
+                    .map(|_| kernel::nearest(kernel, &share, rows))
+                    .collect::<Option<Vec<Shaped>>>()
+                    .ok_or("REPEATED_START_NOT_SHAPEABLE")?,
+            ),
+        };
+        let sigmas = match &shapes {
+            Some(shapes) => shapes
+                .iter()
+                .take(self.components())
+                .map(|shaped| shaped.covariance(self.kernel.as_ref().expect("a kernel")))
+                .collect(),
+            None => vec![share.clone(); self.components()],
+        };
+        let residual = match (&shapes, &self.kernel) {
+            (Some(shapes), Some(kernel)) => shapes
+                .last()
+                .expect("one shape per component and the residual")
+                .covariance(kernel),
+            _ => share,
+        };
+        Ok(State {
+            sigmas,
+            residual,
+            fixed,
+            shapes,
+        })
     }
 
     /// One E-step and the M-step that follows it.
@@ -1267,13 +1414,13 @@ impl RepeatedModel {
     /// depends only on its own effects, and the fixed effects and the residual
     /// covariance are maximised together, the first without reference to the
     /// second. So there is no search here, only four closed forms.
-    fn one_iteration(
-        &self,
-        imputed: &Imputed,
-        sigmas: &[DMatrix<f64>],
-        residual: &DMatrix<f64>,
-        fixed: &DMatrix<f64>,
-    ) -> Option<State> {
+    fn one_iteration(&self, imputed: &Imputed, state: &State) -> Option<State> {
+        let State {
+            sigmas,
+            residual,
+            fixed,
+            shapes,
+        } = state;
         let rotated = &imputed.rotated;
         let blocks = self.blocks(sigmas, residual)?;
         let positions = self.positions;
@@ -1356,20 +1503,55 @@ impl RepeatedModel {
                 residual_variance += row;
             }
         }
-        let next_residual = symmetrised(
-            &((mean_error.transpose() * &mean_error
+        let residual_statistic = symmetrised(
+            &(mean_error.transpose() * &mean_error
                 + contrast_error.transpose() * &contrast_error
-                + residual_variance)
-                / (self.people * self.replicates) as f64),
+                + residual_variance),
         );
+        let rows = (self.people * self.replicates) as f64;
 
-        let next_sigmas: Vec<DMatrix<f64>> = statistics
-            .iter()
-            .zip(&self.ranks)
-            .map(|(statistic, rank)| symmetrised(&(statistic / *rank as f64)))
-            .collect();
-
-        Some((next_sigmas, next_residual, next_fixed))
+        // **Here is where ECM becomes ECM.** Without a kernel each component's
+        // maximiser is its statistic divided by its count, in closed form, and
+        // the M-step is one line. With a kernel the maximiser is the nearest
+        // member of the kernel family in the same Wishart likelihood, and it
+        // has to be searched for -- one small bounded search per component,
+        // started from where that component is now, which is what makes it a
+        // conditional maximisation rather than a maximisation.
+        let Some(kernel) = &self.kernel else {
+            let next_sigmas: Vec<DMatrix<f64>> = statistics
+                .iter()
+                .zip(&self.ranks)
+                .map(|(statistic, rank)| symmetrised(&(statistic / *rank as f64)))
+                .collect();
+            return Some(State {
+                sigmas: next_sigmas,
+                residual: symmetrised(&(residual_statistic / rows)),
+                fixed: next_fixed,
+                shapes: None,
+            });
+        };
+        let shapes = shapes.as_ref()?;
+        let mut next_shapes = Vec::with_capacity(shapes.len());
+        let mut next_sigmas = Vec::with_capacity(self.components());
+        for (component, statistic) in statistics.iter().enumerate() {
+            let shaped = kernel::maximise(
+                kernel,
+                statistic,
+                self.ranks[component] as f64,
+                &shapes[component],
+            )?;
+            next_sigmas.push(shaped.covariance(kernel));
+            next_shapes.push(shaped);
+        }
+        let shaped = kernel::maximise(kernel, &residual_statistic, rows, shapes.last()?)?;
+        let next_residual = shaped.covariance(kernel);
+        next_shapes.push(shaped);
+        Some(State {
+            sigmas: next_sigmas,
+            residual: next_residual,
+            fixed: next_fixed,
+            shapes: Some(next_shapes),
+        })
     }
 
     /// Two EM steps, and an extrapolation along the line they lie on.
@@ -1405,30 +1587,26 @@ impl RepeatedModel {
         &self,
         prepared: &Prepared,
         imputed: &Imputed,
-        sigmas: &[DMatrix<f64>],
-        residual: &DMatrix<f64>,
-        fixed: &DMatrix<f64>,
+        state: &State,
         iterations: &mut usize,
     ) -> Option<(State, Imputed)> {
-        let (one_sigmas, one_residual, one_fixed) =
-            self.one_iteration(imputed, sigmas, residual, fixed)?;
+        let one = self.one_iteration(imputed, state)?;
         let imputed_one =
-            self.expectation(prepared, &one_sigmas, &one_residual, &one_fixed, true)?;
+            self.expectation(prepared, &one.sigmas, &one.residual, &one.fixed, true)?;
         *iterations += 1;
-        let (two_sigmas, two_residual, two_fixed) =
-            self.one_iteration(&imputed_one, &one_sigmas, &one_residual, &one_fixed)?;
+        let two = self.one_iteration(&imputed_one, &one)?;
         let imputed_two =
-            self.expectation(prepared, &two_sigmas, &two_residual, &two_fixed, true)?;
+            self.expectation(prepared, &two.sigmas, &two.residual, &two.fixed, true)?;
         *iterations += 1;
 
-        let base = flatten(sigmas, residual, fixed);
-        let one = flatten(&one_sigmas, &one_residual, &one_fixed);
-        let two = flatten(&two_sigmas, &two_residual, &two_fixed);
+        let base = Self::flatten(state);
+        let first = Self::flatten(&one);
+        let second = Self::flatten(&two);
         let mut step = Vec::with_capacity(base.len());
         let mut bend = Vec::with_capacity(base.len());
         for index in 0..base.len() {
-            let moved = one[index] - base[index];
-            bend.push(two[index] - one[index] - moved);
+            let moved = first[index] - base[index];
+            bend.push(second[index] - first[index] - moved);
             step.push(moved);
         }
         let step_norm = step.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -1438,7 +1616,7 @@ impl RepeatedModel {
         // infinite length, and a NaN both fall through to the plain steps.
         let mut length = -step_norm / bend_norm;
         if !(length < -1.0) || !length.is_finite() {
-            return Some(((two_sigmas, two_residual, two_fixed), imputed_two));
+            return Some((two, imputed_two));
         }
 
         let mut candidate = Vec::with_capacity(base.len());
@@ -1448,25 +1626,113 @@ impl RepeatedModel {
                 candidate
                     .push(base[index] - 2.0 * length * step[index] + length * length * bend[index]);
             }
-            let (try_sigmas, try_residual, try_fixed) = unflatten(
-                &candidate,
-                self.components(),
-                self.positions,
-                self.covariates,
+            let proposal = self.unflatten(&candidate);
+            let attempt = self.expectation(
+                prepared,
+                &proposal.sigmas,
+                &proposal.residual,
+                &proposal.fixed,
+                true,
             );
-            let attempt = self.expectation(prepared, &try_sigmas, &try_residual, &try_fixed, true);
             *iterations += 1;
             if let Some(attempt) = attempt
                 && attempt.loglik >= imputed_two.loglik
             {
-                return Some(((try_sigmas, try_residual, try_fixed), attempt));
+                return Some((proposal, attempt));
             }
             length = (length - 1.0) / 2.0;
             if length >= -1.0 - 1e-6 {
                 break;
             }
         }
-        Some(((two_sigmas, two_residual, two_fixed), imputed_two))
+        Some((two, imputed_two))
+    }
+
+    /// Lay a whole state out end to end, so that two of them can be subtracted
+    /// and a line drawn through them.
+    fn flatten(state: &State) -> Vec<f64> {
+        let mut values = Vec::new();
+        if let Some(shapes) = &state.shapes {
+            for shaped in shapes {
+                values.extend(shaped.packed());
+            }
+        } else {
+            for sigma in &state.sigmas {
+                values.extend(sigma.iter().copied());
+            }
+            values.extend(state.residual.iter().copied());
+        }
+        values.extend(state.fixed.iter().copied());
+        values
+    }
+
+    /// Read a state back, **projected onto the models**.
+    ///
+    /// An extrapolated point is a guess and can be one that is not a model.
+    /// Without a kernel that means a covariance with a negative direction in
+    /// it, and zeroing that direction is the nearest covariance to the guess.
+    /// With one it means a negative scale, a floor past one or a rate at
+    /// nought, and each of those is a bound the search was going to stop at
+    /// anyway. Both repairs are the right one rather than the convenient one,
+    /// because the case that produces them is a component collapsing and the
+    /// boundary is where it was going.
+    fn unflatten(&self, values: &[f64]) -> State {
+        let positions = self.positions;
+        let covariates = self.covariates;
+        let (head, tail) = values.split_at(values.len() - covariates * positions);
+        let fixed = DMatrix::from_column_slice(covariates, positions, tail);
+        if self.kernel.is_some() {
+            let shapes: Vec<Shaped> = head
+                .chunks(positions + 2)
+                .map(|chunk| Shaped::unpacked(chunk).clamped())
+                .collect();
+            return self.shaped_state(&shapes, fixed);
+        }
+        let block = positions * positions;
+        let mut at = 0;
+        let mut sigmas = Vec::with_capacity(self.components());
+        for _ in 0..self.components() {
+            sigmas.push(project_positive(&DMatrix::from_column_slice(
+                positions,
+                positions,
+                &head[at..at + block],
+            )));
+            at += block;
+        }
+        let residual = project_positive(&DMatrix::from_column_slice(
+            positions,
+            positions,
+            &head[at..at + block],
+        ));
+        State {
+            sigmas,
+            residual,
+            fixed,
+            shapes: None,
+        }
+    }
+
+    /// A state from its kernel parameters, which are what determines it.
+    fn shaped_state(&self, shapes: &[Shaped], fixed: DMatrix<f64>) -> State {
+        let kernel = self
+            .kernel
+            .as_ref()
+            .expect("shapes only exist with a kernel");
+        let sigmas = shapes
+            .iter()
+            .take(self.components())
+            .map(|shaped| shaped.covariance(kernel))
+            .collect();
+        let residual = shapes
+            .last()
+            .expect("one shape per component and the residual")
+            .covariance(kernel);
+        State {
+            sigmas,
+            residual,
+            fixed,
+            shapes: Some(shapes.to_vec()),
+        }
     }
 
     /// Put every collapsed direction exactly on the boundary, if the likelihood
@@ -1477,17 +1743,19 @@ impl RepeatedModel {
     /// than absent. A covariance's null space is preserved by the M-step -- it
     /// appears as a factor on both sides of every term in it -- so nought is an
     /// exact fixed point and this never has to be done twice.
-    fn rested(
-        &self,
-        prepared: &Prepared,
-        sigmas: &[DMatrix<f64>],
-        residual: &DMatrix<f64>,
-        fixed: &DMatrix<f64>,
-        loglik: f64,
-    ) -> Option<(State, Imputed)> {
+    ///
+    /// **With a kernel it does nothing at all.** There the covariances are not
+    /// free to be singular in one direction: a component collapses by its
+    /// scales going to nought, which is a bound on a parameter rather than a
+    /// face of the positive semidefinite cone, and the gradient reading
+    /// projects at it in the ordinary way.
+    fn rested(&self, prepared: &Prepared, state: &State, loglik: f64) -> Option<(State, Imputed)> {
+        if self.kernel.is_some() {
+            return None;
+        }
         let mut moved = false;
-        let mut rested = Vec::with_capacity(sigmas.len());
-        for sigma in sigmas {
+        let mut rested = Vec::with_capacity(state.sigmas.len());
+        for sigma in &state.sigmas {
             match rest_on_zero(sigma) {
                 Some(matrix) => {
                     moved = true;
@@ -1496,21 +1764,29 @@ impl RepeatedModel {
                 None => rested.push(sigma.clone()),
             }
         }
-        let rested_residual = match rest_on_zero(residual) {
+        let rested_residual = match rest_on_zero(&state.residual) {
             Some(matrix) => {
                 moved = true;
                 matrix
             }
-            None => residual.clone(),
+            None => state.residual.clone(),
         };
         if !moved {
             return None;
         }
-        let imputed = self.expectation(prepared, &rested, &rested_residual, fixed, true)?;
+        let imputed = self.expectation(prepared, &rested, &rested_residual, &state.fixed, true)?;
         if imputed.loglik < loglik {
             return None;
         }
-        Some(((rested, rested_residual, fixed.clone()), imputed))
+        Some((
+            State {
+                sigmas: rested,
+                residual: rested_residual,
+                fixed: state.fixed.clone(),
+                shapes: None,
+            },
+            imputed,
+        ))
     }
 
     /// The observed-data log-likelihood at these parameters and these fixed
@@ -1653,72 +1929,141 @@ impl RepeatedModel {
     /// The scaled projected gradient at the point EM stopped, by central
     /// differences on the observed-data log-likelihood.
     ///
-    /// # Two cases, and why they differ
+    /// # Three cases, and why they differ
     ///
-    /// On complete data the fixed effects have a closed-form maximum at any
-    /// variances, so they are profiled out and the reading is of the profile
-    /// likelihood, which is what the rest of the crate reports.
+    /// **With a kernel** the parameters are what the model actually has -- a
+    /// scale at every position, a floor and a rate per component -- and each
+    /// has bounds, so the reading is projected at them exactly as
+    /// `src/components.rs` projects a variance resting on nought. The rate is
+    /// differentiated logarithmically, because it is a scale parameter in units
+    /// the crate does not choose and a derivative with respect to it would
+    /// otherwise mean something different for every caller.
     ///
-    /// With censoring they do not: there is no generalised least squares
-    /// solution to a likelihood that is part density and part region
-    /// probability. So they are stepped in like everything else, and the
-    /// reading covers them too. That is a stronger statement rather than a
-    /// weaker one -- it says the fit is stationary in every parameter at once
-    /// -- and it costs a reading over `q T` more directions.
+    /// **Without one** the parameters are the symmetric square roots of the
+    /// covariances. Every symmetric matrix squares to something at least
+    /// positive semidefinite, so that space is unconstrained and there is no
+    /// bound to project onto; the price is that a component resting at nought
+    /// is a critical point of the parameterisation whatever the likelihood
+    /// does.
+    ///
+    /// **On complete data** the fixed effects have a closed-form maximum at any
+    /// variances, so they are profiled out. With censoring they do not -- there
+    /// is no generalised least squares solution to a likelihood that is part
+    /// density and part region probability -- so they are stepped in like
+    /// everything else, and the reading says the fit is stationary in every
+    /// parameter at once.
     fn gradient_reading(
         &self,
         prepared: &Prepared,
         complete: bool,
         imputed: &Imputed,
-        sigmas: &[DMatrix<f64>],
-        residual: &DMatrix<f64>,
-        fixed: &DMatrix<f64>,
+        state: &State,
     ) -> Option<f64> {
-        let mut roots: Vec<DMatrix<f64>> = sigmas.iter().map(symmetric_square_root).collect();
-        roots.push(symmetric_square_root(residual));
-
-        let value_at = |roots: &[DMatrix<f64>], fixed: &DMatrix<f64>| -> Option<f64> {
-            let (last, rest) = roots.split_last()?;
-            let sigmas: Vec<DMatrix<f64>> = rest.iter().map(|l| symmetrised(&(l * l))).collect();
-            let residual = symmetrised(&(last * last));
+        let value_at = |sigmas: &[DMatrix<f64>],
+                        residual: &DMatrix<f64>,
+                        fixed: &DMatrix<f64>|
+         -> Option<f64> {
             if complete {
-                self.profile_loglik(&imputed.rotated, &sigmas, &residual)
+                self.profile_loglik(&imputed.rotated, sigmas, residual)
             } else {
                 Some(
-                    self.expectation(prepared, &sigmas, &residual, fixed, false)?
+                    self.expectation(prepared, sigmas, residual, fixed, false)?
                         .loglik,
                 )
             }
         };
-        let at = value_at(&roots, fixed)?;
-
+        let at = value_at(&state.sigmas, &state.residual, &state.fixed)?;
         let mut worst = 0.0_f64;
-        for which in 0..roots.len() {
-            for a in 0..self.positions {
-                for b in 0..=a {
-                    let mut up = roots.clone();
-                    let mut down = roots.clone();
-                    up[which][(a, b)] += GRADIENT_STEP;
-                    down[which][(a, b)] -= GRADIENT_STEP;
-                    if a != b {
-                        up[which][(b, a)] += GRADIENT_STEP;
-                        down[which][(b, a)] -= GRADIENT_STEP;
+
+        if let Some(shapes) = &state.shapes {
+            {
+                let (lower, upper) = Shaped::bounds(self.positions);
+                let rate_at = self.positions + 1;
+                for which in 0..shapes.len() {
+                    let par = shapes[which].packed();
+                    for index in 0..par.len() {
+                        let reach = GRADIENT_STEP * par[index].abs().max(1.0);
+                        let high_at = (par[index] + reach).min(upper[index]);
+                        let low_at = (par[index] - reach).max(lower[index]);
+                        let span = high_at - low_at;
+                        if !(span > 0.0) {
+                            continue;
+                        }
+                        let mut moved = shapes.clone();
+                        let mut up = par.clone();
+                        up[index] = high_at;
+                        moved[which] = Shaped::unpacked(&up);
+                        let raised = self.shaped_state(&moved, state.fixed.clone());
+                        let high = value_at(&raised.sigmas, &raised.residual, &raised.fixed)?;
+                        let mut down = par.clone();
+                        down[index] = low_at;
+                        moved[which] = Shaped::unpacked(&down);
+                        let lowered = self.shaped_state(&moved, state.fixed.clone());
+                        let low = value_at(&lowered.sigmas, &lowered.residual, &lowered.fixed)?;
+
+                        let mut slope = (high - low) / span;
+                        if index == rate_at {
+                            // The derivative with respect to the logarithm of
+                            // the rate, which is dimensionless where the rate
+                            // itself carries the caller's units.
+                            slope *= par[index];
+                        }
+                        // A parameter sitting on a bound cannot move past it, so
+                        // the part of its derivative that wants to is not a
+                        // failure to converge.
+                        if par[index] <= lower[index] + AT_BOUND {
+                            slope = slope.max(0.0);
+                        } else if par[index] >= upper[index] - AT_BOUND {
+                            slope = slope.min(0.0);
+                        }
+                        worst = worst.max(slope.abs());
                     }
-                    let high = value_at(&up, fixed)?;
-                    let low = value_at(&down, fixed)?;
-                    worst = worst.max(((high - low) / (2.0 * GRADIENT_STEP)).abs());
+                }
+            }
+        } else {
+            {
+                let mut roots: Vec<DMatrix<f64>> =
+                    state.sigmas.iter().map(symmetric_square_root).collect();
+                roots.push(symmetric_square_root(&state.residual));
+                let from_roots =
+                    |roots: &[DMatrix<f64>]| -> Option<(Vec<DMatrix<f64>>, DMatrix<f64>)> {
+                        let (last, rest) = roots.split_last()?;
+                        Some((
+                            rest.iter().map(|l| symmetrised(&(l * l))).collect(),
+                            symmetrised(&(last * last)),
+                        ))
+                    };
+                for which in 0..roots.len() {
+                    for a in 0..self.positions {
+                        for b in 0..=a {
+                            let mut up = roots.clone();
+                            let mut down = roots.clone();
+                            up[which][(a, b)] += GRADIENT_STEP;
+                            down[which][(a, b)] -= GRADIENT_STEP;
+                            if a != b {
+                                up[which][(b, a)] += GRADIENT_STEP;
+                                down[which][(b, a)] -= GRADIENT_STEP;
+                            }
+                            let (up_sigmas, up_residual) = from_roots(&up)?;
+                            let (down_sigmas, down_residual) = from_roots(&down)?;
+                            let high = value_at(&up_sigmas, &up_residual, &state.fixed)?;
+                            let low = value_at(&down_sigmas, &down_residual, &state.fixed)?;
+                            worst = worst.max(((high - low) / (2.0 * GRADIENT_STEP)).abs());
+                        }
+                    }
                 }
             }
         }
+
         if !complete {
             for a in 0..self.covariates {
                 for t in 0..self.positions {
-                    let mut up = fixed.clone();
-                    let mut down = fixed.clone();
+                    let mut up = state.fixed.clone();
+                    let mut down = state.fixed.clone();
                     up[(a, t)] += GRADIENT_STEP;
                     down[(a, t)] -= GRADIENT_STEP;
-                    let high = value_at(&roots, &up)?;
-                    let low = value_at(&roots, &down)?;
+                    let high = value_at(&state.sigmas, &state.residual, &up)?;
+                    let low = value_at(&state.sigmas, &state.residual, &down)?;
                     worst = worst.max(((high - low) / (2.0 * GRADIENT_STEP)).abs());
                 }
             }
@@ -1760,56 +2105,6 @@ fn gather(target: &mut DMatrix<f64>, family: &FamilySpread, weights: &[f64]) {
             target[(t, u)] += weights[a] * weights[b] * family.covariance[(a, b)];
         }
     }
-}
-
-/// Lay the whole parameter set out end to end, so that two of them can be
-/// subtracted and a line drawn through them.
-fn flatten(sigmas: &[DMatrix<f64>], residual: &DMatrix<f64>, fixed: &DMatrix<f64>) -> Vec<f64> {
-    let mut values = Vec::new();
-    for sigma in sigmas {
-        values.extend(sigma.iter().copied());
-    }
-    values.extend(residual.iter().copied());
-    values.extend(fixed.iter().copied());
-    values
-}
-
-/// Read a parameter set back, **projected onto the covariances**.
-///
-/// An extrapolated point is a guess and can be one that is not a model: a
-/// covariance with a negative direction in it. Zeroing that direction is the
-/// nearest covariance to the guess in the Frobenius sense, and it is the right
-/// repair rather than a convenient one, because the case that produces it is a
-/// component collapsing to nought and the boundary is where it was going.
-fn unflatten(
-    values: &[f64],
-    components: usize,
-    positions: usize,
-    covariates: usize,
-) -> (Vec<DMatrix<f64>>, DMatrix<f64>, DMatrix<f64>) {
-    let block = positions * positions;
-    let mut at = 0;
-    let mut sigmas = Vec::with_capacity(components);
-    for _ in 0..components {
-        sigmas.push(project_positive(&DMatrix::from_column_slice(
-            positions,
-            positions,
-            &values[at..at + block],
-        )));
-        at += block;
-    }
-    let residual = project_positive(&DMatrix::from_column_slice(
-        positions,
-        positions,
-        &values[at..at + block],
-    ));
-    at += block;
-    let fixed = DMatrix::from_column_slice(
-        covariates,
-        positions,
-        &values[at..at + covariates * positions],
-    );
-    (sigmas, residual, fixed)
 }
 
 /// The same covariance with every collapsed direction set exactly to nought,
@@ -2323,7 +2618,7 @@ mod tests {
             (y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / count).sqrt()
         };
         let rotated = model.rotate(&(&y / scale));
-        let (mut sigmas, mut residual, mut fixed) = model
+        let mut state = model
             .starting_values(&rotated)
             .expect("a start should exist");
         // Nothing is unmeasured here, so the expectation step has nothing to
@@ -2337,22 +2632,25 @@ mod tests {
             loglik: 0.0,
         };
         let mut previous = model
-            .loglik_at(&rotated, &sigmas, &residual, &fixed)
+            .loglik_at(&rotated, &state.sigmas, &state.residual, &state.fixed)
             .expect("the start should evaluate");
         for step in 0..200 {
-            let (next_sigmas, next_residual, next_fixed) = model
-                .one_iteration(&complete(&rotated), &sigmas, &residual, &fixed)
+            let next_state = model
+                .one_iteration(&complete(&rotated), &state)
                 .expect("an iteration should evaluate");
             let next = model
-                .loglik_at(&rotated, &next_sigmas, &next_residual, &next_fixed)
+                .loglik_at(
+                    &rotated,
+                    &next_state.sigmas,
+                    &next_state.residual,
+                    &next_state.fixed,
+                )
                 .expect("an iteration should evaluate");
             assert!(
                 next >= previous - 1e-9,
                 "step {step} fell from {previous} to {next}"
             );
-            sigmas = next_sigmas;
-            residual = next_residual;
-            fixed = next_fixed;
+            state = next_state;
             previous = next;
         }
     }
