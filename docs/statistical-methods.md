@@ -272,6 +272,49 @@ or one person entered twice, give a correlation of `h2` rather than `h2/2` —
 which is why an off-diagonal relationship above 0.9 is refused. Removing that
 guard means replacing the quadrature first.
 
+## Censored traits
+
+`tobit_fit` assumes every person carries a complete value
+
+```text
+y* = X beta + g + e,
+Var(y*) = h2 sigma2 A + (1-h2) sigma2 I,
+```
+
+seen exactly where the instrument reached it, and known only to lie beyond a
+limit where it did not. The limit belongs to the observation rather than to the
+trait, and the censoring status is an input rather than something inferred from
+the value — a censored observation can carry the same number as a measured one.
+
+Unlike the liability model, the scale is identified here, because the measured
+values arrive on it. So `sigma2` is estimated and the heritability returned is
+that of the complete variable. A family splits into its measured and unmeasured
+members: the measured contribute a multivariate-normal density, and the
+unmeasured the probability that their values lie beyond their limits
+**conditional on the measured ones** — not marginally, because within a family
+the two are correlated and that correlation is the information a pedigree
+carries. The region probability is the one `LiabilityModel` uses: exact to two
+people, and Mendell-Elston sequential truncation above that.
+
+This is ML for the same reason the liability model is: a censored observation
+has no response to project onto the null space of the design. At least two
+measured values are required, below which the scale is not identified.
+
+In calibration at 400 sibling pairs with a true heritability of 0.5, the model
+returned 0.496 with nothing censored and 0.494 with half censored, where
+replacing the censored values by their limit gave 0.398. Interval coverage was
+within nominal at heritabilities of 0 and 0.3 across censoring shares to 0.5.
+**All of that evidence was generated on pairs, where the region probability is
+exact and the sequential approximation never runs at all.** Its behaviour in
+large families, conditional on many measured values, is not established by it.
+
+`mixed_bivariate_fit` places two traits of any kinds — continuous, binary or
+censored — in `BivariateModel`'s covariance, each observation entering as a
+density or as a region probability according to its kind. A binary trait's
+variance is fixed at one; a continuous or censored trait's is free. The genetic
+correlation is scale free and is therefore comparable across kinds, while the
+heritabilities are not.
+
 ## Marker association
 
 For marker `j`, `AssociationModel` fits

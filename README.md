@@ -181,6 +181,55 @@ fixed at one. The reported heritability is on the liability scale, not the
 observed binary scale. Family probabilities above dimension two use the
 Mendell-Elston sequential approximation.
 
+## A trait whose measurement stops at a limit
+
+```python
+fit = asterism.tobit_fit(relationship, value, censoring, limit, design)
+fit["heritability"], fit["total_variance"], fit["censored_share"]
+
+interval = asterism.tobit_interval(relationship, value, censoring, limit, design)
+```
+
+`censoring` is 0 where the value was measured, 1 where it lies at or above its
+limit, and 2 where it lies at or below it. `value` is read only where the status
+says measured, and `limit` only where it does not.
+
+**The status is given rather than inferred, and the limit belongs to the
+observation rather than to the trait.** Extended high-frequency audiometry is
+the case this was built for, and there the recorded maximum differs between
+frequencies and between sessions, so a censored value can carry the same number
+as a genuinely measured one. Only the status tells them apart.
+
+The heritability that comes back is the heritability of the *complete* variable
+— the number there would have been had the instrument reached far enough. It is
+comparable with an ordinary heritability of an uncensored trait, and **not**
+comparable with one fitted to values where the censored ones were replaced by
+their limit, which is the usual practice and the thing this exists to replace.
+It is maximum likelihood, never REML, because a censored observation has no
+response to project onto the null space of the design.
+
+## Two traits measured differently
+
+```python
+first = {"kind": "binary", "value": v1, "censoring": c1, "limit": l1}
+second = {"kind": "censored", "value": v2, "censoring": c2, "limit": l2}
+
+fit = asterism.mixed_bivariate_fit(relationship, first, second, design)
+fit["genetic_correlation"], fit["residual_correlation"]
+```
+
+Either trait may be `continuous`, `binary` or `censored`, and the pair may be
+any combination of the three. The covariance is `BivariateModel`'s; what varies
+is only how each observation is seen — a density at a point, or the probability
+of a region, with a continuous value the degenerate region.
+
+**A binary trait's variance is fixed at one** and comes back as one, because
+only the sign of a liability is ever seen. Its heritability is a liability
+heritability while a continuous or censored trait's is not, and the two must not
+be read as the same quantity. The genetic correlation is unaffected by that
+difference, which is what makes a mixed pair worth fitting at all: a correlation
+is scale free even where one of its two scales is arbitrary.
+
 ## Marker association
 
 ```python
