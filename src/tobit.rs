@@ -75,6 +75,13 @@ const LOG_TWO_PI: f64 = 1.837_877_066_409_345_3;
 /// Below this share of measured values the scale is not identified: the
 /// uncensored values are what put the trait on a scale at all.
 const FEWEST_MEASURED: usize = 2;
+/// What the objective returns where the likelihood cannot be evaluated at all,
+/// which happens when a family block will not factorise. It is a large finite
+/// number rather than an infinity because the optimiser has to be able to work
+/// with it. Because it is finite, a search that never left it would otherwise
+/// be accepted as a fit: the acceptance test compares against this name rather
+/// than asking whether the objective is finite, which it always is.
+const INFEASIBLE: f64 = 1e30;
 
 /// Which way an unmeasured value lies from its limit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -453,12 +460,12 @@ impl TobitModel {
             .map(|i| self.value[i])
             .collect();
         let centre = measured.iter().sum::<f64>() / measured.len() as f64;
-        let spread = measured
+        let spread = (measured
             .iter()
             .map(|v| (v - centre).powi(2))
             .sum::<f64>()
-            .max(1e-12)
-            / measured.len() as f64;
+            / measured.len() as f64)
+            .max(1e-12);
 
         let mut lower = vec![f64::NEG_INFINITY; count];
         let mut upper = vec![f64::INFINITY; count];
@@ -471,7 +478,7 @@ impl TobitModel {
 
         let value_of = |theta: &[f64]| -> f64 {
             self.loglik(theta[0], theta[1].exp(), &theta[2..])
-                .map_or(1e30, |v| -v)
+                .map_or(INFEASIBLE, |v| -v)
         };
         // The region probability has no derivative worth writing, so the
         // gradient is a central difference, as the liability model's is.
@@ -514,7 +521,7 @@ impl TobitModel {
                 continue;
             };
             let objective = value_of(&solution.par);
-            if objective.is_finite() && best.as_ref().is_none_or(|(seen, _)| objective < *seen) {
+            if objective < INFEASIBLE && best.as_ref().is_none_or(|(seen, _)| objective < *seen) {
                 best = Some((objective, solution.par));
             }
         }
@@ -541,6 +548,59 @@ impl TobitModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fit that never found a feasible point must say so rather than come
+    /// back converged.
+    ///
+    /// `build` checks that the relationship matrix is symmetric and that its
+    /// off-diagonal entries are within the guard, but it does not check that
+    /// the matrix is positive semi-definite and it does not look at the
+    /// diagonal at all. A matrix with a nought diagonal therefore reaches the
+    /// search, and holding the heritability at one makes the covariance that
+    /// matrix exactly, which will not factorise. Every start is then
+    /// infeasible -- and because a held fit builds the same start three times,
+    /// all three fail together, so no other start can rescue it.
+    ///
+    /// Before the objective's infeasible value was given a name and tested
+    /// against, this returned `Ok` with `converged: true` and a log likelihood
+    /// of -1e30, which `heritability_interval` then read as ground the data
+    /// had ruled out.
+    #[test]
+    fn a_fit_with_no_feasible_start_is_refused_rather_than_reported() {
+        let people = 4;
+        let mut relationship = DMatrix::zeros(people, people);
+        for family in 0..2 {
+            let (a, b) = (2 * family, 2 * family + 1);
+            relationship[(a, b)] = 0.9;
+            relationship[(b, a)] = 0.9;
+        }
+
+        let value = vec![0.4, -0.2, 0.9, -0.6];
+        let censoring = vec![
+            Censoring::Measured,
+            Censoring::Measured,
+            Censoring::Measured,
+            Censoring::Measured,
+        ];
+        let limit = vec![2.0; people];
+        let design = DMatrix::from_element(people, 1, 1.0);
+
+        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
+            .expect("a nought diagonal is not something build refuses");
+
+        assert!(
+            model.loglik(1.0, 1.0, &[0.0]).is_none(),
+            "the covariance at a held heritability of one should not factorise"
+        );
+
+        match model.fit_holding(Some(1.0)) {
+            Err(code) => assert_eq!(code, "TOBIT_NO_START_CONVERGED"),
+            Ok(fit) => panic!(
+                "a fit with no feasible start came back converged={} at a log likelihood of {}",
+                fit.converged, fit.loglik
+            ),
+        }
+    }
 
     /// Sibling pairs, a known heritability, and a censoring limit applied to
     /// the top share of the complete values.
