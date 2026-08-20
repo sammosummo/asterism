@@ -48,9 +48,11 @@ from .models import (
     kinship_classes,
     mixed_bivariate_fit,
     mixed_bivariate_interval,
+    mixed_bivariate_test,
     region_log_probability,
     tobit_fit,
     tobit_interval,
+    tobit_test,
 )
 
 __all__ = [
@@ -69,11 +71,13 @@ __all__ = [
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
+    "mixed_bivariate_test",
     "prepare",
     "region_log_probability",
     "relationship_matrix",
     "tobit_fit",
     "tobit_interval",
+    "tobit_test",
     "weighted_chi2_upper_tail",
 ]
 

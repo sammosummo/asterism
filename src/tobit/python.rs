@@ -82,7 +82,7 @@ pub fn tobit_interval(
     censoring: PyReadonlyArray1<'_, i64>,
     limit: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
-) -> PyResult<(f64, f64, f64, bool, bool, f64, usize, f64)> {
+) -> PyResult<(f64, f64, f64, bool, bool, f64, Option<bool>, Option<bool>, usize, f64)> {
     let a = relationship.as_array();
     let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
     let x = design.as_array();
@@ -106,7 +106,46 @@ pub fn tobit_interval(
         got.lower_at_bound,
         got.upper_at_bound,
         got.level,
+        got.contains_lower_bound,
+        got.contains_upper_bound,
         got.profile_failures,
         got.censored_share,
+    ))
+}
+
+/// The censored heritability against nought.
+///
+/// Returns the statistic, the p-value, the reference rule, and the two log
+/// likelihoods the statistic was made from.
+#[pyfunction]
+pub fn tobit_test(
+    relationship: PyReadonlyArray2<'_, f64>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+) -> PyResult<(f64, f64, String, f64, f64)> {
+    let a = relationship.as_array();
+    let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
+    let x = design.as_array();
+    let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+    let value: Vec<f64> = value.as_array().iter().copied().collect();
+    let limit: Vec<f64> = limit.as_array().iter().copied().collect();
+    let censoring: Vec<Censoring> = censoring
+        .as_array()
+        .iter()
+        .map(|c| censoring_from(*c))
+        .collect::<PyResult<_>>()?;
+
+    let got = TobitModel::build(&a, &value, &censoring, &limit, &x)
+        .map_err(PyValueError::new_err)?
+        .heritability_test()
+        .map_err(PyValueError::new_err)?;
+    Ok((
+        got.statistic,
+        got.p_value,
+        got.rule.to_owned(),
+        got.null_loglik,
+        got.alternative_loglik,
     ))
 }

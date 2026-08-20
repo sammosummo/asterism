@@ -13,16 +13,21 @@ rules elsewhere in this package for the same reasons:
    covers. Dropping the awkward ones is exactly how a coverage check comes out
    at 95 per cent while the recipe is wrong, and the refusals are reported
    beside the coverage rather than under it.
-2. **An end on a bound still counts as containment** when the truth is inside,
-   because an end on nought or one is the data failing to rule that end out,
-   not the interval stopping short.
+2. **Whether a boundary point belongs to the interval is decided by the
+   Self-Liang mixture**, which is ADR 0004's recipe, and not by the end having
+   landed on the bound. The record carries the verdict as
+   ``contains_lower_bound`` and ``contains_upper_bound``, and this reads it.
+   Correcting the earlier version of this check, which counted an end on nought
+   as containment: that is the obvious rule and it is the wrong one. ADR 0004
+   measured what it costs -- 0.977 against a nominal 0.95 at a true
+   heritability of nought, where the mixture gives 0.953 -- and this check
+   reported 0.980, 0.977 and 0.983 in exactly those cells while passing them.
 3. **A cell passes when the Clopper-Pearson interval on its coverage overlaps
    the nominal 0.95**, which is a statement about this many replicates rather
-   than about the number looking close by eye. **At a heritability of nought
-   the requirement is one-sided instead**: nought is on a bound, a profile read
-   against a plain chi-square is conservative there, and over-covering is the
-   safe direction. Such a cell has to not fall below nominal; being above it is
-   the recipe being careful rather than wrong.
+   than about the number looking close by eye. **Every cell is two-sided,
+   including the one at nought.** The earlier version allowed that cell to
+   over-cover, which is what let the missing mixture go unnoticed: a rule
+   written to tolerate a fault will not report it.
 
 Run with:
 
@@ -93,12 +98,33 @@ def one(job):
                 "refusal": str(refusal).replace("TOBIT_", "")}
     return {
         "heritability": heritability, "rate": rate,
-        "covered": bool(got["lower"] <= heritability <= got["upper"]),
+        "covered": covers(got, heritability),
         "width": got["upper"] - got["lower"],
         "lower_at_bound": got["lower_at_bound"],
         "upper_at_bound": got["upper_at_bound"],
+        "contains_lower_bound": got["contains_lower_bound"],
+        "contains_upper_bound": got["contains_upper_bound"],
         "profile_failures": got["profile_failures"],
     }
+
+
+def covers(got: dict, truth: float) -> bool:
+    """Does the interval contain the truth, by ADR 0004's rule?
+
+    Inside the two ends is containment and outside them is not, as anywhere
+    else. What differs is a truth that sits exactly on a bound: there the
+    interval reaching the bound is not the question, and the mixture verdict
+    is. An absent verdict counts as not covered, because absent means the fit
+    at the bound could not be made -- which is unknown ground rather than
+    ground the data ruled out, and every replicate is scored.
+    """
+    if truth < got["lower"] or truth > got["upper"]:
+        return False
+    if truth == 0.0 and got["lower"] == 0.0:
+        return bool(got["contains_lower_bound"])
+    if truth == 1.0 and got["upper"] == 1.0:
+        return bool(got["contains_upper_bound"])
+    return True
 
 
 def clopper_pearson(hits: int, n: int) -> tuple[float, float]:
@@ -137,10 +163,12 @@ def main() -> int:
             low, high = clopper_pearson(hits, len(here))
             width = np.mean([r["width"] for r in here if "width" in r]) \
                 if len(here) > len(refused) else float("nan")
-            # At the boundary the requirement is one-sided: conservative is
-            # fine, under-covering is not.
+            # Two-sided everywhere, including at nought. Over-covering is a
+            # fault of the recipe as much as under-covering is, and the whole
+            # point of the mixture is that the boundary cell no longer needs
+            # an allowance.
             at_boundary = heritability <= 0.0
-            ok = high >= NOMINAL if at_boundary else low <= NOMINAL <= high
+            ok = low <= NOMINAL <= high
             print(f"{heritability:>5.2f} | {rate:>7.0%} | "
                   f"{len(refused):>3}/{len(here):<5} | "
                   f"{hits / len(here):>6.3f} [{low:.3f},{high:.3f}] | "
@@ -153,10 +181,6 @@ def main() -> int:
             }
             if not ok:
                 failures.append(
-                    f"at h2 {heritability} and {rate:.0%} censored, coverage "
-                    f"{hits / len(here):.3f} [{low:.3f}, {high:.3f}] falls "
-                    f"below the nominal {NOMINAL}"
-                    if at_boundary else
                     f"at h2 {heritability} and {rate:.0%} censored, coverage "
                     f"{hits / len(here):.3f} [{low:.3f}, {high:.3f}] excludes "
                     f"the nominal {NOMINAL}"
