@@ -557,11 +557,290 @@ fn mendell_elston(thresholds: &[f64], correlation: &DMatrix<f64>, normal: &Norma
     total.is_finite().then_some(total)
 }
 
+/// One value known only to lie one side of a limit.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Truncation {
+    pub limit: f64,
+    /// `1.0` where the value lies at or above its limit, `-1.0` where at or
+    /// below. This is the same convention `region_log_probability` takes.
+    pub sign: f64,
+}
+
+/// The mean and covariance of a Gaussian vector after conditioning on some of
+/// its coordinates lying beyond their limits.
+///
+/// # Why this exists beside [`mendell_elston`]
+///
+/// It is the same sequential update, arithmetic for arithmetic, and it returns
+/// the same log probability -- there is a test that says so to the last bit.
+/// What it also returns is the running mean and covariance that the update
+/// maintains and that [`mendell_elston`] discards, because a probability was
+/// all that was wanted there.
+///
+/// Those moments are an expectation step. A model fitted by
+/// expectation-maximisation over censored values needs exactly the conditional
+/// mean of each unmeasured value and the covariance of what is left uncertain,
+/// and both fall out of an update that was already being computed.
+///
+/// # What it does differently
+///
+/// [`mendell_elston`] updates only the coordinates it has not yet reached,
+/// which is all a probability needs. This updates every coordinate, so that one
+/// already processed picks up what conditioning on a later one says about it.
+/// That changes none of the probabilities: the value at step `i` reads only the
+/// mean and variance of coordinate `i`, and those are updated identically
+/// either way.
+///
+/// # Coordinates that are merely carried
+///
+/// A `None` in `truncation` is a coordinate with no limit -- a value that was
+/// never measured at all. It is never conditioned on, because nothing is known
+/// about it, but it is correlated with the ones that are and its moments move
+/// when they are truncated. Dropping it instead and conditioning afterwards
+/// would be the same thing done twice.
+///
+/// # It is an approximation, and the order is part of it
+///
+/// Sequential truncation is exact to two coordinates and approximate above,
+/// and its error depends on the order the coordinates are taken in. The order
+/// here is the one given. `checks/sequential_against_ghk.py` is what says how
+/// much that costs on the design this was written for, and the answer there
+/// rests on the coordinates being nearly independent once everything measured
+/// has been conditioned on.
+pub(crate) fn truncated_moments(
+    mean: &mut [f64],
+    covariance: &mut DMatrix<f64>,
+    truncation: &[Option<Truncation>],
+    normal: &Normal,
+) -> Option<f64> {
+    let dimension = mean.len();
+    if covariance.nrows() != dimension
+        || covariance.ncols() != dimension
+        || truncation.len() != dimension
+    {
+        return None;
+    }
+    let mut total = 0.0;
+    for step in 0..dimension {
+        let Some(limit) = truncation[step] else {
+            continue;
+        };
+        let variance = covariance[(step, step)];
+        if !(variance > 0.0) || !variance.is_finite() {
+            return None;
+        }
+        let sd = variance.sqrt();
+        // The event is `sign * (value - limit) > 0`, whose probability is the
+        // distribution function at this point however the sign falls.
+        let z = limit.sign * (mean[step] - limit.limit) / sd;
+        let probability = normal.cdf(z).clamp(FLOOR, 1.0);
+        total += probability.ln();
+        let height = density(z);
+        if height == 0.0 {
+            continue;
+        }
+        let mills = height / probability;
+        if !mills.is_finite() {
+            return None;
+        }
+        let multiplier = (1.0 - z * mills - mills * mills).clamp(1.0e-12, 1.0);
+        let covariance_scale = (multiplier - 1.0) / variance;
+        let mean_scale = limit.sign * mills / sd;
+        let column: Vec<f64> = (0..dimension).map(|row| covariance[(row, step)]).collect();
+        for row in 0..dimension {
+            mean[row] += column[row] * mean_scale;
+        }
+        for row in 0..dimension {
+            for at in 0..=row {
+                let updated = covariance[(row, at)] + column[row] * column[at] * covariance_scale;
+                covariance[(row, at)] = updated;
+                covariance[(at, row)] = updated;
+            }
+        }
+    }
+    total.is_finite().then_some(total)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{LiabilityModel, bivariate_normal_cdf, mendell_elston};
+    use super::{
+        LiabilityModel, Truncation, bivariate_normal_cdf, mendell_elston, truncated_moments,
+    };
     use nalgebra::DMatrix;
     use statrs::distribution::{ContinuousCDF, Normal};
+
+    /// A correlated pair, used by the truncation tests below.
+    fn pair(variance_one: f64, variance_two: f64, correlation: f64) -> DMatrix<f64> {
+        let covariance = correlation * (variance_one * variance_two).sqrt();
+        let mut matrix = DMatrix::<f64>::zeros(2, 2);
+        matrix[(0, 0)] = variance_one;
+        matrix[(1, 1)] = variance_two;
+        matrix[(0, 1)] = covariance;
+        matrix[(1, 0)] = covariance;
+        matrix
+    }
+
+    /// **The two updates must agree to the last bit.** They are the same
+    /// arithmetic; one keeps what the other throws away. If this ever fails,
+    /// the two have drifted apart and one of them is no longer the sequential
+    /// truncation that `checks/sequential_against_ghk.py` measured.
+    #[test]
+    fn the_moments_update_returns_the_probability_update_exactly() {
+        let normal = Normal::new(0.0, 1.0).unwrap();
+        for size in 1..7 {
+            let mut correlation = DMatrix::<f64>::identity(size, size);
+            for row in 0..size {
+                for column in 0..row {
+                    let value = 0.9_f64.powi(i32::try_from(row - column).unwrap_or(0)) * 0.8;
+                    correlation[(row, column)] = value;
+                    correlation[(column, row)] = value;
+                }
+            }
+            let thresholds: Vec<f64> = (0..size).map(|i| 0.4 * (i as f64) - 0.7).collect();
+            let wanted = mendell_elston(&thresholds, &correlation, &normal)
+                .expect("the probability update should run");
+
+            // The same problem in the moments update's own terms. It works on
+            // `sign * (value - limit) > 0` where the other works on
+            // `Z <= threshold`, and a sign of minus one is what turns the first
+            // into the second at the same limit.
+            let mut mean = vec![0.0; size];
+            let mut covariance = correlation.clone();
+            let truncation: Vec<Option<Truncation>> = thresholds
+                .iter()
+                .map(|t| {
+                    Some(Truncation {
+                        limit: *t,
+                        sign: -1.0,
+                    })
+                })
+                .collect();
+            let got = truncated_moments(&mut mean, &mut covariance, &truncation, &normal)
+                .expect("the moments update should run");
+            assert_eq!(got, wanted, "at {size} coordinates");
+        }
+    }
+
+    /// One truncation is not an approximation at all: conditioning on a single
+    /// coordinate's region is the ordinary regression, and every moment has a
+    /// closed form to check against -- including the moments of a coordinate
+    /// that has no limit of its own and only feels this one through their
+    /// correlation.
+    #[test]
+    fn one_truncated_coordinate_is_exact_and_carries_the_other() {
+        let normal = Normal::new(0.0, 1.0).unwrap();
+        for &(limit, sign) in &[(1.5_f64, 1.0_f64), (-0.4, 1.0), (0.7, -1.0)] {
+            let (variance, other_variance, correlation) = (2.0, 0.75, 0.6);
+            let start = [0.3, -0.2];
+            let mut mean = start;
+            let mut covariance = pair(variance, other_variance, correlation);
+            let truncation = [Some(Truncation { limit, sign }), None];
+            let probability = truncated_moments(&mut mean, &mut covariance, &truncation, &normal)
+                .expect("the moments update should run");
+
+            let sd = variance.sqrt();
+            let z = sign * (start[0] - limit) / sd;
+            let expected_probability = normal.cdf(z);
+            let mills = super::density(z) / expected_probability;
+            let multiplier = 1.0 - z * mills - mills * mills;
+            let cross = correlation * (variance * other_variance).sqrt();
+
+            assert!((probability - expected_probability.ln()).abs() < 1e-12);
+            assert!((mean[0] - (start[0] + sign * sd * mills)).abs() < 1e-12);
+            assert!((covariance[(0, 0)] - variance * multiplier).abs() < 1e-12);
+            // The carried coordinate moves by its regression on the truncated
+            // one, and loses the same share of its shared variance.
+            assert!((mean[1] - (start[1] + cross * sign * mills / sd)).abs() < 1e-12);
+            assert!(
+                (covariance[(1, 1)]
+                    - (other_variance + cross * cross * (multiplier - 1.0) / variance))
+                    .abs()
+                    < 1e-12
+            );
+            assert!((covariance[(0, 1)] - cross * multiplier).abs() < 1e-12);
+        }
+    }
+
+    /// Where it *is* an approximation, it should still be close. Two truncated
+    /// coordinates at a correlation of 0.7, against a million draws.
+    #[test]
+    fn two_truncated_coordinates_are_close_to_the_truth() {
+        let normal = Normal::new(0.0, 1.0).unwrap();
+        let (variance, correlation) = (1.0, 0.7);
+        let limits = [0.2_f64, -0.3];
+        let start = [0.0, 0.0];
+        let covariance_start = pair(variance, variance, correlation);
+
+        let mut mean = start;
+        let mut covariance = covariance_start.clone();
+        let truncation = [
+            Some(Truncation {
+                limit: limits[0],
+                sign: 1.0,
+            }),
+            Some(Truncation {
+                limit: limits[1],
+                sign: 1.0,
+            }),
+        ];
+        truncated_moments(&mut mean, &mut covariance, &truncation, &normal)
+            .expect("the moments update should run");
+
+        let factor = covariance_start
+            .clone()
+            .cholesky()
+            .expect("the pair should factorise")
+            .l();
+        let mut state = 20_260_820_u64;
+        let mut uniform = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let (mut kept, mut sum, mut squares, mut cross) = (0.0, [0.0; 2], [0.0; 2], 0.0);
+        for _ in 0..1_000_000 {
+            let u1 = uniform();
+            let u2 = uniform();
+            let radius = (-2.0 * u1.ln()).sqrt();
+            let angle = 2.0 * std::f64::consts::PI * u2;
+            let z = [radius * angle.cos(), radius * angle.sin()];
+            let first = factor[(0, 0)] * z[0];
+            let second = factor[(1, 0)] * z[0] + factor[(1, 1)] * z[1];
+            if first > limits[0] && second > limits[1] {
+                kept += 1.0;
+                sum[0] += first;
+                sum[1] += second;
+                squares[0] += first * first;
+                squares[1] += second * second;
+                cross += first * second;
+            }
+        }
+        let truth = [sum[0] / kept, sum[1] / kept];
+        // A tenth of a standard deviation, which is far tighter than the
+        // difference between imputing a censored value and substituting its
+        // limit, and is what this update is for.
+        for index in 0..2 {
+            assert!(
+                (mean[index] - truth[index]).abs() < 0.1,
+                "coordinate {index}: sequential {} against {} from a million draws",
+                mean[index],
+                truth[index]
+            );
+            let variance_truth = squares[index] / kept - truth[index] * truth[index];
+            assert!(
+                (covariance[(index, index)] - variance_truth).abs() < 0.1,
+                "coordinate {index} variance: {} against {variance_truth}",
+                covariance[(index, index)]
+            );
+        }
+        let cross_truth = cross / kept - truth[0] * truth[1];
+        assert!(
+            (covariance[(0, 1)] - cross_truth).abs() < 0.1,
+            "covariance {} against {cross_truth}",
+            covariance[(0, 1)]
+        );
+    }
 
     /// The bivariate distribution function, where it can be checked by hand.
     ///

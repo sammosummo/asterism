@@ -30,13 +30,40 @@
 //!
 //! # What is here, and what is not yet
 //!
-//! This is the skeleton: complete, balanced, uncensored data, and a free
-//! covariance per component. Censoring comes next and the covariance kernel
-//! after it, in that order, because each rests on the one before. Until the
-//! kernel arrives every `S_j` is unstructured, so a fit at seventeen positions
-//! estimates 153 numbers per component and nobody should read a single one of
-//! them. What the skeleton is for is showing that the machinery lands on the
-//! answer where the answer is already known.
+//! Values that reached a limit instead of being measured, values that were
+//! never measured at all, and a free covariance per component. **The covariance
+//! kernel is still to come**, so until it arrives every `S_j` is unstructured:
+//! a fit at seventeen positions estimates 153 numbers per component and nobody
+//! should read a single one of them. What is here is the machinery, and what it
+//! is for is landing on the answer where the answer is already known.
+//!
+//! # Censoring, and what it costs
+//!
+//! An observation is one of four things -- measured, above a limit, below a
+//! limit, or never measured -- and [`Known`] carries which, so a value and its
+//! status cannot disagree.
+//!
+//! What was measured contributes a density. What reached a limit contributes
+//! the probability of the region it lies in, **conditional on everything that
+//! family did measure**. What was never measured contributes nothing at all,
+//! which is what makes the likelihood the right one for data missing at random.
+//!
+//! The expectation step fills all of them in anyway. A value that was never
+//! measured is imputed rather than dropped, because dropping it would unbalance
+//! the data and unbalanced data is what breaks the rotation. Filling in is not
+//! the same as knowing: each rotated row carries the covariance of its own
+//! imputation, and every statistic the maximisation forms picks that up in
+//! place of an outer product it would otherwise take as certain. Leave it out
+//! and the variances come back too small, which is the failure a test here is
+//! written to catch.
+//!
+//! **The two halves are not the same size.** The maximisation is a pass over
+//! blocks of `T`. The expectation step is a dense factorisation per family per
+//! iteration, because conditioning on what a family measured does not survive
+//! the rotation: the measured and unmeasured coordinates are scattered through
+//! its rows. ADR 0010 counted that cost and accepted it -- the saving is not
+//! against one likelihood evaluation but against the two hundred and fifty a
+//! central-difference gradient would need.
 //!
 //! # Why the rotation
 //!
@@ -82,8 +109,12 @@
 //! arrived where it claimed.
 
 use nalgebra::{DMatrix, DVector};
+use statrs::distribution::Normal;
 
+use crate::blocks::family_blocks;
 use crate::convergence::TOLERANCE;
+use crate::dense::DenseFactor;
+use crate::liability::{LiabilityModel, Truncation, truncated_moments};
 
 /// `log(2 pi)`, which appears once per scalar observation.
 const LN_2PI: f64 = 1.837_877_066_409_345_5;
@@ -206,10 +237,121 @@ pub struct RepeatedFit {
     /// a small reading there says less than it does elsewhere -- the same
     /// caveat [`crate::ComponentModel`] carries for a variance on its bound.
     pub scaled_gradient: f64,
+    /// The share of all observations at each position that reached a limit,
+    /// counting those never measured in the denominator. **Read the estimates
+    /// against it**: at a very high share the tail at that
+    /// position is carried by the censoring pattern rather than by anything
+    /// measured.
+    pub censored_shares: Vec<f64>,
+    /// The largest family, in people.
+    pub largest_family: usize,
+    /// The largest number of censored values in one family, which is the
+    /// dimension the sequential region approximation actually ran at. It is
+    /// exact to two and approximate above.
+    pub sequential_dimension: usize,
     pub estimator: &'static str,
 }
 
+/// What is known about one observation.
+///
+/// **A value and its status cannot disagree here**, because there is only one
+/// of them. `src/tobit.rs` takes a value, a status and a limit as three
+/// parallel arrays, which is what a numpy interface wants; this model has no
+/// interface yet and can afford to make the impossible state unrepresentable
+/// instead.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Known {
+    /// Measured, and this is what it was.
+    Value(f64),
+    /// Not measured: known only to be at or above this limit, which is what an
+    /// instrument that has run out of output leaves behind.
+    Above(f64),
+    /// Not measured: known only to be at or below this limit.
+    Below(f64),
+    /// Never measured at all, and nothing is known about where it lies. It is
+    /// imputed rather than dropped, because dropping it would unbalance the
+    /// data and unbalanced data is what breaks the rotation.
+    Missing,
+}
+
+impl Known {
+    /// The measured value, where there is one.
+    fn value(self) -> Option<f64> {
+        match self {
+            Self::Value(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// The limit and the direction, where the value is censored. A value that
+    /// was never measured has neither and is carried rather than conditioned
+    /// on.
+    fn truncation(self) -> Option<Truncation> {
+        match self {
+            Self::Above(limit) => Some(Truncation { limit, sign: 1.0 }),
+            Self::Below(limit) => Some(Truncation { limit, sign: -1.0 }),
+            _ => None,
+        }
+    }
+}
+
+/// What one family leaves uncertain, in that family's own coordinates.
+struct FamilySpread {
+    /// The `(row, position)` each coordinate stands for.
+    coordinates: Vec<(usize, usize)>,
+    /// Their covariance, conditional on everything that family measured and on
+    /// the region the rest of it lies in.
+    covariance: DMatrix<f64>,
+}
+
+/// How uncertain each rotated row is once the unmeasured values are filled in.
+///
+/// A rotated row is a fixed linear combination of the raw rows, so its
+/// covariance is that combination applied to the family covariances above. The
+/// maximisation needs nothing else about the imputation: every statistic it
+/// forms is quadratic in the data, so a mean and a covariance are between them
+/// the whole expectation.
+struct Spread {
+    /// `P` of them, `T x T`: one per mean-channel row.
+    mean: Vec<DMatrix<f64>>,
+    /// `P (R - 1)` of them, one per contrast row.
+    contrast: Vec<DMatrix<f64>>,
+}
+
+/// The data as the fit works on it: standardised, and rotated in advance where
+/// that can be done at all.
+///
+/// **Rotating does not depend on the parameters, so where nothing is unmeasured
+/// it is done once and never again.** Where something is unmeasured the
+/// imputation changes with the parameters and so does the rotation of it, which
+/// is the difference between the cheap half of this model and the expensive
+/// one.
+struct Prepared {
+    known: Vec<Known>,
+    rotated: Option<Rotated>,
+}
+
+/// The result of one expectation step.
+struct Imputed {
+    rotated: Rotated,
+    /// `None` where nothing was unmeasured, so every rotated row is known
+    /// exactly and there is nothing to correct for. The uncensored fit takes
+    /// that path and pays none of this.
+    spread: Option<Spread>,
+    /// The observed-data log-likelihood at the parameters this was built from:
+    /// a density for what was measured, and the probability of the region the
+    /// rest lies in given it.
+    ///
+    /// **This is the definition of correct and it is not what the expectation
+    /// step maximises.** The two are computed by different routes on purpose --
+    /// this one through `region_log_probability`, which is exact at one and two
+    /// coordinates where the sequential update is not, and which is what
+    /// `TobitModel` uses and therefore what a comparison against it compares.
+    loglik: f64,
+}
+
 /// The data rotated into the basis where the likelihood is block diagonal.
+#[derive(Clone)]
 struct Rotated {
     /// `P x T`. The replicate mean of each person, rotated by the eigenvectors.
     mean: DMatrix<f64>,
@@ -228,6 +370,16 @@ struct Block {
 /// Repeated measures at fixed positions, with a replicate level inside the
 /// person.
 pub struct RepeatedModel {
+    /// The person-level components as they were given. The rotation does not
+    /// need them, but the expectation step over unmeasured values does: it
+    /// works on one family's dense covariance, where there is no rotation to
+    /// hide behind.
+    matrices: Vec<DMatrix<f64>>,
+    /// The families, as lists of people. Two people in different families are
+    /// independent under every component at once, which is what makes the
+    /// expectation step a loop over families rather than one dense solve of the
+    /// whole roster.
+    blocks: Vec<Vec<usize>>,
     /// The rotated diagonal of each person-level component: `diagonals[j][k]`
     /// is what component `j` contributes in eigendirection `k`. The residual is
     /// implicit and is not stored.
@@ -235,6 +387,10 @@ pub struct RepeatedModel {
     /// How many eigendirections carry information about each component, which
     /// is the rank of its matrix and the divisor in that component's update.
     ranks: Vec<usize>,
+    /// The design as given, `(P * R) x q`. The rotated forms below are what
+    /// the maximisation uses; this is what the expectation step needs, because
+    /// it works one family at a time in the response's own coordinates.
+    design: DMatrix<f64>,
     /// The rotated design of the mean channel, `P x q`.
     design_mean: DMatrix<f64>,
     /// The rotated design of the contrast channels, `P(R - 1) x q`.
@@ -355,6 +511,22 @@ impl RepeatedModel {
             ranks.push(rank);
         }
 
+        // Blocks come from every matrix at once and not from the first, for
+        // the reason `src/components.rs` gives: two people unrelated in the
+        // pedigree may still share a household, and blocking on the
+        // relationship alone would silently drop the covariance between them.
+        let mut union = DMatrix::<f64>::zeros(people, people);
+        for matrix in matrices {
+            for i in 0..people {
+                for j in 0..people {
+                    if matrix[(i, j)] != 0.0 {
+                        union[(i, j)] = 1.0;
+                    }
+                }
+            }
+        }
+        let blocks = family_blocks(&union);
+
         let helmert = helmert_matrix(replicates);
         let (design_mean_raw, design_contrast) = rotate_replicates(design, &helmert, people);
         let design_mean = &transposed * design_mean_raw;
@@ -369,6 +541,9 @@ impl RepeatedModel {
         let contrast_cross = design_contrast.transpose() * &design_contrast;
 
         Ok(Self {
+            design: design.clone(),
+            matrices: matrices.to_vec(),
+            blocks,
             diagonals,
             ranks,
             design_mean,
@@ -403,23 +578,70 @@ impl RepeatedModel {
         if y.nrows() != self.people * self.replicates || y.ncols() != self.positions {
             return Err("REPEATED_RESPONSE_WRONG_SHAPE");
         }
+        let mut known = Vec::with_capacity(y.nrows() * y.ncols());
+        for row in 0..y.nrows() {
+            for position in 0..y.ncols() {
+                known.push(Known::Value(y[(row, position)]));
+            }
+        }
+        self.fit_known(&known)
+    }
+
+    /// Fit where some values were never measured, or reached a limit instead
+    /// of being measured.
+    ///
+    /// `known` is `(P * R) * T` long, with observation `(row, position)` at
+    /// `row * T + position` -- the same row order as the design.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the data do not match the model, leave
+    /// nothing measured to set a scale by, or produce a covariance that cannot
+    /// be factorised.
+    pub fn fit_known(&self, known: &[Known]) -> Result<RepeatedFit, &'static str> {
+        let rows = self.people * self.replicates;
+        let positions = self.positions;
+        if known.len() != rows * positions {
+            return Err("REPEATED_RESPONSE_WRONG_SHAPE");
+        }
 
         // Standardised for the same reason the one-trait model standardises:
         // it puts the gradient reading on a scale that means the same thing
         // from one data set to the next, so one threshold can serve them all.
-        let count = (y.nrows() * y.ncols()) as f64;
-        let mean = y.iter().sum::<f64>() / count;
-        let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / count;
+        // The scale comes from what was measured, because that is the only
+        // thing there is; a limit is carried by it rather than counted in it.
+        let measured: Vec<f64> = known.iter().filter_map(|k| k.value()).collect();
+        if measured.len() < 2 {
+            return Err("REPEATED_NOTHING_MEASURED");
+        }
+        let count = measured.len() as f64;
+        let mean = measured.iter().sum::<f64>() / count;
+        let variance = measured.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / count;
         if !(variance > 0.0) {
             return Err("REPEATED_RESPONSE_CONSTANT");
         }
         let scale = variance.sqrt();
-        let rotated = self.rotate(&(y / scale));
+        let scaled: Vec<Known> = known
+            .iter()
+            .map(|k| match *k {
+                Known::Value(value) => Known::Value(value / scale),
+                Known::Above(limit) => Known::Above(limit / scale),
+                Known::Below(limit) => Known::Below(limit / scale),
+                Known::Missing => Known::Missing,
+            })
+            .collect();
+        let complete = scaled.iter().all(|k| k.value().is_some());
+        let crude = self.rotate(&self.crude(&scaled));
+        let prepared = Prepared {
+            rotated: complete.then(|| crude.clone()),
+            known: scaled,
+        };
 
-        let (mut sigmas, mut residual, mut fixed) = self.starting_values(&rotated)?;
-        let mut loglik = self
-            .loglik_at(&rotated, &sigmas, &residual, &fixed)
+        let (mut sigmas, mut residual, mut fixed) = self.starting_values(&crude)?;
+        let mut imputed = self
+            .expectation(&prepared, &sigmas, &residual, &fixed, true)
             .ok_or("REPEATED_START_NOT_EVALUABLE")?;
+        let mut loglik = imputed.loglik;
         let mut monotone = true;
         let mut iterations = 0;
         let mut previous_gain = 0.0;
@@ -428,14 +650,25 @@ impl RepeatedModel {
         let mut last_reading: Option<usize> = None;
 
         while iterations < MAX_ITERATIONS {
-            let Some(next) =
-                self.accelerated_step(&rotated, &sigmas, &residual, &fixed, &mut iterations)
+            let Some(((next_sigmas, next_residual, next_fixed), next_imputed)) = self
+                .accelerated_step(
+                    &prepared,
+                    &imputed,
+                    &sigmas,
+                    &residual,
+                    &fixed,
+                    &mut iterations,
+                )
             else {
                 return Err("REPEATED_ITERATION_NOT_EVALUABLE");
             };
-            let ((next_sigmas, next_residual, next_fixed), next_loglik) = next;
+            let next_loglik = next_imputed.loglik;
             // A fall of a few units in the last place is the arithmetic and not
-            // the algorithm; anything larger is this code being wrong.
+            // the algorithm. Anything larger, on complete data, is this code
+            // being wrong; with censoring it may instead be the expectation
+            // step's own approximation, which ADR 0010 warns is not guaranteed
+            // to climb the likelihood it claims to maximise. Either way it is
+            // reported rather than swallowed.
             if next_loglik < loglik - 1e-8 * loglik.abs().max(1.0) {
                 monotone = false;
             }
@@ -443,15 +676,23 @@ impl RepeatedModel {
             sigmas = next_sigmas;
             residual = next_residual;
             fixed = next_fixed;
+            imputed = next_imputed;
             loglik = next_loglik;
             if gain <= 0.0 {
                 break;
             }
 
-            let periodic = iterations
-                >= last_reading
-                    .unwrap_or(0)
-                    .saturating_add(GRADIENT_CHECK_EVERY);
+            // **The gradient is read on a schedule only where reading it is
+            // cheap.** On complete data an evaluation is a pass over blocks of
+            // `T`; with censoring it is a dense factorisation per family, and
+            // two of those per parameter is not something to do every five
+            // hundred iterations. There it is read once, at the end, which is
+            // what ADR 0010 asks for.
+            let periodic = complete
+                && iterations
+                    >= last_reading
+                        .unwrap_or(0)
+                        .saturating_add(GRADIENT_CHECK_EVERY);
             let settling = !relaxed && {
                 let rate = if previous_gain > 0.0 {
                     gain / previous_gain
@@ -466,16 +707,17 @@ impl RepeatedModel {
                 remaining <= REMAINING_GAIN * loglik.abs().max(1.0)
             };
             if periodic || settling {
-                if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_loglik)) =
-                    self.rested(&rotated, &sigmas, &residual, &fixed, loglik)
+                if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_imputed)) =
+                    self.rested(&prepared, &sigmas, &residual, &fixed, loglik)
                 {
                     sigmas = rested_sigmas;
                     residual = rested_residual;
                     fixed = rested_fixed;
-                    loglik = rested_loglik;
+                    loglik = rested_imputed.loglik;
+                    imputed = rested_imputed;
                 }
                 scaled_gradient = self
-                    .gradient_reading(&rotated, &sigmas, &residual)
+                    .gradient_reading(&prepared, complete, &imputed, &sigmas, &residual, &fixed)
                     .unwrap_or(f64::INFINITY);
                 last_reading = Some(iterations);
                 if scaled_gradient < TOLERANCE {
@@ -487,22 +729,25 @@ impl RepeatedModel {
         }
 
         if last_reading != Some(iterations) {
-            if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_loglik)) =
-                self.rested(&rotated, &sigmas, &residual, &fixed, loglik)
+            if let Some(((rested_sigmas, rested_residual, rested_fixed), rested_imputed)) =
+                self.rested(&prepared, &sigmas, &residual, &fixed, loglik)
             {
                 sigmas = rested_sigmas;
                 residual = rested_residual;
                 fixed = rested_fixed;
-                loglik = rested_loglik;
+                loglik = rested_imputed.loglik;
+                imputed = rested_imputed;
             }
             scaled_gradient = self
-                .gradient_reading(&rotated, &sigmas, &residual)
+                .gradient_reading(&prepared, complete, &imputed, &sigmas, &residual, &fixed)
                 .unwrap_or(f64::INFINITY);
         }
 
         // Back to the response's own units. A covariance carries the square of
         // the scale, a fixed effect carries the scale itself, and the
-        // log-likelihood carries a term per scalar observation.
+        // log-likelihood carries a term per **measured** observation, because a
+        // region probability is a probability and does not change with the
+        // units its limits are quoted in.
         let factor = variance;
         let component_covariances: Vec<DMatrix<f64>> = sigmas.iter().map(|s| s * factor).collect();
         let residual_covariance = &residual * factor;
@@ -517,8 +762,92 @@ impl RepeatedModel {
             monotone,
             converged: scaled_gradient < TOLERANCE,
             scaled_gradient,
+            censored_shares: self.censored_shares(known),
+            largest_family: self.blocks.iter().map(Vec::len).max().unwrap_or(0),
+            sequential_dimension: self.sequential_dimension(known),
             estimator: "ml",
         })
+    }
+
+    /// The share of observations at each position that reached a limit.
+    fn censored_shares(&self, known: &[Known]) -> Vec<f64> {
+        let rows = self.people * self.replicates;
+        (0..self.positions)
+            .map(|position| {
+                let hit = (0..rows)
+                    .filter(|row| {
+                        matches!(
+                            known[row * self.positions + position],
+                            Known::Above(_) | Known::Below(_)
+                        )
+                    })
+                    .count();
+                hit as f64 / rows as f64
+            })
+            .collect()
+    }
+
+    /// The largest number of censored values one family carries, which is the
+    /// dimension the sequential approximation actually runs at.
+    ///
+    /// **This is in the fit record because the whole result leans on it.** The
+    /// region probability is exact to two coordinates and approximate above,
+    /// and a reader should not have to work out from the censoring pattern how
+    /// far past two a given fit went.
+    fn sequential_dimension(&self, known: &[Known]) -> usize {
+        self.blocks
+            .iter()
+            .map(|block| {
+                let mut counted = 0;
+                for &person in block {
+                    for replicate in 0..self.replicates {
+                        let row = person * self.replicates + replicate;
+                        for position in 0..self.positions {
+                            if matches!(
+                                known[row * self.positions + position],
+                                Known::Above(_) | Known::Below(_)
+                            ) {
+                                counted += 1;
+                            }
+                        }
+                    }
+                }
+                counted
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// A complete response to take starting values from.
+    ///
+    /// **Substituting the limit is the analysis this model exists to replace**,
+    /// and it appears here and nowhere else. It costs nothing to be wrong at a
+    /// start: expectation-maximisation from a poor one reaches the same maximum
+    /// as from a good one, only later. What a start must not be is unfittable,
+    /// and a substituted limit never is.
+    fn crude(&self, known: &[Known]) -> DMatrix<f64> {
+        let rows = self.people * self.replicates;
+        let positions = self.positions;
+        let mut values = DMatrix::<f64>::zeros(rows, positions);
+        for position in 0..positions {
+            let mut total = 0.0;
+            let mut counted = 0.0;
+            for row in 0..rows {
+                if let Some(value) = known[row * positions + position].value() {
+                    total += value;
+                    counted += 1.0;
+                }
+            }
+            let average = if counted > 0.0 { total / counted } else { 0.0 };
+            for row in 0..rows {
+                values[(row, position)] = match known[row * positions + position] {
+                    Known::Value(value) => value,
+                    Known::Above(limit) | Known::Below(limit) => limit,
+                    Known::Missing => average,
+                };
+            }
+        }
+        values
     }
 
     /// Rotate a response into the basis the likelihood is diagonal in.
@@ -552,16 +881,353 @@ impl RepeatedModel {
         v
     }
 
+    /// The expectation step: fill in everything that was not measured, and say
+    /// how uncertain each filling is.
+    ///
+    /// # Why this is the expensive half
+    ///
+    /// The maximisation works in a basis where the likelihood is block diagonal
+    /// in blocks of `T`, and that basis exists only for complete balanced data.
+    /// Conditioning on what a family actually measured does not survive it:
+    /// the measured and unmeasured coordinates are scattered through the
+    /// family's rows, so the covariance has to be built and factorised in the
+    /// response's own coordinates, densely, once per family per iteration.
+    ///
+    /// ADR 0010 counted the cost and accepted it. The saving that route buys is
+    /// not against one likelihood evaluation but against the two hundred and
+    /// fifty a central-difference gradient would need, and this is the one.
+    ///
+    /// # What it computes
+    ///
+    /// Per family, in order: the density of what was measured; the conditional
+    /// distribution of what was not, given what was; the probability of the
+    /// region the censored values lie in, given the same; and then the moments
+    /// of that conditional distribution truncated to the region.
+    ///
+    /// A value that was never measured has no region of its own and is
+    /// conditioned on nothing, but it is correlated with values that were
+    /// censored and its moments move when they are truncated -- so it is
+    /// carried through the same update rather than filled in beforehand.
+    fn expectation(
+        &self,
+        prepared: &Prepared,
+        sigmas: &[DMatrix<f64>],
+        residual: &DMatrix<f64>,
+        fixed: &DMatrix<f64>,
+        // Where this is false only the log-likelihood is wanted, so the
+        // truncated moments are not taken and the rotation comes back empty.
+        moments: bool,
+    ) -> Option<Imputed> {
+        // Nothing was unmeasured, so there is nothing to condition on and
+        // nothing to impute. The likelihood is the ordinary one in the rotated
+        // basis and the rotation was done once, before the search began.
+        if let Some(rotated) = &prepared.rotated {
+            let loglik = self.loglik_at(rotated, sigmas, residual, fixed)?;
+            return Some(Imputed {
+                rotated: rotated.clone(),
+                spread: None,
+                loglik,
+            });
+        }
+        let known = &prepared.known;
+        let rows = self.people * self.replicates;
+        let positions = self.positions;
+        let normal = Normal::new(0.0, 1.0).ok()?;
+        let expected = &self.design * fixed;
+        let mut values = DMatrix::<f64>::zeros(rows, positions);
+        for row in 0..rows {
+            for position in 0..positions {
+                if let Some(value) = known[row * positions + position].value() {
+                    values[(row, position)] = value;
+                }
+            }
+        }
+        let mut loglik = 0.0;
+        let mut spreads: Vec<FamilySpread> = Vec::new();
+
+        for block in &self.blocks {
+            let mut coordinates: Vec<(usize, usize)> = Vec::new();
+            for &person in block {
+                for replicate in 0..self.replicates {
+                    let row = person * self.replicates + replicate;
+                    for position in 0..positions {
+                        coordinates.push((row, position));
+                    }
+                }
+            }
+            let size = coordinates.len();
+            let covariance = self.family_covariance(&coordinates, sigmas, residual);
+            let mean: Vec<f64> = coordinates
+                .iter()
+                .map(|&(row, position)| expected[(row, position)])
+                .collect();
+
+            let mut measured = Vec::new();
+            let mut unmeasured = Vec::new();
+            for index in 0..size {
+                let (row, position) = coordinates[index];
+                if known[row * positions + position].value().is_some() {
+                    measured.push(index);
+                } else {
+                    unmeasured.push(index);
+                }
+            }
+
+            // What was measured, as a density, and the factor that conditions
+            // what was not on it.
+            let mut conditioning = None;
+            if !measured.is_empty() {
+                let block_covariance = DMatrix::from_fn(measured.len(), measured.len(), |i, j| {
+                    covariance[(measured[i], measured[j])]
+                });
+                // **This is the one factorisation that decides what a fit
+                // costs.** The largest family in the audiogram design has 75
+                // people, two replicates and seventeen positions, so this is
+                // 2,550 rows, and `src/dense.rs` measured `faer` at eighteen
+                // times `nalgebra` by 1,800 of them.
+                let factor = DenseFactor::new(&block_covariance)?;
+                let logdet = factor.logdet();
+                let deviation = DVector::from_iterator(
+                    measured.len(),
+                    measured.iter().map(|&index| {
+                        let (row, position) = coordinates[index];
+                        values[(row, position)] - mean[index]
+                    }),
+                );
+                let solved = factor.solve_vector(&deviation);
+                let quadratic = (deviation.transpose() * &solved)[(0, 0)];
+                loglik -= 0.5 * (measured.len() as f64 * LN_2PI + logdet + quadratic);
+                if !loglik.is_finite() {
+                    return None;
+                }
+                conditioning = Some((factor, solved));
+            }
+            if unmeasured.is_empty() {
+                continue;
+            }
+
+            let marginal = DMatrix::from_fn(unmeasured.len(), unmeasured.len(), |i, j| {
+                covariance[(unmeasured[i], unmeasured[j])]
+            });
+            let (mut conditional_mean, mut conditional) = match &conditioning {
+                Some((factor, solved)) => {
+                    let cross = DMatrix::from_fn(unmeasured.len(), measured.len(), |i, j| {
+                        covariance[(unmeasured[i], measured[j])]
+                    });
+                    let regression = factor.solve_matrix(&cross.transpose());
+                    let shift = &cross * solved;
+                    (
+                        unmeasured
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &index)| mean[index] + shift[i])
+                            .collect::<Vec<f64>>(),
+                        marginal - &cross * &regression,
+                    )
+                }
+                // Nobody in this family measured anything, so the conditional
+                // distribution is the marginal one.
+                None => (
+                    unmeasured.iter().map(|&index| mean[index]).collect(),
+                    marginal,
+                ),
+            };
+            self.region_and_moments(
+                known,
+                &coordinates,
+                &unmeasured,
+                &mut conditional_mean,
+                &mut conditional,
+                &normal,
+                moments,
+                &mut loglik,
+                &mut values,
+                &mut spreads,
+            )?;
+        }
+
+        // Where the moments were not wanted, the imputed cells were never
+        // filled and rotating them would give an answer that looks right and
+        // is not. An empty rotation is returned instead, so that using it is a
+        // shape error rather than a silent one.
+        let rotated = if moments {
+            self.rotate(&values)
+        } else {
+            Rotated {
+                mean: DMatrix::zeros(0, 0),
+                contrast: DMatrix::zeros(0, 0),
+            }
+        };
+        let spread = (moments && !spreads.is_empty()).then(|| self.collapse(&spreads));
+        loglik.is_finite().then_some(Imputed {
+            rotated,
+            spread,
+            loglik,
+        })
+    }
+
+    /// The probability of the region the censored values lie in, and then the
+    /// moments of the conditional distribution truncated to it.
+    ///
+    /// The two use different routines on purpose. The probability comes from
+    /// `region_log_probability`, which is exact at one and two coordinates and
+    /// is what every other censored model in the crate reports, so a comparison
+    /// against one of them compares like with like. The moments come from the
+    /// sequential update, which is the only thing that has them.
+    #[allow(clippy::too_many_arguments)]
+    fn region_and_moments(
+        &self,
+        known: &[Known],
+        coordinates: &[(usize, usize)],
+        unmeasured: &[usize],
+        conditional_mean: &mut [f64],
+        conditional: &mut DMatrix<f64>,
+        normal: &Normal,
+        moments: bool,
+        loglik: &mut f64,
+        values: &mut DMatrix<f64>,
+        spreads: &mut Vec<FamilySpread>,
+    ) -> Option<()> {
+        let positions = self.positions;
+        let truncation: Vec<Option<Truncation>> = unmeasured
+            .iter()
+            .map(|&index| {
+                let (row, position) = coordinates[index];
+                known[row * positions + position].truncation()
+            })
+            .collect();
+
+        let censored: Vec<usize> = (0..unmeasured.len())
+            .filter(|&i| truncation[i].is_some())
+            .collect();
+        if !censored.is_empty() {
+            let region_mean: Vec<f64> = censored
+                .iter()
+                .map(|&i| conditional_mean[i] - truncation[i].map_or(0.0, |t| t.limit))
+                .collect();
+            let sign: Vec<f64> = censored
+                .iter()
+                .map(|&i| truncation[i].map_or(1.0, |t| t.sign))
+                .collect();
+            let region = DMatrix::from_fn(censored.len(), censored.len(), |a, b| {
+                conditional[(censored[a], censored[b])]
+            });
+            *loglik +=
+                LiabilityModel::region_log_probability(&region_mean, &sign, &region, normal)?;
+        }
+        if !moments {
+            return Some(());
+        }
+        truncated_moments(conditional_mean, conditional, &truncation, normal)?;
+        for (i, &index) in unmeasured.iter().enumerate() {
+            let (row, position) = coordinates[index];
+            values[(row, position)] = conditional_mean[i];
+        }
+        spreads.push(FamilySpread {
+            coordinates: unmeasured.iter().map(|&index| coordinates[index]).collect(),
+            covariance: conditional.clone(),
+        });
+        Some(())
+    }
+
+    /// One family's dense covariance, in the response's own coordinates.
+    fn family_covariance(
+        &self,
+        coordinates: &[(usize, usize)],
+        sigmas: &[DMatrix<f64>],
+        residual: &DMatrix<f64>,
+    ) -> DMatrix<f64> {
+        let size = coordinates.len();
+        let mut covariance = DMatrix::<f64>::zeros(size, size);
+        for a in 0..size {
+            let (row_a, t) = coordinates[a];
+            let person_a = row_a / self.replicates;
+            for b in 0..=a {
+                let (row_b, u) = coordinates[b];
+                let person_b = row_b / self.replicates;
+                let mut value = 0.0;
+                for (component, sigma) in sigmas.iter().enumerate() {
+                    let shared = self.matrices[component][(person_a, person_b)];
+                    if shared != 0.0 {
+                        value += shared * sigma[(t, u)];
+                    }
+                }
+                if row_a == row_b {
+                    value += residual[(t, u)];
+                }
+                covariance[(a, b)] = value;
+                covariance[(b, a)] = value;
+            }
+        }
+        covariance
+    }
+
+    /// Carry the family covariances through the rotation, one rotated row at a
+    /// time.
+    ///
+    /// A rotated row is the same fixed combination of raw rows at every
+    /// position, so its covariance is that combination applied twice to the
+    /// family covariance and then gathered by position. Families are
+    /// independent, so a row touching several of them simply sums.
+    fn collapse(&self, families: &[FamilySpread]) -> Spread {
+        let positions = self.positions;
+        let root = (self.replicates as f64).sqrt();
+        let mut mean = vec![DMatrix::<f64>::zeros(positions, positions); self.people];
+        let mut contrast =
+            vec![DMatrix::<f64>::zeros(positions, positions); self.people * (self.replicates - 1)];
+
+        for family in families {
+            let size = family.coordinates.len();
+            let mut weights = vec![0.0; size];
+            for direction in 0..self.people {
+                let mut touched = false;
+                for (slot, &(row, _)) in family.coordinates.iter().enumerate() {
+                    let weight = self.eigenvectors[(row / self.replicates, direction)] / root;
+                    weights[slot] = weight;
+                    touched |= weight != 0.0;
+                }
+                if touched {
+                    gather(&mut mean[direction], family, &weights);
+                }
+            }
+            let people: Vec<usize> = {
+                let mut seen: Vec<usize> = family
+                    .coordinates
+                    .iter()
+                    .map(|&(row, _)| row / self.replicates)
+                    .collect();
+                seen.dedup();
+                seen
+            };
+            for person in people {
+                for step in 1..self.replicates {
+                    for (slot, &(row, _)) in family.coordinates.iter().enumerate() {
+                        weights[slot] = if row / self.replicates == person {
+                            self.helmert[(step, row % self.replicates)]
+                        } else {
+                            0.0
+                        };
+                    }
+                    gather(
+                        &mut contrast[person * (self.replicates - 1) + step - 1],
+                        family,
+                        &weights,
+                    );
+                }
+            }
+        }
+        Spread { mean, contrast }
+    }
+
     /// Factor every mean-channel block once.
     fn blocks(&self, sigmas: &[DMatrix<f64>], residual: &DMatrix<f64>) -> Option<Vec<Block>> {
         (0..self.people)
             .map(|k| {
                 let v = self.mean_covariance(k, sigmas, residual);
-                let chol = v.cholesky()?;
-                let log_determinant = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+                let factor = DenseFactor::new(&v)?;
                 Some(Block {
-                    inverse: chol.inverse(),
-                    log_determinant,
+                    inverse: factor.inverse(),
+                    log_determinant: factor.logdet(),
                 })
             })
             .collect()
@@ -603,11 +1269,12 @@ impl RepeatedModel {
     /// second. So there is no search here, only four closed forms.
     fn one_iteration(
         &self,
-        rotated: &Rotated,
+        imputed: &Imputed,
         sigmas: &[DMatrix<f64>],
         residual: &DMatrix<f64>,
         fixed: &DMatrix<f64>,
     ) -> Option<State> {
+        let rotated = &imputed.rotated;
         let blocks = self.blocks(sigmas, residual)?;
         let positions = self.positions;
         let replicates = self.replicates as f64;
@@ -621,6 +1288,17 @@ impl RepeatedModel {
         for (k, block) in blocks.iter().enumerate() {
             let r: DVector<f64> = mean_residual.row(k).transpose();
             let weighted = &block.inverse * &r;
+            // **Where a rotated row was imputed rather than measured, its
+            // second moment is not the square of its mean.** Every statistic
+            // below is quadratic in the data, so each outer product of a
+            // rotated quantity picks up the same term with the row's own
+            // covariance in place of that outer product. Written through the
+            // inverse once here because both the components and the residual
+            // want it.
+            let carried = imputed
+                .spread
+                .as_ref()
+                .map(|spread| &block.inverse * &spread.mean[k] * &block.inverse);
             let mut total = DVector::<f64>::zeros(positions);
             for (component, sigma) in sigmas.iter().enumerate() {
                 let d = self.diagonals[component][k];
@@ -641,11 +1319,20 @@ impl RepeatedModel {
                 statistics[component] += &projected * projected.transpose() * (replicates * d)
                     + sigma
                     - sigma * &block.inverse * sigma * (replicates * d);
+                if let Some(carried) = &carried {
+                    statistics[component] += sigma * carried * sigma * (replicates * d);
+                }
             }
             for t in 0..positions {
                 effects[(k, t)] = total[t];
             }
             residual_variance += residual - residual * &block.inverse * residual;
+            if let Some(carried) = &carried {
+                // The residual of this row is the residual covariance times the
+                // inverse times the row, so its own uncertainty arrives the
+                // same way.
+                residual_variance += residual * carried * residual;
+            }
         }
 
         // The fixed effects, given the effects just estimated. This is ordinary
@@ -661,6 +1348,14 @@ impl RepeatedModel {
 
         let mean_error = &adjusted_mean - &self.design_mean * &next_fixed;
         let contrast_error = &rotated.contrast - &self.design_contrast * &next_fixed;
+        // A contrast row carries no person-level effect at all, so what is left
+        // uncertain in it is left uncertain in its residual, with nothing in
+        // between to change it.
+        if let Some(spread) = &imputed.spread {
+            for row in &spread.contrast {
+                residual_variance += row;
+            }
+        }
         let next_residual = symmetrised(
             &((mean_error.transpose() * &mean_error
                 + contrast_error.transpose() * &contrast_error
@@ -708,19 +1403,23 @@ impl RepeatedModel {
     /// whatever the extrapolation does.
     fn accelerated_step(
         &self,
-        rotated: &Rotated,
+        prepared: &Prepared,
+        imputed: &Imputed,
         sigmas: &[DMatrix<f64>],
         residual: &DMatrix<f64>,
         fixed: &DMatrix<f64>,
         iterations: &mut usize,
-    ) -> Option<(State, f64)> {
+    ) -> Option<(State, Imputed)> {
         let (one_sigmas, one_residual, one_fixed) =
-            self.one_iteration(rotated, sigmas, residual, fixed)?;
+            self.one_iteration(imputed, sigmas, residual, fixed)?;
+        let imputed_one =
+            self.expectation(prepared, &one_sigmas, &one_residual, &one_fixed, true)?;
         *iterations += 1;
         let (two_sigmas, two_residual, two_fixed) =
-            self.one_iteration(rotated, &one_sigmas, &one_residual, &one_fixed)?;
+            self.one_iteration(&imputed_one, &one_sigmas, &one_residual, &one_fixed)?;
+        let imputed_two =
+            self.expectation(prepared, &two_sigmas, &two_residual, &two_fixed, true)?;
         *iterations += 1;
-        let two_loglik = self.loglik_at(rotated, &two_sigmas, &two_residual, &two_fixed)?;
 
         let base = flatten(sigmas, residual, fixed);
         let one = flatten(&one_sigmas, &one_residual, &one_fixed);
@@ -739,7 +1438,7 @@ impl RepeatedModel {
         // infinite length, and a NaN both fall through to the plain steps.
         let mut length = -step_norm / bend_norm;
         if !(length < -1.0) || !length.is_finite() {
-            return Some(((two_sigmas, two_residual, two_fixed), two_loglik));
+            return Some(((two_sigmas, two_residual, two_fixed), imputed_two));
         }
 
         let mut candidate = Vec::with_capacity(base.len());
@@ -755,21 +1454,19 @@ impl RepeatedModel {
                 self.positions,
                 self.covariates,
             );
-            let attempt = self.one_iteration(rotated, &try_sigmas, &try_residual, &try_fixed);
+            let attempt = self.expectation(prepared, &try_sigmas, &try_residual, &try_fixed, true);
             *iterations += 1;
-            if let Some((next_sigmas, next_residual, next_fixed)) = attempt
-                && let Some(next_loglik) =
-                    self.loglik_at(rotated, &next_sigmas, &next_residual, &next_fixed)
-                && next_loglik >= two_loglik
+            if let Some(attempt) = attempt
+                && attempt.loglik >= imputed_two.loglik
             {
-                return Some(((next_sigmas, next_residual, next_fixed), next_loglik));
+                return Some(((try_sigmas, try_residual, try_fixed), attempt));
             }
             length = (length - 1.0) / 2.0;
             if length >= -1.0 - 1e-6 {
                 break;
             }
         }
-        Some(((two_sigmas, two_residual, two_fixed), two_loglik))
+        Some(((two_sigmas, two_residual, two_fixed), imputed_two))
     }
 
     /// Put every collapsed direction exactly on the boundary, if the likelihood
@@ -782,12 +1479,12 @@ impl RepeatedModel {
     /// exact fixed point and this never has to be done twice.
     fn rested(
         &self,
-        rotated: &Rotated,
+        prepared: &Prepared,
         sigmas: &[DMatrix<f64>],
         residual: &DMatrix<f64>,
         fixed: &DMatrix<f64>,
         loglik: f64,
-    ) -> Option<(State, f64)> {
+    ) -> Option<(State, Imputed)> {
         let mut moved = false;
         let mut rested = Vec::with_capacity(sigmas.len());
         for sigma in sigmas {
@@ -809,21 +1506,11 @@ impl RepeatedModel {
         if !moved {
             return None;
         }
-        let value = self.loglik_at(rotated, &rested, &rested_residual, fixed)?;
-        if value < loglik {
+        let imputed = self.expectation(prepared, &rested, &rested_residual, fixed, true)?;
+        if imputed.loglik < loglik {
             return None;
         }
-        // One ordinary step from where it landed, so the fixed effects are
-        // those of the point being reported rather than of the point before it.
-        let Some((next_sigmas, next_residual, next_fixed)) =
-            self.one_iteration(rotated, &rested, &rested_residual, fixed)
-        else {
-            return Some(((rested, rested_residual, fixed.clone()), value));
-        };
-        match self.loglik_at(rotated, &next_sigmas, &next_residual, &next_fixed) {
-            Some(next) if next >= value => Some(((next_sigmas, next_residual, next_fixed), next)),
-            _ => Some(((rested, rested_residual, fixed.clone()), value)),
-        }
+        Some(((rested, rested_residual, fixed.clone()), imputed))
     }
 
     /// The observed-data log-likelihood at these parameters and these fixed
@@ -964,23 +1651,46 @@ impl RepeatedModel {
     }
 
     /// The scaled projected gradient at the point EM stopped, by central
-    /// differences in the symmetric square roots of the covariances.
+    /// differences on the observed-data log-likelihood.
+    ///
+    /// # Two cases, and why they differ
+    ///
+    /// On complete data the fixed effects have a closed-form maximum at any
+    /// variances, so they are profiled out and the reading is of the profile
+    /// likelihood, which is what the rest of the crate reports.
+    ///
+    /// With censoring they do not: there is no generalised least squares
+    /// solution to a likelihood that is part density and part region
+    /// probability. So they are stepped in like everything else, and the
+    /// reading covers them too. That is a stronger statement rather than a
+    /// weaker one -- it says the fit is stationary in every parameter at once
+    /// -- and it costs a reading over `q T` more directions.
     fn gradient_reading(
         &self,
-        rotated: &Rotated,
+        prepared: &Prepared,
+        complete: bool,
+        imputed: &Imputed,
         sigmas: &[DMatrix<f64>],
         residual: &DMatrix<f64>,
+        fixed: &DMatrix<f64>,
     ) -> Option<f64> {
         let mut roots: Vec<DMatrix<f64>> = sigmas.iter().map(symmetric_square_root).collect();
         roots.push(symmetric_square_root(residual));
-        let at = self.profile_loglik(rotated, sigmas, residual)?;
 
-        let value_at = |roots: &[DMatrix<f64>]| -> Option<f64> {
+        let value_at = |roots: &[DMatrix<f64>], fixed: &DMatrix<f64>| -> Option<f64> {
             let (last, rest) = roots.split_last()?;
             let sigmas: Vec<DMatrix<f64>> = rest.iter().map(|l| symmetrised(&(l * l))).collect();
             let residual = symmetrised(&(last * last));
-            self.profile_loglik(rotated, &sigmas, &residual)
+            if complete {
+                self.profile_loglik(&imputed.rotated, &sigmas, &residual)
+            } else {
+                Some(
+                    self.expectation(prepared, &sigmas, &residual, fixed, false)?
+                        .loglik,
+                )
+            }
         };
+        let at = value_at(&roots, fixed)?;
 
         let mut worst = 0.0_f64;
         for which in 0..roots.len() {
@@ -994,8 +1704,21 @@ impl RepeatedModel {
                         up[which][(b, a)] += GRADIENT_STEP;
                         down[which][(b, a)] -= GRADIENT_STEP;
                     }
-                    let high = value_at(&up)?;
-                    let low = value_at(&down)?;
+                    let high = value_at(&up, fixed)?;
+                    let low = value_at(&down, fixed)?;
+                    worst = worst.max(((high - low) / (2.0 * GRADIENT_STEP)).abs());
+                }
+            }
+        }
+        if !complete {
+            for a in 0..self.covariates {
+                for t in 0..self.positions {
+                    let mut up = fixed.clone();
+                    let mut down = fixed.clone();
+                    up[(a, t)] += GRADIENT_STEP;
+                    down[(a, t)] -= GRADIENT_STEP;
+                    let high = value_at(&roots, &up)?;
+                    let low = value_at(&roots, &down)?;
                     worst = worst.max(((high - low) / (2.0 * GRADIENT_STEP)).abs());
                 }
             }
@@ -1018,6 +1741,25 @@ fn shares(components: &[DMatrix<f64>], residual: &DMatrix<f64>) -> Vec<Vec<f64>>
             }
         })
         .collect()
+}
+
+/// Add one rotated row's share of a family's covariance into that row's own
+/// `T x T` total.
+///
+/// The weight sits on the raw row and so is the same at every position, which
+/// is what makes this a gather by position rather than a matrix product.
+fn gather(target: &mut DMatrix<f64>, family: &FamilySpread, weights: &[f64]) {
+    for (a, &(_, t)) in family.coordinates.iter().enumerate() {
+        if weights[a] == 0.0 {
+            continue;
+        }
+        for (b, &(_, u)) in family.coordinates.iter().enumerate() {
+            if weights[b] == 0.0 {
+                continue;
+            }
+            target[(t, u)] += weights[a] * weights[b] * family.covariance[(a, b)];
+        }
+    }
 }
 
 /// Lay the whole parameter set out end to end, so that two of them can be
@@ -1174,8 +1916,12 @@ fn rotate_replicates(
 
 #[cfg(test)]
 mod tests {
-    use super::{LN_2PI, RepeatedModel, helmert_matrix, rotate_replicates, symmetric_square_root};
+    use super::{
+        Imputed, Known, LN_2PI, Prepared, RepeatedModel, Rotated, helmert_matrix,
+        rotate_replicates, symmetric_square_root,
+    };
     use nalgebra::{DMatrix, DVector};
+    use statrs::distribution::Normal;
 
     /// A small pedigree: `families` unrelated sets of two parents and two
     /// children, which gives a relationship matrix with real off-diagonal
@@ -1418,6 +2164,134 @@ mod tests {
         assert!((quick - slow).abs() < 1e-9, "rotated {quick}, dense {slow}");
     }
 
+    /// **The censored likelihood, written out by hand.** One value that
+    /// reached a limit, in a family of four people with two replicates apiece
+    /// at two positions, so that the censored coordinate is correlated with
+    /// fifteen measured ones through three different levels at once. The answer
+    /// has to be the density of what was measured times the probability that
+    /// the one unmeasured value lies where it is known to lie, **given** the
+    /// rest -- and the conditional part is the part that is easy to get wrong,
+    /// because it is what stops the censored record being counted twice.
+    #[test]
+    fn the_censored_likelihood_is_the_density_and_the_region_given_it() {
+        let replicates = 2;
+        let positions = 2;
+        let a = relationship(1);
+        let people = a.nrows();
+        let identity = DMatrix::<f64>::identity(people, people);
+        let rows = people * replicates;
+        let x = design(rows);
+        let y = response(rows, positions);
+        let model = RepeatedModel::build(&[a.clone(), identity.clone()], &x, replicates, positions)
+            .expect("the model should build");
+
+        let make = |scale: f64, off: f64| {
+            let mut m = DMatrix::<f64>::identity(positions, positions) * scale;
+            m[(0, 1)] = off;
+            m[(1, 0)] = off;
+            m
+        };
+        let sigmas = vec![make(0.7, 0.25), make(0.4, -0.1)];
+        let residual = make(1.1, 0.3);
+        let mut fixed = DMatrix::<f64>::zeros(2, positions);
+        for t in 0..positions {
+            fixed[(0, t)] = 0.3 * (t as f64) - 0.4;
+            fixed[(1, t)] = 0.2 - 0.05 * (t as f64);
+        }
+
+        // One value reached a limit a little under what it would have been.
+        let (censored_row, censored_position) = (5, 1);
+        let limit = y[(censored_row, censored_position)] - 0.4;
+        let mut known = Vec::with_capacity(rows * positions);
+        for row in 0..rows {
+            for position in 0..positions {
+                known.push(if row == censored_row && position == censored_position {
+                    Known::Above(limit)
+                } else {
+                    Known::Value(y[(row, position)])
+                });
+            }
+        }
+        let prepared = Prepared {
+            known,
+            rotated: None,
+        };
+        let got = model
+            .expectation(&prepared, &sigmas, &residual, &fixed, true)
+            .expect("the expectation step should run");
+
+        // The same thing with no rotation and no conditioning machinery: build
+        // the family covariance, take the measured block out of it, and do the
+        // regression by hand.
+        let size = rows * positions;
+        let mut covariance = DMatrix::<f64>::zeros(size, size);
+        for row_one in 0..rows {
+            for row_two in 0..rows {
+                for t in 0..positions {
+                    for u in 0..positions {
+                        let mut value = a[(row_one / replicates, row_two / replicates)]
+                            * sigmas[0][(t, u)]
+                            + identity[(row_one / replicates, row_two / replicates)]
+                                * sigmas[1][(t, u)];
+                        if row_one == row_two {
+                            value += residual[(t, u)];
+                        }
+                        covariance[(row_one * positions + t, row_two * positions + u)] = value;
+                    }
+                }
+            }
+        }
+        let expected = &x * &fixed;
+        let censored = censored_row * positions + censored_position;
+        let measured: Vec<usize> = (0..size).filter(|&at| at != censored).collect();
+
+        let block = DMatrix::from_fn(measured.len(), measured.len(), |i, j| {
+            covariance[(measured[i], measured[j])]
+        });
+        let factor = block
+            .cholesky()
+            .expect("the measured block should factorise");
+        let logdet = 2.0 * factor.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+        let deviation = DVector::from_iterator(
+            measured.len(),
+            measured.iter().map(|&at| {
+                let (row, position) = (at / positions, at % positions);
+                y[(row, position)] - expected[(row, position)]
+            }),
+        );
+        let solved = factor.solve(&deviation);
+        let quadratic = (deviation.transpose() * &solved)[(0, 0)];
+        let density = -0.5 * (measured.len() as f64 * LN_2PI + logdet + quadratic);
+
+        let cross = DMatrix::from_fn(1, measured.len(), |_, j| {
+            covariance[(censored, measured[j])]
+        });
+        let conditional_mean = expected[(censored_row, censored_position)] + (&cross * &solved)[0];
+        let conditional_variance =
+            covariance[(censored, censored)] - (&cross * factor.solve(&cross.transpose()))[(0, 0)];
+        let normal = Normal::new(0.0, 1.0).expect("the standard normal exists");
+        let region = statrs::distribution::ContinuousCDF::cdf(
+            &normal,
+            (conditional_mean - limit) / conditional_variance.sqrt(),
+        )
+        .ln();
+
+        assert!(
+            (got.loglik - (density + region)).abs() < 1e-9,
+            "{} against {} = density {density} + region {region}",
+            got.loglik,
+            density + region
+        );
+        // And the value itself is filled in above its limit, where it is known
+        // to be, rather than at it.
+        let filled = got.rotated.mean.nrows();
+        assert!(filled > 0);
+        assert!(
+            got.spread.is_some(),
+            "something was unmeasured, so something is uncertain"
+        );
+    }
+
     #[test]
     fn a_second_structured_component_is_refused_rather_than_approximated() {
         let a = relationship(2);
@@ -1452,12 +2326,22 @@ mod tests {
         let (mut sigmas, mut residual, mut fixed) = model
             .starting_values(&rotated)
             .expect("a start should exist");
+        // Nothing is unmeasured here, so the expectation step has nothing to
+        // impute and every rotated row is known exactly.
+        let complete = |rotated: &Rotated| Imputed {
+            rotated: Rotated {
+                mean: rotated.mean.clone(),
+                contrast: rotated.contrast.clone(),
+            },
+            spread: None,
+            loglik: 0.0,
+        };
         let mut previous = model
             .loglik_at(&rotated, &sigmas, &residual, &fixed)
             .expect("the start should evaluate");
         for step in 0..200 {
             let (next_sigmas, next_residual, next_fixed) = model
-                .one_iteration(&rotated, &sigmas, &residual, &fixed)
+                .one_iteration(&complete(&rotated), &sigmas, &residual, &fixed)
                 .expect("an iteration should evaluate");
             let next = model
                 .loglik_at(&rotated, &next_sigmas, &next_residual, &next_fixed)

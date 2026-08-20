@@ -6,7 +6,7 @@ reasoning for a third time, in the same direction as ADR 0007.**
 **Status:** proposed 19 August 2026, before any code for it existed. **Accepted
 20 August 2026**, once the ladder this record made a precondition had been
 climbed and the complete-data skeleton agreed with `ComponentModel`. Amended the
-same day by *What the skeleton changed*, below.
+same day by *What the skeleton changed* and *What censoring changed*, below.
 
 > **This model has no name yet.** It is described here by what it does, because
 > naming it is deferred until it works and the name is meant to say what the
@@ -291,3 +291,119 @@ opens with. `RepeatedModel::build` checks the second component is diagonal in
 the first's basis and refuses otherwise, rather than approximating. A household
 matrix, when one exists, will need a dense per-family route and the cost that
 goes with it — which is a decision to take then, with the matrix in hand.
+
+## What censoring changed
+
+*Amendment, 20 August 2026, after building the expectation step over censored
+and never-measured values. The decision above stands. Two things in it need
+saying more precisely, one of the four checks it asks for cannot be run as
+written, and its arithmetic about the route it rejects was pessimistic.*
+
+**The moments were there and were being thrown away.** The record says the
+E-step "is what the sequential truncation already computes -- `mendell_elston`
+maintains a running mean and covariance updated for having conditioned on each
+coordinate in turn". True, and that function returned only the probability and
+discarded the rest. `truncated_moments` in `src/liability.rs` is the same
+arithmetic keeping it, and a test asserts the two return the same log
+probability **to the last bit**, so they cannot drift apart quietly. The one
+difference is that it updates every coordinate rather than only those it has not
+yet reached, which changes no probability -- the value at step `i` reads only
+coordinate `i`'s own mean and variance -- and is what lets a coordinate already
+processed pick up what conditioning on a later one says about it.
+
+**The likelihood and the expectation step use different routines, on purpose.**
+The likelihood takes its region probability from `region_log_probability`, which
+is exact at one and two coordinates where the sequential update is not, and
+which is what every other censored model in the crate reports. The expectation
+step has only the sequential update, because only it has moments. So the two
+halves of an iteration are not approximations of the same order, and where a
+family carries one censored value the expectation step is not an approximation
+at all -- it is the ordinary truncated normal, and expectation-maximisation is
+exact, and the likelihood cannot fall. Above one it can, and the fit record's
+`monotone` is there to say whether it did.
+
+**Filling a value in is not the same as knowing it.** Each rotated row carries
+the covariance of its own imputation, and every statistic the maximisation forms
+is quadratic in the data, so each takes that covariance in place of an outer
+product it would otherwise treat as certain. Leave it out and the variances come
+back too small. The test that would catch it is the sharpest one here: a value
+that was never measured contributes nothing to the likelihood, so a fit that
+imputes it must land exactly where `ComponentModel` given only the rest lands.
+It does, in the variances, the fixed effects and the log-likelihood.
+
+### The `TobitModel` check cannot be run as this record specifies
+
+The list of four checks asks for "`TobitModel` reproducing a one-position
+slice". It cannot, for a structural reason rather than an incidental one.
+
+`TobitModel` refuses a relationship matrix with an off-diagonal above 0.9,
+deliberately: its two-person quadrature loses accuracy as the correlation
+approaches one. **A replicate design always produces exactly one there**, because
+the two ears of a person share the whole of that person's genotype. Written over
+rows, `A ⊗ J₂` carries ones off the diagonal wherever two rows are the same
+person, so the two models cannot be pointed at the same matrix. Relaxing the
+guard is not the answer; it is there for a reason that has nothing to do with
+this model.
+
+They can be pointed at the same *analysis*. Leave the second replicate of every
+person unmeasured and what remains is one record per person with a genetic
+component and a residual, on the plain relationship matrix `TobitModel` accepts.
+The repeated model still has to impute the untested ear, condition the censored
+values on what was measured and get the region right; it simply has an
+independent answer to be checked against while doing it. With one censored
+record per family the two agree to 5e-3 in the heritability and 1e-2 in the
+log-likelihood. With two per family, where the expectation step is approximate
+and the likelihood still is not, they agree to 0.02 in the heritability.
+
+That is weaker than the record asked for and the difference is worth being plain
+about: **it does not exercise the replicate structure at all.** What does is a
+test that writes the censored likelihood out by hand for one family of four
+people with two replicates apiece at two positions, and finds it equal to the
+density of what was measured times the probability of the region the one
+censored value lies in **given** that. The conditioning is the part that is easy
+to get wrong and the part that stops a censored record being counted twice.
+
+### What it costs, measured rather than counted
+
+On a roster with SAFS's family sizes -- 402 people, largest family 75, two
+replicates, seventeen positions, 13,668 observations of which 2,073 reached a
+limit, and 386 censored values in the largest family:
+
+| | |
+|---|---|
+| one evaluation of the observed-data likelihood | **130 ms** |
+| one EM iteration, which is three of them | **0.4 s** |
+| the gradient reading at the fixed point | **2.3 minutes** |
+
+That is about 77 Gflop/s against this record's estimate of 9.4 Gflop per
+evaluation, and the two agree well. **The throughput assumption did not.** This
+record put the direct route at "20 to 60 hours" per fit by assuming 10 Gflop/s;
+at the rate actually reached it is nearer one to three hours. The decision is
+unchanged -- an ECM fit is minutes where the direct route is hours, and the
+profile intervals the paper needs multiply both -- but the record overstated the
+margin and should not be quoted for the larger number.
+
+Part of the difference is a fix rather than a measurement. The expectation step
+factorises one dense covariance per family, 2,550 rows for the largest, and it
+was using `nalgebra` for it. `src/dense.rs` had already measured `faer` at
+**eighteen times** `nalgebra` by 1,800 rows and provided `DenseFactor` to choose
+between them by size. Using it was a one-line change to the one factorisation
+that decides what a fit costs.
+
+**The gradient reading, not the iterations, is what the kernel has to fix.** With
+a free covariance at seventeen positions the fit carries 459 variances and 68
+fixed effects, so the reading is 1,055 evaluations -- the same arithmetic this
+record used to reject the direct route, with the difference that ECM needs it
+once rather than once per step. It is affordable once. It stops being a rounding
+error if a fit converges quickly, and it is a second reason for the covariance
+kernel beyond the statistical one: 459 variances become 51 and 6.
+
+Nobody should fit the unstructured model at seventeen positions in any case.
+Four hundred and two people do not determine 459 variances, the module says so,
+and a fit of it was left running for an hour without converging, which is what
+being badly posed looks like from the outside.
+
+**There is no repeatable check of any of this yet.** The numbers above came from
+a scratch harness that was deleted, because the crate's cost checks live in
+`checks/` and are reached through Python, and this model has no Python interface
+until the kernel gives it something worth calling.

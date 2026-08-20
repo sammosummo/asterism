@@ -12,7 +12,7 @@
 //! near the code. Expectation-maximisation and a bounded quasi-Newton search
 //! share no arithmetic at all, so agreement between them is worth something.
 
-use asterism::{ComponentModel, RepeatedModel};
+use asterism::{Censoring, ComponentModel, Known, RepeatedModel, TobitModel};
 use nalgebra::{DMatrix, DVector};
 
 /// splitmix64 and Box-Muller, so the data can be reproduced from the seed.
@@ -378,4 +378,299 @@ fn a_singular_relationship_matrix_is_handled_rather_than_divided_by() {
         ours.loglik,
         theirs.loglik
     );
+}
+
+/// Keep only some rows of a square matrix.
+fn subset(matrix: &DMatrix<f64>, keep: &[usize]) -> DMatrix<f64> {
+    DMatrix::from_fn(keep.len(), keep.len(), |i, j| matrix[(keep[i], keep[j])])
+}
+
+#[test]
+fn a_value_never_measured_is_imputed_to_the_answer_dropping_it_would_give() {
+    // **This is the test that says the imputation is honest.** A value that was
+    // never measured contributes nothing to the likelihood, so a model that
+    // imputes it must land exactly where a model given only the rest lands. If
+    // the expectation step treated an imputed value as though it had been
+    // measured -- which is what leaving out the covariance of the imputation
+    // would do -- the variances would come back too small and this would fail.
+    let replicates = 2;
+    let data = simulate(50, replicates, 1, 0.5, 0.2, 0.3, 20_260_824);
+    let people = data.relationship.nrows();
+    let identity = DMatrix::<f64>::identity(people, people);
+    let rows = people * replicates;
+
+    // Every seventh row was never measured, which leaves some people with one
+    // replicate, some with both, and a few families short of a whole person.
+    let mut known: Vec<Known> = (0..rows)
+        .map(|row| Known::Value(data.response[(row, 0)]))
+        .collect();
+    let mut kept = Vec::new();
+    for row in 0..rows {
+        if row % 7 == 3 {
+            known[row] = Known::Missing;
+        } else {
+            kept.push(row);
+        }
+    }
+    assert!(kept.len() < rows && kept.len() > rows / 2);
+
+    let model = RepeatedModel::build(
+        &[data.relationship.clone(), identity.clone()],
+        &data.design,
+        replicates,
+        1,
+    )
+    .expect("the model should build");
+    let ours = model.fit_known(&known).expect("the fit should run");
+    assert!(ours.monotone, "the likelihood fell during the search");
+    assert!(
+        ours.converged,
+        "|g| = {} after {} iterations",
+        ours.scaled_gradient, ours.iterations
+    );
+
+    let general = ComponentModel::build(
+        &[
+            subset(&expand(&data.relationship, replicates), &kept),
+            subset(&expand(&identity, replicates), &kept),
+        ],
+        &DMatrix::from_fn(kept.len(), data.design.ncols(), |i, j| {
+            data.design[(kept[i], j)]
+        }),
+    )
+    .expect("the component model should build");
+    let y = DVector::from_iterator(kept.len(), kept.iter().map(|&row| data.response[(row, 0)]));
+    let theirs = general
+        .fit(&y, false)
+        .expect("the component fit should run");
+
+    let mine = [
+        ours.component_covariances[0][(0, 0)],
+        ours.component_covariances[1][(0, 0)],
+        ours.residual_covariance[(0, 0)],
+    ];
+    for (index, (got, want)) in mine.iter().zip(&theirs.variances).enumerate() {
+        assert!(
+            (got - want).abs() < 1e-4 * want.abs().max(1.0),
+            "component {index}: {got} against {want}"
+        );
+    }
+    assert!(
+        (ours.loglik - theirs.loglik).abs() < 1e-5,
+        "log-likelihood {} against {}, difference {}",
+        ours.loglik,
+        theirs.loglik,
+        ours.loglik - theirs.loglik
+    );
+    assert_eq!(ours.sequential_dimension, 0, "nothing here is censored");
+}
+
+/// One ear tested and the other never tested, with some of the tested ones
+/// having reached a limit.
+///
+/// # Why the comparison is set up this way
+///
+/// `TobitModel` refuses a relationship matrix with an off-diagonal above 0.9,
+/// deliberately: its two-person quadrature loses accuracy as the correlation
+/// approaches one. **A replicate design always produces exactly one there** --
+/// the two ears of a person share the whole of that person's genotype -- so the
+/// two models cannot be pointed at the same expanded matrix.
+///
+/// They can be pointed at the same *analysis*. Leave the second replicate of
+/// every person unmeasured and what remains is one record per person with a
+/// genetic component and a residual, which is precisely the model `TobitModel`
+/// fits, on the plain relationship matrix it accepts. The repeated model still
+/// has to impute the untested ear, condition the censored values on what was
+/// measured, and get the region right; it simply has an independent answer to
+/// be checked against while doing it.
+struct OneEar {
+    known: Vec<Known>,
+    value: Vec<f64>,
+    censoring: Vec<Censoring>,
+    limit: Vec<f64>,
+    design: DMatrix<f64>,
+    share_of_tested: f64,
+}
+
+fn one_ear(data: &Simulated, replicates: usize, every: usize, offset: usize) -> OneEar {
+    let rows = data.response.nrows();
+    let people = rows / replicates;
+    let mut known = Vec::with_capacity(rows);
+    let mut value = Vec::with_capacity(people);
+    let mut censoring = Vec::with_capacity(people);
+    let mut limit = Vec::with_capacity(people);
+    let mut design = DMatrix::<f64>::zeros(people, data.design.ncols());
+    let mut hit = 0.0;
+    for person in 0..people {
+        let tested = person * replicates;
+        let observed = data.response[(tested, 0)];
+        // The limit sits a little below the value, so the record is genuinely
+        // censored rather than censored at a limit it never reached.
+        if person % every == offset {
+            let at = observed - 0.35;
+            known.push(Known::Above(at));
+            value.push(0.0);
+            censoring.push(Censoring::Above);
+            limit.push(at);
+            hit += 1.0;
+        } else {
+            known.push(Known::Value(observed));
+            value.push(observed);
+            censoring.push(Censoring::Measured);
+            limit.push(0.0);
+        }
+        for replicate in 1..replicates {
+            let _ = replicate;
+            known.push(Known::Missing);
+        }
+        for column in 0..data.design.ncols() {
+            design[(person, column)] = data.design[(tested, column)];
+        }
+    }
+    OneEar {
+        known,
+        value,
+        censoring,
+        limit,
+        design,
+        share_of_tested: hit / people as f64,
+    }
+}
+
+#[test]
+fn one_censored_record_per_family_reproduces_the_tobit_model() {
+    // With one censored record in a family the region is one-dimensional, where
+    // the sequential update is not an approximation at all: it is the ordinary
+    // truncated normal, exactly. So this is exact expectation-maximisation for
+    // this likelihood, and it must land where `TobitModel` lands, by an
+    // arithmetic it shares nothing of.
+    //
+    // A family is four people, so censoring every fourth person puts exactly
+    // one in each.
+    let replicates = 2;
+    let data = simulate(50, replicates, 1, 0.5, 0.0, 0.4, 20_260_825);
+    let cut = one_ear(&data, replicates, 4, 2);
+    assert!(
+        (cut.share_of_tested - 0.25).abs() < 1e-12,
+        "censored share of those tested {}",
+        cut.share_of_tested
+    );
+
+    // One person-level component and the residual, which is the model
+    // `TobitModel` fits.
+    let model = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        1,
+    )
+    .expect("the model should build");
+    let ours = model.fit_known(&cut.known).expect("the fit should run");
+    assert_eq!(
+        ours.sequential_dimension, 1,
+        "the point of this case is that no family needs more than one"
+    );
+    // At one dimension the expectation step is exact, so this is ordinary
+    // expectation-maximisation and the likelihood cannot fall. Above one it can
+    // in principle, which is why the same assertion is not made in the next
+    // test: there a fall would be news rather than a fault.
+    assert!(ours.monotone, "the likelihood fell during the search");
+
+    let theirs = TobitModel::build(
+        &data.relationship,
+        &cut.value,
+        &cut.censoring,
+        &cut.limit,
+        &cut.design,
+    )
+    .expect("the tobit model should build")
+    .fit()
+    .expect("the tobit fit should run");
+
+    let genetic = ours.component_covariances[0][(0, 0)];
+    let heritability = genetic / (genetic + ours.residual_covariance[(0, 0)]);
+    assert!(
+        (heritability - theirs.heritability).abs() < 5e-3,
+        "heritability {heritability} against {}, difference {}",
+        theirs.heritability,
+        heritability - theirs.heritability
+    );
+    assert!(
+        (ours.loglik - theirs.loglik).abs() < 1e-2,
+        "log-likelihood {} against {}, difference {}",
+        ours.loglik,
+        theirs.loglik,
+        ours.loglik - theirs.loglik
+    );
+}
+
+#[test]
+fn several_censored_records_per_family_still_track_the_tobit_model() {
+    // Here two records in a family are censored, so the region is
+    // two-dimensional. The likelihood is still exact there -- the region
+    // probability is the bivariate distribution function and not the sequential
+    // update -- but **the expectation step is not**, because the moments have
+    // only the sequential update to come from. So the two need not agree
+    // exactly. What they must not do is disagree by enough to matter.
+    let replicates = 2;
+    let data = simulate(50, replicates, 1, 0.5, 0.0, 0.4, 20_260_826);
+    let cut = one_ear(&data, replicates, 2, 1);
+    assert!((cut.share_of_tested - 0.5).abs() < 1e-12);
+
+    let model = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        1,
+    )
+    .expect("the model should build");
+    let ours = model.fit_known(&cut.known).expect("the fit should run");
+    assert_eq!(ours.sequential_dimension, 2);
+
+    let theirs = TobitModel::build(
+        &data.relationship,
+        &cut.value,
+        &cut.censoring,
+        &cut.limit,
+        &cut.design,
+    )
+    .expect("the tobit model should build")
+    .fit()
+    .expect("the tobit fit should run");
+
+    let genetic = ours.component_covariances[0][(0, 0)];
+    let heritability = genetic / (genetic + ours.residual_covariance[(0, 0)]);
+    assert!(
+        (heritability - theirs.heritability).abs() < 0.02,
+        "heritability {heritability} against {}, difference {}",
+        theirs.heritability,
+        heritability - theirs.heritability
+    );
+}
+
+#[test]
+fn nothing_censored_takes_the_same_road_as_the_uncensored_fit() {
+    // `fit` and `fit_known` must be the same function reached two ways, and the
+    // fast path that skips the dense expectation step must not change the
+    // answer it skips to.
+    let replicates = 2;
+    let data = simulate(30, replicates, 2, 0.5, 0.2, 0.3, 20_260_827);
+    let people = data.relationship.nrows();
+    let identity = DMatrix::<f64>::identity(people, people);
+    let model = RepeatedModel::build(&[data.relationship, identity], &data.design, replicates, 2)
+        .expect("the model should build");
+
+    let direct = model.fit(&data.response).expect("the fit should run");
+    let mut known = Vec::new();
+    for row in 0..data.response.nrows() {
+        for position in 0..2 {
+            known.push(Known::Value(data.response[(row, position)]));
+        }
+    }
+    let through = model.fit_known(&known).expect("the fit should run");
+    assert_eq!(direct.loglik, through.loglik);
+    assert_eq!(direct.iterations, through.iterations);
+    for position in 0..2 {
+        assert_eq!(direct.censored_shares[position], 0.0);
+    }
 }
