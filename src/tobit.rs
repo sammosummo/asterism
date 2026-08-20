@@ -128,6 +128,25 @@ pub struct TobitFit {
 
 /// Chi-square on one degree of freedom at 0.95.
 const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+/// The Self-Liang 50:50 critical value. Under a null that sits on the
+/// parameter's bound, half the reference distribution's mass is at nought, so
+/// the correct threshold is not the plain chi-square one above. ADR 0004
+/// records what the difference costs: taking an end of nought to mean the
+/// interval contains nought gives 0.977 coverage at a true heritability of
+/// nought, where this gives 0.953.
+const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
+
+/// The result of testing the heritability against nought.
+#[derive(Clone, Debug)]
+pub struct TobitTest {
+    pub statistic: f64,
+    pub p_value: f64,
+    /// The reference distribution the p-value was read against, as data on the
+    /// record rather than as a contract term.
+    pub rule: &'static str,
+    pub null_loglik: f64,
+    pub alternative_loglik: f64,
+}
 
 /// A profile-likelihood interval for the heritability.
 #[derive(Clone, Debug)]
@@ -140,6 +159,13 @@ pub struct TobitInterval {
     pub lower_at_bound: bool,
     pub upper_at_bound: bool,
     pub level: f64,
+    /// Whether a boundary point belongs to the interval, decided by the
+    /// Self-Liang mixture rather than by the end having landed on the bound.
+    /// Present only where the corresponding end is on its bound and the fit
+    /// there could be made; absent means nobody measured it, not that the
+    /// question does not apply.
+    pub contains_lower_bound: Option<bool>,
+    pub contains_upper_bound: Option<bool>,
     /// How many profile fits failed or did not converge. Each one widened the
     /// interval rather than narrowing it, which is the safe direction, but a
     /// large count means the interval rests on fewer points than it looks.
@@ -428,26 +454,63 @@ impl TobitModel {
     /// # Errors
     ///
     /// Returns a stable code where the free fit fails.
+    /// The heritability against nought.
+    ///
+    /// The null sits on the parameter's bound, so the reference is the
+    /// Self-Liang 50:50 mixture of chi-square on nought and one degrees of
+    /// freedom and not a plain chi-square. That is the same null ADR 0004
+    /// calibrates the interval's boundary point against, and the same rule the
+    /// liability model reports for the same reason.
+    ///
+    /// The statistic and the p-value both come from `deviance`, which honours
+    /// the point mass at nought: two searches that land on the same likelihood
+    /// give a deviance that is rounding rather than evidence, and that reads as
+    /// a p-value of one rather than of a half.
+    pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
+        let free = self.fit()?;
+        let null = self.fit_holding(Some(0.0))?;
+        let statistic = crate::deviance::deviance(free.loglik, null.loglik);
+        Ok(TobitTest {
+            statistic,
+            p_value: crate::deviance::p_value(statistic, |value| {
+                0.5 * crate::deviance::chi2_one_df_upper_tail(value)
+            }),
+            rule: "mixture_50_50",
+            null_loglik: null.loglik,
+            alternative_loglik: free.loglik,
+        })
+    }
+
     pub fn heritability_interval(&self) -> Result<TobitInterval, &'static str> {
         let free = self.fit()?;
         let estimate = free.heritability;
         let at_estimate = self.fit_holding(Some(estimate))?.loglik;
-        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
 
         let failures = std::cell::Cell::new(0usize);
-        let outside = |value: f64| match self.fit_holding(Some(value)) {
-            Ok(fit) if fit.converged => fit.loglik < threshold,
-            _ => {
-                failures.set(failures.get() + 1);
-                false
+        // The deviance rather than a bare verdict, because the boundary rule
+        // below needs the number and not only whether it crossed.
+        let deviance_at = |value: f64| -> Option<f64> {
+            match self.fit_holding(Some(value)) {
+                Ok(fit) if fit.converged => Some(2.0 * (at_estimate - fit.loglik)),
+                _ => {
+                    failures.set(failures.get() + 1);
+                    None
+                }
             }
         };
-        let (lower, lower_at_bound) = if outside(0.0) {
+        let outside = |value: f64| deviance_at(value).is_some_and(|d| d > CHI2_ONE_95);
+
+        // Each bound is fitted once and the answer used twice: to place the
+        // end, and to decide whether the bound itself belongs to the interval.
+        let at_zero = deviance_at(0.0);
+        let at_one = deviance_at(1.0);
+
+        let (lower, lower_at_bound) = if at_zero.is_some_and(|d| d > CHI2_ONE_95) {
             (crate::liability::bisect(0.0, estimate, &outside), false)
         } else {
             (0.0, true)
         };
-        let (upper, upper_at_bound) = if outside(1.0) {
+        let (upper, upper_at_bound) = if at_one.is_some_and(|d| d > CHI2_ONE_95) {
             (crate::liability::bisect(1.0, estimate, &outside), false)
         } else {
             (1.0, true)
@@ -459,6 +522,16 @@ impl TobitModel {
             lower_at_bound,
             upper_at_bound,
             level: 0.95,
+            contains_lower_bound: if lower == 0.0 {
+                at_zero.map(|d| d <= MIXTURE_CRIT)
+            } else {
+                None
+            },
+            contains_upper_bound: if upper == 1.0 {
+                at_one.map(|d| d <= MIXTURE_CRIT)
+            } else {
+                None
+            },
             profile_failures: failures.get(),
             censored_share: self.censored_share(),
         })
