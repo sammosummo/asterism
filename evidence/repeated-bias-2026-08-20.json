@@ -1,0 +1,127 @@
+{
+  "what": "whether the region approximation biases the estimates, or only displaces the gradient",
+  "date": "2026-08-20",
+  "people": 240,
+  "families": 60,
+  "replicates_per_person": 2,
+  "positions": 3,
+  "replicates": 200,
+  "truth": {
+    "heritability": 0.5,
+    "genetic_correlation": 0.6,
+    "residual_correlation": 0.25,
+    "total_variance": 4.0
+  },
+  "allowed_extra_bias": 0.025,
+  "by_censored_share": {
+    "0.0": {
+      "replicates": 200,
+      "refused": 0,
+      "heritability": {
+        "mean": 0.49883181323366804,
+        "standard_error": 0.002279416606572224,
+        "bias": -0.0011681867663319578
+      },
+      "genetic_correlation": {
+        "mean": 0.6055422308355561,
+        "standard_error": 0.0037756917481839066,
+        "bias": 0.005542230835556161
+      },
+      "residual_correlation": {
+        "mean": 0.24977402731429457,
+        "standard_error": 0.0029277053532794878,
+        "bias": -0.00022597268570542783
+      },
+      "scaled_gradient": 1.451895812812467e-07,
+      "sequential_dimension": 0.0,
+      "monotone_share": 1.0
+    },
+    "0.1": {
+      "replicates": 200,
+      "refused": 0,
+      "heritability": {
+        "mean": 0.4990306187320243,
+        "standard_error": 0.0023275101105579414,
+        "bias": -0.0009693812679756886,
+        "paired_shift": 0.00019880549835621513,
+        "paired_shift_error": 0.0003837247008228527
+      },
+      "genetic_correlation": {
+        "mean": 0.6054459099143967,
+        "standard_error": 0.0038680801321098078,
+        "bias": 0.0054459099143967515,
+        "paired_shift": -9.632092115932162e-05,
+        "paired_shift_error": 0.0006348836189643313
+      },
+      "residual_correlation": {
+        "mean": 0.24928649612086473,
+        "standard_error": 0.0030109484369144784,
+        "bias": -0.0007135038791352688,
+        "paired_shift": -0.00048753119342986005,
+        "paired_shift_error": 0.0006379922928188387
+      },
+      "scaled_gradient": 0.0012994191753931436,
+      "sequential_dimension": 11.125,
+      "monotone_share": 0.69
+    },
+    "0.25": {
+      "replicates": 200,
+      "refused": 0,
+      "heritability": {
+        "mean": 0.49882942445252,
+        "standard_error": 0.002368766376445082,
+        "bias": -0.0011705755474800128,
+        "paired_shift": -2.3887811480707845e-06,
+        "paired_shift_error": 0.0008018996269015162
+      },
+      "genetic_correlation": {
+        "mean": 0.6078237087261988,
+        "standard_error": 0.004091286412727482,
+        "bias": 0.007823708726198864,
+        "paired_shift": 0.002281477890642801,
+        "paired_shift_error": 0.0014393080291719234
+      },
+      "residual_correlation": {
+        "mean": 0.24813081984364127,
+        "standard_error": 0.0032294043251214375,
+        "bias": -0.0018691801563587296,
+        "paired_shift": -0.0016432074706532642,
+        "paired_shift_error": 0.0012501207248433726
+      },
+      "scaled_gradient": 0.004191814679493119,
+      "sequential_dimension": 17.29,
+      "monotone_share": 0.63
+    },
+    "0.5": {
+      "replicates": 200,
+      "refused": 0,
+      "heritability": {
+        "mean": 0.4953828064871349,
+        "standard_error": 0.0026284326802898184,
+        "bias": -0.004617193512865103,
+        "paired_shift": -0.003449006746533152,
+        "paired_shift_error": 0.00165951550006045
+      },
+      "genetic_correlation": {
+        "mean": 0.6200713174945139,
+        "standard_error": 0.005331886057375823,
+        "bias": 0.020071317494513963,
+        "paired_shift": 0.014529086658957753,
+        "paired_shift_error": 0.0032698961187109274
+      },
+      "residual_correlation": {
+        "mean": 0.23798158813388967,
+        "standard_error": 0.00376001848946425,
+        "bias": -0.012018411866110329,
+        "paired_shift": -0.011792439180404903,
+        "paired_shift_error": 0.0022774828103903776
+      },
+      "scaled_gradient": 0.010854999356880475,
+      "sequential_dimension": 22.33,
+      "monotone_share": 0.43
+    }
+  },
+  "note": "every cell is judged against the cell with nothing censored and not against the truth, because maximum likelihood is already biased downward for a variance component and that is not what this is asking about. A replicate index gives the same data at every share, so the shift is a paired difference and its error is the error of that difference.",
+  "passed": true,
+  "failures": []
+}

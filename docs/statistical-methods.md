@@ -370,7 +370,9 @@ in a family and Mendell-Elston sequential truncation above; the moments the
 expectation step uses have only the sequential update. So the fixed point of the
 one need not be the maximum of the other, and the fit's gradient reading grows
 with the share of the data that is censored rather than measuring the search.
-`docs/numerical-validation.md` measures it.
+`docs/numerical-validation.md` measures both it and what it costs: five
+orders of magnitude in the reading, against 0.015 in a correlation at half
+censored and nothing detectable at a tenth.
 
 **There is no interval and no test.** What an interval should be of is an open
 question, not an unwritten function.

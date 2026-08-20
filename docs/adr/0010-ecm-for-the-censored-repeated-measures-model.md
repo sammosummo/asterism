@@ -563,10 +563,43 @@ Two things follow.
   record chose "the observed-data likelihood stays the definition of correct",
   and the gradient reading is the price and the diagnostic at once.
 
-**What the sweep does not settle is whether the displacement biases the
-estimates.** They move by less than 0.02 in a heritability across the whole
-range and not monotonically, which is what sampling noise on one data set looks
-like -- but one data set cannot tell that from a bias. That measurement needs
-replicates and has not been made. It is the natural next thing and it does not
-need an interval, so it is available now in a way the coverage simulation is
-not.
+### What the displacement costs, measured
+
+The sweep says the gradient moves. `checks/repeated_bias.py` says what that
+does to the estimates, on 200 replicates with the cells **paired** -- a
+replicate index gives the same data at every censoring share, only the limits
+differ, so the shift between two cells is a paired difference and the sampling
+variation that dominates either cell on its own cancels out of it. Every cell is
+judged against the cell with nothing censored rather than against the truth,
+because maximum likelihood is already biased downward for a variance component
+and that is not the question.
+
+| censored | gradient | heritability | genetic corr | replicate corr |
+| --- | --- | --- | --- | --- |
+| none | 1.5e-07 | -- | -- | -- |
+| 10% | 1.3e-03 | +0.0002 ± 0.0004 | −0.0001 ± 0.0006 | −0.0005 ± 0.0006 |
+| 25% | 4.2e-03 | −0.0000 ± 0.0008 | +0.0023 ± 0.0014 | −0.0016 ± 0.0013 |
+| 50% | 1.1e-02 | −0.0034 ± 0.0017 | +0.0145 ± 0.0033 | −0.0118 ± 0.0023 |
+
+**The gradient grows five orders of magnitude and the largest thing that reaches
+an estimate is 0.015 in a correlation.** So the displacement this record
+predicted is real, the reading put in to detect it does detect it, and what it
+costs is about two orders of magnitude smaller than the reading makes it look.
+
+It is not nothing. At half censored every shift is several standard errors from
+nought and they have a direction -- the genetic correlation rising while the
+replicate-level one falls, as though the approximation moves covariance from the
+lower level to the upper one. At a tenth censored nothing is detectable at all.
+No fit was refused in any cell.
+
+**The number to read a position against is how much of that position was
+measured**, not the share over the whole design. This model's own data is about
+11 per cent censored overall and 52 and 75 per cent at 16 and 18 kHz, so the top
+two frequencies sit in the row where the shift is measurable and the rest do
+not. A genetic correlation quoted between 16 kHz and anything else carries it;
+one between 1 and 4 kHz does not.
+
+**This does not replace the coverage simulation and does not need an interval.**
+It says the estimator is very nearly unbiased where it is used. Whether an
+interval built on it covers is a separate question that cannot be asked until
+there is an interval to ask it of.

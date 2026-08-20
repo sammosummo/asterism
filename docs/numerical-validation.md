@@ -579,6 +579,7 @@ replicates apiece at two positions.
 
 ```sh
 uv run --no-project python checks/repeated_against_mcmcglmm.py
+uv run --no-project python checks/repeated_bias.py
 ```
 
 MCMCglmm is Bayesian where this is maximum likelihood, sampled where this is
@@ -622,11 +623,49 @@ one in the package: below `1e-6` only where nothing is censored. The check
 requires that case to converge, because there is nothing approximate in it, and
 reports the rest.
 
-What the sweep does not settle is whether the displacement biases the estimates.
-They move by less than 0.02 in a heritability across the whole range and not
-monotonically, which is what sampling noise on one data set looks like -- but one
-data set cannot tell that from a bias, and this is the one measurement that
-needs replicates. It has not been made.
+### What the displacement does to the estimates
+
+```sh
+uv run --no-project python checks/repeated_bias.py
+```
+
+The sweep above says the gradient moves. It cannot say whether the estimates
+do, because it runs on one data set and one data set cannot tell sampling noise
+from a bias. This can, and **the cells are paired**: a replicate index gives the
+same data at every censoring share, only the limits differ, so the shift between
+two cells is a paired difference and the sampling variation that dominates
+either cell on its own cancels out of it.
+
+Every cell is judged against the cell with nothing censored rather than against
+the truth, because maximum likelihood is already biased downward for a variance
+component -- that is why REML exists, and why REML is not available here -- and
+that is not the question.
+
+**On 200 replicates of 240 people, three positions, free covariance:**
+
+| censored | gradient | heritability | genetic corr | replicate corr |
+| --- | --- | --- | --- | --- |
+| none | 1.5e-07 | -- | -- | -- |
+| 10% | 1.3e-03 | +0.0002 ± 0.0004 | −0.0001 ± 0.0006 | −0.0005 ± 0.0006 |
+| 25% | 4.2e-03 | −0.0000 ± 0.0008 | +0.0023 ± 0.0014 | −0.0016 ± 0.0013 |
+| 50% | 1.1e-02 | −0.0034 ± 0.0017 | +0.0145 ± 0.0033 | −0.0118 ± 0.0023 |
+
+The gradient reading grows by five orders of magnitude across that range and the
+largest thing that reaches an estimate is 0.015 in a correlation. **So the
+displacement is real and what it costs is about two orders of magnitude smaller
+than the reading makes it look.**
+
+It is not nothing, and the paired design is what makes it visible. At half
+censored every shift is several standard errors from nought and they have a
+direction: the genetic correlation rises while the replicate-level one falls, as
+though the approximation moves covariance from the lower level to the upper one.
+At a tenth censored nothing is detectable at all. No fit was refused in any cell.
+
+**Read this against how much of the position being reported was measured, not
+against the share over the whole design.** The extended high-frequency audiogram
+is about 11 per cent censored overall and 52 and 75 per cent at 16 and 18 kHz,
+so the top two frequencies sit in the row where the shift is measurable and the
+rest do not.
 
 **What is not here.** A coverage simulation, which every other family in this
 package has. It needs an interval, and this model has none: ADR 0010 records
@@ -701,6 +740,7 @@ records what it found.
 
 ```sh
 uv run --no-project python checks/repeated_against_mcmcglmm.py
+uv run --no-project python checks/repeated_bias.py
 ```
 
 The sequential region approximation against a reference that does not come

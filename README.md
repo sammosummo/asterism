@@ -272,7 +272,15 @@ Nothing from it should be reported with an interval attached.
 **Read `converged` against `censored_shares`.** With nothing censored the fit
 reaches a gradient of about `1e-07` like every other family here. With censoring
 it does not, and that is the expectation step's approximation rather than a
-search that failed: `docs/numerical-validation.md` has the measurement.
+search that failed.
+
+What that costs has been measured, on 200 paired replicates. The gradient
+reading grows five orders of magnitude between nothing censored and half, and
+the largest thing that reaches an estimate over the same range is 0.015 in a
+correlation: at a tenth censored nothing is detectable at all, and at a half the
+shifts are small, several standard errors from nought, and have a direction.
+`docs/numerical-validation.md` has the table. **Judge a position by how much of
+it was measured**, not by the share over the whole design.
 
 ## Marker association
 
