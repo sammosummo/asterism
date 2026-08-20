@@ -3,7 +3,10 @@
 **Extends ADR 0001 under decision 20. Amends nothing. Confirms decision 16's
 reasoning for a third time, in the same direction as ADR 0007.**
 
-**Status:** proposed 19 August 2026, before any code for it exists.
+**Status:** proposed 19 August 2026, before any code for it existed. **Accepted
+20 August 2026**, once the ladder this record made a precondition had been
+climbed and the complete-data skeleton agreed with `ComponentModel`. Amended the
+same day by *What the skeleton changed*, below.
 
 > **This model has no name yet.** It is described here by what it does, because
 > naming it is deferred until it works and the name is meant to say what the
@@ -208,3 +211,83 @@ censoring per observation, missing-at-random observations, maximum likelihood.
   three-position model, and a coverage simulation on the real 50-family roster
   with the real censoring pattern. The external one cannot check the kernel,
   only the likelihood — which is the part that could be wrong quietly.
+
+## What the skeleton changed
+
+*Amendment, 20 August 2026, after building the complete-data half of the model
+in `src/repeated.rs`. The decision above stands; three things about it turned
+out to be either simpler or harder than written.*
+
+**The ladder passed, and it passed for a reason worth keeping in view.**
+Conditioned on the rest of the family, the sequential approximation's error at
+221 censored dimensions is 0.062 log units, about 0.09 of what a heritability
+step of 0.1 does to the same quantity. But conditioning on a nearly complete
+audiogram leaves a mean absolute correlation of 0.009 between the censored
+residuals, and sequential truncation is exact when coordinates are independent.
+On the same number of coordinates with nothing conditioned away the error is 84
+times larger. So the result is a statement about this design and not about the
+routine, and the case it does not cover is a person whose audiogram is mostly
+unmeasurable — who is exactly the person the model exists to use.
+`checks/sequential_against_ghk.py` is the check and it should be run again
+whenever the design moves.
+
+**It is EM and not ECM, because the joint M-step exists.** ECM is for when the
+complete-data maximisation has to be done in conditional blocks. Here it does
+not: the complete-data likelihood separates into one closed form per component,
+and the fixed effects and the replicate-level covariance maximise together, the
+first without reference to the second — the design is shared across positions
+and the coefficients are free at every one, so the covariance cancels out of the
+normal equations and what is left is ordinary least squares. Plain EM is the
+stronger statement and is what the code does. The title of this record is left
+as it was written.
+
+**Plain EM does not reach a boundary, and the boundary is not an exotic case.**
+A component whose covariance has gone to nought, or lost a direction, is what a
+fit says when the data do not support that component, and this model has three
+components and will have a covariance apiece at seventeen positions. EM
+approaches such a point geometrically and never arrives: measured on twenty
+people with no signal in them, plain EM was still at `1.5e-4` after twenty
+thousand iterations for a variance whose maximum is exactly nought, against
+L-BFGS-B's `0.0`, and reported itself unconverged — correctly, and uselessly.
+
+Two additions fix it, and both are guarded by the likelihood rather than
+trusted.
+
+- **Extrapolation.** Two EM steps from a point lie on a line, and where the
+  sequence is geometric the rest of that line can be taken at once. This is the
+  `S3` scheme of Varadhan and Roland's SQUAREM. The proposal is projected back
+  onto the covariances, followed by an ordinary EM step so that what is returned
+  is always an EM iterate, kept only where the observed-data likelihood is at
+  least what two plain steps would have given, and backed off towards the plain
+  step where it is not. Monotonicity is preserved whatever the extrapolation
+  does.
+- **Resting on the bound.** A direction whose variance falls below `1e-6` on the
+  standardised scale is put exactly on nought. This is the same idea as
+  `resting_on_zero` in `src/components.rs`, needed for the same reason and at a
+  much looser tolerance, because EM leaves a component further from its bound
+  than a bounded search does. It is a proposal and not a decision: the
+  likelihood is evaluated at the boundary and the move refused if it falls,
+  which is precisely the case of a direction that was small rather than absent.
+  A covariance's null space is preserved by the M-step, so nought is an exact
+  fixed point and this is never undone.
+
+Together they took that fit from 20,000 iterations and a wrong answer to 3,166
+iterations and a variance agreeing with L-BFGS-B to twelve significant figures.
+**Neither is an optimisation.** Without them the fit is wrong at a boundary and
+says so; the cost argument for this whole route assumed EM iterations are cheap,
+and twenty thousand of them are not.
+
+**What is still to come, in order**: censoring, then the kernel, then the four
+checks. The skeleton takes complete balanced data and a free covariance per
+component, which at seventeen positions is 153 numbers nobody should read. It is
+there to show the machinery lands where the answer is already known, and it
+does: at one position it reproduces `ComponentModel` in the estimates, the fixed
+effects and the log-likelihood, by an arithmetic that shares nothing with it.
+
+**One thing in the decision above is not yet honoured.** It says any number of
+supplied relationship matrices is in scope. The rotation cannot do that: two
+structured matrices share no eigenbasis, which is the same fact `src/components.rs`
+opens with. `RepeatedModel::build` checks the second component is diagonal in
+the first's basis and refuses otherwise, rather than approximating. A household
+matrix, when one exists, will need a dense per-family route and the cost that
+goes with it — which is a decision to take then, with the matrix in hand.

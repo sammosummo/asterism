@@ -192,6 +192,10 @@ def test_every_family_with_an_interval_is_pinned_here():
         "LatentMediationModel",
         # The sealed object; `prepare` is how it is reached and is pinned.
         "PreparedModel",
+        # Has no interval at all yet: it exposes `cells` and `fit` and nothing
+        # else. There is nothing to pin until it grows one, and when it does it
+        # belongs in `pinned` above rather than here.
+        "AutoregressiveModel",
     }
     missing = exposed - pinned - exempt
     assert not missing, (

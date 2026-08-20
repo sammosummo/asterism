@@ -22,6 +22,7 @@ mod mixed_bivariate;
 mod mixture_tail;
 mod prepared;
 mod relationship;
+mod repeated;
 mod spatial;
 mod tobit;
 mod variant_set;
@@ -49,6 +50,7 @@ pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
+pub use repeated::{RepeatedFit, RepeatedModel};
 pub use spatial::{SpatialFit, SpatialModel};
 pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
 
