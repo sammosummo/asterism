@@ -53,6 +53,18 @@ how often the interval contains it. It is what chooses an interval recipe, and
 nothing about reading the code can tell you the same thing.
 _Avoid_: EXIT gate, qualification, ratified
 
+**The interval**:
+The profile-likelihood interval for a reported quantity. One module builds it
+and one record carries it, whichever family asked: what changes between families
+is the objective being profiled and nothing else. Its recipe belongs to `0004`
+and its shape to `0011`; neither the recipe's name nor its endpoints are a
+contract term, because the coverage check has to be free to change them.
+
+A boundary point belongs to the interval only where a coverage simulation has
+scored it there. An absent verdict means nobody has measured it yet, not that
+the question does not apply.
+_Avoid_: error bar, bounds, CI
+
 **Fit record**:
 What a fit returns, held in memory and carrying its seed. The Python interface
 may write it down; Asterism writes nothing by itself.
