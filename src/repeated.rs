@@ -144,6 +144,8 @@
 //! arrived where it claimed.
 
 mod kernel;
+#[cfg(feature = "python")]
+pub mod python;
 
 use kernel::{Kernel, Shaped};
 use nalgebra::{DMatrix, DVector};
@@ -198,6 +200,23 @@ const BACKTRACKS: usize = 12;
 /// convergence test. The projected gradient decides that, as it does everywhere
 /// else in the crate.
 const REMAINING_GAIN: f64 = 1e-13;
+
+/// How many passes the search will take without improving on the best point
+/// it has seen before it gives up.
+///
+/// **A fall in the likelihood is not a reason to stop.** With free covariances
+/// and complete data the expectation step is exact and the likelihood cannot
+/// fall, so this only ever costs a handful of cheap passes at the end. With
+/// censoring it is the difference between a fit and a fit that stopped at its
+/// seventh pass: the sequential expectation step is approximate, ADR 0010 says
+/// so, and an approximate one can step downhill without being anywhere near a
+/// maximum. Measured against `MCMCglmm` at thirteen censored coordinates in a
+/// family, stopping on the first fall left the scaled gradient at `5.7e-03`
+/// after 23 iterations.
+///
+/// The point that is reported is the best one seen and not the last one
+/// reached, which is what makes carrying on safe.
+const STALL: usize = 6;
 
 /// Once the estimated gain has run out and the gradient test has still not
 /// passed, the rule is switched off and the gradient is read again this often.
@@ -766,6 +785,9 @@ impl RepeatedModel {
             )
             .ok_or("REPEATED_START_NOT_EVALUABLE")?;
         let mut loglik = imputed.loglik;
+        let mut best = state.clone();
+        let mut best_loglik = loglik;
+        let mut stalled = 0;
         let mut monotone = true;
         let mut iterations = 0;
         let mut previous_gain = 0.0;
@@ -793,8 +815,15 @@ impl RepeatedModel {
             state = next_state;
             imputed = next_imputed;
             loglik = next_loglik;
-            if gain <= 0.0 {
-                break;
+            if loglik > best_loglik {
+                best_loglik = loglik;
+                best = state.clone();
+                stalled = 0;
+            } else {
+                stalled += 1;
+                if stalled >= STALL {
+                    break;
+                }
             }
 
             // **The gradient is read on a schedule only where reading it is
@@ -837,6 +866,25 @@ impl RepeatedModel {
                 relaxed = true;
             }
             previous_gain = gain;
+        }
+
+        // **The best point seen, not the last one reached.** They differ only
+        // where the expectation step stepped downhill, which is the case this
+        // is here for; re-imputing at it costs one expectation step against a
+        // fit that would otherwise report a point it had already improved on.
+        if best_loglik > loglik {
+            state = best;
+            imputed = self
+                .expectation(
+                    &prepared,
+                    &state.sigmas,
+                    &state.residual,
+                    &state.fixed,
+                    true,
+                )
+                .ok_or("REPEATED_BEST_NOT_EVALUABLE")?;
+            loglik = imputed.loglik;
+            last_reading = None;
         }
 
         if last_reading != Some(iterations) {

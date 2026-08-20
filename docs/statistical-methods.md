@@ -315,6 +315,66 @@ variance is fixed at one; a continuous or censored trait's is free. The genetic
 correlation is scale free and is therefore comparable across kinds, while the
 heritabilities are not.
 
+## Repeated measures at fixed positions
+
+One trait measured at `T` fixed positions on an ordered continuum, `R` times
+over, on a pedigree:
+
+```text
+y[p, r, t] = x[p, r]' b[., t] + sum_j u[j, p, t] + e[p, r, t]
+```
+
+The person-level effects `u[j, p, .]` are shared by every replicate of that
+person, so the covariance is
+
+```text
+V = sum_j (K_j (x) J_R (x) S_j) + I (x) I_R (x) S_e
+```
+
+with `J_R` the `R x R` matrix of ones. **The replicate is a level within the
+person and not a second set of traits.** For an audiogram that is the statement
+that a genotype does not know left ear from right: the loadings are shared and
+left--right asymmetry gets `S_e` rather than being averaged away.
+
+Each `S_j` is either free, or
+
+```text
+S_j = D_j R_j D_j,   R_j(t, u) = c_j + (1 - c_j) exp(-lambda_j d(t, u))
+```
+
+-- a free variance at every position and one floor and one rate per component,
+where `d` is separation on whatever line the caller supplies. The floor is a
+common factor and the exponential is the local decay; a large `lambda` gives a
+one-factor model and a `c` of nought a pure distance model, so the fit chooses
+between them. **The two are not separately estimable and the correlation they
+describe is**, so the fit reports the correlation as a function of separation.
+
+**Estimator: maximum likelihood, never REML**, for the reason every censored
+model here gives -- a region has no response to project onto the null space of
+the design. Fitted by expectation-conditional-maximisation: the person-level
+effects are the missing data, and with a kernel each component's maximisation is
+a small bounded search rather than a closed form.
+
+Covariates enter the likelihood rather than being removed beforehand, because
+**a censored observation cannot be residualised**: there is no value to subtract
+a fitted mean from, so residualising first silently forces the analyst back to
+substituting the limit.
+
+Values that were never measured contribute nothing to the likelihood, which is
+the ordinary likelihood for data missing at random. They are imputed in the
+expectation step regardless, because dropping them would unbalance the data.
+
+**Two approximations, and they are not of the same order.** The region
+probability the likelihood reports is exact at one and two censored coordinates
+in a family and Mendell-Elston sequential truncation above; the moments the
+expectation step uses have only the sequential update. So the fixed point of the
+one need not be the maximum of the other, and the fit's gradient reading grows
+with the share of the data that is censored rather than measuring the search.
+`docs/numerical-validation.md` measures it.
+
+**There is no interval and no test.** What an interval should be of is an open
+question, not an unwritten function.
+
 ## Marker association
 
 For marker `j`, `AssociationModel` fits

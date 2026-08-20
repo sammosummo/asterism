@@ -553,6 +553,88 @@ scaling the gradient, as the liability model already did, moved that interval
 to `[0.4928, 0.8429]` and brought the two into agreement. Widths fell from
 about 1.5 to between 0.44 and 0.97.
 
+## Repeated measures at fixed positions
+
+The model has four comparators and **three of them are in this crate**, which
+under ADR 0006 makes them consistency checks rather than external ones. They are
+still worth having, because each covers something the others cannot, and all
+three agree to the tolerances below.
+
+| comparator | what it covers | agreement |
+| --- | --- | --- |
+| `ComponentModel` | one position, no censoring | estimates, fixed effects and log-likelihood to 1e-5 |
+| `TobitModel` | one position, censored | 5e-3 in the heritability at one censored record per family, 0.02 at two |
+| `MixedBivariateModel` | **two positions**, with and without censoring | 5e-3 in both heritabilities and both correlations uncensored, 0.03 and 0.05 censored |
+| MCMCglmm | two positions, censored, related, external | the maximum likelihood estimate inside the posterior, for both heritabilities and both correlations |
+
+**`TobitModel` cannot be pointed at this model directly and the reason is
+structural.** It refuses a relationship matrix with an off-diagonal above 0.9,
+because its two-person quadrature loses accuracy as the correlation approaches
+one, and a replicate design always produces exactly one there: two ears share
+the whole of a person's genotype. Leaving the second replicate unmeasured gives
+both models the same analysis on a matrix Tobit accepts, at the cost of not
+exercising the replicate structure at all. What does exercise it is a test that
+writes the censored likelihood out by hand for a family of four people with two
+replicates apiece at two positions.
+
+```sh
+uv run --no-project python checks/repeated_against_mcmcglmm.py
+```
+
+MCMCglmm is Bayesian where this is maximum likelihood, sampled where this is
+optimised, and written by somebody else in another language; `us(trait):animal`
+is a genetic covariance across positions shared by every record of a person,
+`us(trait):units` is the replicate level, and `cengaussian` takes the interval a
+censored value is known to lie in. It cannot check the covariance kernel,
+because it has no such structure, so the comparison runs on the free covariance
+-- which is where the likelihood lives, and the likelihood is the part that
+could be wrong quietly.
+
+**This check found a real fault the internal ones could not.** The search used
+to stop the first time the observed-data likelihood fell. With free covariances
+and complete data it cannot fall, so nothing ever noticed; with thirteen
+censored coordinates in a family the sequential expectation step is approximate,
+ADR 0010 says as much, and an approximate one can step downhill while nowhere
+near a maximum. The fit stopped at its seventh pass -- and returned estimates
+that agreed with MCMCglmm anyway, which is exactly how a fault like that
+survives. The search now carries on through a fall and reports the best point it
+saw rather than the last one it reached.
+
+**Under it sat something that is not a fault, and the check now measures it.**
+Carrying on moved the fit from 23 iterations to 75 and left the gradient where
+it was. That is the second thing ADR 0010 warned about: an approximate
+expectation step's fixed point need not be at the maximum of the likelihood it
+reports. Swept over how much of the data is censored, on 480 people in families
+of four:
+
+| censored | dimension | scaled gradient | monotone |
+| --- | --- | --- | --- |
+| none | 0 | 1.2e-07 | yes |
+| 2% | 4 | 1.7e-04 | yes |
+| 5% | 7 | 6.1e-04 | yes |
+| 10% | 8 | 1.2e-03 | no |
+| 25% | 13 | 5.7e-03 | no |
+| 50% | 16 | 1.4e-02 | no |
+
+So **the reading measures the approximation and not the search**, and the
+convergence flag means something different for this model than for every other
+one in the package: below `1e-6` only where nothing is censored. The check
+requires that case to converge, because there is nothing approximate in it, and
+reports the rest.
+
+What the sweep does not settle is whether the displacement biases the estimates.
+They move by less than 0.02 in a heritability across the whole range and not
+monotonically, which is what sampling noise on one data set looks like -- but one
+data set cannot tell that from a bias, and this is the one measurement that
+needs replicates. It has not been made.
+
+**What is not here.** A coverage simulation, which every other family in this
+package has. It needs an interval, and this model has none: ADR 0010 records
+that the kernel's floor and rate are not separately estimable while the
+correlation they describe is, so what an interval should be *of* is an open
+question rather than an unwritten function. Nothing should be reported from this
+model with an interval attached until that is settled.
+
 ## Scale and cost
 
 The dense routes are quadratic in memory and the fits are cubic in the largest
@@ -609,6 +691,16 @@ outcome:
 ```sh
 uv run --no-project python checks/tobit_against_censreg.py
 uv run --no-project python checks/tobit_against_mcmcglmm.py
+```
+
+The repeated-measures model against the same engine, on the multivariate model
+it was built for: a genetic covariance across positions shared by every record
+of a person, a replicate level of its own, and censoring in play at the same
+time. It is the only external comparator this model has, and the section above
+records what it found.
+
+```sh
+uv run --no-project python checks/repeated_against_mcmcglmm.py
 ```
 
 The sequential region approximation against a reference that does not come

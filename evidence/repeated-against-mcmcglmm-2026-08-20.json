@@ -1,0 +1,139 @@
+{
+  "what": "the repeated-measures model against MCMCglmm's multivariate censored animal model, on a free covariance",
+  "date": "2026-08-20",
+  "people": 480,
+  "families": 120,
+  "replicates": 2,
+  "positions": 2,
+  "censored_share": 0.25,
+  "sequential_dimension": 13,
+  "truth": {
+    "heritability": [
+      0.5,
+      0.5
+    ],
+    "genetic_correlation": 0.6,
+    "residual_correlation": 0.25
+  },
+  "asterism": {
+    "converged": false,
+    "monotone": false,
+    "scaled_gradient": 0.005652768126281096,
+    "iterations": 75,
+    "loglik": -3395.704893347702
+  },
+  "gradient_against_censoring": [
+    {
+      "censored_share": 0.0,
+      "sequential_dimension": 0,
+      "scaled_gradient": 1.193738571302243e-07,
+      "monotone": true,
+      "iterations": 21,
+      "h2_one": 0.466765004524827,
+      "h2_two": 0.4727393311834945,
+      "rg": 0.5498620939871964,
+      "re": 0.2713570546774582
+    },
+    {
+      "censored_share": 0.02,
+      "sequential_dimension": 4,
+      "scaled_gradient": 0.000164800637107664,
+      "monotone": true,
+      "iterations": 63,
+      "h2_one": 0.4668906511090984,
+      "h2_two": 0.47252522732792884,
+      "rg": 0.5554072739992303,
+      "re": 0.268068144489805
+    },
+    {
+      "censored_share": 0.05,
+      "sequential_dimension": 7,
+      "scaled_gradient": 0.0006141821901218845,
+      "monotone": true,
+      "iterations": 99,
+      "h2_one": 0.46679036413427993,
+      "h2_two": 0.4699849136065603,
+      "rg": 0.5532427522345095,
+      "re": 0.26445023597553113
+    },
+    {
+      "censored_share": 0.1,
+      "sequential_dimension": 8,
+      "scaled_gradient": 0.0011875577398470902,
+      "monotone": false,
+      "iterations": 85,
+      "h2_one": 0.4655094525246537,
+      "h2_two": 0.4702014364442526,
+      "rg": 0.5394920908435133,
+      "re": 0.2699352679587511
+    },
+    {
+      "censored_share": 0.25,
+      "sequential_dimension": 13,
+      "scaled_gradient": 0.005652768126281096,
+      "monotone": false,
+      "iterations": 75,
+      "h2_one": 0.4832767401923279,
+      "h2_two": 0.4847793326636167,
+      "rg": 0.5905158038404508,
+      "re": 0.23444963145026623
+    },
+    {
+      "censored_share": 0.5,
+      "sequential_dimension": 16,
+      "scaled_gradient": 0.014201262510728145,
+      "monotone": false,
+      "iterations": 105,
+      "h2_one": 0.451607042737279,
+      "h2_two": 0.4885767988427907,
+      "rg": 0.6207948344855373,
+      "re": 0.19227677995198644
+    }
+  ],
+  "note": "the gradient reading measures how far the approximate expectation step's fixed point sits from the maximum, and grows with the share of the data the region approximation touches. It is not a criterion here. The fit with nothing censored is required to converge and is.",
+  "mcmcglmm": {
+    "iterations": 150000,
+    "burnin": 30000,
+    "thin": 60
+  },
+  "by_quantity": {
+    "h2_one": {
+      "asterism": 0.4832767401923279,
+      "posterior_mean": 0.483812907,
+      "posterior_low": 0.40441691,
+      "posterior_high": 0.562887508,
+      "effective_sample_size": 2000.0,
+      "inside": true,
+      "width": 0.15847059799999996
+    },
+    "h2_two": {
+      "asterism": 0.4847793326636167,
+      "posterior_mean": 0.486134291,
+      "posterior_low": 0.414508993,
+      "posterior_high": 0.561855273,
+      "effective_sample_size": 2000.0,
+      "inside": true,
+      "width": 0.14734628000000005
+    },
+    "rg": {
+      "asterism": 0.5905158038404508,
+      "posterior_mean": 0.576877435,
+      "posterior_low": 0.439742843,
+      "posterior_high": 0.690930395,
+      "effective_sample_size": 2000.0,
+      "inside": true,
+      "width": 0.251187552
+    },
+    "re": {
+      "asterism": 0.23444963145026623,
+      "posterior_mean": 0.237285635,
+      "posterior_low": 0.154560658,
+      "posterior_high": 0.328107913,
+      "effective_sample_size": 2000.0,
+      "inside": true,
+      "width": 0.17354725499999998
+    }
+  },
+  "passed": true,
+  "failures": []
+}

@@ -196,6 +196,13 @@ def test_every_family_with_an_interval_is_pinned_here():
         # else. There is nothing to pin until it grows one, and when it does it
         # belongs in `pinned` above rather than here.
         "AutoregressiveModel",
+        # Has no interval yet, and what it should be an interval *of* is an
+        # open question rather than an unwritten function. ADR 0010 records
+        # that the kernel's floor and rate are not separately estimable while
+        # the correlation they describe is, so an interval belongs on
+        # `correlation(d)` at separations that matter and not on either
+        # parameter. When that is settled it belongs in `pinned` above.
+        "RepeatedModel",
     }
     missing = exposed - pinned - exempt
     assert not missing, (

@@ -1888,3 +1888,147 @@ def region_log_probability(mean: Any, sign: Any, covariance: Any) -> float:
             np.ascontiguousarray(covariance, dtype=float),
         )
     )
+
+
+class RepeatedModel:
+    """Repeated measures at fixed positions on an ordered continuum.
+
+    Every person is measured at the same positions, some number of times over.
+    In the analysis this was built for the positions are audiometric
+    frequencies and the replicate is the ear, but the package does not know
+    that: it takes positions on a line and a replicate index, and the caller
+    decides what they mean.
+
+    The person-level effects are shared by every replicate of a person, which
+    is the point of the design — a genotype does not know left ear from right,
+    so the loadings are shared and left–right asymmetry gets a level of its
+    own rather than being averaged away.
+
+    **This is a class where the other censored models are functions.**
+    Preparing it does an eigendecomposition per family and works out the family
+    blocks, and none of that depends on the response, so a caller fitting the
+    same roster twice should pay for it once.
+
+    ``matrices`` is one square person-by-person matrix per person-level
+    component; the replicate-level residual is added for you. ``design`` has
+    one row per observation in person-major order, so person ``p`` replicate
+    ``r`` is row ``p * replicates + r``.
+
+    ``line``, if given, is where each position sits on whatever scale the
+    caller thinks in, and shapes every covariance into a variance per position
+    with a correlation ``c + (1 - c) exp(-lambda d)`` — nineteen numbers at
+    seventeen positions where a free covariance is 153. **The floor and the
+    rate are not separately estimable**: over a finite span a high floor with a
+    fast decay and no floor at all with a slow one draw very nearly the same
+    curve. Read :meth:`correlation` rather than the two numbers behind it.
+
+    Leaving ``line`` out leaves every covariance free, which is what says
+    whether the shape cost anything.
+    """
+
+    def __init__(
+        self,
+        matrices: Any,
+        design: Any,
+        replicates: int,
+        positions: int,
+        line: Any = None,
+    ) -> None:
+        stacked = np.ascontiguousarray(matrices, dtype=float)
+        if stacked.ndim == 2:
+            stacked = stacked[np.newaxis, :, :]
+        self._core = _core.RepeatedCore(
+            stacked,
+            np.ascontiguousarray(design, dtype=float),
+            int(replicates),
+            int(positions),
+            None if line is None else np.ascontiguousarray(line, dtype=float),
+        )
+        self.positions = int(positions)
+        self.replicates = int(replicates)
+        self.components = stacked.shape[0]
+        self.line = None if line is None else np.ascontiguousarray(line, dtype=float)
+
+    def fit(self, value: Any, censoring: Any, limit: Any) -> dict[str, Any]:
+        """Fit a response.
+
+        All three arrays are ``(people * replicates, positions)``.
+        ``censoring`` is 0 where the value was measured, 1 where it lies at or
+        above its limit, 2 where it lies at or below it, and **3 where it was
+        never measured at all**. The status is given rather than inferred, for
+        the reason the one-position model gives: a censored value can carry the
+        same number as a measured one.
+
+        ``value`` is read only where the status says measured, and ``limit``
+        only where it says censored. A value that was never measured is imputed
+        rather than dropped — dropping it would unbalance the data, and
+        unbalanced data is what makes this model expensive — but it contributes
+        nothing to the likelihood either way.
+
+        What comes back is maximum likelihood, never REML, and the covariances
+        are of the *complete* variables: what they would have been had the
+        instrument reached far enough.
+        """
+        (
+            component_covariances,
+            residual_covariance,
+            fixed_effects,
+            variance_shares,
+            floors,
+            rates,
+            loglik,
+            scaled_gradient,
+            censored_shares,
+            (iterations, monotone, converged, largest_family, sequential_dimension),
+        ) = self._core.fit(
+            np.ascontiguousarray(value, dtype=float),
+            np.ascontiguousarray(censoring, dtype=np.int64),
+            np.ascontiguousarray(limit, dtype=float),
+        )
+        size = self.positions
+        return {
+            "component_covariances": [
+                np.asarray(each, dtype=float).reshape(size, size)
+                for each in component_covariances
+            ],
+            "residual_covariance": np.asarray(
+                residual_covariance, dtype=float
+            ).reshape(size, size),
+            "fixed_effects": np.asarray(fixed_effects, dtype=float).reshape(-1, size),
+            "variance_shares": np.asarray(variance_shares, dtype=float),
+            "floors": np.asarray(floors, dtype=float),
+            "rates": np.asarray(rates, dtype=float),
+            "loglik": loglik,
+            "iterations": iterations,
+            "monotone": monotone,
+            "converged": converged,
+            "scaled_gradient": scaled_gradient,
+            "censored_shares": np.asarray(censored_shares, dtype=float),
+            "largest_family": largest_family,
+            "sequential_dimension": sequential_dimension,
+            "estimator": "ml",
+        }
+
+    @staticmethod
+    def correlation(fit: dict[str, Any], component: int, separation: float) -> float:
+        """The correlation this fit puts between two positions a given
+        separation apart on the caller's own line.
+
+        **This is a function and not a matrix on purpose.** It came from two
+        numbers, and handing back a seventeen by seventeen matrix would invite
+        a reader to treat 136 of its entries as estimates when there are two.
+        The two numbers themselves are not separately estimable and this curve
+        is, so this is the thing to report.
+
+        Components are in the order the matrices were given, with the
+        replicate level last. Raises where the fit had no kernel.
+        """
+        floors = fit["floors"]
+        rates = fit["rates"]
+        if len(floors) == 0:
+            raise ValueError("REPEATED_NO_KERNEL")
+        if not 0 <= component < len(floors):
+            raise ValueError("REPEATED_NO_SUCH_COMPONENT")
+        floor = float(floors[component])
+        rate = float(rates[component])
+        return floor + (1.0 - floor) * float(np.exp(-rate * abs(separation)))

@@ -168,6 +168,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         mixed_bivariate::python::mixed_bivariate_interval,
         module
     )?)?;
+    module.add_class::<repeated::python::PyRepeatedCore>()?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_statistic, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_interval, module)?)?;

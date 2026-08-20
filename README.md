@@ -230,6 +230,50 @@ be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
 
+## The same trait at many positions, measured twice
+
+```python
+model = asterism.RepeatedModel(
+    [relationship], design, replicates=2, positions=17, line=erb_numbers
+)
+fit = model.fit(value, censoring, limit)
+fit["variance_shares"][t]                          # at position t
+asterism.RepeatedModel.correlation(fit, 0, 6.0)    # six ERB apart, genetically
+```
+
+An audiogram is one trait at seventeen frequencies in each of two ears, and this
+fits it as such: **the ear is a replicate within the person, not a second set of
+seventeen traits**. A genotype does not know left from right, so the loadings are
+shared and left–right asymmetry gets a level of its own instead of being averaged
+away. Nothing in the package knows this is about hearing — it takes positions on
+a line and a replicate index, and the caller decides what they mean.
+
+`censoring` is 0 where the value was measured, 1 where it lies at or above its
+limit, 2 where at or below, and **3 where it was never measured at all**. What
+was measured contributes a density, what reached a limit contributes the
+probability of the region it lies in *given everything that family did measure*,
+and what was never measured contributes nothing. All three are filled in anyway,
+because dropping one would unbalance the data and unbalanced data is what makes
+this model expensive.
+
+`line` is where each position sits on whatever scale you think in — ERB numbers
+for an audiogram — and gives every component a variance per position and a
+correlation `c + (1 - c) exp(-lambda d)`. **Read `correlation` rather than the
+floor and the rate behind it.** They are not separately estimable: over a finite
+span a high floor with a fast decay and no floor at all with a slow one draw very
+nearly the same curve, and it is the curve the data determine. Leave `line` out
+to fit a free covariance instead, which is what says whether the shape cost
+anything.
+
+**This model has no interval and no test.** What an interval should be *of* is
+an open question rather than an unwritten function, for the reason above.
+Nothing from it should be reported with an interval attached.
+
+**Read `converged` against `censored_shares`.** With nothing censored the fit
+reaches a gradient of about `1e-07` like every other family here. With censoring
+it does not, and that is the expectation step's approximation rather than a
+search that failed: `docs/numerical-validation.md` has the measurement.
+
 ## Marker association
 
 ```python

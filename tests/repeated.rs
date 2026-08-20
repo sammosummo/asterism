@@ -12,7 +12,10 @@
 //! near the code. Expectation-maximisation and a bounded quasi-Newton search
 //! share no arithmetic at all, so agreement between them is worth something.
 
-use asterism::{Censoring, ComponentModel, Known, RepeatedModel, TobitModel};
+use asterism::{
+    Censoring, ComponentModel, Known, MixedBivariateModel, RepeatedModel, TobitModel, TraitData,
+    TraitKind,
+};
 use nalgebra::{DMatrix, DVector};
 
 /// splitmix64 and Box-Muller, so the data can be reproduced from the seed.
@@ -1036,5 +1039,194 @@ fn the_kernel_and_censoring_work_together() {
         fit.correlation(0, 9.4).expect("a correlation")
             > fit.correlation(1, 9.4).expect("a correlation"),
         "the genetic level should still reach further than the replicate one"
+    );
+}
+
+/// Two positions on one record per person, which is what `MixedBivariateModel`
+/// fits and what this model becomes when the second replicate was never
+/// measured.
+struct TwoPositions {
+    known: Vec<Known>,
+    first: TraitData,
+    second: TraitData,
+    design: DMatrix<f64>,
+}
+
+/// `censor` is the share of records at the **second** position that reached a
+/// limit; the first position is always measured, which is the audiogram's own
+/// shape and the case where the cross-position covariance has to be recovered
+/// from records that are only half there.
+fn two_positions(data: &Simulated, replicates: usize, censor: usize) -> TwoPositions {
+    let rows = data.response.nrows();
+    let people = rows / replicates;
+    let mut known = Vec::with_capacity(rows * 2);
+    let mut values = [Vec::with_capacity(people), Vec::with_capacity(people)];
+    let mut censoring = [Vec::with_capacity(people), Vec::with_capacity(people)];
+    let mut limits = [Vec::with_capacity(people), Vec::with_capacity(people)];
+    let mut design = DMatrix::<f64>::zeros(people, data.design.ncols());
+
+    for person in 0..people {
+        let tested = person * replicates;
+        for position in 0..2 {
+            let observed = data.response[(tested, position)];
+            if position == 1 && censor > 0 && person % censor == 1 {
+                let at = observed - 0.35;
+                known.push(Known::Above(at));
+                values[position].push(0.0);
+                censoring[position].push(Censoring::Above);
+                limits[position].push(at);
+            } else {
+                known.push(Known::Value(observed));
+                values[position].push(observed);
+                censoring[position].push(Censoring::Measured);
+                limits[position].push(0.0);
+            }
+        }
+        for replicate in 1..replicates {
+            let _ = replicate;
+            known.push(Known::Missing);
+            known.push(Known::Missing);
+        }
+        for column in 0..data.design.ncols() {
+            design[(person, column)] = data.design[(tested, column)];
+        }
+    }
+    let kinds = [
+        TraitKind::Continuous,
+        if censor > 0 {
+            TraitKind::Censored
+        } else {
+            TraitKind::Continuous
+        },
+    ];
+    let mut each = values
+        .into_iter()
+        .zip(censoring)
+        .zip(limits)
+        .zip(kinds)
+        .map(|(((value, censoring), limit), kind)| TraitData {
+            kind,
+            value,
+            censoring,
+            limit,
+        });
+    let first = each.next().expect("two traits");
+    let second = each.next().expect("two traits");
+    TwoPositions {
+        known,
+        first,
+        second,
+        design,
+    }
+}
+
+#[test]
+fn two_positions_reproduce_the_mixed_bivariate_model() {
+    // **This is the check the `TobitModel` comparison cannot make.** That one
+    // has a single position and so says nothing about the covariance *across*
+    // positions, which is the whole of what this model adds. Two positions is
+    // a bivariate model, and `MixedBivariateModel` fits exactly that by a
+    // different search on the same likelihood.
+    let replicates = 2;
+    let data = simulate(60, replicates, 2, 0.5, 0.0, 0.4, 20_260_832);
+    let cut = two_positions(&data, replicates, 0);
+
+    let ours = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        2,
+    )
+    .expect("the model should build")
+    .fit_known(&cut.known)
+    .expect("the fit should run");
+    assert!(ours.monotone, "the likelihood fell during the search");
+
+    let theirs = MixedBivariateModel::build(&data.relationship, cut.first, cut.second, &cut.design)
+        .expect("the mixed bivariate model should build")
+        .fit()
+        .expect("the mixed bivariate fit should run");
+
+    let genetic = &ours.component_covariances[0];
+    let residual = &ours.residual_covariance;
+    for position in 0..2 {
+        let heritability = genetic[(position, position)]
+            / (genetic[(position, position)] + residual[(position, position)]);
+        assert!(
+            (heritability - theirs.heritability[position]).abs() < 5e-3,
+            "heritability at {position}: {heritability} against {}",
+            theirs.heritability[position]
+        );
+    }
+    let genetic_correlation = genetic[(0, 1)] / (genetic[(0, 0)] * genetic[(1, 1)]).sqrt();
+    assert!(
+        (genetic_correlation - theirs.genetic_correlation).abs() < 5e-3,
+        "genetic correlation {genetic_correlation} against {}",
+        theirs.genetic_correlation
+    );
+    let residual_correlation = residual[(0, 1)] / (residual[(0, 0)] * residual[(1, 1)]).sqrt();
+    assert!(
+        (residual_correlation - theirs.residual_correlation).abs() < 5e-3,
+        "residual correlation {residual_correlation} against {}",
+        theirs.residual_correlation
+    );
+    assert!(
+        (ours.loglik - theirs.loglik).abs() < 1e-2,
+        "log-likelihood {} against {}, difference {}",
+        ours.loglik,
+        theirs.loglik,
+        ours.loglik - theirs.loglik
+    );
+}
+
+#[test]
+fn a_censored_second_position_still_reproduces_the_mixed_bivariate_model() {
+    // The same comparison with one of the two positions censored, which is what
+    // the audiogram looks like: the low frequencies are all measured and the
+    // high ones are not. Every third record reaches a limit at the second
+    // position, so a family of four carries one or two of them and the region
+    // the approximation runs on is small.
+    let replicates = 2;
+    let data = simulate(60, replicates, 2, 0.5, 0.0, 0.4, 20_260_833);
+    let cut = two_positions(&data, replicates, 3);
+    let censored = cut
+        .second
+        .censoring
+        .iter()
+        .filter(|c| **c == Censoring::Above)
+        .count();
+    assert!(censored > 60, "only {censored} censored");
+
+    let ours = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        2,
+    )
+    .expect("the model should build")
+    .fit_known(&cut.known)
+    .expect("the fit should run");
+
+    let theirs = MixedBivariateModel::build(&data.relationship, cut.first, cut.second, &cut.design)
+        .expect("the mixed bivariate model should build")
+        .fit()
+        .expect("the mixed bivariate fit should run");
+
+    let genetic = &ours.component_covariances[0];
+    let residual = &ours.residual_covariance;
+    for position in 0..2 {
+        let heritability = genetic[(position, position)]
+            / (genetic[(position, position)] + residual[(position, position)]);
+        assert!(
+            (heritability - theirs.heritability[position]).abs() < 0.03,
+            "heritability at {position}: {heritability} against {}",
+            theirs.heritability[position]
+        );
+    }
+    let genetic_correlation = genetic[(0, 1)] / (genetic[(0, 0)] * genetic[(1, 1)]).sqrt();
+    assert!(
+        (genetic_correlation - theirs.genetic_correlation).abs() < 0.05,
+        "genetic correlation {genetic_correlation} against {}",
+        theirs.genetic_correlation
     );
 }

@@ -6,8 +6,8 @@ reasoning for a third time, in the same direction as ADR 0007.**
 **Status:** proposed 19 August 2026, before any code for it existed. **Accepted
 20 August 2026**, once the ladder this record made a precondition had been
 climbed and the complete-data skeleton agreed with `ComponentModel`. Amended the
-same day by *What the skeleton changed*, *What censoring changed* and
-*What the kernel changed*, below.
+same day by *What the skeleton changed*, *What censoring changed*, *What the
+kernel changed* and *What the checks changed*, below.
 
 > **This model has no name yet.** It is described here by what it does, because
 > naming it is deferred until it works and the name is meant to say what the
@@ -480,3 +480,93 @@ correlation that respects the ordering of the positions, from a fit whose own
 gradient is affordable to read, containing both the factor model and the
 distance model as special cases. It simply does not license reading `c` as the
 size of a common factor.
+
+## What the checks changed
+
+*Amendment, 20 August 2026, after building the Python interface and running the
+checks this record asks for. Three of the four now stand. The fourth cannot be
+run, for a reason worth recording, and the external one found a fault and then
+measured something underneath it.*
+
+**The interface is a class.** This record noted that the censored models are
+reached as functions where every other model is a class, and that this one
+should be a class. It is: preparing it does an eigendecomposition and works out
+the family blocks, and none of that depends on the response, so a caller fitting
+the same roster twice should pay for it once. An observation arrives as a status
+of nought, one, two or **three**, the last being a value never measured at all,
+which is a fourth code the crate did not have.
+
+### Where the four checks stand
+
+| check | state |
+| --- | --- |
+| `TobitModel` on a one-position slice | stands, with the structural caveat recorded above |
+| `mixed_bivariate_fit` on a two-position slice | stands, uncensored and censored |
+| MCMCglmm, external | stands, and found a fault |
+| a coverage simulation | **cannot be run** |
+
+`MixedBivariateModel` is the one that covers the covariance *between* positions,
+which the `TobitModel` comparison cannot: it has one position and so says
+nothing about the thing this model adds. Uncensored the two agree to 5e-3 in
+both heritabilities and both correlations; with one position censored, to 0.03
+and 0.05.
+
+**The coverage simulation cannot be run because there is no interval, and there
+is no interval because what it should be *of* is unsettled.** The previous
+amendment found that the kernel's floor and rate are not separately estimable
+while the correlation they describe is. An interval on a floor would be wide and
+would not mean what it looked like. So this is a decision outstanding, not a
+function unwritten, and nothing from this model should be reported with an
+interval attached until it is taken. `tests/test_interval_baseline.py` carries
+the same reason at the point where it exempts the model.
+
+### The external check found a fault, and then something under it
+
+The search used to stop the first time the observed-data likelihood fell. With
+free covariances and complete data it cannot fall, so no internal check ever
+noticed. With thirteen censored coordinates in a family it can, and did, at the
+seventh pass -- returning estimates that agreed with MCMCglmm anyway, which is
+exactly how a fault like that survives an agreement check. The search now
+carries on through a fall and reports the best point it saw rather than the last
+one it reached.
+
+Carrying on moved the fit from 23 iterations to 75 and left the gradient where
+it was. **That is the other thing this record warned about**: an approximate
+expectation step's fixed point need not be at the maximum of the likelihood it
+reports. Swept over how much of the data is censored, on 480 people in families
+of four:
+
+| censored | dimension | scaled gradient | monotone |
+| --- | --- | --- | --- |
+| none | 0 | 1.2e-07 | yes |
+| 2% | 4 | 1.7e-04 | yes |
+| 5% | 7 | 6.1e-04 | yes |
+| 10% | 8 | 1.2e-03 | no |
+| 25% | 13 | 5.7e-03 | no |
+| 50% | 16 | 1.4e-02 | no |
+
+Two things follow.
+
+- **The convergence flag means something different for this model than for
+  every other one in the package.** Elsewhere it is a statement about whether
+  the search arrived. Here it is that only where nothing is censored; with
+  censoring it measures the approximation. The check requires the uncensored
+  case to converge, because there is nothing approximate in it, and reports the
+  rest. `README.md` tells a reader to read `converged` against
+  `censored_shares`.
+- **The likelihood and the expectation step use different approximations, and
+  that is why the gradient does not go to nought.** The likelihood's region
+  probability is exact at one and two coordinates; the expectation step's
+  moments are sequential throughout. Making them the same would drive the
+  gradient to nought and would be the wrong trade: the reported likelihood would
+  stop being the best available and would stop agreeing with `TobitModel`. This
+  record chose "the observed-data likelihood stays the definition of correct",
+  and the gradient reading is the price and the diagnostic at once.
+
+**What the sweep does not settle is whether the displacement biases the
+estimates.** They move by less than 0.02 in a heritability across the whole
+range and not monotonically, which is what sampling noise on one data set looks
+like -- but one data set cannot tell that from a bias. That measurement needs
+replicates and has not been made. It is the natural next thing and it does not
+need an interval, so it is available now in a way the coverage simulation is
+not.
