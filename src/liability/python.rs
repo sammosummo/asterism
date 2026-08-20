@@ -92,3 +92,41 @@ pub fn liability_test(
         test.null_loglik,
     ))
 }
+
+/// The conditional region log-probability the censored models rest on.
+///
+/// **Exposed so that it can be checked.** This is the sequential truncation --
+/// exact to two coordinates, Mendell-Elston above -- and every censored
+/// heritability in the package rests on it. All the evidence for those models
+/// was generated on pairs, where this routine's approximate branch never runs,
+/// so the only way to learn how it behaves in a large family is to be able to
+/// call it beside an independent reference. `checks/sequential_against_ghk.py`
+/// is that reference.
+///
+/// `mean` is each coordinate's mean **already centred on its own limit**, and
+/// `sign` is `1.0` where the value lies above that limit and `-1.0` where it
+/// lies below, which is the convention `TobitModel` builds.
+///
+/// # Errors
+///
+/// Returns a stable code where the shapes disagree or the region cannot be
+/// evaluated.
+#[pyfunction]
+pub fn region_log_probability(
+    mean: PyReadonlyArray1<'_, f64>,
+    sign: PyReadonlyArray1<'_, f64>,
+    covariance: PyReadonlyArray2<'_, f64>,
+) -> PyResult<f64> {
+    let mean: Vec<f64> = mean.as_array().iter().copied().collect();
+    let sign: Vec<f64> = sign.as_array().iter().copied().collect();
+    let raw = covariance.as_array();
+    let size = mean.len();
+    if sign.len() != size || raw.shape()[0] != size || raw.shape()[1] != size {
+        return Err(PyValueError::new_err("REGION_SHAPE_INVALID"));
+    }
+    let covariance = DMatrix::from_fn(size, size, |i, j| raw[(i, j)]);
+    let normal = statrs::distribution::Normal::new(0.0, 1.0)
+        .map_err(|_| PyValueError::new_err("REGION_NORMAL_INVALID"))?;
+    LiabilityModel::region_log_probability(&mean, &sign, &covariance, &normal)
+        .ok_or_else(|| PyValueError::new_err("REGION_NOT_EVALUABLE"))
+}

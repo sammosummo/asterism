@@ -102,6 +102,30 @@ pub struct LatentMediationFamilyInput {
     /// fraction of people that age are cases, not what hazard they faced
     /// getting there.
     pub outcome_prevalence: Vec<Option<f64>>,
+    /// Where given, the population share in each ordered outcome category for
+    /// this person, and the outcome is **ordinal** rather than binary.
+    ///
+    /// **A diagnosis is a liability cut once; a stage cuts it more finely.**
+    /// The model already supposes a continuous latent liability underneath, so
+    /// staging is not an extra assumption -- it is the removal of an
+    /// approximation. CDR at nought, questionable, mild, moderate and severe is
+    /// five ordered categories over the same liability, and the extra cuts
+    /// carry information a single cut throws away: at a sixth affected, a
+    /// binary keeps about 44 per cent of what the liability holds and five
+    /// stages keep about 68.
+    ///
+    /// Empty means binary, and then `outcome_prevalence` is used as before.
+    /// Where a person has categories, `outcome_status` is the index of the one
+    /// they are in rather than a nought-or-one, and the shares are the
+    /// population rates that fix the cuts -- age-indexed for the same reason
+    /// the binary rate is.
+    pub outcome_category_prevalence: Vec<Vec<f64>>,
+    /// The lowest category that counts as a case for ascertainment. One by
+    /// default, which for a binary outcome is "affected" and leaves the
+    /// existing behaviour untouched. For CDR staged into five it would be the
+    /// index of mild dementia, so that a clinic roster conditions on dementia
+    /// rather than on a questionable rating.
+    pub ascertainment_category: Option<usize>,
     pub mediator_proxy_sensitivity: Vec<f64>,
     pub mediator_proxy_specificity: Vec<f64>,
     pub ascertainment: String,
@@ -126,6 +150,11 @@ struct LatentMediationFamily {
     mediator_threshold: Vec<f64>,
     outcome_threshold: Vec<f64>,
     outcome_prevalence: Vec<Option<f64>>,
+    /// Per person, the shares in each ordered category, or empty where that
+    /// person's outcome is binary.
+    outcome_category_prevalence: Vec<Vec<f64>>,
+    /// The lowest category counting as a case for ascertainment.
+    ascertainment_category: usize,
     mediator_proxy_sensitivity: Vec<f64>,
     mediator_proxy_specificity: Vec<f64>,
     ascertainment: Ascertainment,
@@ -247,7 +276,16 @@ impl LatentMediationModel {
         if inputs.is_empty() {
             return Err("LATENT_MEDIATION_NO_FAMILIES");
         }
-        if qmc_points < 256 || !qmc_points.is_multiple_of(8) {
+        // **Nought selects sequential truncation instead**, which is the
+        // method SOLAR uses and `LiabilityModel` already carries. It is an
+        // approximation where quasi-Monte Carlo is accurate, and it costs in
+        // proportion to the family size where quasi-Monte Carlo costs at least
+        // five hundred evaluations regardless -- which is the difference
+        // between a design that may use general pedigrees and one restricted
+        // to pairs. Measured against the accurate route it agrees to about
+        // 0.03 in log probability per family at the correlations a pedigree
+        // produces, and exactly where the members are independent.
+        if qmc_points != 0 && (qmc_points < 256 || !qmc_points.is_multiple_of(8)) {
             return Err("LATENT_MEDIATION_QMC_POINTS_INVALID");
         }
         let mut families = Vec::with_capacity(inputs.len());
@@ -366,12 +404,30 @@ impl LatentMediationModel {
     /// exist, no start converges, or the likelihood at the best of them cannot
     /// be evaluated.
     pub fn fit_holding(&self, held: &[usize]) -> Result<LatentMediationFit, &'static str> {
-        if held.iter().any(|index| *index >= FIT_DIMENSION) {
+        let at_nought: Vec<(usize, f64)> = held.iter().map(|&i| (i, 0.0)).collect();
+        self.fit_holding_at(&at_nought)
+    }
+
+    /// The same, with each held coordinate pinned to a value of its own.
+    ///
+    /// A profile needs coordinates held away from nought, which is what a
+    /// confidence set by inversion asks for. Holding at nought is the special
+    /// case [`Self::fit_holding`] keeps.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where a coordinate does not
+    /// exist, a value lies outside its bounds, or no start converges.
+    pub fn fit_holding_at(
+        &self,
+        held: &[(usize, f64)],
+    ) -> Result<LatentMediationFit, &'static str> {
+        if held.iter().any(|(index, _)| *index >= FIT_DIMENSION) {
             return Err("LATENT_MEDIATION_HELD_COORDINATE_INVALID");
         }
         let mediator_scale_squared = self.mediator_scale_squared()?;
         let coefficients = self.coefficient_count();
-        let bounds = transformed_bounds_holding(held, coefficients)?;
+        let bounds = transformed_bounds_holding_at(held, coefficients)?;
         let mut best_converged: Option<FitCandidate> = None;
         let mut best_unresolved: Option<f64> = None;
         // The most recent underlying failure, so a fit in which nothing
@@ -379,8 +435,8 @@ impl LatentMediationModel {
         let mut last_error: Option<&'static str> = None;
 
         for mut start in deterministic_starts(coefficients) {
-            for &index in held {
-                start[index] = 0.0;
+            for &(index, value) in held {
+                start[index] = value;
             }
             let Some(initial_objective) =
                 self.optimisation_objective(&start, mediator_scale_squared)
@@ -603,6 +659,30 @@ impl LatentMediationModel {
     }
 }
 
+fn transformed_bounds_holding_at(
+    held: &[(usize, f64)],
+    coefficients: usize,
+) -> Result<Bounds, &'static str> {
+    let mut lower = vec![
+        0.0,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+        0.0,
+        f64::NEG_INFINITY,
+    ];
+    lower.extend(std::iter::repeat_n(f64::NEG_INFINITY, coefficients));
+    let mut upper = vec![f64::INFINITY; FIT_DIMENSION + coefficients];
+    for &(index, value) in held {
+        if value < lower[index] || value > upper[index] {
+            return Err("LATENT_MEDIATION_HELD_VALUE_OUT_OF_RANGE");
+        }
+        lower[index] = value;
+        upper[index] = value;
+    }
+    Bounds::new(lower, upper).map_err(|_| "LATENT_MEDIATION_OPTIMISER_BOUNDS_INVALID")
+}
+
+#[allow(dead_code)]
 fn transformed_bounds_holding(held: &[usize], coefficients: usize) -> Result<Bounds, &'static str> {
     let mut lower = vec![
         0.0,
@@ -919,16 +999,54 @@ impl LatentMediationFamily {
                 return Err("LATENT_MEDIATION_CONTINUOUS_OBSERVATION_WRONG_LENGTH");
             }
         }
-        for values in [&input.mediator_proxy_status, &input.outcome_status] {
-            if values.len() != size {
-                return Err("LATENT_MEDIATION_STATUS_WRONG_LENGTH");
+        if input.mediator_proxy_status.len() != size || input.outcome_status.len() != size {
+            return Err("LATENT_MEDIATION_STATUS_WRONG_LENGTH");
+        }
+        // The proxy is a fallible test result and stays binary whatever the
+        // outcome does.
+        if input
+            .mediator_proxy_status
+            .iter()
+            .flatten()
+            .any(|status| !matches!(status, 0 | 1))
+        {
+            return Err("LATENT_MEDIATION_STATUS_NOT_BINARY");
+        }
+        // The outcome is binary unless categories were given for it, and then
+        // the status is which category rather than whether affected.
+        let categories = &input.outcome_category_prevalence;
+        if !categories.is_empty() && categories.len() != size {
+            return Err("LATENT_MEDIATION_OUTCOME_CATEGORIES_WRONG_LENGTH");
+        }
+        for person in 0..size {
+            let shares = categories.get(person).map(Vec::as_slice).unwrap_or(&[]);
+            if shares.is_empty() {
+                if !matches!(input.outcome_status[person], None | Some(0) | Some(1)) {
+                    return Err("LATENT_MEDIATION_STATUS_NOT_BINARY");
+                }
+                continue;
             }
-            if values
+            if shares.len() < 2 {
+                return Err("LATENT_MEDIATION_OUTCOME_CATEGORIES_TOO_FEW");
+            }
+            // Every category has to be reachable. A share of nought makes its
+            // two cuts coincide, so the category is an interval of no width and
+            // anybody recorded in it has probability nought -- which shows up
+            // as a likelihood of minus infinity rather than as the input error
+            // it is.
+            if shares
                 .iter()
-                .flatten()
-                .any(|status| !matches!(status, 0 | 1))
+                .any(|share| !share.is_finite() || *share <= 0.0)
             {
-                return Err("LATENT_MEDIATION_STATUS_NOT_BINARY");
+                return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_SHARE_INVALID");
+            }
+            if (shares.iter().sum::<f64>() - 1.0).abs() > 1e-9 {
+                return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_SHARES_NOT_ONE");
+            }
+            if let Some(status) = input.outcome_status[person] {
+                if status < 0 || (status as usize) >= shares.len() {
+                    return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_OUT_OF_RANGE");
+                }
             }
         }
         for index in 0..size {
@@ -997,7 +1115,14 @@ impl LatentMediationFamily {
                 if proband >= size {
                     return Err("LATENT_MEDIATION_PROBAND_OUTSIDE_FAMILY");
                 }
-                if input.outcome_status[proband] != Some(1) {
+                // A case is the nominated category or worse, which for a binary
+                // outcome is the affected one and leaves this unchanged. Staged,
+                // it is what a clinic roster means: recruited for dementia, not
+                // for a questionable rating.
+                let case_from = input.ascertainment_category.unwrap_or(1);
+                if !matches!(input.outcome_status[proband],
+                             Some(status) if status >= 0 && (status as usize) >= case_from)
+                {
                     return Err("LATENT_MEDIATION_NAMED_PROBAND_NOT_OUTCOME_CASE");
                 }
                 Ascertainment::NamedProbandCase(proband)
@@ -1083,6 +1208,8 @@ impl LatentMediationFamily {
             mediator_threshold: input.mediator_threshold,
             outcome_threshold: input.outcome_threshold,
             outcome_prevalence: outcome_prevalence.clone(),
+            outcome_category_prevalence: input.outcome_category_prevalence,
+            ascertainment_category: input.ascertainment_category.unwrap_or(1),
             mediator_proxy_sensitivity: input.mediator_proxy_sensitivity,
             mediator_proxy_specificity: input.mediator_proxy_specificity,
             ascertainment,
@@ -1108,25 +1235,29 @@ impl LatentMediationFamily {
     /// beyond which that fraction of people lie. Where it was not, the supplied
     /// cut stands. The variance is read from the covariance rather than assumed
     /// to be one, so an inbred person's cut is their own.
-    fn outcome_cuts(&self, covariance: &DMatrix<f64>) -> Result<Vec<f64>, &'static str> {
+    /// The cuts on each person's outcome liability, one set per person.
+    ///
+    /// A binary outcome has a single cut and the set has one entry, which is
+    /// what it has always had. A staged outcome has one cut per boundary
+    /// between adjacent categories, and they are derived the same way: from
+    /// the share of the population *above* the cut, converted at the person's
+    /// own outcome variance. The variance depends on the parameters being
+    /// fitted, which is why this is done at every evaluation rather than once.
+    fn outcome_cut_sets(&self, covariance: &DMatrix<f64>) -> Result<Vec<Vec<f64>>, &'static str> {
         let size = self.relationship.nrows();
-        let mut cuts = self.outcome_threshold.clone();
+        let mut sets = Vec::with_capacity(size);
         for person in 0..size {
-            let Some(rate) = self.outcome_prevalence[person] else {
-                continue;
-            };
-            let variance = covariance[(size + person, size + person)];
-            if !(variance > 0.0) || !variance.is_finite() {
-                return Err("LATENT_MEDIATION_OUTCOME_VARIANCE_INVALID");
-            }
-            let standardised = if rate <= 0.5 {
-                inverse_log_normal_sf(rate.ln())?
-            } else {
-                -inverse_log_normal_sf((-rate).ln_1p())?
-            };
-            cuts[person] = standardised * variance.sqrt();
+            sets.push(cut_set_for(
+                self.outcome_category_prevalence
+                    .get(person)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                self.outcome_prevalence[person],
+                self.outcome_threshold[person],
+                covariance[(size + person, size + person)],
+            )?);
         }
-        Ok(cuts)
+        Ok(sets)
     }
 
     fn evaluate(
@@ -1136,7 +1267,7 @@ impl LatentMediationFamily {
         coefficients: &[f64],
     ) -> Result<LatentMediationFamilyEvaluation, &'static str> {
         let latent_mean = self.mean_under(coefficients)?;
-        let outcome_cuts = self.outcome_cuts(covariance)?;
+        let outcome_cuts = self.outcome_cut_sets(covariance)?;
         let size = self.relationship.nrows();
         let conditional = condition_on_mediator_measurements(
             &self.discrete_target_indices,
@@ -1181,7 +1312,7 @@ impl LatentMediationFamily {
                 upper.push(bounds.1);
             }
             for &(index, status) in &self.observed_outcome {
-                let bounds = status_bounds(status, outcome_cuts[index]);
+                let bounds = category_bounds(status, &outcome_cuts[index]);
                 lower.push(bounds.0);
                 upper.push(bounds.1);
             }
@@ -1220,8 +1351,19 @@ impl LatentMediationFamily {
                 if !(variance > 0.0 && variance.is_finite()) {
                     return Err("LATENT_MEDIATION_ASCERTAINMENT_VARIANCE_INVALID");
                 }
+                // The chance of being a case is the chance of clearing the cut
+                // below the nominated category. For a binary outcome that is
+                // the only cut there is, so this is unchanged; staged, it is
+                // the boundary between questionable and mild rather than
+                // between nought and questionable.
+                let cuts = &outcome_cuts[proband];
+                let boundary = self
+                    .ascertainment_category
+                    .checked_sub(1)
+                    .filter(|index| *index < cuts.len())
+                    .ok_or("LATENT_MEDIATION_ASCERTAINMENT_CATEGORY_OUT_OF_RANGE")?;
                 let standardised =
-                    (outcome_cuts[proband] - latent_mean[latent_index]) / variance.sqrt();
+                    (cuts[boundary] - latent_mean[latent_index]) / variance.sqrt();
                 (normal_sf(standardised)?, "condition_on_named_proband_case")
             }
         };
@@ -1354,7 +1496,7 @@ fn resimulate(
             return Err("LATENT_MEDIATION_COEFFICIENT_COUNT_WRONG");
         }
         let mut shift = vec![0.0; 2 * size];
-        let mut cuts = input.outcome_threshold.clone();
+        let mut cuts: Vec<Vec<f64>> = Vec::with_capacity(size);
         for person in 0..size {
             for term in 0..mediator_terms {
                 shift[person] += input.mediator_design[person][term] * coefficients[term];
@@ -1365,17 +1507,18 @@ fn resimulate(
             }
             shift[person] += input.latent_mean[person];
             shift[size + person] += input.latent_mean[size + person];
-            let rate = input.outcome_prevalence.get(person).copied().flatten();
-            if let Some(rate) = rate {
-                let variance = covariance[(size + person, size + person)];
-                let standardised = if rate <= 0.5 {
-                    inverse_log_normal_sf(rate.ln())?
-                } else {
-                    -inverse_log_normal_sf((-rate).ln_1p())?
-                };
-                cuts[person] = standardised * variance.sqrt();
-            }
+            cuts.push(cut_set_for(
+                input
+                    .outcome_category_prevalence
+                    .get(person)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                input.outcome_prevalence.get(person).copied().flatten(),
+                input.outcome_threshold[person],
+                covariance[(size + person, size + person)],
+            )?);
         }
+        let case_from = input.ascertainment_category.unwrap_or(1);
 
         let conditioned = if input.ascertainment == "condition_on_named_proband_case" {
             input.proband_index
@@ -1390,9 +1533,9 @@ fn resimulate(
             }
             let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
             let latent = &factor * draw + DVector::from_column_slice(&shift);
-            let case = |person: usize| latent[size + person] > cuts[person];
+            let stage = |person: usize| category_of(latent[size + person], &cuts[person]);
             if let Some(proband) = conditioned
-                && !case(proband)
+                && (stage(proband) as usize) < case_from
             {
                 continue;
             }
@@ -1412,7 +1555,7 @@ fn resimulate(
                         i8::from(truth == (stream.uniform() < right))
                     });
                 next.outcome_status[person] =
-                    input.outcome_status[person].map(|_| i8::from(case(person)));
+                    input.outcome_status[person].map(|_| stage(person));
             }
             break next;
         };
@@ -1565,6 +1708,81 @@ fn status_bounds(status: i8, threshold: f64) -> (f64, f64) {
     }
 }
 
+/// The point on a liability of this variance with `rate` of the population
+/// above it.
+fn cut_at_rate(rate: f64, variance: f64) -> Result<f64, &'static str> {
+    let standardised = if rate <= 0.5 {
+        inverse_log_normal_sf(rate.ln())?
+    } else {
+        -inverse_log_normal_sf((-rate).ln_1p())?
+    };
+    Ok(standardised * variance.sqrt())
+}
+
+/// One person's cuts: a single one where the outcome is binary, and one per
+/// boundary where it is staged.
+///
+/// The tail is walked down from the top so that each cut's rate is a sum of the
+/// shares above it. Accumulating upwards and subtracting from one would lose
+/// the small tails the severe categories have to cancellation, and those are
+/// exactly the categories whose cuts sit furthest out.
+fn cut_set_for(
+    shares: &[f64],
+    rate: Option<f64>,
+    threshold: f64,
+    variance: f64,
+) -> Result<Vec<f64>, &'static str> {
+    if shares.is_empty() {
+        let Some(rate) = rate else {
+            return Ok(vec![threshold]);
+        };
+        if !(variance > 0.0) || !variance.is_finite() {
+            return Err("LATENT_MEDIATION_OUTCOME_VARIANCE_INVALID");
+        }
+        return Ok(vec![cut_at_rate(rate, variance)?]);
+    }
+    if !(variance > 0.0) || !variance.is_finite() {
+        return Err("LATENT_MEDIATION_OUTCOME_VARIANCE_INVALID");
+    }
+    let mut cuts = vec![0.0; shares.len() - 1];
+    let mut tail = 0.0;
+    for boundary in (0..shares.len() - 1).rev() {
+        tail += shares[boundary + 1];
+        cuts[boundary] = cut_at_rate(tail, variance)?;
+    }
+    Ok(cuts)
+}
+
+/// Which ordered category a drawn liability falls in: the number of cuts it
+/// clears. Nought and one for a binary outcome, so a drawn category is the
+/// drawn status it has always been.
+fn category_of(liability: f64, cuts: &[f64]) -> i8 {
+    cuts.iter().filter(|cut| liability > **cut).count() as i8
+}
+
+/// The interval of liability that puts somebody in this ordered category.
+///
+/// With `k` cuts there are `k + 1` categories: the lowest runs from minus
+/// infinity to the first cut, the highest from the last cut upwards, and each
+/// one between sits between two adjacent cuts. A binary outcome is the single
+/// cut case and this returns exactly what [`status_bounds`] does, which is why
+/// the integrator needs no change -- it has always taken a rectangle, and a
+/// half-line is the rectangle with one side at infinity.
+fn category_bounds(category: i8, cuts: &[f64]) -> (f64, f64) {
+    let category = category.max(0) as usize;
+    let lower = if category == 0 {
+        f64::NEG_INFINITY
+    } else {
+        cuts[category - 1]
+    };
+    let upper = if category >= cuts.len() {
+        f64::INFINITY
+    } else {
+        cuts[category]
+    };
+    (lower, upper)
+}
+
 struct RectangleProbability {
     /// **The log of the probability, not the probability.** A family deep in
     /// the tail has a rectangle far below the smallest double, and the whole
@@ -1575,6 +1793,105 @@ struct RectangleProbability {
     log_probability: f64,
     log_batch_range: f64,
     method: &'static str,
+}
+
+/// A rectangle probability by sequential truncation.
+///
+/// **This is the method SOLAR uses and the one `LiabilityModel` already
+/// carries, generalised from an orthant to a rectangle.** It conditions on one
+/// coordinate at a time, replacing that coordinate by the mean and variance of
+/// its truncated distribution and updating the rest. The cost grows in
+/// proportion to the number of members, where quasi-Monte Carlo costs at least
+/// five hundred evaluations however few members there are -- which is why a
+/// third observed member costs 113 times the second.
+///
+/// It is an approximation and is named as one. Sequential truncation is exact
+/// where the coordinates are independent and degrades as they correlate, which
+/// is the trade a pedigree analysis has always made; the quasi-Monte Carlo
+/// route stays available as the accurate reference it has been all along.
+///
+/// The rarest interval is taken first, for the reason `LiabilityModel` takes
+/// the rarer class first: the error of the sequential update depends on that
+/// order.
+///
+/// # Errors
+///
+/// Returns a stable code where a conditional variance stops being positive.
+fn sequential_rectangle(
+    lower: &[f64],
+    upper: &[f64],
+    mean: &DVector<f64>,
+    covariance: &DMatrix<f64>,
+) -> Result<f64, &'static str> {
+    let size = lower.len();
+    let mut mu: Vec<f64> = (0..size).map(|i| mean[i]).collect();
+    let mut sigma = covariance.clone();
+    let mut remaining: Vec<usize> = (0..size).collect();
+    let mut total = 0.0_f64;
+
+    while !remaining.is_empty() {
+        // The rarest interval first.
+        let mut chosen = 0usize;
+        let mut chosen_log = f64::INFINITY;
+        let mut chosen_bounds = (0.0_f64, 0.0_f64);
+        for (slot, &index) in remaining.iter().enumerate() {
+            let variance = sigma[(index, index)];
+            if !(variance > 0.0) || !variance.is_finite() {
+                return Err("LATENT_MEDIATION_SEQUENTIAL_VARIANCE_INVALID");
+            }
+            let sd = variance.sqrt();
+            let low = (lower[index] - mu[index]) / sd;
+            let high = (upper[index] - mu[index]) / sd;
+            let log_probability = log_interval_probability(low, high)?;
+            if log_probability < chosen_log {
+                chosen_log = log_probability;
+                chosen = slot;
+                chosen_bounds = (low, high);
+            }
+        }
+        let index = remaining.remove(chosen);
+        let (low, high) = chosen_bounds;
+        if !chosen_log.is_finite() {
+            return Ok(f64::NEG_INFINITY);
+        }
+        total += chosen_log;
+
+        // The truncated mean and variance of a standard normal on the chosen
+        // interval, formed through logs so a rare interval does not underflow:
+        // the density and the probability are both tiny there and only their
+        // ratio is ordinary.
+        let log_density = |z: f64| -0.5 * z * z - 0.5 * LOG_TWO_PI;
+        let at_low = if low.is_finite() {
+            (log_density(low) - chosen_log).exp()
+        } else {
+            0.0
+        };
+        let at_high = if high.is_finite() {
+            (log_density(high) - chosen_log).exp()
+        } else {
+            0.0
+        };
+        let truncated_mean = at_low - at_high;
+        let weighted_low = if low.is_finite() { low * at_low } else { 0.0 };
+        let weighted_high = if high.is_finite() { high * at_high } else { 0.0 };
+        let truncated_variance =
+            (1.0 + weighted_low - weighted_high - truncated_mean * truncated_mean)
+                .clamp(1e-12, 1.0);
+
+        // Condition everything still to come on what that coordinate now is.
+        let sd = sigma[(index, index)].sqrt();
+        let still: Vec<usize> = remaining.clone();
+        let cross: Vec<f64> = still.iter().map(|&j| sigma[(index, j)] / sd).collect();
+        for (slot, &j) in still.iter().enumerate() {
+            mu[j] += cross[slot] * truncated_mean;
+        }
+        for (a, &j) in still.iter().enumerate() {
+            for (b, &k) in still.iter().enumerate() {
+                sigma[(j, k)] -= cross[a] * cross[b] * (1.0 - truncated_variance);
+            }
+        }
+    }
+    Ok(total)
 }
 
 fn rectangle_probability(
@@ -1627,6 +1944,14 @@ fn rectangle_probability(
             log_probability: rectangle.log_probability,
             log_batch_range: 0.0,
             method: rectangle.method,
+        });
+    }
+
+    if qmc_points == 0 {
+        return Ok(RectangleProbability {
+            log_probability: sequential_rectangle(lower, upper, mean, covariance)?,
+            log_batch_range: 0.0,
+            method: "sequential_truncation",
         });
     }
 
@@ -2479,6 +2804,13 @@ pub struct LatentMediationDesign {
     /// is derived from it and the outcome variance the truth implies, so a
     /// campaign can be age-indexed the same way an analysis is.
     pub outcome_prevalence: Vec<Option<f64>>,
+    /// Where given, the population share in each ordered category, and the
+    /// drawn outcome is a stage rather than a nought or a one. Empty for a
+    /// binary outcome, which is what an empty vector has always meant.
+    pub outcome_category_prevalence: Vec<Vec<f64>>,
+    /// The lowest category counting as a case when a proband is conditioned on.
+    /// `None` means one, which for a binary outcome is "affected".
+    pub ascertainment_category: Option<usize>,
     /// Covariates acting on the latent mediator, one row per person, and the
     /// coefficients to draw them with. Empty for none.
     pub mediator_design: Vec<Vec<f64>>,
@@ -2595,17 +2927,18 @@ pub fn simulate(
 
     // The cuts the truth implies, by the same rule the likelihood uses.
     let cuts = {
-        let mut cuts = design.outcome_threshold.clone();
+        let mut cuts: Vec<Vec<f64>> = Vec::with_capacity(size);
         for person in 0..size {
-            if let Some(rate) = design.outcome_prevalence[person] {
-                let variance = covariance[(size + person, size + person)];
-                let standardised = if rate <= 0.5 {
-                    inverse_log_normal_sf(rate.ln())?
-                } else {
-                    -inverse_log_normal_sf((-rate).ln_1p())?
-                };
-                cuts[person] = standardised * variance.sqrt();
-            }
+            cuts.push(cut_set_for(
+                design
+                    .outcome_category_prevalence
+                    .get(person)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                design.outcome_prevalence[person],
+                design.outcome_threshold[person],
+                covariance[(size + person, size + person)],
+            )?);
         }
         cuts
     };
@@ -2622,9 +2955,9 @@ pub fn simulate(
             // Process-major, mediator block first, as the covariance is built.
             let draw = DVector::from_fn(2 * size, |_, _| stream.normal());
             let latent = &factor * draw + DVector::from_column_slice(&shift);
-            let case = |person: usize| latent[size + person] > cuts[person];
+            let stage = |person: usize| category_of(latent[size + person], &cuts[person]);
             if let Some(proband) = conditioned
-                && !case(proband)
+                && (stage(proband) as usize) < design.ascertainment_category.unwrap_or(1)
             {
                 continue;
             }
@@ -2646,7 +2979,7 @@ pub fn simulate(
                     proxy[person] = Some(i8::from(truth == agrees));
                 }
                 if design.observe_outcome[person] {
-                    outcome[person] = Some(i8::from(case(person)));
+                    outcome[person] = Some(stage(person));
                 }
             }
             break LatentMediationFamilyInput {
@@ -2663,6 +2996,8 @@ pub fn simulate(
                 mediator_threshold: design.mediator_threshold.clone(),
                 outcome_threshold: design.outcome_threshold.clone(),
                 outcome_prevalence: design.outcome_prevalence.clone(),
+                outcome_category_prevalence: design.outcome_category_prevalence.clone(),
+                ascertainment_category: design.ascertainment_category,
                 mediator_proxy_sensitivity: design.mediator_proxy_sensitivity.clone(),
                 mediator_proxy_specificity: design.mediator_proxy_specificity.clone(),
                 ascertainment: design.ascertainment.clone(),
@@ -2699,6 +3034,60 @@ pub struct VerticalTest {
     /// How many simulated data sets the reference rests on, and nought where
     /// none were needed.
     pub bootstrap_replicates: usize,
+}
+
+/// A 97.5 per cent confidence set for the vertical estimand.
+#[derive(Clone, Debug)]
+pub struct VerticalSet {
+    pub estimate: f64,
+    /// `None` where the profile never fell away on that side within the range
+    /// searched.
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
+    /// Whether nought is in the set, decided by the intersection-union test
+    /// rather than by the profile: at nought the null is a union of two models
+    /// and one likelihood ratio has no reference across it.
+    pub contains_zero: bool,
+    /// True where the set spans nought but excludes it, so it is two pieces
+    /// rather than one. The application requires such a set to be retained
+    /// rather than reported as the interval that contains both.
+    pub disjoint: bool,
+    pub level: f64,
+    pub profile_failures: usize,
+    pub searched_to: f64,
+}
+
+/// A 97.5 per cent confidence set for the horizontal estimand.
+#[derive(Clone, Debug)]
+pub struct HorizontalSet {
+    pub estimate: f64,
+    /// `None` where the profile never fell away on that side within the range
+    /// searched. The application requires an unbounded set to be retained as
+    /// unbounded rather than reported at the edge of a search.
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
+    pub level: f64,
+    /// True where neither end is bounded. The horizontal component is then
+    /// **not separately estimable**, which is a different statement from its
+    /// being nought and is what the application requires be said.
+    pub unbounded: bool,
+    /// Profile fits that failed. Each widened the set rather than narrowing
+    /// it, which is the safe direction.
+    pub profile_failures: usize,
+    pub searched_to: f64,
+}
+
+/// A test of the horizontal estimand `c_prime` against nought.
+#[derive(Clone, Debug)]
+pub struct HorizontalTest {
+    /// The deviance for the direct path `c_prime = 0`.
+    pub statistic: f64,
+    pub p_value: f64,
+    pub rule: &'static str,
+    /// Which reference the p-value was read against. Unlike the loading, this
+    /// one never varies: the direct path is signed and interior, so there is no
+    /// boundary case to detect and no simulated reference to fall back on.
+    pub reference: &'static str,
 }
 
 impl LatentMediationModel {
@@ -2871,6 +3260,244 @@ impl LatentMediationModel {
             bootstrap_replicates: bootstrap,
         })
     }
+
+    /// Test the horizontal estimand `c_prime` against nought.
+    ///
+    /// **This one is simple, and it is worth saying why, because its twin is
+    /// not.** The vertical estimand is a product, so its null is a union of two
+    /// models and one likelihood ratio has no reference across it. The
+    /// horizontal estimand is a single coordinate. Its null is a point, the
+    /// coordinate is signed and interior -- an inherited effect outside
+    /// measured hearing may run either way -- and the ordinary chi-square on
+    /// one degree of freedom is the whole of the reference. There is no
+    /// boundary mixture to choose and no simulated reference to fall back on.
+    ///
+    /// **What it cannot do is separate the two paths where the loading is at
+    /// nought.** With `a = 0` the inherited covariance carries the direct path
+    /// and the outcome loading only as `c'^2 + d^2`, so the two rotate freely
+    /// against each other and the likelihood is flat along that rotation. A
+    /// p-value read there would be a statement about which of the pair the
+    /// optimiser happened to put the variance in. Both fits are asked, because
+    /// the loading can be comfortably positive when free and fall to nought
+    /// once the direct path is held, and the free fit alone reports nothing
+    /// about that.
+    ///
+    /// Refusing is the honest answer here rather than a gap to be filled later.
+    /// The application says as much already: a horizontal component that fails
+    /// its identification diagnostics is reported as not separately estimable,
+    /// never as nought.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable `LATENT_MEDIATION_*` code where either fit fails, or
+    /// `LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO` where the loading
+    /// rests on its bound in either of them.
+    pub fn test_horizontal(&self) -> Result<HorizontalTest, &'static str> {
+        let free = self.fit()?;
+        if !free.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+        let without_direct = self.fit_holding(&[2])?;
+        if !without_direct.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+
+        let statistic =
+            crate::deviance::deviance(free.log_likelihood, without_direct.log_likelihood);
+        let p_value =
+            crate::deviance::p_value(statistic, |t| crate::deviance::chi2_upper_tail(t, 1.0));
+
+        Ok(HorizontalTest {
+            statistic,
+            p_value,
+            rule: "likelihood_ratio_on_the_interior_direct_path",
+            reference: "chi_square_on_one",
+        })
+    }
+
+    /// The largest log likelihood attainable with the vertical estimand held
+    /// at a value.
+    ///
+    /// The estimand is a product, so holding it is a curve rather than a
+    /// coordinate: for each loading the path is fixed at `value / loading`.
+    /// The profile is the best point on that curve, found by scanning the
+    /// loading and taking the largest. A scan rather than a search because the
+    /// curve can have more than one local best, and a search that found the
+    /// wrong one would narrow the set silently.
+    fn vertical_profile(&self, value: f64, failures: &std::cell::Cell<usize>) -> f64 {
+        const SCAN: usize = 24;
+        let mut best = f64::NEG_INFINITY;
+        for step in 1..=SCAN {
+            // The loading is non-negative and the path is `value / loading`,
+            // so a loading near nought sends the path to infinity. The scan
+            // starts away from it for that reason.
+            let loading = 0.05 + (step as f64) * (1.5 / SCAN as f64);
+            let path = value / loading;
+            match self.fit_holding_at(&[(0, loading), (1, path)]) {
+                Ok(fit) => best = best.max(fit.log_likelihood),
+                Err(_) => failures.set(failures.get() + 1),
+            }
+        }
+        best
+    }
+
+    /// A 97.5 per cent confidence set for the vertical estimand, by inverting
+    /// the test.
+    ///
+    /// **Nought is decided differently from everywhere else, and has to be.**
+    /// Away from nought, holding the estimand is one constraint and the
+    /// likelihood ratio has an ordinary chi-square reference. At nought the
+    /// null is a union -- the loading is nought, or the path is, or both -- and
+    /// no single ratio spans it, so membership there is decided by the
+    /// intersection-union test the model already carries.
+    ///
+    /// That is what allows the set to come back in two pieces: the profile may
+    /// admit values either side of nought while the union test excludes nought
+    /// itself. The application requires such a set to be retained as two
+    /// pieces rather than reported as the interval covering both, and
+    /// `disjoint` says when that has happened.
+    ///
+    /// An end that does not close within the range searched is reported open.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails or the range is not a
+    /// positive distance.
+    pub fn vertical_set(
+        &self,
+        searched_to: f64,
+        bootstrap_replicates: usize,
+    ) -> Result<VerticalSet, &'static str> {
+        if !(searched_to > 0.0) || !searched_to.is_finite() {
+            return Err("LATENT_MEDIATION_SEARCH_RANGE_INVALID");
+        }
+        let free = self.fit()?;
+        let estimate = free.parameters.a * free.parameters.b;
+        let failures = std::cell::Cell::new(0usize);
+
+        let peak = self.vertical_profile(estimate, &failures);
+        if !peak.is_finite() {
+            return Err("LATENT_MEDIATION_VERTICAL_PROFILE_UNAVAILABLE");
+        }
+        // Chi-square on one degree of freedom at 0.975.
+        let threshold = peak - 0.5 * 5.023_886_187_353_339;
+        let outside = |value: f64| self.vertical_profile(value, &failures) < threshold;
+
+        let lower = if outside(estimate - searched_to) {
+            Some(crate::liability::bisect(
+                estimate - searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        let upper = if outside(estimate + searched_to) {
+            Some(crate::liability::bisect(
+                estimate + searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+
+        // Nought belongs to the union test, not to the profile.
+        let contains_zero = match self.test_vertical_with(bootstrap_replicates) {
+            Ok(test) => test.p_value > 1.0 - 0.975,
+            Err(_) => {
+                failures.set(failures.get() + 1);
+                true // a test that could not be made has not excluded anything
+            }
+        };
+        let spans_zero = lower.is_none_or(|low| low <= 0.0)
+            && upper.is_none_or(|high| high >= 0.0);
+
+        Ok(VerticalSet {
+            estimate,
+            lower,
+            upper,
+            contains_zero,
+            disjoint: spans_zero && !contains_zero,
+            level: 0.975,
+            profile_failures: failures.get(),
+            searched_to,
+        })
+    }
+
+    /// A 97.5 per cent confidence set for the horizontal estimand, by
+    /// inverting the same likelihood ratio the test uses.
+    ///
+    /// **An end that does not close is reported as open, not as the edge of
+    /// the search.** The application requires flat, disjoint or unbounded sets
+    /// to be retained, and a set reported at whatever value the search stopped
+    /// at would be a statement about the search rather than the data.
+    ///
+    /// **Both ends open means the horizontal component is not separately
+    /// estimable.** That is the identification diagnostic in its most direct
+    /// form: where the likelihood does not fall away in either direction, the
+    /// data do not locate the direct path at all, and saying so is required
+    /// rather than reporting nought.
+    ///
+    /// The threshold is chi-square on one at 0.975, because a two-sided set at
+    /// that level is what inverting a test at the Bonferroni .025 gives.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the free fit fails, or where the loading
+    /// rests on its bound and the decomposition is unidentified for the reason
+    /// [`Self::test_horizontal`] gives.
+    pub fn horizontal_set(&self, searched_to: f64) -> Result<HorizontalSet, &'static str> {
+        if !(searched_to > 0.0) || !searched_to.is_finite() {
+            return Err("LATENT_MEDIATION_SEARCH_RANGE_INVALID");
+        }
+        let free = self.fit()?;
+        if !free.horizontal_identified {
+            return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
+        }
+        let estimate = free.parameters.c_prime;
+        let at_estimate = self
+            .fit_holding_at(&[(2, estimate)])?
+            .log_likelihood;
+        // Chi-square on one degree of freedom at 0.975.
+        let threshold = at_estimate - 0.5 * 5.023_886_187_353_339;
+
+        let failures = std::cell::Cell::new(0usize);
+        let outside = |value: f64| match self.fit_holding_at(&[(2, value)]) {
+            Ok(fit) => fit.log_likelihood < threshold,
+            Err(_) => {
+                failures.set(failures.get() + 1);
+                false
+            }
+        };
+        let lower = if outside(estimate - searched_to) {
+            Some(crate::liability::bisect(
+                estimate - searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        let upper = if outside(estimate + searched_to) {
+            Some(crate::liability::bisect(
+                estimate + searched_to,
+                estimate,
+                &outside,
+            ))
+        } else {
+            None
+        };
+        Ok(HorizontalSet {
+            estimate,
+            lower,
+            upper,
+            level: 0.975,
+            unbounded: lower.is_none() && upper.is_none(),
+            profile_failures: failures.get(),
+            searched_to,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -2907,6 +3534,8 @@ mod tests {
             for rate in [0.05_f64, 0.3, 0.8] {
                 let design = LatentMediationDesign {
                     outcome_prevalence: vec![Some(rate), Some(rate)],
+                    outcome_category_prevalence: Vec::new(),
+                    ascertainment_category: None,
                     mediator_design: Vec::new(),
                     mediator_coefficients: Vec::new(),
                     outcome_design: Vec::new(),
@@ -2952,6 +3581,8 @@ mod tests {
         };
         let family = |prevalence: Vec<Option<f64>>| LatentMediationFamilyInput {
             outcome_prevalence: prevalence,
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
             latent_mean: vec![0.0; 4],
             mediator_design: Vec::new(),
@@ -3005,6 +3636,8 @@ mod tests {
         // person so it is not confounded with the family mean.
         let design = LatentMediationDesign {
             outcome_prevalence: vec![None, None],
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             mediator_design: vec![vec![-1.0], vec![1.0]],
             mediator_coefficients: vec![0.8],
             outcome_design: vec![vec![-1.0], vec![1.0]],
@@ -3046,6 +3679,8 @@ mod tests {
     fn a_model_with_covariates_refuses_to_be_evaluated_without_them() {
         let design = LatentMediationDesign {
             outcome_prevalence: vec![None, None],
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             mediator_design: vec![vec![1.0], vec![-1.0]],
             mediator_coefficients: vec![0.3],
             outcome_design: Vec::new(),
@@ -3100,6 +3735,8 @@ mod tests {
         // for the latent mediator itself.
         let design = LatentMediationDesign {
             outcome_prevalence: vec![None, None],
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             mediator_design: Vec::new(),
             mediator_coefficients: Vec::new(),
             outcome_design: Vec::new(),
@@ -3175,6 +3812,8 @@ mod tests {
     fn conditioning_on_a_proband_draws_families_that_have_one() {
         let design = LatentMediationDesign {
             outcome_prevalence: vec![None, None],
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             mediator_design: Vec::new(),
             mediator_coefficients: Vec::new(),
             outcome_design: Vec::new(),
@@ -3323,6 +3962,211 @@ mod tests {
     /// marginals, so the quasi-Monte Carlo path can be held to an exact
     /// answer -- including where that answer is far below anything the
     /// ordinary scale carries.
+    /// Sequential truncation agrees with quasi-Monte Carlo at the
+    /// correlations a pedigree produces.
+    ///
+    /// **This is the check that decides whether the cheap route may be used at
+    /// all.** Sequential truncation is exact where the coordinates are
+    /// independent and degrades as they correlate, so the question is not
+    /// whether it is approximate -- it is -- but whether its error is small
+    /// where the model actually works. An additive model with a heritability of
+    /// a half puts a sibling liability correlation at a quarter, so the range
+    /// that matters is roughly nought to a half.
+    ///
+    /// The error is reported rather than only asserted, because a method whose
+    /// accuracy depends on the data has to state where it holds.
+    /// The horizontal confidence set is where the profile falls away, and it
+    /// says so when it does not fall away at all.
+    ///
+    /// Two things are checked. The estimate lies inside its own set, and each
+    /// end that closed costs the deviance a set at this level claims. An end
+    /// that did not close is reported open rather than at the edge of the
+    /// search, which is what the application means by retaining an unbounded
+    /// set.
+    /// The vertical confidence set is coherent, and decides nought by the
+    /// union test rather than by the profile.
+    ///
+    /// The estimand is a product, so the set is built by profiling along the
+    /// curve where the product is held. Nought is the one point where that
+    /// cannot be done, because the null there is a union of two models. The
+    /// check is that the two decisions are made by the right instruments and
+    /// that the flags agree with the ends.
+    #[test]
+    fn the_vertical_set_decides_nought_by_the_union_test() {
+        let model = interior_fit_model();
+        let got = model.vertical_set(1.0, 0).expect("a set");
+        assert!((got.level - 0.975).abs() < 1e-12);
+
+        if let (Some(low), Some(high)) = (got.lower, got.upper) {
+            assert!(
+                low <= got.estimate && got.estimate <= high,
+                "the estimate {} is outside its own set [{low}, {high}]",
+                got.estimate
+            );
+        }
+
+        // Whether nought is in the set must be what the union test says, not
+        // what the profile says, because at nought the profile has no
+        // reference.
+        let union = model.test_vertical_with(0).expect("the union test");
+        assert_eq!(
+            got.contains_zero,
+            union.p_value > 0.025,
+            "membership of nought disagrees with the intersection-union test"
+        );
+
+        // Two pieces exactly when the ends span nought and the union test
+        // excludes it.
+        let spans = got.lower.is_none_or(|low| low <= 0.0)
+            && got.upper.is_none_or(|high| high >= 0.0);
+        assert_eq!(
+            got.disjoint,
+            spans && !got.contains_zero,
+            "the disjoint flag disagrees with the ends and the union test"
+        );
+
+        // Whichever ends closed have to sit where the profile actually fell
+        // away. Without this the test only checks the ends are arranged
+        // sensibly, and a set can be arranged sensibly around a crossing the
+        // search never found. The horizontal set is held to the same standard.
+        //
+        // The tolerance is 0.20 where the horizontal one is 0.05, and the
+        // reason is the profile rather than the set. Holding a product means
+        // scanning the loading and taking the best of 24 points, so the
+        // profile is itself quantised at the scan's spacing; holding a
+        // coordinate is an exact fit and is not. Tightening this without
+        // making the scan finer would be tuning the test to the answer.
+        let failures = std::cell::Cell::new(0usize);
+        let peak = model.vertical_profile(got.estimate, &failures);
+        for end in [got.lower, got.upper].into_iter().flatten() {
+            let there = model.vertical_profile(end, &failures);
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - 5.023_886_187_353_339).abs() < 0.20,
+                "an end costs {cost} in deviance, not the 5.02 a 97.5 per cent \
+                 set claims"
+            );
+        }
+    }
+
+    /// A vertical search range that is not a positive distance is refused.
+    #[test]
+    fn a_vertical_search_range_must_be_a_positive_distance() {
+        let model = interior_fit_model();
+        for bad in [0.0, -2.0, f64::NAN] {
+            assert_eq!(
+                model.vertical_set(bad, 0).err(),
+                Some("LATENT_MEDIATION_SEARCH_RANGE_INVALID"),
+                "a range of {bad} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn the_horizontal_set_is_where_the_profile_falls_away() {
+        let model = interior_fit_model();
+        let got = model.horizontal_set(4.0).expect("a set");
+        assert!((got.level - 0.975).abs() < 1e-12);
+
+        if let (Some(low), Some(high)) = (got.lower, got.upper) {
+            assert!(
+                low <= got.estimate && got.estimate <= high,
+                "the estimate {} is outside its own set [{low}, {high}]",
+                got.estimate
+            );
+            assert!(!got.unbounded, "a closed set was reported as unbounded");
+        } else {
+            // Not separately estimable is a legitimate answer on a small
+            // fixture, and the flag has to agree with the ends.
+            assert_eq!(
+                got.unbounded,
+                got.lower.is_none() && got.upper.is_none(),
+                "the unbounded flag disagrees with the ends"
+            );
+        }
+
+        // Whichever ends closed must sit where the likelihood actually fell.
+        let peak = model
+            .fit_holding_at(&[(2, got.estimate)])
+            .expect("held fit")
+            .log_likelihood;
+        for end in [got.lower, got.upper].into_iter().flatten() {
+            let there = model
+                .fit_holding_at(&[(2, end)])
+                .expect("held fit")
+                .log_likelihood;
+            let cost = 2.0 * (peak - there);
+            assert!(
+                (cost - 5.023_886_187_353_339).abs() < 0.05,
+                "an end costs {cost} in deviance, not the 5.02 a 97.5 per cent \
+                 set claims"
+            );
+        }
+    }
+
+    /// A search range that is not a positive distance is refused.
+    #[test]
+    fn a_search_range_must_be_a_positive_distance() {
+        let model = interior_fit_model();
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                model.horizontal_set(bad).err(),
+                Some("LATENT_MEDIATION_SEARCH_RANGE_INVALID"),
+                "a range of {bad} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn sequential_truncation_agrees_with_quasi_monte_carlo() {
+        let normal = Normal::new(0.0, 1.0).expect("standard normal");
+        let _ = &normal;
+        let mut worst_ordinary = 0.0_f64;
+        for &correlation in &[0.0, 0.1, 0.25, 0.5, 0.8] {
+            let mut worst = 0.0_f64;
+            for &size in &[3_usize, 4, 6] {
+                let mut covariance = DMatrix::<f64>::identity(size, size);
+                for i in 0..size {
+                    for j in 0..size {
+                        if i != j {
+                            covariance[(i, j)] = correlation;
+                        }
+                    }
+                }
+                let mean = DVector::from_element(size, 0.0);
+                // A spread of rectangles: the common case, a rare corner, and
+                // one half-line, which is what a binary status actually gives.
+                for (lower, upper) in [
+                    (vec![f64::NEG_INFINITY; size], vec![0.5_f64; size]),
+                    (vec![1.5_f64; size], vec![f64::INFINITY; size]),
+                    (vec![-1.0_f64; size], vec![1.0_f64; size]),
+                    (vec![f64::NEG_INFINITY; size], vec![-1.5_f64; size]),
+                ] {
+                    let reference =
+                        rectangle_probability(&lower, &upper, &mean, &covariance, 262_144)
+                            .expect("quasi-Monte Carlo")
+                            .log_probability;
+                    let cheap = sequential_rectangle(&lower, &upper, &mean, &covariance)
+                        .expect("sequential");
+                    worst = worst.max((cheap - reference).abs());
+                }
+            }
+            println!("correlation {correlation:.2}: worst log difference {worst:.4}");
+            if correlation <= 0.5 {
+                worst_ordinary = worst_ordinary.max(worst);
+            }
+        }
+        // A likelihood ratio needs 3.84 to matter, and this enters as a sum
+        // over families, so a per-family error of this size is what the
+        // approximation has to stay under to be usable at all.
+        assert!(
+            worst_ordinary < 0.25,
+            "at pedigree correlations the sequential route is out by \
+             {worst_ordinary}, which is too much to substitute for the \
+             quasi-Monte Carlo one"
+        );
+    }
+
     #[test]
     fn the_qmc_path_reaches_the_deep_tail() {
         for thresholds in [
@@ -3432,6 +4276,8 @@ mod tests {
     fn singleton(mediator_measurement: Option<f64>) -> LatentMediationFamilyInput {
         LatentMediationFamilyInput {
             outcome_prevalence: Vec::new(),
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             relationship: vec![vec![1.0]],
             latent_mean: vec![0.0, 0.0],
             mediator_design: Vec::new(),
@@ -3452,6 +4298,8 @@ mod tests {
     fn dyad() -> LatentMediationFamilyInput {
         LatentMediationFamilyInput {
             outcome_prevalence: Vec::new(),
+            outcome_category_prevalence: Vec::new(),
+            ascertainment_category: None,
             relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
             latent_mean: vec![0.0; 4],
             mediator_design: Vec::new(),
@@ -3487,6 +4335,8 @@ mod tests {
             .map(
                 |(mediator_measurement, status)| LatentMediationFamilyInput {
                     outcome_prevalence: Vec::new(),
+                    outcome_category_prevalence: Vec::new(),
+                    ascertainment_category: None,
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
                     mediator_design: Vec::new(),
@@ -3570,6 +4420,8 @@ mod tests {
             .map(
                 |(first, second, first_status, second_status)| LatentMediationFamilyInput {
                     outcome_prevalence: Vec::new(),
+                    outcome_category_prevalence: Vec::new(),
+                    ascertainment_category: None,
                     relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                     latent_mean: vec![0.0; 4],
                     mediator_design: Vec::new(),
@@ -3592,6 +4444,156 @@ mod tests {
 
     fn deterministic_fit_model() -> LatentMediationModel {
         deterministic_fit_model_at_mediator_scale(1.0)
+    }
+
+    /// One family, with the outcome declared as ordered categories.
+    fn ordinal_family(
+        statuses: Vec<Option<i8>>,
+        shares: Vec<f64>,
+    ) -> LatentMediationFamilyInput {
+        let size = statuses.len();
+        LatentMediationFamilyInput {
+            outcome_prevalence: Vec::new(),
+            outcome_category_prevalence: vec![shares; size],
+            ascertainment_category: None,
+            relationship: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+            latent_mean: vec![0.0; 2 * size],
+            mediator_design: Vec::new(),
+            outcome_design: Vec::new(),
+            mediator_measurement: vec![Some(0.3), Some(-0.4)],
+            mediator_measurement_error_variance: vec![Some(0.15), Some(0.15)],
+            mediator_proxy_status: vec![None; size],
+            outcome_status: statuses,
+            mediator_threshold: vec![0.0; size],
+            outcome_threshold: vec![0.0; size],
+            mediator_proxy_sensitivity: vec![0.8; size],
+            mediator_proxy_specificity: vec![0.85; size],
+            ascertainment: "population_unconditioned".to_owned(),
+            proband_index: None,
+        }
+    }
+
+    /// **An outcome staged into two is the binary outcome, exactly.**
+    ///
+    /// This is the check that says the ordinal path is a generalisation rather
+    /// than a second implementation that happens to look similar. Shares of a
+    /// half put the single derived cut at nought, which is where the binary
+    /// fixture's threshold already sits, so the two models are the same model
+    /// and their log likelihoods must agree to the last bit -- not merely to a
+    /// tolerance, which would hide a cut computed a slightly different way.
+    #[test]
+    fn two_categories_reproduce_the_binary_outcome_exactly() {
+        let parameters = LatentMediationParameters {
+            a: 0.5,
+            b: 0.3,
+            c_prime: 0.2,
+            d: 0.6,
+            sigma_m2: 0.7,
+        };
+        for statuses in [
+            vec![Some(0), Some(0)],
+            vec![Some(0), Some(1)],
+            vec![Some(1), Some(1)],
+            vec![Some(1), None],
+        ] {
+            let mut binary = ordinal_family(statuses.clone(), vec![0.5, 0.5]);
+            binary.outcome_category_prevalence = Vec::new();
+
+            let staged = ordinal_family(statuses.clone(), vec![0.5, 0.5]);
+            let one = LatentMediationModel::build(vec![binary], 0)
+                .expect("binary model")
+                .evaluate(parameters)
+                .expect("binary evaluation");
+            let other = LatentMediationModel::build(vec![staged], 0)
+                .expect("staged model")
+                .evaluate(parameters)
+                .expect("staged evaluation");
+            assert_eq!(
+                one.log_likelihood, other.log_likelihood,
+                "staging into two changed the likelihood for {statuses:?}"
+            );
+        }
+    }
+
+    /// A staged outcome with more than two categories fits, and the middle
+    /// category is a genuine interval rather than a half-line.
+    ///
+    /// The likelihood of somebody in a middle stage has to be smaller than the
+    /// likelihood of the same person recorded in the open top stage, because
+    /// the middle is bounded above and the top is not. Getting the bounds the
+    /// wrong way round is the mistake this catches, and it would not show up as
+    /// a failure to run.
+    #[test]
+    fn a_middle_category_is_bounded_on_both_sides() {
+        let parameters = LatentMediationParameters {
+            a: 0.5,
+            b: 0.3,
+            c_prime: 0.2,
+            d: 0.6,
+            sigma_m2: 0.7,
+        };
+        let shares = vec![0.7, 0.2, 0.1];
+        let middle = LatentMediationModel::build(
+            vec![ordinal_family(vec![Some(1), Some(1)], shares.clone())],
+            0,
+        )
+        .expect("staged model")
+        .evaluate(parameters)
+        .expect("staged evaluation")
+        .log_likelihood;
+        let top = LatentMediationModel::build(
+            vec![ordinal_family(vec![Some(2), Some(2)], shares.clone())],
+            0,
+        )
+        .expect("staged model")
+        .evaluate(parameters)
+        .expect("staged evaluation")
+        .log_likelihood;
+        assert!(
+            middle.is_finite() && top.is_finite(),
+            "a staged family did not evaluate"
+        );
+        // The middle stage holds twice the share of the top one here, so it is
+        // the likelier place to be despite being bounded.
+        assert!(
+            middle > top,
+            "the middle stage ({middle}) is not likelier than the top ({top}), \
+             which suggests its bounds are not an interval"
+        );
+    }
+
+    /// Category inputs that do not describe a distribution are refused.
+    #[test]
+    fn category_shares_must_be_a_distribution() {
+        for (shares, statuses, code) in [
+            (
+                vec![0.5, 0.4],
+                vec![Some(0), Some(1)],
+                "LATENT_MEDIATION_OUTCOME_CATEGORY_SHARES_NOT_ONE",
+            ),
+            (
+                vec![1.0],
+                vec![Some(0), Some(0)],
+                "LATENT_MEDIATION_OUTCOME_CATEGORIES_TOO_FEW",
+            ),
+            (
+                vec![0.7, 0.0, 0.3],
+                vec![Some(0), Some(2)],
+                "LATENT_MEDIATION_OUTCOME_CATEGORY_SHARE_INVALID",
+            ),
+            (
+                vec![0.5, 0.5],
+                vec![Some(0), Some(2)],
+                "LATENT_MEDIATION_OUTCOME_CATEGORY_OUT_OF_RANGE",
+            ),
+        ] {
+            let family = ordinal_family(statuses, shares);
+            assert_eq!(
+                LatentMediationModel::build(vec![family], 0).err(),
+                Some(code),
+                "the wrong code came back"
+            );
+        }
     }
 
     #[test]
@@ -3853,6 +4855,51 @@ mod tests {
         assert!((without_loading.parameters.a * without_loading.parameters.b).abs() < 1e-12);
         let without_path = model.fit_holding(&[1]).expect("held fit");
         assert!(without_path.parameters.b.abs() < 1e-12);
+        let without_direct = model.fit_holding(&[2]).expect("held fit");
+        assert!(without_direct.parameters.c_prime.abs() < 1e-12);
+    }
+
+    /// The horizontal estimand is one signed interior coordinate, so its test
+    /// is the deviance against holding it at nought, read against an ordinary
+    /// chi-square on one. Nothing about it varies with the data: unlike the
+    /// loading, there is no bound for it to rest on, so there is no second
+    /// reference to choose between and none to simulate.
+    #[test]
+    fn the_horizontal_test_reads_an_interior_coordinate_against_chi_square() {
+        let model = interior_fit_model();
+        let free = model.fit().expect("free fit");
+        let without_direct = model.fit_holding(&[2]).expect("held fit");
+        let test = model.test_horizontal().expect("tests");
+
+        assert_eq!(test.reference, "chi_square_on_one");
+        assert_eq!(test.rule, "likelihood_ratio_on_the_interior_direct_path");
+        assert!(
+            (test.statistic
+                - crate::deviance::deviance(free.log_likelihood, without_direct.log_likelihood))
+            .abs()
+                < 1e-12,
+            "the statistic is not the deviance it claims to be"
+        );
+        assert!(test.statistic >= -1e-9, "a nested fit beat the free one");
+        assert!((0.0..=1.0).contains(&test.p_value), "p-value out of range");
+    }
+
+    /// With the loading at nought the direct path and the outcome loading enter
+    /// the inherited covariance only as `c'^2 + d^2`, so nothing separates
+    /// them and the test must refuse rather than report which of the pair the
+    /// optimiser happened to fill.
+    #[test]
+    fn the_horizontal_test_refuses_where_the_loading_is_on_its_bound() {
+        let model = interior_fit_model();
+        // Holding the loading at nought is exactly the unidentified case, so
+        // the fit taken there must report the horizontal decomposition as
+        // unavailable. That flag is what the test refuses on.
+        let without_loading = model.fit_holding(&[0]).expect("held fit");
+        assert!(
+            !without_loading.horizontal_identified,
+            "a fit with the loading at nought claimed the horizontal was identified"
+        );
+        assert!(without_loading.boundary_parameters.contains(&"a"));
     }
 
     /// The union null is rejected only when both parts are, so the p-value is

@@ -1,0 +1,43 @@
+{
+  "what": "the censored model with relatedness, against MCMCglmm's cengaussian family",
+  "date": "2026-08-18",
+  "people": 1600,
+  "pairs": 800,
+  "censored": 400,
+  "limit": 11.388066669329792,
+  "truth": {
+    "heritability": 0.5,
+    "variance": 4.0,
+    "mean": 10.0
+  },
+  "asterism": {
+    "heritability": 0.4764817309529675,
+    "total_variance": 3.807474946222686,
+    "intercept": 10.045081044603045,
+    "converged": true
+  },
+  "mcmcglmm": {
+    "h2_mean": 0.481558506,
+    "h2_low": 0.346080337,
+    "h2_high": 0.624117706,
+    "total_mean": 3.826639031,
+    "total_low": 3.521510805,
+    "total_high": 4.163353012,
+    "intercept_mean": 10.042783194,
+    "intercept_low": 9.93259092,
+    "intercept_high": 10.147533698,
+    "effective_h2": 1603.5
+  },
+  "sampling": {
+    "iterations": 120000,
+    "burnin": 20000,
+    "thin": 50
+  },
+  "inside_posterior": {
+    "heritability": true,
+    "variance": true,
+    "intercept": true
+  },
+  "passed": true,
+  "failures": []
+}

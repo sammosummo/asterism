@@ -1,0 +1,112 @@
+{
+  "what": "how many quasi-Monte Carlo points the latent mediation model needs",
+  "date": "2026-08-18",
+  "families": 200,
+  "people": 800,
+  "family_sizes": [
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "reference_points": 32768,
+  "reference_log_likelihood": [
+    -1386.4914768238878,
+    -1556.856397187003,
+    -1413.1235629884845,
+    -1412.233184048729,
+    -1386.8879872511402
+  ],
+  "parameter_points": 5,
+  "tolerance": 0.02,
+  "settings": [
+    {
+      "points": 512,
+      "worst_difference": 0.08624931608505904,
+      "median_difference": 0.055657965785712804,
+      "all_differences": [
+        0.055657965785712804,
+        0.026847991523254677,
+        0.08624931608505904,
+        0.025980972443903738,
+        0.06233555414110015
+      ],
+      "seconds": 0.03641200065612793,
+      "within_tolerance": false
+    },
+    {
+      "points": 1024,
+      "worst_difference": 0.02811834622571041,
+      "median_difference": 0.018183914331530104,
+      "all_differences": [
+        0.018183914331530104,
+        0.007664202666546771,
+        0.02811834622571041,
+        0.008028619192600672,
+        0.020573453858105495
+      ],
+      "seconds": 0.06599931716918946,
+      "within_tolerance": false
+    },
+    {
+      "points": 2048,
+      "worst_difference": 0.001599375691739624,
+      "median_difference": 0.0006704811537474598,
+      "all_differences": [
+        0.0013168342779863451,
+        7.031878931229585e-05,
+        0.0006704811537474598,
+        0.00041127074860014545,
+        0.001599375691739624
+      ],
+      "seconds": 0.12204861640930176,
+      "within_tolerance": true
+    },
+    {
+      "points": 4096,
+      "worst_difference": 0.011654362981516897,
+      "median_difference": 0.009522371415641828,
+      "all_differences": [
+        0.009522371415641828,
+        0.00422332128277958,
+        0.011654362981516897,
+        0.004212895654518434,
+        0.010763059951386822
+      ],
+      "seconds": 0.2524119853973389,
+      "within_tolerance": true
+    },
+    {
+      "points": 8192,
+      "worst_difference": 0.004780098570563496,
+      "median_difference": 0.002966034229757497,
+      "all_differences": [
+        0.002966034229757497,
+        0.0016107351509617729,
+        0.004780098570563496,
+        0.0014310145493254822,
+        0.003284939570221468
+      ],
+      "seconds": 0.5088791847229004,
+      "within_tolerance": true
+    },
+    {
+      "points": 16384,
+      "worst_difference": 0.0011881661371262453,
+      "median_difference": 0.0005699220032511221,
+      "all_differences": [
+        0.0005699220032511221,
+        0.00039264223187274183,
+        0.0011881661371262453,
+        0.0003121243519217387,
+        0.0006181865589951485
+      ],
+      "seconds": 0.9875478267669677,
+      "within_tolerance": true
+    }
+  ],
+  "cheapest_within_tolerance": 2048,
+  "passed": true,
+  "failures": []
+}

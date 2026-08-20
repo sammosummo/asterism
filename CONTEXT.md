@@ -60,9 +60,9 @@ _Avoid_: receipt, artefact, run record
 
 **Deferred capability**:
 Something Asterism does not do yet and will do when an analysis needs it.
-Survival, longitudinal, Tobit, signal detection and prospective design analysis
-are all deferred. The list carries no order, priority or dates, because a list
-with an order is a roadmap.
+Survival, longitudinal, signal detection and prospective design analysis are all
+deferred. The list carries no order, priority or dates, because a list with an
+order is a roadmap.
 
 Liability and threshold models, gene-by-environment, spatial, BLUP and
 association have each left this list by an amendment naming the analysis that
@@ -92,6 +92,17 @@ that ignores the question, because linkage has no power there either.
 
 The latent mediation model left the list on 16 August 2026, named by the
 mediation grant, which is the analysis it was built for.
+
+Tobit left the list on 18 August 2026, named by the extended high-frequency
+audiogram. An audiometer stops at its maximum output, so a threshold nobody
+reached is a bound rather than a value, and the share of thresholds that hits
+one climbs with frequency: 0.2% at 500 Hz, 16% at 12.5 kHz, 52% at 16 kHz and
+75% at 18 kHz. `TobitModel` fits one such trait and returns the heritability of
+the complete variable — the number there would have been had the instrument
+reached far enough — which is not the number a Gaussian fit to values replaced
+by their limit returns. `MixedBivariateModel` fits a pair in any combination of
+continuous, binary and censored, named by the genetic correlation between a
+psychiatric diagnosis and hearing.
 
 The variant-set kernels stay for the same effort, and Asterism will grow the
 test that belongs with them. Using SKAT through R would mean treating the

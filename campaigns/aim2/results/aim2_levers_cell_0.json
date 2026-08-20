@@ -1,0 +1,15 @@
+{
+  "design": "/net/lus01/home/smathias/asterism-campaign/design.npz",
+  "replicates": 200,
+  "arm": "audiogram",
+  "bootstrap": 50,
+  "cells": {
+    "baseline | null: no path": {
+      "replicates": 200,
+      "people": 1600,
+      "mean_cases": 257,
+      "vertical_refused": 3,
+      "vertical_reject_025": 2
+    }
+  }
+}

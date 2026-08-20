@@ -18,10 +18,12 @@ mod gxe;
 mod kinship_classes;
 mod latent_mediation;
 mod liability;
+mod mixed_bivariate;
 mod mixture_tail;
 mod prepared;
 mod relationship;
 mod spatial;
+mod tobit;
 mod variant_set;
 
 pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
@@ -32,11 +34,18 @@ pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
-    LatentMediationDesign, LatentMediationEvaluation, LatentMediationFamilyEvaluation,
-    LatentMediationFamilyInput, LatentMediationFit, LatentMediationModel,
-    LatentMediationParameters, VerticalTest, simulate as simulate_latent_mediation,
+    HorizontalSet, VerticalSet,
+    HorizontalTest, LatentMediationDesign, LatentMediationEvaluation,
+    LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
+    LatentMediationModel, LatentMediationParameters, VerticalTest,
+    simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
+pub use mixed_bivariate::{
+    GENETIC_CORRELATION, HERITABILITY_ONE, HERITABILITY_TWO, MixedBivariateFit,
+    MixedBivariateInterval, MixedBivariateModel, RESIDUAL_CORRELATION, TraitData, TraitKind,
+};
+pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
@@ -128,11 +137,33 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
+        liability::python::region_log_probability,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
         variant_set::python::variant_set_scan,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         variant_set::python::variant_set_family_scan,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(tobit::python::tobit_fit, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        tobit::python::tobit_interval,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(tobit::python::tobit_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_test,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_interval,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(spatial::spatial_fit, module)?)?;

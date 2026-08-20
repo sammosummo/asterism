@@ -1,0 +1,71 @@
+{
+  "design": "/net/lus01/home/smathias/asterism-campaign/design.npz",
+  "replicates": 200,
+  "bootstrap": 50,
+  "cells": {
+    "ABR only | direct 0.0": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "ABR only | direct 0.3": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "ABR only | direct 0.5": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "ABR only | direct 0.7": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "audiogram | direct 0.0": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "audiogram | direct 0.3": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    },
+    "audiogram | direct 0.5": {
+      "replicates": 200,
+      "mean_cases": 257,
+      "vertical_refused": 4,
+      "vertical_reject_025": 97,
+      "horizontal_refused": 5,
+      "horizontal_reject_025": 66
+    },
+    "audiogram | direct 0.7": {
+      "replicates": 0,
+      "mean_cases": 0,
+      "vertical_refused": 0,
+      "vertical_reject_025": 0,
+      "horizontal_refused": 0,
+      "horizontal_reject_025": 0
+    }
+  }
+}

@@ -88,7 +88,9 @@ impl PyLatentMediationCore {
         qmc_points,
         mediator_designs,
         outcome_designs,
-        outcome_prevalences
+        outcome_prevalences,
+        outcome_category_prevalences=None,
+        ascertainment_categories=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn _build(
@@ -108,6 +110,8 @@ impl PyLatentMediationCore {
         mediator_designs: &Bound<'_, PyAny>,
         outcome_designs: &Bound<'_, PyAny>,
         outcome_prevalences: &Bound<'_, PyAny>,
+        outcome_category_prevalences: Option<&Bound<'_, PyAny>>,
+        ascertainment_categories: Option<Vec<Option<usize>>>,
     ) -> PyResult<Self> {
         for value in [
             relationships,
@@ -134,6 +138,17 @@ impl PyLatentMediationCore {
         let mediator_designs: Vec<Vec<Vec<f64>>> = mediator_designs.extract()?;
         let outcome_designs: Vec<Vec<Vec<f64>>> = outcome_designs.extract()?;
         let outcome_prevalences: Vec<Vec<Option<f64>>> = outcome_prevalences.extract()?;
+        // Absent means every family is binary, which is what every caller
+        // written before staging existed intends.
+        let outcome_category_prevalences: Vec<Vec<Vec<f64>>> = match outcome_category_prevalences {
+            Some(value) => {
+                reject_boolean_tree(value, "LATENT_MEDIATION_NUMERIC_BOOLEAN")?;
+                value.extract()?
+            }
+            None => vec![Vec::new(); outcome_prevalences.len()],
+        };
+        let ascertainment_categories =
+            ascertainment_categories.unwrap_or_else(|| vec![None; outcome_prevalences.len()]);
         let latent_means: Vec<Vec<f64>> = latent_means.extract()?;
         let mediator_measurements: Vec<Vec<Option<f64>>> = mediator_measurements.extract()?;
         let mediator_measurement_error_variances: Vec<Vec<Option<f64>>> =
@@ -170,6 +185,14 @@ impl PyLatentMediationCore {
                 mediator_design: mediator_designs[index].clone(),
                 outcome_design: outcome_designs[index].clone(),
                 outcome_prevalence: outcome_prevalences[index].clone(),
+                outcome_category_prevalence: outcome_category_prevalences
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_default(),
+                ascertainment_category: ascertainment_categories
+                    .get(index)
+                    .copied()
+                    .flatten(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
                 mediator_measurement_error_variance: mediator_measurement_error_variances[index]
@@ -293,6 +316,73 @@ impl PyLatentMediationCore {
         out.set_item("loading_p_value", test.loading_p_value)?;
         out.set_item("path_statistic", test.path_statistic)?;
         out.set_item("path_p_value", test.path_p_value)?;
+        Ok(out)
+    }
+
+    /// Test the horizontal estimand `c_prime` against nought.
+    #[pyo3(signature = ())]
+    fn test_horizontal<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let test = self.model.test_horizontal().map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("p_value", test.p_value)?;
+        out.set_item("rule", test.rule)?;
+        out.set_item("reference", test.reference)?;
+        out.set_item("statistic", test.statistic)?;
+        Ok(out)
+    }
+
+    /// A 97.5 per cent confidence set for the horizontal estimand.
+    ///
+    /// `lower` and `upper` are `None` where that end did not close within
+    /// `searched_to`. That is the point of them: an end reported as the edge of
+    /// the search would be a statement about the search rather than the data.
+    /// `unbounded` is true when neither end closed, which is what a direct path
+    /// the data cannot locate looks like.
+    #[pyo3(signature = (searched_to = 4.0))]
+    fn horizontal_set<'py>(
+        &self,
+        py: Python<'py>,
+        searched_to: f64,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let set = self.model.horizontal_set(searched_to).map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("estimate", set.estimate)?;
+        out.set_item("lower", set.lower)?;
+        out.set_item("upper", set.upper)?;
+        out.set_item("unbounded", set.unbounded)?;
+        out.set_item("level", set.level)?;
+        out.set_item("searched_to", set.searched_to)?;
+        Ok(out)
+    }
+
+    /// A 97.5 per cent confidence set for the vertical estimand.
+    ///
+    /// `contains_zero` is decided by the intersection-union test rather than by
+    /// the profile, because at nought the null is a union and one likelihood
+    /// ratio has no reference across it. `disjoint` is true where the set spans
+    /// nought but excludes it, so it is two pieces rather than one -- read it
+    /// before treating `lower` and `upper` as an interval, because the values
+    /// between them are then not all in the set.
+    #[pyo3(signature = (searched_to = 1.0, bootstrap_replicates = 200))]
+    fn vertical_set<'py>(
+        &self,
+        py: Python<'py>,
+        searched_to: f64,
+        bootstrap_replicates: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let set = self
+            .model
+            .vertical_set(searched_to, bootstrap_replicates)
+            .map_err(code)?;
+        let out = PyDict::new(py);
+        out.set_item("estimate", set.estimate)?;
+        out.set_item("lower", set.lower)?;
+        out.set_item("upper", set.upper)?;
+        out.set_item("contains_zero", set.contains_zero)?;
+        out.set_item("disjoint", set.disjoint)?;
+        out.set_item("level", set.level)?;
+        out.set_item("profile_failures", set.profile_failures)?;
+        out.set_item("searched_to", set.searched_to)?;
         Ok(out)
     }
 
@@ -468,6 +558,8 @@ fn fit_dict<'py>(
     seed,
     ascertainment="population_unconditioned",
     proband_index=None,
+    outcome_category_prevalence=None,
+    ascertainment_category=None,
 ))]
 pub fn latent_mediation_simulate<'py>(
     py: Python<'py>,
@@ -493,6 +585,8 @@ pub fn latent_mediation_simulate<'py>(
     seed: u64,
     ascertainment: &str,
     proband_index: Option<usize>,
+    outcome_category_prevalence: Option<Vec<Vec<f64>>>,
+    ascertainment_category: Option<usize>,
 ) -> PyResult<Bound<'py, PyList>> {
     let design = LatentMediationDesign {
         relationship,
@@ -501,6 +595,8 @@ pub fn latent_mediation_simulate<'py>(
         outcome_design,
         outcome_coefficients,
         outcome_prevalence,
+        outcome_category_prevalence: outcome_category_prevalence.unwrap_or_default(),
+        ascertainment_category,
         mediator_threshold,
         outcome_threshold,
         mediator_measurement_error_variance,
@@ -537,6 +633,16 @@ pub fn latent_mediation_simulate<'py>(
         item.set_item("mediator_threshold", family.mediator_threshold)?;
         item.set_item("outcome_threshold", family.outcome_threshold)?;
         item.set_item("outcome_prevalence", family.outcome_prevalence)?;
+        // Echoed like every other field, so a drawn family can be handed
+        // straight back to the model. Without these two a staged family comes
+        // back describing stages the model is no longer told about, and the
+        // first thing it says is that the status is not binary -- which is
+        // true, and unhelpful, and nothing to do with the caller.
+        item.set_item(
+            "outcome_category_prevalence",
+            family.outcome_category_prevalence,
+        )?;
+        item.set_item("ascertainment_category", family.ascertainment_category)?;
         item.set_item(
             "mediator_proxy_sensitivity",
             family.mediator_proxy_sensitivity,

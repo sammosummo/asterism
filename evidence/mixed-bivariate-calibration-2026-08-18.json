@@ -1,0 +1,45 @@
+{
+  "what": "recovery of the genetic correlation across trait kinds",
+  "date": "2026-08-18",
+  "pairs": 400,
+  "replicates": 100,
+  "truth": {
+    "genetic_correlation": 0.4,
+    "residual_correlation": 0.15,
+    "heritability": [
+      0.5,
+      0.5
+    ]
+  },
+  "prevalence": 0.3,
+  "censored_share": 0.25,
+  "standard_errors_allowed": 3.0,
+  "by_pairing": {
+    "continuous": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.3790056619959493,
+      "genetic_correlation_standard_error": 0.012578366838090877,
+      "heritability_first_mean": 0.4879839594630367,
+      "heritability_second_mean": 0.4929418422428619
+    },
+    "binary": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.38677131669223125,
+      "genetic_correlation_standard_error": 0.01940250716950382,
+      "heritability_first_mean": 0.47927217731343785,
+      "heritability_second_mean": 0.4929420291074406
+    },
+    "censored": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.37643623062712245,
+      "genetic_correlation_standard_error": 0.012986633789875798,
+      "heritability_first_mean": 0.49497878360958725,
+      "heritability_second_mean": 0.4929418758270401
+    }
+  },
+  "passed": true,
+  "failures": []
+}

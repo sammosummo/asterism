@@ -27,6 +27,12 @@ __all__ = [
     "ComponentModel",
     "SpatialModel",
     "kinship_classes",
+    "mixed_bivariate_fit",
+    "mixed_bivariate_interval",
+    "mixed_bivariate_test",
+    "tobit_fit",
+    "tobit_interval",
+    "tobit_test",
 ]
 
 
@@ -1512,3 +1518,373 @@ def kinship_classes(
         "class_names": names,
         "pairs": dict(zip(names, pairs, strict=True)),
     }
+
+
+def tobit_fit(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """Fit one trait whose measurement stops at a limit.
+
+    ``censoring`` is 0 where the value was measured, 1 where it lies at or
+    above its limit, and 2 where it lies at or below it. **The status is given
+    rather than inferred**, because a censored value can carry the same number
+    as a measured one — extended high-frequency audiometry records several
+    limits within one frequency, and measured values coincide with them.
+
+    ``value`` is read only where the status says measured, and ``limit`` only
+    where it does not.
+
+    The heritability that comes back is the heritability of the *complete*
+    variable — the number you would have had if the instrument reached far
+    enough. It is comparable with an ordinary heritability of an uncensored
+    trait, and not with one fitted to values where the censored ones were
+    replaced by the limit. It is maximum likelihood, never REML, so it must not
+    be placed beside a REML heritability as though the two were the same.
+    """
+    (
+        heritability,
+        total_variance,
+        fixed_effects,
+        loglik,
+        converged,
+        scaled_gradient,
+        censored_share,
+        largest_family,
+    ) = _core.tobit_fit(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "heritability": heritability,
+        "total_variance": total_variance,
+        "fixed_effects": fixed_effects,
+        "loglik": loglik,
+        "converged": converged,
+        "scaled_gradient": scaled_gradient,
+        "censored_share": censored_share,
+        "largest_family": largest_family,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_fit(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+) -> dict[str, Any]:
+    """Fit two traits whose measurements need not be of the same kind.
+
+    Each trait is a dictionary with ``kind`` (``"continuous"``, ``"binary"`` or
+    ``"censored"``), ``value``, ``censoring`` and ``limit``. For a binary trait
+    a censoring code of 1 is a case, and the limit is nought because the
+    threshold is carried by the intercept.
+
+    **A binary trait's variance is fixed at one** and comes back as one, because
+    only the sign of a liability is ever seen. Its heritability is therefore a
+    liability heritability, while a continuous or censored trait's is not; the
+    two must not be read as the same quantity. The genetic correlation is
+    unaffected, which is what makes a mixed pair worth fitting.
+    """
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        if each["kind"] not in kinds:
+            raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+    (
+        heritability,
+        total_variance,
+        genetic_correlation,
+        residual_correlation,
+        first_effects,
+        second_effects,
+        loglik,
+        converged,
+        scaled_gradient,
+        largest_family,
+    ) = _core.mixed_bivariate_fit(
+        np.ascontiguousarray(relationship, dtype=float),
+        first_kind,
+        first_value,
+        first_censoring,
+        first_limit,
+        second_kind,
+        second_value,
+        second_censoring,
+        second_limit,
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "heritability": heritability,
+        "total_variance": total_variance,
+        "genetic_correlation": genetic_correlation,
+        "residual_correlation": residual_correlation,
+        "fixed_effects": [first_effects, second_effects],
+        "loglik": loglik,
+        "converged": converged,
+        "scaled_gradient": scaled_gradient,
+        "largest_family": largest_family,
+        "kinds": [first["kind"], second["kind"]],
+        "estimator": "ml",
+    }
+
+
+def tobit_interval(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """A 95 per cent profile-likelihood interval for the censored heritability.
+
+    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    parameter's own bound rather than where the profile fell away. An end on a
+    bound means **the data did not rule that end out**, which is a different
+    statement from the interval stopping there.
+
+    ``profile_failures`` counts fits along the profile that failed or did not
+    converge. Each one widened the interval rather than narrowing it, which is
+    the safe direction, but a large count means the interval rests on fewer
+    points than its width suggests.
+
+    Read ``censored_share`` beside the answer. On simulated data the model
+    recovers the truth to three quarters censored; on real extended
+    high-frequency thresholds it degrades past about half, where too little of
+    the upper tail is left to estimate a variance from.
+    """
+    (
+        estimate,
+        lower,
+        upper,
+        lower_at_bound,
+        upper_at_bound,
+        level,
+        contains_lower_bound,
+        contains_upper_bound,
+        profile_failures,
+        censored_share,
+    ) = _core.tobit_interval(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "estimate": estimate,
+        "lower": lower,
+        "upper": upper,
+        "lower_at_bound": lower_at_bound,
+        "upper_at_bound": upper_at_bound,
+        "level": level,
+        # Whether the bound itself belongs to the interval, decided by the
+        # Self-Liang mixture rather than by the end having landed on it. Absent
+        # where the end is not on its bound, and absent where the fit there
+        # could not be made -- which means nobody measured it, not that the
+        # question does not apply.
+        "contains_lower_bound": contains_lower_bound,
+        "contains_upper_bound": contains_upper_bound,
+        "profile_failures": profile_failures,
+        "censored_share": censored_share,
+        "estimator": "ml",
+    }
+
+
+def tobit_test(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """Test the censored heritability against nought.
+
+    The null holds the heritability at nought, which is its own bound, so the
+    reference is the Self-Liang 50:50 mixture of chi-square on nought and one
+    degrees of freedom rather than a plain chi-square. ``rule`` says which was
+    used, as data rather than as a promise.
+    """
+    statistic, p_value, rule, null_loglik, alternative_loglik = _core.tobit_test(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "statistic": statistic,
+        "p_value": p_value,
+        "rule": rule,
+        "null_loglik": null_loglik,
+        "alternative_loglik": alternative_loglik,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_test(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+    coordinate: str = "genetic_correlation",
+) -> dict[str, Any]:
+    """Test one correlation of the mixed bivariate model against nought.
+
+    ``coordinate`` is ``genetic_correlation`` or ``residual_correlation``, the
+    same names the interval takes. Nought is an interior point of a
+    correlation's range, so the reference is a plain chi-square on one degree
+    of freedom and no boundary mixture applies.
+
+    This is the question the model exists to answer: an estimate with an
+    interval does not say whether the two traits share genes at all.
+    """
+    coordinates = {"genetic_correlation": 4, "residual_correlation": 5}
+    if coordinate not in coordinates:
+        raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST")
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        if each["kind"] not in kinds:
+            raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+
+    what, statistic, p_value, rule, null_loglik, alternative_loglik = (
+        _core.mixed_bivariate_test(
+            np.ascontiguousarray(relationship, dtype=float),
+            first_kind,
+            first_value,
+            first_censoring,
+            first_limit,
+            second_kind,
+            second_value,
+            second_censoring,
+            second_limit,
+            np.ascontiguousarray(design, dtype=float),
+            coordinates[coordinate],
+        )
+    )
+    return {
+        "what": what,
+        "statistic": statistic,
+        "p_value": p_value,
+        "rule": rule,
+        "null_loglik": null_loglik,
+        "alternative_loglik": alternative_loglik,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_interval(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+    coordinate: str = "genetic_correlation",
+) -> dict[str, Any]:
+    """A 95 per cent profile-likelihood interval for one bivariate coordinate.
+
+    ``coordinate`` is ``"heritability_one"``, ``"heritability_two"``,
+    ``"genetic_correlation"`` or ``"residual_correlation"``.
+
+    **The variances have no interval on purpose.** A binary trait's is fixed at
+    one because a liability has no scale of its own, so an interval on it would
+    describe that assumption rather than the data.
+
+    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    coordinate's own bound — nought or one for a heritability, minus one or one
+    for a correlation — rather than where the profile fell away. An end on a
+    bound means the data did not rule that end out, which is a different
+    statement from the interval stopping there.
+    """
+    coordinates = {
+        "heritability_one": 0,
+        "heritability_two": 1,
+        "genetic_correlation": 4,
+        "residual_correlation": 5,
+    }
+    if coordinate not in coordinates:
+        raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL")
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+    (
+        what, estimate, lower, upper,
+        lower_at_bound, upper_at_bound, level, profile_failures,
+    ) = _core.mixed_bivariate_interval(
+        np.ascontiguousarray(relationship, dtype=float),
+        first_kind, first_value, first_censoring, first_limit,
+        second_kind, second_value, second_censoring, second_limit,
+        np.ascontiguousarray(design, dtype=float),
+        coordinates[coordinate],
+    )
+    return {
+        "what": what,
+        "estimate": estimate,
+        "lower": lower,
+        "upper": upper,
+        "lower_at_bound": lower_at_bound,
+        "upper_at_bound": upper_at_bound,
+        "level": level,
+        "profile_failures": profile_failures,
+        "estimator": "ml",
+    }
+
+
+def region_log_probability(mean: Any, sign: Any, covariance: Any) -> float:
+    """The conditional region log-probability the censored models rest on.
+
+    **Exposed so that it can be checked, not so that it can be used.** This is
+    the sequential truncation — exact to two coordinates, Mendell-Elston above
+    — and every censored heritability in the package rests on it. All the
+    evidence for those models was generated on pairs, where the approximate
+    branch never runs at all, so the only way to learn how it behaves in a
+    large family is to call it beside an independent reference.
+    ``checks/sequential_against_ghk.py`` is that reference.
+
+    ``mean`` is each coordinate's mean already centred on its own limit, and
+    ``sign`` is 1.0 where the value lies above that limit and -1.0 where it
+    lies below — the convention the censored model builds. The region is
+    therefore about nought, and the probability returned is that of the whole
+    orthant, jointly and not coordinate by coordinate.
+    """
+    return float(
+        _core.region_log_probability(
+            np.ascontiguousarray(mean, dtype=float),
+            np.ascontiguousarray(sign, dtype=float),
+            np.ascontiguousarray(covariance, dtype=float),
+        )
+    )

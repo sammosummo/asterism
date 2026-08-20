@@ -483,6 +483,76 @@ runs cannot measure a rejection rate. No simulation presently establishes
 coverage or type-I error for the vertical estimand `a b`, so the model reports numerical diagnostics and point estimates
 without a calibrated interval or p-value.
 
+## Censored model
+
+Against R's `censReg` with no relatedness, the log likelihood and all four
+reported quantities agreed to `9.6e-9` at 4,000 people with 1,131 censored.
+With relatedness, the maximum-likelihood estimates sit inside MCMCglmm's
+posterior. Substituting the limit -- the usual practice -- returns 0.46 at a
+quarter censored and 0.31 at three quarters where the truth is 0.5; the
+censored model recovers 0.5 at every rate to three quarters.
+
+**Interval coverage, on 300 replicates of 300 sibling pairs per cell**, scored
+unconditionally with no cell dropped and no refusals:
+
+| true h² | 0% censored | 25% | 50% |
+| --- | --- | --- | --- |
+| 0.0 | 0.937 | 0.950 | 0.960 |
+| 0.3 | 0.943 | 0.943 | 0.957 |
+| 0.5 | 0.953 | 0.950 | 0.933 |
+
+All nine cells contain the nominal 0.95 in their Clopper-Pearson intervals,
+**two-sided, including the cells at nought**.
+
+Correcting the receipt of 18 August 2026, which reported 0.980, 0.977 and 0.983
+in those three cells and passed them under a one-sided rule: the interval was
+missing the Self-Liang mixture that ADR 0004 requires, so a lower end of nought
+was read as containment whatever the likelihood there said. ADR 0004 had
+already measured what that costs -- 0.977 against 0.953 -- and the censored
+model reproduced it. The mixture is now on the record as
+`contains_lower_bound` and `contains_upper_bound`, the check reads it, and the
+boundary allowance that hid the fault is gone. `evidence/tobit-coverage-2026-08-18.json`
+predates the mixture and describes a recipe the code no longer implements.
+
+## Mixed bivariate model
+
+Against native SOLAR on the binary-with-continuous pair, the worst difference
+was 0.014. Recovery of a genetic correlation of 0.4 is mildly conservative in
+every pairing, an attenuation the all-continuous control shows too, so it
+belongs to maximum likelihood rather than to the censoring.
+
+**Interval coverage for the genetic correlation, on 300 replicates of 400
+sibling pairs per cell**, each cell drawn on its own stream, scored
+unconditionally with no refusals:
+
+| pairing | ρ = 0.0 | ρ = 0.4 | ρ = 0.7 |
+| --- | --- | --- | --- |
+| continuous | 0.950 | 0.957 | 0.957 |
+| binary | 0.930 | 0.943 | 0.943 |
+| censored | 0.940 | 0.940 | 0.943 |
+
+The test against nought holds its level in the same run: 0.050, 0.070 and 0.060
+against a nominal 0.05, with power at ρ = 0.7 of 0.997, 0.950 and 0.993. Nought
+is an interior point of a correlation's range, so the reference is a plain
+chi-square on one degree of freedom and no boundary mixture applies.
+
+**This is the first measurement of that interval, and it found it broken.**
+Before the fix, one end of every correlation interval sat on its own bound
+whatever the data said, giving widths of about 1.5 on a parameter that runs
+from minus one to one. The cause was the convergence flag: it was read from a
+raw maximum-absolute gradient, neither projected onto the coordinates the
+search is free to move nor divided by the objective. A held profile fit rests
+other coordinates on their bounds, so a perfectly good constrained maximum
+reported that it had not converged, the profile discarded it as a failure, and
+a failure reads as an end the data did not rule out.
+
+The interval contradicted this model's own test, which is how it was caught: a
+replicate reporting an interval of `[-1.0000, 0.8429]` -- containing nought --
+had a deviance at nought of 29.9 and a p-value of `4.5e-08`. Projecting and
+scaling the gradient, as the liability model already did, moved that interval
+to `[0.4928, 0.8429]` and brought the two into agreement. Widths fell from
+about 1.5 to between 0.44 and 0.97.
+
 ## Scale and cost
 
 The dense routes are quadratic in memory and the fits are cubic in the largest
@@ -526,8 +596,53 @@ uv run --no-project python checks/spatial_against_spamm.py
 uv run --no-project python checks/bivariate_against_solar.py
 uv run --no-project python checks/liability_against_solar.py
 uv run --no-project python checks/association_against_solar.py
+uv run --no-project python checks/mixed_bivariate_against_solar.py
 uv run --locked --no-sync python checks/against_famskat.py
 ```
+
+The censored model against R. `censReg` gives the fit with no relatives in it,
+which is the only case the two models share; `MCMCglmm` carries the relatedness
+and is compared by posterior interval rather than by point estimate, because it
+is a different estimator and agreement to a decimal would be the surprising
+outcome:
+
+```sh
+uv run --no-project python checks/tobit_against_censreg.py
+uv run --no-project python checks/tobit_against_mcmcglmm.py
+```
+
+The sequential region approximation against a reference that does not come
+from this crate. Every censored heritability rests on one conditional region
+probability, exact to two coordinates and Mendell-Elston sequential truncation
+above -- and all the evidence for the censored models was generated on pairs,
+where the approximate branch never runs at all. This climbs a ladder of 5, 20,
+50, 100 and 221 censored dimensions against a GHK simulator, which is unbiased
+and carries its own standard error. The crate's own quasi-Monte Carlo rectangle
+cannot serve as the reference here: it refuses above 25 dimensions.
+
+```sh
+uv run --no-project python checks/sequential_against_ghk.py
+```
+
+**What it found, on 19 August 2026.** Conditioned on the rest of the family --
+which is what the models actually evaluate -- the error at 221 dimensions is
+0.062 log units, about 0.09 of what a heritability step of 0.1 does to the same
+quantity. The approximation is safe there.
+
+**It is safe because of the conditioning, not because the routine is
+accurate.** Conditioning on a nearly complete audiogram leaves a mean absolute
+correlation of 0.009 between the censored residuals, and sequential truncation
+is exact when coordinates are independent. On the same number of coordinates
+with nothing conditioned away, where the correlations are the audiogram's own,
+the error is 84 times larger and the answer moves by 3.3 log units depending on
+the order the coordinates are given in -- an order that is arbitrary, because
+when every censored value lies the same side of its limit there is no rarer
+class to sort by.
+
+So the result is conditional on the design. Fewer frequencies, heavier
+censoring, smaller families, or a person whose audiogram is mostly unmeasurable
+all reduce how much is conditioned on and move back towards the regime where it
+is not safe. Run it again when the design changes.
 
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
@@ -551,6 +666,32 @@ uv run --no-project python checks/gxe_intervals.py
 uv run --no-project python checks/discrete_gxe_calibration.py
 uv run --no-project python checks/liability_calibration.py
 uv run --no-project python checks/association_tail.py
+uv run --no-project python checks/tobit_calibration.py
+uv run --no-project python checks/tobit_coverage.py
+uv run --no-project python checks/mixed_bivariate_calibration.py
+uv run --no-project python checks/mixed_bivariate_coverage.py
+uv run --no-project python checks/mediation_calibration.py
+uv run --no-project python checks/mediation_ascertainment.py
+uv run --with numpy python checks/mediation_power.py
+```
+
+`mediation_power.py` answers a design question rather than checking a
+calculation: whether to enrol several offspring per adjudicated case. It is here
+because it is a simulation that has to be run and read like the rest.
+
+Measurements that set a default rather than assert a result. Both exist because
+a number in the code was chosen once and needed a reason attached:
+
+```sh
+uv run --no-project python checks/mediation_qmc_points.py
+uv run --no-project python checks/mediation_family_size_cost.py
+```
+
+Reading a real relationship matrix, which the others never do. It asserts on
+structure and agreement, never on a person:
+
+```sh
+uv run --no-project python checks/empirical_kinship_import.py
 ```
 
 Timing, which asserts nothing:

@@ -157,6 +157,11 @@ class LatentMediationModel:
         mediator_designs: list[list[list[Any]]] = []
         outcome_designs: list[list[list[Any]]] = []
         outcome_prevalences: list[list[Any]] = []
+        # Per family, per person, the share in each ordered outcome category.
+        # An empty list for a person means their outcome is binary, which is
+        # what every family written before staging existed carries.
+        outcome_category_prevalences: list[list[Any]] = []
+        ascertainment_categories: list[Any] = []
 
         for family in families:
             if not isinstance(family, Mapping):
@@ -229,6 +234,23 @@ class LatentMediationModel:
                     allow_none=True,
                 )
             )
+            staged = _field(family, "outcome_category_prevalence", default=[])
+            outcome_category_prevalences.append(
+                [
+                    _sequence(
+                        person,
+                        "LATENT_MEDIATION_OUTCOME_CATEGORY_PREVALENCE_NOT_A_SEQUENCE",
+                        numeric=True,
+                    )
+                    for person in _sequence(
+                        staged,
+                        "LATENT_MEDIATION_OUTCOME_CATEGORY_PREVALENCE_NOT_A_SEQUENCE",
+                    )
+                ]
+            )
+            ascertainment_categories.append(
+                _field(family, "ascertainment_category", default=None)
+            )
             outcome_thresholds.append(
                 _person_vector(
                     family,
@@ -277,6 +299,8 @@ class LatentMediationModel:
             mediator_designs,
             outcome_designs,
             outcome_prevalences,
+            outcome_category_prevalences,
+            ascertainment_categories,
         )
 
     def evaluate(
@@ -325,6 +349,81 @@ class LatentMediationModel:
         """
         return self._core.test_vertical(bootstrap_replicates)
 
+    def test_horizontal(self) -> dict[str, Any]:
+        """Test the horizontal estimand ``c_prime`` against nought.
+
+        **The null is a point, not a union**, which is what makes this the
+        simpler of the two tests. The direct inherited effect is a single
+        signed coordinate -- an effect outside measured hearing may run either
+        way -- so it is interior, and the ordinary chi-square on one degree of
+        freedom is the whole of the reference. There is no boundary mixture to
+        choose and no simulated reference, so this costs two fits rather than
+        the few hundred the vertical test can cost.
+
+        **It refuses where the mediator loading is at nought.** There the
+        inherited covariance carries the direct path and the outcome loading
+        only as ``c'^2 + d^2``, the two rotate freely against each other, and a
+        p-value would report which of the pair the optimiser happened to pick.
+        Both the free and the held fit are checked, because the loading can be
+        positive when free and fall to its bound once the direct path is held.
+
+        A refusal here is the answer, not a gap: a horizontal component that
+        fails its identification diagnostics is not separately estimable, which
+        is a different statement from its being nought.
+        """
+        return self._core.test_horizontal()
+
+    def horizontal_set(self, *, searched_to: float = 4.0) -> dict[str, Any]:
+        """A 97.5 per cent confidence set for the horizontal estimand.
+
+        Built by inverting the same likelihood ratio :meth:`test_horizontal`
+        computes, at chi-square on one at 0.975 because that is what a
+        two-sided set at the Bonferroni .025 gives.
+
+        **An end that did not close is ``None``, not a number.** Reporting the
+        edge of the search would be a statement about how far the search went
+        rather than about the data. ``unbounded`` is true when neither end
+        closed, and that is the identification diagnostic in its most useful
+        form: a profile that falls away in neither direction is what a direct
+        path the data cannot locate looks like from the data's side. It sees
+        the near-boundary case that :meth:`test_horizontal` cannot, because
+        that refuses only when the loading rests exactly on its bound.
+
+        ``searched_to`` is the distance either side of the estimate that is
+        searched. Widening it costs fits and can only close an end that a
+        narrower search left open.
+        """
+        return self._core.horizontal_set(searched_to)
+
+    def vertical_set(
+        self,
+        *,
+        searched_to: float = 1.0,
+        bootstrap_replicates: int = 200,
+    ) -> dict[str, Any]:
+        """A 97.5 per cent confidence set for the vertical estimand.
+
+        **Nought is decided differently from everywhere else, and has to be.**
+        Away from nought, holding the estimand is one constraint on a curve --
+        the estimand is a product, so a held value fixes the path at the value
+        over the loading -- and the likelihood ratio has an ordinary
+        chi-square reference. At nought the null is a union, the loading is
+        nought or the path is, and no single ratio spans it, so membership
+        there comes from the intersection-union test instead.
+
+        **Read ``disjoint`` before treating ``lower`` and ``upper`` as an
+        interval.** The profile can admit values either side of nought while
+        the union test excludes nought itself, and then the set is genuinely
+        two pieces and the values between the ends are not all in it. The
+        application requires such a set to be retained rather than reported as
+        the interval that covers both.
+
+        This is the expensive one. Holding a product means scanning the loading
+        and taking the best of two dozen fits per value examined, where the
+        horizontal set needs one.
+        """
+        return self._core.vertical_set(searched_to, bootstrap_replicates)
+
     def fit(self) -> dict[str, Any]:
         """Fit the five structural parameters with a fixed numerical recipe.
 
@@ -358,6 +457,8 @@ def simulate(
     outcome_design: Sequence[Sequence[float]] | None = None,
     outcome_coefficients: Sequence[float] | None = None,
     outcome_prevalence: float | Sequence[float | None] | None = None,
+    outcome_category_prevalence: Sequence[float] | Sequence[Sequence[float]] | None = None,
+    ascertainment_category: int | None = None,
 ) -> list[dict[str, Any]]:
     """Draw families from the model, for calibration, coverage and power work.
 
@@ -436,5 +537,15 @@ def simulate(
             int(seed),
             ascertainment,
             proband_index,
+            None if outcome_category_prevalence is None else [
+                [float(share) for share in person]
+                for person in (
+                    [outcome_category_prevalence] * size
+                    if outcome_category_prevalence
+                    and not isinstance(outcome_category_prevalence[0], Sequence)
+                    else outcome_category_prevalence
+                )
+            ],
+            None if ascertainment_category is None else int(ascertainment_category),
         )
     )

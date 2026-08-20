@@ -1,0 +1,31 @@
+{
+  "what": "a binary trait beside a continuous one, against native SOLAR",
+  "date": "2026-08-18",
+  "people": 1800,
+  "families": 300,
+  "affected": 531,
+  "truth": {
+    "heritability": [
+      0.5,
+      0.5
+    ],
+    "genetic_correlation": 0.5,
+    "residual_correlation": 0.2
+  },
+  "asterism": {
+    "h2_affected": 0.5389629822911015,
+    "h2_quantity": 0.44380078114301363,
+    "rho_g": 0.5314400282845424,
+    "rho_e": 0.22601328717312322
+  },
+  "solar": {
+    "h2_affected": 0.5253134,
+    "h2_quantity": 0.4437903,
+    "rho_g": 0.5370928,
+    "rho_e": 0.2239487
+  },
+  "solar_used_the_discrete_model": true,
+  "tolerance": 0.05,
+  "passed": true,
+  "failures": []
+}

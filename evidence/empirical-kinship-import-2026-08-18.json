@@ -1,0 +1,29 @@
+{
+  "what": "Asterism import receipt for the final2555 empirical relationship matrix",
+  "date": "2026-08-18",
+  "subjects": 2555,
+  "matrix_sha256": "dc14affa509de068f88da9b4ce07a0143e2f2bfc461472949cfd16e98486baf2",
+  "identifier_order_sha256": "018df3ebe41a3b46c677551afed45302c813b123cc7d3cd82822f7533788fe3c",
+  "max_asymmetry": 0.0,
+  "diagonal": {
+    "min": 0.6372105986324941,
+    "max": 1.105325028293021,
+    "mean": 0.9874590170844061
+  },
+  "off_diagonal": {
+    "min": -0.1324650514060544,
+    "max": 0.99737071964727
+  },
+  "minimum_eigenvalue": 0.000377305213513881,
+  "exact_preservation_same_order": true,
+  "exact_preservation_reordered": true,
+  "contract": {
+    "subjects": 2555,
+    "off_diagonal_scale": "2 * PC-Relate kinship",
+    "diagonal_scale": "1 + PC-Relate F",
+    "minimum_eigenvalue": 0.000377305213515519,
+    "repair": "none"
+  },
+  "passed": true,
+  "failures": []
+}

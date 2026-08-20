@@ -244,7 +244,7 @@ impl LiabilityModel {
 
     /// The log probability that one family's liabilities fall where its
     /// statuses say they do.
-    fn region_log_probability(
+    pub(crate) fn region_log_probability(
         mean: &[f64],
         sign: &[f64],
         covariance: &DMatrix<f64>,
@@ -926,7 +926,7 @@ impl LiabilityModel {
 }
 
 /// Bisect between a point outside the interval and one inside it.
-fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
+pub(crate) fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
     for _ in 0..40 {
         let middle = 0.5 * (out + inside);
         if outside(middle) {

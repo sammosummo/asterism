@@ -1,0 +1,47 @@
+{
+  "what": "the cost of a third observed outcome in a family",
+  "date": "2026-08-19",
+  "families": 150,
+  "sizes": [
+    2,
+    3,
+    4
+  ],
+  "points": [
+    512,
+    2048
+  ],
+  "rows": [
+    {
+      "size": 2,
+      "people": 300,
+      "seconds": {
+        "512": 0.0003731250762939453,
+        "2048": 0.0003647804260253906
+      },
+      "seconds_per_person": 1.2159347534179687e-06
+    },
+    {
+      "size": 3,
+      "people": 450,
+      "seconds": {
+        "512": 0.016308069229125977,
+        "2048": 0.06166505813598633
+      },
+      "seconds_per_person": 0.00013703346252441406
+    },
+    {
+      "size": 4,
+      "people": 600,
+      "seconds": {
+        "512": 0.023654937744140625,
+        "2048": 0.09111690521240234
+      },
+      "seconds_per_person": 0.00015186150868733725
+    }
+  ],
+  "step_from_two_to_three": 112.69803921568628,
+  "note": "not a correctness problem; the higher-dimensional route converges and factorises. The gap is that nothing sits between an exact bivariate and a fixed quasi-Monte Carlo rule.",
+  "worth_flagging_above": 10.0,
+  "a_design_constraint": true
+}
