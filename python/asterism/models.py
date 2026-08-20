@@ -22,6 +22,7 @@ import numpy as np
 from . import _core
 
 __all__ = [
+    "AutoregressiveModel",
     "BivariateModel",
     "ComponentModel",
     "SpatialModel",
@@ -625,6 +626,102 @@ class SpatialModel:
             "rule": rule,
             "seed": seed,
             "smallest_reportable": 1.0 / (used + 1),
+        }
+
+
+class AutoregressiveModel:
+    """One trait with a separable first-order autoregressive effect on a grid.
+
+    Two people in cells ``(r_i, c_i)`` and ``(r_j, c_j)`` share
+    ``sigma_s^2 * rho_row^|r_i-r_j| * rho_col^|c_i-c_j|``. This is the model
+    Stopher and colleagues fitted to the red deer of Rum, and the standard one
+    for field trials laid out in rows and columns.
+
+    **It is not** :class:`SpatialModel`. That one estimates the range of an
+    isotropic kernel in true distance; this one takes the cell size as given
+    and estimates only how fast correlation falls off per cell. The scale is
+    therefore a choice the caller makes, and the two rates mean nothing without
+    the cell size that produced them — so sweep the cell size rather than
+    reporting one grid's answer.
+
+    **At both rates nought the kernel is the same-cell indicator**, because
+    ``0**0`` is one and ``0**k`` is nought. So this model contains a plain
+    shared-cell random effect as a special case, and asking whether the rates
+    are nought asks whether smooth decay across neighbouring cells buys
+    anything over shared membership.
+
+    Parameters
+    ----------
+    fixed
+        The matrices whose variances are estimated but whose shape is given —
+        a relationship matrix, a household matrix.
+    row, column
+        Cell coordinates per person, as whole numbers of cells.
+    design
+        The fixed-effect design.
+    """
+
+    def __init__(self, fixed: list[Any], row: Any, column: Any, design: Any) -> None:
+        self._fixed = [
+            _owned_matrix(matrix, f"matrix_{i}") for i, matrix in enumerate(fixed)
+        ]
+        self._row = [int(v) for v in np.asarray(row).ravel()]
+        self._column = [int(v) for v in np.asarray(column).ravel()]
+        if len(self._row) != len(self._column):
+            raise ValueError("AUTOREGRESSIVE_CELLS_WRONG_LENGTH")
+        self._design = _owned_matrix(design, "design")
+
+    @property
+    def cells(self) -> int:
+        """How many distinct cells the coordinates hold.
+
+        Worth reading before paying for a fit. A grid so fine that almost
+        everybody is alone in a cell has nothing to say about neighbours, and
+        one so coarse that everybody shares a cell has nothing to say at all.
+        """
+        return _core.autoregressive_cells(self._row, self._column)
+
+    def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
+        """Fit, and report the variances and the two rates."""
+        y = np.ascontiguousarray(y, dtype=np.float64)
+        (
+            variances,
+            proportions,
+            total,
+            rates,
+            loglik,
+            converged,
+            polished,
+            gradient,
+            effects,
+            errors,
+        ) = _core.autoregressive_fit(
+            self._fixed, self._row, self._column, self._design, y, reml
+        )
+        rho_row, rho_column, half_row, half_column = rates
+        return {
+            "variances": list(variances),
+            "raw_coefficient_proportions": list(proportions),
+            "raw_coefficient_total": total,
+            # Correlation between cells one step apart, down and across. These
+            # are per cell: they mean nothing without the cell size.
+            "rho_row": rho_row,
+            "rho_column": rho_column,
+            # The same thing in a unit people think in — how many cells apart
+            # the correlation halves. Nought where a rate is nought, infinite
+            # where it is one.
+            "half_cells_row": half_row,
+            "half_cells_column": half_column,
+            "cells": self.cells,
+            "fixed_effects": [
+                {"estimate": e, "standard_error": s}
+                for e, s in zip(effects, errors, strict=True)
+            ],
+            "loglik": loglik,
+            "scaled_gradient": gradient,
+            "converged": converged,
+            "polished": polished,
+            "estimator": "reml" if reml else "ml",
         }
 
 

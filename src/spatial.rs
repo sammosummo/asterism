@@ -52,13 +52,13 @@ use crate::convergence::{self, TOLERANCE};
 /// That difference is the difference between a bootstrap of an hour and one of
 /// a day, so this path alone is routed through `faer` and everything else is
 /// left where it is.
-struct DenseFactor {
-    logdet: f64,
-    inverse: Mat<f64>,
+pub(crate) struct DenseFactor {
+    pub(crate) logdet: f64,
+    pub(crate) inverse: Mat<f64>,
 }
 
 impl DenseFactor {
-    fn new(v: &DMatrix<f64>) -> Option<(Self, Llt<f64>)> {
+    pub(crate) fn new(v: &DMatrix<f64>) -> Option<(Self, Llt<f64>)> {
         let n = v.nrows();
         let a = Mat::from_fn(n, n, |i, j| v[(i, j)]);
         let llt = Llt::new(a.as_ref(), Side::Lower).ok()?;
@@ -72,7 +72,7 @@ impl DenseFactor {
 }
 
 /// Solve `V z = b` for a vector, through the factorisation.
-fn solve_vector(llt: &Llt<f64>, b: &DVector<f64>) -> DVector<f64> {
+pub(crate) fn solve_vector(llt: &Llt<f64>, b: &DVector<f64>) -> DVector<f64> {
     let n = b.len();
     let rhs = Mat::from_fn(n, 1, |i, _| b[i]);
     let out = llt.solve(rhs.as_ref());
@@ -80,7 +80,7 @@ fn solve_vector(llt: &Llt<f64>, b: &DVector<f64>) -> DVector<f64> {
 }
 
 /// Solve `V Z = B` for a matrix, through the factorisation.
-fn solve_matrix(llt: &Llt<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
+pub(crate) fn solve_matrix(llt: &Llt<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
     let (n, p) = (b.nrows(), b.ncols());
     let rhs = Mat::from_fn(n, p, |i, j| b[(i, j)]);
     let out = llt.solve(rhs.as_ref());
