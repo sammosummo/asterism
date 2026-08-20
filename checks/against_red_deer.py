@@ -70,7 +70,7 @@ def read_table(path: Path) -> list[dict[str, str]]:
     lines = [line for line in path.read_text(errors="replace").splitlines() if line.strip()]
     header = [name.strip() for name in lines[0].split("\t")]
     return [
-        dict(zip(header, [cell.strip() for cell in line.split("\t")]))
+        dict(zip(header, [cell.strip() for cell in line.split("\t")], strict=True))
         for line in lines[1:]
     ]
 
@@ -401,7 +401,7 @@ def fit(matrices: dict[str, np.ndarray], names: list[str], x, y) -> dict:
     present = [name for name in names if name in matrices]
     model = asterism.ComponentModel([matrices[name] for name in present], x)
     record = model.fit(y, reml=True)
-    variances = dict(zip(present + ["residual"], record["variances"]))
+    variances = dict(zip([*present, "residual"], record["variances"], strict=True))
     total = sum(variances.values())
     return {
         "variances": variances,
