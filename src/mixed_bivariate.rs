@@ -111,6 +111,20 @@ pub const HERITABILITY_TWO: usize = 1;
 pub const GENETIC_CORRELATION: usize = 4;
 pub const RESIDUAL_CORRELATION: usize = 5;
 
+/// The result of testing one correlation against nought.
+#[derive(Clone, Debug)]
+pub struct MixedBivariateTest {
+    /// Which correlation was tested, as data on the record.
+    pub what: &'static str,
+    pub statistic: f64,
+    pub p_value: f64,
+    /// The reference distribution the p-value was read against, as data on the
+    /// record rather than as a contract term.
+    pub rule: &'static str,
+    pub null_loglik: f64,
+    pub alternative_loglik: f64,
+}
+
 /// A profile-likelihood interval for one coordinate.
 #[derive(Clone, Debug)]
 pub struct MixedBivariateInterval {
@@ -382,6 +396,47 @@ impl MixedBivariateModel {
         self.fit_holding(None)
     }
 
+    /// One correlation against nought.
+    ///
+    /// **This is the question the model was built to answer.** `CONTEXT.md`
+    /// names the analysis as the genetic correlation between a psychiatric
+    /// diagnosis and hearing, and an estimate with an interval does not say
+    /// whether the two traits share genes at all.
+    ///
+    /// Nought is an interior point of the correlation's range, so the reference
+    /// is a plain chi-square on one degree of freedom. There is no mass at the
+    /// null and no mixture to apply. That is what separates this from a
+    /// variance against nought, which sits on its bound and needs the
+    /// Self-Liang rule instead.
+    ///
+    /// The statistic and the p-value both come from `deviance`, which honours
+    /// the point mass at nought: two searches that land on the same likelihood
+    /// give a deviance that is rounding rather than evidence.
+    pub fn correlation_test(
+        &self,
+        coordinate: usize,
+    ) -> Result<MixedBivariateTest, &'static str> {
+        let what = match coordinate {
+            GENETIC_CORRELATION => "genetic_correlation",
+            RESIDUAL_CORRELATION => "residual_correlation",
+            _ => return Err("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST"),
+        };
+        let free = self.fit()?;
+        let null = self.fit_holding(Some((coordinate, 0.0)))?;
+        let statistic = crate::deviance::deviance(free.loglik, null.loglik);
+        Ok(MixedBivariateTest {
+            what,
+            statistic,
+            p_value: crate::deviance::p_value(
+                statistic,
+                crate::deviance::chi2_one_df_upper_tail,
+            ),
+            rule: "chi2_1",
+            null_loglik: null.loglik,
+            alternative_loglik: free.loglik,
+        })
+    }
+
     /// A 95 per cent profile-likelihood interval for one coordinate.
     ///
     /// Only the two heritabilities and the two correlations are available. A
@@ -574,8 +629,35 @@ impl MixedBivariateModel {
         }
 
         let (objective, theta) = best.ok_or("MIXED_BIVARIATE_NO_START_CONVERGED")?;
+        // The projected, scaled gradient, as the liability model reports it.
+        //
+        // A coordinate resting on its bound contributes a gradient the search
+        // is not free to act on, and a held coordinate contributes one it must
+        // not act on. Counting either in full makes a constrained maximum
+        // report that it did not converge. Dividing by the objective makes the
+        // number mean the same thing at every sample size.
+        //
+        // This is not tidiness. A profile fit discarded as unconverged reads as
+        // an end the data did not rule out, so the unprojected reading put one
+        // end of every correlation interval on its own bound whatever the data
+        // said -- and made the interval contradict this model's own test, which
+        // rejected a correlation of nought that the interval reported as inside.
         let gradient = gradient_of(&theta);
-        let scaled_gradient = gradient.iter().fold(0.0_f64, |worst, g| worst.max(g.abs()));
+        let projected = gradient
+            .iter()
+            .enumerate()
+            .map(|(k, g)| {
+                let held_here = lower[k] == upper[k];
+                let at_lower = theta[k] <= lower[k] && *g > 0.0;
+                let at_upper = theta[k] >= upper[k] && *g < 0.0;
+                if held_here || at_lower || at_upper {
+                    0.0
+                } else {
+                    *g
+                }
+            })
+            .fold(0.0f64, |worst, g| worst.max(g.abs()));
+        let scaled_gradient = projected / objective.abs().max(1.0);
         Ok(MixedBivariateFit {
             heritability: [theta[0], theta[1]],
             total_variance: [theta[2].exp(), theta[3].exp()],
@@ -586,7 +668,7 @@ impl MixedBivariateModel {
                 theta[6 + columns..].to_vec(),
             ],
             loglik: -objective,
-            converged: scaled_gradient < 1e-3,
+            converged: scaled_gradient < 1e-5,
             scaled_gradient,
             kinds: [self.traits[0].kind, self.traits[1].kind],
             estimator: "ml",

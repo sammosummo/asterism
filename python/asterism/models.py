@@ -28,8 +28,10 @@ __all__ = [
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
+    "mixed_bivariate_test",
     "tobit_fit",
     "tobit_interval",
+    "tobit_test",
 ]
 
 
@@ -1537,6 +1539,8 @@ def tobit_interval(
         lower_at_bound,
         upper_at_bound,
         level,
+        contains_lower_bound,
+        contains_upper_bound,
         profile_failures,
         censored_share,
     ) = _core.tobit_interval(
@@ -1553,8 +1557,107 @@ def tobit_interval(
         "lower_at_bound": lower_at_bound,
         "upper_at_bound": upper_at_bound,
         "level": level,
+        # Whether the bound itself belongs to the interval, decided by the
+        # Self-Liang mixture rather than by the end having landed on it. Absent
+        # where the end is not on its bound, and absent where the fit there
+        # could not be made -- which means nobody measured it, not that the
+        # question does not apply.
+        "contains_lower_bound": contains_lower_bound,
+        "contains_upper_bound": contains_upper_bound,
         "profile_failures": profile_failures,
         "censored_share": censored_share,
+        "estimator": "ml",
+    }
+
+
+def tobit_test(
+    relationship: Any,
+    value: Any,
+    censoring: Any,
+    limit: Any,
+    design: Any,
+) -> dict[str, Any]:
+    """Test the censored heritability against nought.
+
+    The null holds the heritability at nought, which is its own bound, so the
+    reference is the Self-Liang 50:50 mixture of chi-square on nought and one
+    degrees of freedom rather than a plain chi-square. ``rule`` says which was
+    used, as data rather than as a promise.
+    """
+    statistic, p_value, rule, null_loglik, alternative_loglik = _core.tobit_test(
+        np.ascontiguousarray(relationship, dtype=float),
+        np.ascontiguousarray(value, dtype=float),
+        np.ascontiguousarray(censoring, dtype=np.int64),
+        np.ascontiguousarray(limit, dtype=float),
+        np.ascontiguousarray(design, dtype=float),
+    )
+    return {
+        "statistic": statistic,
+        "p_value": p_value,
+        "rule": rule,
+        "null_loglik": null_loglik,
+        "alternative_loglik": alternative_loglik,
+        "estimator": "ml",
+    }
+
+
+def mixed_bivariate_test(
+    relationship: Any,
+    first: dict[str, Any],
+    second: dict[str, Any],
+    design: Any,
+    coordinate: str = "genetic_correlation",
+) -> dict[str, Any]:
+    """Test one correlation of the mixed bivariate model against nought.
+
+    ``coordinate`` is ``genetic_correlation`` or ``residual_correlation``, the
+    same names the interval takes. Nought is an interior point of a
+    correlation's range, so the reference is a plain chi-square on one degree
+    of freedom and no boundary mixture applies.
+
+    This is the question the model exists to answer: an estimate with an
+    interval does not say whether the two traits share genes at all.
+    """
+    coordinates = {"genetic_correlation": 4, "residual_correlation": 5}
+    if coordinate not in coordinates:
+        raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST")
+    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+
+    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+        if each["kind"] not in kinds:
+            raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
+        return (
+            kinds[each["kind"]],
+            np.ascontiguousarray(each["value"], dtype=float),
+            np.ascontiguousarray(each["censoring"], dtype=np.int64),
+            np.ascontiguousarray(each["limit"], dtype=float),
+        )
+
+    first_kind, first_value, first_censoring, first_limit = unpack(first)
+    second_kind, second_value, second_censoring, second_limit = unpack(second)
+
+    what, statistic, p_value, rule, null_loglik, alternative_loglik = (
+        _core.mixed_bivariate_test(
+            np.ascontiguousarray(relationship, dtype=float),
+            first_kind,
+            first_value,
+            first_censoring,
+            first_limit,
+            second_kind,
+            second_value,
+            second_censoring,
+            second_limit,
+            np.ascontiguousarray(design, dtype=float),
+            coordinates[coordinate],
+        )
+    )
+    return {
+        "what": what,
+        "statistic": statistic,
+        "p_value": p_value,
+        "rule": rule,
+        "null_loglik": null_loglik,
+        "alternative_loglik": alternative_loglik,
         "estimator": "ml",
     }
 

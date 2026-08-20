@@ -142,6 +142,11 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         tobit::python::tobit_interval,
         module
     )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(tobit::python::tobit_test, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        mixed_bivariate::python::mixed_bivariate_test,
+        module
+    )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         mixed_bivariate::python::mixed_bivariate_fit,
         module
