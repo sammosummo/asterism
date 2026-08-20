@@ -450,6 +450,39 @@ uv run --no-project python checks/tobit_against_censreg.py
 uv run --no-project python checks/tobit_against_mcmcglmm.py
 ```
 
+The sequential region approximation against a reference that does not come
+from this crate. Every censored heritability rests on one conditional region
+probability, exact to two coordinates and Mendell-Elston sequential truncation
+above -- and all the evidence for the censored models was generated on pairs,
+where the approximate branch never runs at all. This climbs a ladder of 5, 20,
+50, 100 and 221 censored dimensions against a GHK simulator, which is unbiased
+and carries its own standard error. The crate's own quasi-Monte Carlo rectangle
+cannot serve as the reference here: it refuses above 25 dimensions.
+
+```sh
+uv run --no-project python checks/sequential_against_ghk.py
+```
+
+**What it found, on 19 August 2026.** Conditioned on the rest of the family --
+which is what the models actually evaluate -- the error at 221 dimensions is
+0.062 log units, about 0.09 of what a heritability step of 0.1 does to the same
+quantity. The approximation is safe there.
+
+**It is safe because of the conditioning, not because the routine is
+accurate.** Conditioning on a nearly complete audiogram leaves a mean absolute
+correlation of 0.009 between the censored residuals, and sequential truncation
+is exact when coordinates are independent. On the same number of coordinates
+with nothing conditioned away, where the correlations are the audiogram's own,
+the error is 84 times larger and the answer moves by 3.3 log units depending on
+the order the coordinates are given in -- an order that is arbitrary, because
+when every censored value lies the same side of its limit there is no rarer
+class to sort by.
+
+So the result is conditional on the design. Fewer frequencies, heavier
+censoring, smaller families, or a person whose audiogram is mostly unmeasurable
+all reduce how much is conditioned on and move back towards the regime where it
+is not safe. Run it again when the design changes.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

@@ -1622,3 +1622,29 @@ def mixed_bivariate_interval(
         "profile_failures": profile_failures,
         "estimator": "ml",
     }
+
+
+def region_log_probability(mean: Any, sign: Any, covariance: Any) -> float:
+    """The conditional region log-probability the censored models rest on.
+
+    **Exposed so that it can be checked, not so that it can be used.** This is
+    the sequential truncation — exact to two coordinates, Mendell-Elston above
+    — and every censored heritability in the package rests on it. All the
+    evidence for those models was generated on pairs, where the approximate
+    branch never runs at all, so the only way to learn how it behaves in a
+    large family is to call it beside an independent reference.
+    ``checks/sequential_against_ghk.py`` is that reference.
+
+    ``mean`` is each coordinate's mean already centred on its own limit, and
+    ``sign`` is 1.0 where the value lies above that limit and -1.0 where it
+    lies below — the convention the censored model builds. The region is
+    therefore about nought, and the probability returned is that of the whole
+    orthant, jointly and not coordinate by coordinate.
+    """
+    return float(
+        _core.region_log_probability(
+            np.ascontiguousarray(mean, dtype=float),
+            np.ascontiguousarray(sign, dtype=float),
+            np.ascontiguousarray(covariance, dtype=float),
+        )
+    )

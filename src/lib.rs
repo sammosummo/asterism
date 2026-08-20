@@ -126,6 +126,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
+        liability::python::region_log_probability,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
         variant_set::python::variant_set_scan,
         module
     )?)?;
