@@ -12,6 +12,10 @@ The shareable logic view is
 file and needs no server. It lets a non-developer inspect the complete design
 state and walk through the comparisons without running the simulation.
 
+The current execution boundary is recorded in
+`PREFLIGHT_RECEIPT_2026-08-21.md`. It records an intentionally terminated local
+cost probe and the Medusa clearance gate; it is not a power verdict.
+
 ## The exact question
 
 **What are the measured level and power of the grant design that has actually
