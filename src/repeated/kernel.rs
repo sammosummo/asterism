@@ -65,6 +65,20 @@ pub(crate) const RATE_MAX: f64 = 1.0e4;
 /// likelihood to rise, and starting from where the last iteration left off
 /// guarantees it cannot fall.
 const INNER_ITERATIONS: usize = 60;
+/// What the objective returns where it cannot be evaluated at all -- a shape
+/// whose covariance will not factorise, or one whose value or gradient is not
+/// finite.
+///
+/// It is a large finite number rather than an infinity because the optimiser
+/// has to be able to work with it. **Being finite is also the hazard**: a
+/// search that never left it would be accepted as a step by an acceptance test
+/// that asked whether the objective was finite, which it always is. So the
+/// acceptance below compares against this name instead. `src/tobit.rs` carries
+/// the same constant for the same reason, and learnt it the same way.
+const INFEASIBLE: f64 = 1.0e30;
+/// The step for differencing the objective where its analytic gradient is
+/// unavailable. The same step the rest of the module uses.
+const GRADIENT_STEP: f64 = 1.0e-5;
 
 /// Separations between positions, formed once.
 pub(crate) struct Kernel {
@@ -279,15 +293,50 @@ pub(crate) fn maximise(
     let bounds = Bounds::new(lower, upper).ok()?;
 
     let value_of = |par: &[f64]| -> f64 {
-        objective(kernel, statistic, weight, par).map_or(1e30, |(value, _)| value)
+        objective(kernel, statistic, weight, par).map_or(INFEASIBLE, |(value, _)| value)
     };
+    // Where the objective cannot be evaluated the gradient is differenced from
+    // the value rather than reported as nought.
+    //
+    // **A nought gradient is what a bound-constrained search reads as a
+    // stationary point.** Returning one at a shape that could not be evaluated
+    // tells the search it has arrived precisely where it has not, and it then
+    // stops there and reports success. That shape is reachable inside the
+    // bounds: `Shaped::bounds` puts a scale's lower bound at nought, and a
+    // nought scale is a singular covariance.
+    //
+    // Differencing the sentinel instead gives a large slope pointing back
+    // towards the feasible region, which is what the censored and liability
+    // models get for free by differencing their objective throughout. Deep
+    // inside an infeasible region both sides are the sentinel and the
+    // difference degenerates to nought again -- the acceptance test below is
+    // what catches that case.
     let gradient_of = |par: &[f64]| -> Vec<f64> {
-        objective(kernel, statistic, weight, par)
-            .map_or_else(|| vec![0.0; par.len()], |(_, gradient)| gradient)
+        if let Some((_, gradient)) = objective(kernel, statistic, weight, par) {
+            return gradient;
+        }
+        (0..par.len())
+            .map(|index| {
+                let step = GRADIENT_STEP * par[index].abs().max(1.0);
+                let mut up = par.to_vec();
+                let mut down = par.to_vec();
+                up[index] += step;
+                down[index] -= step;
+                (value_of(&up) - value_of(&down)) / (2.0 * step)
+            })
+            .collect()
     };
+    // An infeasible start would otherwise scale the objective by the sentinel,
+    // and every genuine reduction would divide to nothing against it -- the
+    // search would stop on its first iteration and call it a step.
+    let before = value_of(&start);
     let mut control = OptimControl::default_for_dimension(start.len());
     control.maxit = INNER_ITERATIONS;
-    control.fnscale = value_of(&start).abs().max(1.0);
+    control.fnscale = if before < INFEASIBLE {
+        before.abs().max(1.0)
+    } else {
+        1.0
+    };
     control.parscale = vec![1.0; start.len()];
     control.factr = 1.0e5;
     control.pgtol = 1e-9;
@@ -298,9 +347,13 @@ pub(crate) fn maximise(
     // Keep the result only where it is no worse. A search that ends badly
     // leaves the component where it was, which is a step of nothing and still a
     // step that cannot lower the likelihood.
-    let before = value_of(&start);
+    //
+    // The test is against the sentinel rather than against `is_finite`, which
+    // the sentinel always satisfies. Where the start was infeasible too, a
+    // finiteness test would have read `INFEASIBLE <= INFEASIBLE` as an
+    // improvement and taken the failed point.
     let after = value_of(&solution.par);
-    let par = if after.is_finite() && after <= before {
+    let par = if after < INFEASIBLE && after <= before {
         solution.par
     } else {
         start
