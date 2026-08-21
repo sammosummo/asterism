@@ -56,7 +56,12 @@ NOMINAL = 0.95
 # The cells: a heritability worth finding, one at the boundary, and censoring
 # from none to the half where the real audiometry stops working.
 HERITABILITIES = [0.0, 0.3, 0.5]
-RATES = [0.0, 0.25, 0.50]
+# **Three quarters is in the list because the data have it.** The extended
+# high-frequency audiogram is 74.6 per cent censored at 18 kHz and 51.3 at
+# 16 kHz, so a coverage check stopping at a half leaves the two frequencies the
+# analysis is actually about outside its own evidence. The point estimate was
+# already checked to three quarters; the interval was not.
+RATES = [0.0, 0.25, 0.50, 0.75]
 
 
 def draw(heritability: float, rate: float, replicate: int):

@@ -18,13 +18,18 @@ use super::{Known, RepeatedModel};
 use nalgebra::DMatrix;
 
 /// How the fit went, as against what it found: iterations, whether the
-/// likelihood ever fell, whether the gradient test passed, the largest family
-/// and the dimension the sequential approximation reached.
+/// likelihood ever fell, whether the gradient test passed, the largest family,
+/// the dimension the sequential approximation reached, and the shape of the
+/// decay.
 ///
-/// Bundled because a Python tuple built by PyO3 stops at twelve entries and
+/// The shape is here rather than beside the floors and the rates only for want
+/// of room, and it belongs with them: a floor and a rate describe a different
+/// curve under each shape.
+///
+/// Bundled because a Python tuple built by `PyO3` stops at twelve entries and
 /// this record has fourteen things worth returning. The split is where it would
 /// have been anyway.
-type Diagnostics = (usize, bool, bool, usize, usize);
+type Diagnostics = (usize, bool, bool, usize, usize, String);
 
 /// Everything one fit returns, flattened for the trip across.
 ///
@@ -44,6 +49,25 @@ type FitRecord = (
     Diagnostics,
 );
 
+/// A profile-likelihood interval for one correlation at one separation:
+/// the component, the separation, the estimate, the two ends, whether each end
+/// sits on a bound, the confidence level, whether each bound belongs to the
+/// interval where it is one, and how many points of the profile could not be
+/// fitted.
+type IntervalRecord = (
+    usize,
+    f64,
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    Option<bool>,
+    Option<bool>,
+    usize,
+);
+
 /// A prepared repeated-measures model.
 #[pyclass(name = "RepeatedCore")]
 pub struct PyRepeatedCore {
@@ -59,18 +83,21 @@ impl PyRepeatedCore {
     /// given, is where each position sits on the caller's own scale, and turns
     /// every covariance into a variance per position with a floor and a rate.
     #[new]
-    #[pyo3(signature = (matrices, design, replicates, positions, line = None))]
+    #[pyo3(signature = (
+        matrices, design, replicates, positions, line = None, shape = "exponential"
+    ))]
     fn new(
         matrices: PyReadonlyArray3<'_, f64>,
         design: PyReadonlyArray2<'_, f64>,
         replicates: usize,
         positions: usize,
         line: Option<PyReadonlyArray1<'_, f64>>,
+        shape: &str,
     ) -> PyResult<Self> {
         let raw = matrices.as_array();
-        let shape = raw.shape();
-        let matrices: Vec<DMatrix<f64>> = (0..shape[0])
-            .map(|k| DMatrix::from_fn(shape[1], shape[2], |i, j| raw[(k, i, j)]))
+        let dimensions = raw.shape();
+        let matrices: Vec<DMatrix<f64>> = (0..dimensions[0])
+            .map(|k| DMatrix::from_fn(dimensions[1], dimensions[2], |i, j| raw[(k, i, j)]))
             .collect();
         let x = design.as_array();
         let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
@@ -81,7 +108,7 @@ impl PyRepeatedCore {
                 if line.len() != positions {
                     return Err(PyValueError::new_err("REPEATED_LINE_WRONG_LENGTH"));
                 }
-                RepeatedModel::build_on_a_line(&matrices, &x, replicates, &line)
+                RepeatedModel::build_on_a_line_shaped(&matrices, &x, replicates, &line, shape)
             }
             None => RepeatedModel::build(&matrices, &x, replicates, positions),
         }
@@ -102,6 +129,51 @@ impl PyRepeatedCore {
         censoring: PyReadonlyArray2<'_, i64>,
         limit: PyReadonlyArray2<'_, f64>,
     ) -> PyResult<FitRecord> {
+        let known = Self::read(&value, &censoring, &limit)?;
+        self.record(&known)
+    }
+
+    /// A 95 per cent profile-likelihood interval for one component's
+    /// correlation at one separation.
+    ///
+    /// **Every point of the profile is a whole fit**, so this costs what about
+    /// forty fits cost.
+    fn correlation_interval(
+        &self,
+        value: PyReadonlyArray2<'_, f64>,
+        censoring: PyReadonlyArray2<'_, i64>,
+        limit: PyReadonlyArray2<'_, f64>,
+        component: usize,
+        separation: f64,
+    ) -> PyResult<IntervalRecord> {
+        let known = Self::read(&value, &censoring, &limit)?;
+        let got = self
+            .model
+            .correlation_interval(&known, component, separation)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            got.component,
+            got.separation,
+            got.estimate,
+            got.lower,
+            got.upper,
+            got.lower_at_bound,
+            got.upper_at_bound,
+            got.level,
+            got.contains_lower_bound,
+            got.contains_upper_bound,
+            got.profile_failures,
+        ))
+    }
+}
+
+impl PyRepeatedCore {
+    /// The three arrays as the model reads them.
+    fn read(
+        value: &PyReadonlyArray2<'_, f64>,
+        censoring: &PyReadonlyArray2<'_, i64>,
+        limit: &PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<Vec<Known>> {
         let value = value.as_array();
         let censoring = censoring.as_array();
         let limit = limit.as_array();
@@ -121,11 +193,12 @@ impl PyRepeatedCore {
                 });
             }
         }
+        Ok(known)
+    }
 
-        let fit = self
-            .model
-            .fit_known(&known)
-            .map_err(PyValueError::new_err)?;
+    /// One fit, flattened for the trip across.
+    fn record(&self, known: &[Known]) -> PyResult<FitRecord> {
+        let fit = self.model.fit_known(known).map_err(PyValueError::new_err)?;
         let flatten = |matrix: &DMatrix<f64>| -> Vec<f64> {
             let mut out = Vec::with_capacity(matrix.nrows() * matrix.ncols());
             for i in 0..matrix.nrows() {
@@ -151,6 +224,7 @@ impl PyRepeatedCore {
                 fit.converged,
                 fit.largest_family,
                 fit.sequential_dimension,
+                fit.shape.to_owned(),
             ),
         ))
     }

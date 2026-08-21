@@ -160,6 +160,40 @@ def test_liability_interval(k, design):
     same(got["upper"], 1.0, "liability upper")
 
 
+def test_repeated_interval(k):
+    """The joint model's interval is on a correlation, not on a heritability.
+
+    Every other family here profiles a share of variance. This one profiles the
+    curve the kernel draws, at one separation, because ADR 0010 records that the
+    floor and the rate behind that curve are not separately estimable while the
+    curve is. So the endpoints pinned here are correlations and the range they
+    live in is what the kernel family can express -- not nought to one.
+    """
+    line = np.array([0.0, 4.0, 9.0, 15.0])
+    people = k.shape[0]
+    rows = people * 2
+    rng = np.random.default_rng(SEED + 9)
+    apart = np.abs(line[:, None] - line[None, :])
+    genetic = 0.35 + 0.65 * np.exp(-0.09 * apart)
+    ear = 0.7 * (0.05 + 0.95 * np.exp(-0.5 * apart))
+    shared = (
+        np.linalg.cholesky(k + 1e-9 * np.eye(people))
+        @ rng.standard_normal((people, line.size))
+        @ np.linalg.cholesky(genetic).T
+    )
+    value = np.repeat(shared, 2, axis=0) + rng.standard_normal(
+        (rows, line.size)
+    ) @ np.linalg.cholesky(ear).T
+    model = asterism.RepeatedModel(
+        k[np.newaxis], np.ones((rows, 1)), 2, line.size, line=line
+    )
+    censoring = np.zeros((rows, line.size), dtype=np.int64)
+    limit = np.zeros((rows, line.size))
+    got = model.correlation_interval(value, censoring, limit, 0, 9.0)
+    same(got["lower"], 0.39923498063515517, "repeated lower")
+    same(got["upper"], 0.675466258419751, "repeated upper")
+
+
 def test_every_family_with_an_interval_is_pinned_here():
     """A new family must arrive with its endpoints pinned, or this fails.
 
@@ -175,6 +209,7 @@ def test_every_family_with_an_interval_is_pinned_here():
         "GxeModel",
         "DiscreteGxeModel",
         "LiabilityModel",
+        "RepeatedModel",
     }
     here = set(globals())
     exposed = {
@@ -196,13 +231,6 @@ def test_every_family_with_an_interval_is_pinned_here():
         # else. There is nothing to pin until it grows one, and when it does it
         # belongs in `pinned` above rather than here.
         "AutoregressiveModel",
-        # Has no interval yet, and what it should be an interval *of* is an
-        # open question rather than an unwritten function. ADR 0010 records
-        # that the kernel's floor and rate are not separately estimable while
-        # the correlation they describe is, so an interval belongs on
-        # `correlation(d)` at separations that matter and not on either
-        # parameter. When that is settled it belongs in `pinned` above.
-        "RepeatedModel",
     }
     missing = exposed - pinned - exempt
     assert not missing, (

@@ -1230,3 +1230,134 @@ fn a_censored_second_position_still_reproduces_the_mixed_bivariate_model() {
         theirs.genetic_correlation
     );
 }
+
+/// The profile interval on the genetic correlation at a named separation.
+///
+/// **This is the only interval the joint model offers, and ADR 0010 says why:**
+/// the floor and the rate trade off against each other almost exactly, so an
+/// interval on either would be wide and would not mean what it looked like. The
+/// correlation at a separation is what the data speak to.
+///
+/// What is checked here is what an interval has to do. It has to contain its own
+/// estimate. Its ends have to cost 3.8415 in deviance and not some other number,
+/// or the 95 per cent is decoration. And it has to contain the correlation the
+/// data were simulated from, at least on a sample this size, or it is not an
+/// interval for that quantity at all.
+#[test]
+fn the_interval_ends_where_the_likelihood_says_it_should() {
+    let replicates = 2;
+    let scale = [1.0, 1.1, 0.9, 1.2, 1.0, 0.8];
+    let (floor, rate) = (0.35, 0.09);
+    let genetic = shaped(&scale, floor, rate);
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(150, replicates, &genetic, &residual, 20_260_828);
+
+    let model = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build");
+
+    let separation = 9.4;
+    let mut known = Vec::new();
+    for row in 0..data.response.nrows() {
+        for position in 0..data.response.ncols() {
+            known.push(Known::Value(data.response[(row, position)]));
+        }
+    }
+    let interval = model
+        .correlation_interval(&known, 0, separation)
+        .expect("the interval should be takeable");
+
+    assert_eq!(interval.component, 0);
+    assert!((interval.level - 0.95).abs() < 1e-12);
+    assert_eq!(
+        interval.profile_failures, 0,
+        "{} points of the profile could not be fitted",
+        interval.profile_failures
+    );
+    assert!(
+        interval.lower <= interval.estimate && interval.estimate <= interval.upper,
+        "the interval {} to {} does not contain its own estimate {}",
+        interval.lower,
+        interval.upper,
+        interval.estimate
+    );
+    assert!(
+        interval.upper - interval.lower < 0.9,
+        "an interval of width {} says nothing",
+        interval.upper - interval.lower
+    );
+
+    // The quantity the data actually came from.
+    let wanted = kernel_at(floor, rate, separation);
+    assert!(
+        interval.lower <= wanted && wanted <= interval.upper,
+        "the interval {} to {} misses the correlation it was simulated from, {wanted}",
+        interval.lower,
+        interval.upper
+    );
+
+    // **What makes it a 95 per cent interval.** Each end that is not sitting on
+    // a bound has to cost 3.8415 in deviance, which is the whole of ADR 0004's
+    // recipe. Bisection stops at a thousandth, so the deviance is right to about
+    // a hundredth.
+    let free = model.fit_known(&known).expect("the free fit should run");
+    let at_estimate = model
+        .fit_holding(&known, Some((0, separation, interval.estimate)))
+        .expect("the fit at the estimate should run")
+        .loglik;
+    assert!(
+        (at_estimate - free.loglik).abs() < 1e-4,
+        "holding the free answer's own correlation cost {} in log-likelihood",
+        free.loglik - at_estimate
+    );
+    for (name, end, at_bound) in [
+        ("lower", interval.lower, interval.lower_at_bound),
+        ("upper", interval.upper, interval.upper_at_bound),
+    ] {
+        if at_bound {
+            continue;
+        }
+        let held = model
+            .fit_holding(&known, Some((0, separation, end)))
+            .expect("the fit at the end should run")
+            .loglik;
+        let deviance = 2.0 * (at_estimate - held);
+        assert!(
+            (deviance - 3.841_458_820_694_124).abs() < 0.05,
+            "the {name} end at {end} costs {deviance} in deviance"
+        );
+    }
+
+    // A component that is not there, and a separation that is not a separation,
+    // are refused rather than answered.
+    assert_eq!(
+        model
+            .correlation_interval(&known, 9, separation)
+            .unwrap_err(),
+        "REPEATED_NO_SUCH_COMPONENT"
+    );
+    assert_eq!(
+        model.correlation_interval(&known, 0, 0.0).unwrap_err(),
+        "REPEATED_SEPARATION_NOT_POSITIVE"
+    );
+
+    // Without a kernel there is no curve to hold, and saying so is better than
+    // holding something else.
+    let plain = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        LINE.len(),
+    )
+    .expect("the plain model should build");
+    assert_eq!(
+        plain
+            .correlation_interval(&known, 0, separation)
+            .unwrap_err(),
+        "REPEATED_NO_KERNEL"
+    );
+}

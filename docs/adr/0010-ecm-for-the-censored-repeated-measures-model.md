@@ -503,7 +503,7 @@ which is a fourth code the crate did not have.
 | `TobitModel` on a one-position slice | stands, with the structural caveat recorded above |
 | `mixed_bivariate_fit` on a two-position slice | stands, uncensored and censored |
 | MCMCglmm, external | stands, and found a fault |
-| a coverage simulation | **cannot be run** |
+| a coverage simulation | **could not be run then; runs now** -- see *What the interval changed* |
 
 `MixedBivariateModel` is the one that covers the covariance *between* positions,
 which the `TobitModel` comparison cannot: it has one position and so says
@@ -511,14 +511,14 @@ nothing about the thing this model adds. Uncensored the two agree to 5e-3 in
 both heritabilities and both correlations; with one position censored, to 0.03
 and 0.05.
 
-**The coverage simulation cannot be run because there is no interval, and there
-is no interval because what it should be *of* is unsettled.** The previous
-amendment found that the kernel's floor and rate are not separately estimable
-while the correlation they describe is. An interval on a floor would be wide and
-would not mean what it looked like. So this is a decision outstanding, not a
-function unwritten, and nothing from this model should be reported with an
-interval attached until it is taken. `tests/test_interval_baseline.py` carries
-the same reason at the point where it exempts the model.
+**The coverage simulation could not be run because there was no interval, and
+there was no interval because what it should be *of* was unsettled.** The
+previous amendment found that the kernel's floor and rate are not separately
+estimable while the correlation they describe is. An interval on a floor would be
+wide and would not mean what it looked like. That decision has since been taken
+-- the interval is on the correlation at a named separation -- and the coverage
+check runs; *What the interval changed*, below, records it and the three faults
+found in getting there.
 
 ### The external check found a fault, and then something under it
 
@@ -601,5 +601,149 @@ one between 1 and 4 kHz does not.
 
 **This does not replace the coverage simulation and does not need an interval.**
 It says the estimator is very nearly unbiased where it is used. Whether an
-interval built on it covers is a separate question that cannot be asked until
-there is an interval to ask it of.
+interval built on it covers is a separate question, and it is now asked in
+`checks/repeated_coverage.py`.
+
+## What the interval changed
+
+*Amendment, 20 August 2026, after building the interval this record left open.
+The decision outstanding is taken, three faults were found in taking it, and the
+coverage simulation that could not be run now runs.*
+
+**The interval is on a component's correlation at a named separation.** The
+amendment above found that the kernel's floor and rate are not separately
+estimable while the correlation they describe is, and left the question of what
+an interval should be *of* open. It is settled the way that finding points: on
+`correlation(d)`, at separations that matter, and on neither of the two numbers
+behind it. That is also the quantity this model knows and a pile of
+two-frequency models does not, so it is the one worth carrying an interval.
+
+The mechanism keeps ECM as ECM. Holding `corr(d) = v` fixes the floor once the
+rate is chosen,
+
+```text
+c = (v - u) / (1 - u),   u = decay(rate, d)
+```
+
+so the constraint lives entirely inside one component's conditional
+maximisation: it searches over its scales and its rate, with the floor
+following, and every other component's step is untouched. **A constrained fit
+is a fit of the same size**, and a profile is about forty of them.
+
+It is not forty times a free fit, though, because a held fit takes more
+iterations to settle: 82 to 328 against the free fit's 67 on the same data. On
+the audiogram's ten standard frequencies with three components and 394 people, a
+free fit takes 34 seconds and an interval took **37 to 63 minutes**, six of them
+in four hours and twenty minutes. On seventeen positions it is not something to
+start without meaning to.
+
+**The range is not nought to one, and saying so is not pedantry.** A correlation
+of exactly one leaves a component no variance of its own, which is a singular
+matrix and not a fit; a correlation of exactly nought needs an infinite rate. The
+ends of the search are 0.001 and 0.999, an end reached without the profile
+falling away is reported as sitting there rather than as a crossing, and the
+Self-Liang mixture decides whether it belongs -- the same rule as everywhere
+else, though unlike a heritability no true correlation can sit on either end, so
+the rule is carried rather than exercised.
+
+### Three faults, all in the same direction
+
+Every one of them made the profile sit below the likelihood, which makes an
+interval **too narrow**. That is the direction that matters, and it is the
+direction a check that only looked at point estimates would never have found.
+
+1. **The constrained search started on the rate's own bound.** At the slowest
+   rate a constraint allows the floor is nought, and nought is often where the
+   constrained answer belongs, so the obvious starting point is exactly on a
+   corner of the box. Measured there, L-BFGS-B returned code 52,
+   `ABNORMAL_TERMINATION_IN_LNSRCH`, having moved nothing at all: it kept an
+   objective of 67.562 where the constrained maximum was −21.917. The search now
+   sweeps the family first and starts well inside it. **The sweep runs on the
+   floor, not the rate**, because the floor is bounded by the constraint and the
+   rates that go with it run to infinity; a first attempt swept the rate
+   logarithmically to 1e4 and spent every point where nothing happens.
+
+2. **Both searches had the scales on their natural scale.** A scale's only lower
+   bound is nought, and at nought the covariance is singular and the objective is
+   not a number, so a search could step onto a corner of its own box and find
+   nothing to measure. The rate had been put on its logarithm for this reason
+   already; the scales had not. They are now, in the free search as well as the
+   constrained one, and no step can reach nought. On the real audiogram the free
+   fit's answer did not move: the log-likelihood changed by 0.003 in 26,334 and
+   no floor or rate by more than 1e-4.
+
+3. **The acceleration left the constraint and the answer was reported from
+   there.** SQUAREM draws a line through two points on the constraint surface
+   and lands off it, and the extrapolated point is accepted when it improves the
+   likelihood. A fit told to hold the correlation at 0.30 stopped after twenty
+   iterations and reported 0.42. An extrapolated state was already projected back
+   onto the models -- a negative variance zeroed, a floor past one clamped -- and
+   a constraint is one of the models it has to be projected onto, so it now is.
+
+And one guard that was not a fault yet but would have become one. **The sweep
+tries the shape it was handed**, projected onto the constraint, as well as the
+grid. Without that it could hand the search a worse point than the one it started
+from, and a conditional maximisation that goes downhill is not a conditional
+maximisation: expectation-maximisation climbs the likelihood only because every
+one of its inner steps does, and a fit that no longer climbs stops wherever it
+happens to be. `the_constrained_maximisation_never_goes_downhill_either` is the
+test.
+
+**A held fit is not judged by the free gradient.** At a constrained maximum the
+free gradient is not nought: it points along the constraint, which is exactly
+what the constraint is there to stop. Measured on one fit, 2.3e-7 at the free
+answer's own correlation and 2.8e-3 a twentieth away, at maxima that were both
+reached. So `converged` reports whether the likelihood settled when a
+correlation is held, and the gradient reading is left as it is with that said.
+
+### The coverage simulation, and why it is gated differently
+
+`checks/repeated_coverage.py` runs it: sixty families of four with two ears
+apiece, six positions, three true correlations and censoring up to a half, 300
+draws a cell. It is the check this record said could not be run, and the reason
+it could not -- there was no interval -- is gone.
+
+**No cell covers less than it claims.** That is the direction that matters and
+the reason the check exists. Nothing was refused in any cell and no point of any
+profile failed to fit.
+
+**Two cells of the nine cover more than they claim, and this record gates on
+under-coverage only, which parts company with every other family here.** The
+reason is that a correlation has hard ends and a likelihood that is not
+quadratic near them, so exact two-sided coverage is not available at any sample
+size. Both cells were taken apart rather than argued about:
+
+| true correlation | censored | coverage | ends on a bound | misses below / above |
+| --- | --- | --- | --- | --- |
+| 0.977 | 50% | 0.990 | 63% | 0 / 3 |
+| 0.165 | none | 0.980 | 0% | 5 / 1 |
+
+The first is the ceiling. At a true correlation of 0.977 the upper end of the
+interval runs into the largest correlation the kernel family can express, and a
+truncated end cannot miss, so nothing misses upward. No recipe makes that cell
+0.95. Moving it away from the ceiling would only delete the case that shows the
+property, and it is where the data live: the audiogram's neighbouring standard
+frequencies correlate at about 0.97.
+
+The second is not the ceiling -- no end sat on a bound at all -- and it is
+partly the 300 draws. **Re-run at 1,200 draws that cell gives 0.961**, with 37
+misses below and 10 above against 30 expected either side. So the interval is
+genuinely wide upward at low correlations, because a higher correlation can be
+had from the floor as readily as from the rate and the likelihood barely
+distinguishes the two. That is the same non-identifiability that put the
+interval on the correlation rather than on either parameter, showing up in the
+coverage.
+
+Two other explanations were checked and ruled out. **The profile is anchored
+correctly**: the constrained fit at the free estimate matches the free maximum to
+six decimal places on every draw tried, so the reference point is not low. And
+**the estimate is very nearly unbiased**, out by +0.009 at a true 0.165 and
++0.004 at a true 0.977.
+
+**Reporting a conservative cell is not the same as tolerating it**, and the
+distinction is exactly ADR 0004's. That record found a real fault that showed up
+as over-coverage -- a missing boundary mixture reading 0.977 against a nominal
+0.95 -- and a rule that quietly passed everything above nominal would have hidden
+it. So this check prints every conservative cell with which of its two tails is
+wide and how many of its ends sat on a bound, and the question ADR 0004 had to
+ask gets asked again every time it is run.
