@@ -45,6 +45,19 @@
       "within_nominal": true,
       "at_boundary": true
     },
+    "h2=0.0 censored=0.75": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 290,
+      "coverage": 0.9666666666666667,
+      "clopper_pearson": [
+        0.9395546777987344,
+        0.9839018324373807
+      ],
+      "mean_width": 0.3829115574190736,
+      "within_nominal": true,
+      "at_boundary": true
+    },
     "h2=0.3 censored=0.0": {
       "replicates": 300,
       "refused": 0,
@@ -84,6 +97,19 @@
       "within_nominal": true,
       "at_boundary": false
     },
+    "h2=0.3 censored=0.75": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 288,
+      "coverage": 0.96,
+      "clopper_pearson": [
+        0.9311710118105039,
+        0.9791634236935863
+      ],
+      "mean_width": 0.5910655133641433,
+      "within_nominal": true,
+      "at_boundary": false
+    },
     "h2=0.5 censored=0.0": {
       "replicates": 300,
       "refused": 0,
@@ -120,6 +146,19 @@
         0.9588059837861013
       ],
       "mean_width": 0.5125776835605942,
+      "within_nominal": true,
+      "at_boundary": false
+    },
+    "h2=0.5 censored=0.75": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 280,
+      "coverage": 0.9333333333333333,
+      "clopper_pearson": [
+        0.8989143547885917,
+        0.9588059837861013
+      ],
+      "mean_width": 0.6468440902828053,
       "within_nominal": true,
       "at_boundary": false
     }
