@@ -15,6 +15,7 @@ mod dense;
 mod deviance;
 mod discrete_gxe;
 mod gxe;
+mod interval;
 mod kinship_classes;
 mod latent_mediation;
 mod liability;
