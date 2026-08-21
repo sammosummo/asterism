@@ -1,0 +1,7 @@
+# Identifier-free but participant-derived matrices stay out of Git.
+artifacts/PROTOTYPE_WIPE_ME/designs/*.npz
+
+# Smoke/full compute state is staged deliberately only after qualification.
+artifacts/PROTOTYPE_WIPE_ME/logs/
+artifacts/PROTOTYPE_WIPE_ME/results/
+artifacts/PROTOTYPE_WIPE_ME/summary.json

@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prototype — Aim 2 recruitment design</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f3ee;
+      --surface: #ffffff;
+      --surface-soft: #ece9e2;
+      --ink: #20272b;
+      --ink-soft: #5c676d;
+      --rule: #d4d0c7;
+      --accent: #496b78;
+      --accent-soft: #e1eaed;
+      --shadow: 0 10px 28px rgba(32, 39, 43, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button { font: inherit; }
+
+    .page {
+      width: min(1120px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 3.5rem 0 4rem;
+    }
+
+    header { max-width: 900px; }
+
+    .eyebrow {
+      margin: 0 0 .65rem;
+      color: var(--accent);
+      font-size: .74rem;
+      font-weight: 750;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: .85rem;
+      max-width: 24ch;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2.2rem, 5vw, 4.2rem);
+      font-weight: 500;
+      letter-spacing: -.035em;
+      line-height: 1.02;
+    }
+
+    h2 {
+      margin-bottom: .45rem;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.75rem;
+      font-weight: 500;
+      letter-spacing: -.015em;
+    }
+
+    h3 {
+      margin-bottom: .65rem;
+      font-size: .78rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .question {
+      max-width: 78ch;
+      margin-bottom: 1rem;
+      color: var(--ink-soft);
+      font-size: 1.08rem;
+    }
+
+    .throwaway {
+      display: inline-flex;
+      gap: .45rem;
+      align-items: center;
+      margin-bottom: 2.6rem;
+      padding: .38rem .62rem;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: .72rem;
+      font-weight: 750;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    section { margin-top: 2.7rem; }
+
+    .section-intro {
+      max-width: 74ch;
+      margin-bottom: 1.15rem;
+      color: var(--ink-soft);
+    }
+
+    .panel {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .transition {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: .85rem;
+      align-items: start;
+      margin-bottom: 1rem;
+      padding: 1rem 1.1rem;
+      border-left: 4px solid var(--accent);
+      box-shadow: none;
+    }
+
+    .transition-label {
+      min-width: 5rem;
+      padding-top: .12rem;
+      color: var(--accent);
+      font-size: .68rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .transition p { margin: 0; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      overflow: hidden;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: var(--rule);
+      gap: 1px;
+    }
+
+    .summary-card {
+      min-height: 8rem;
+      padding: 1.05rem;
+      background: var(--surface);
+    }
+
+    .summary-card dt {
+      color: var(--ink-soft);
+      font-size: .72rem;
+      font-weight: 750;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .summary-card dd {
+      margin: .35rem 0 .25rem;
+      color: var(--accent);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 2rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .summary-card small { color: var(--ink-soft); }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .state-block { padding: 1.15rem; }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .92rem;
+    }
+
+    th, td {
+      padding: .58rem .65rem;
+      border-bottom: 1px solid var(--rule);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--ink-soft);
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    td.number {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .field-list {
+      display: grid;
+      grid-template-columns: minmax(9rem, .8fr) minmax(0, 1.4fr);
+      margin: 0;
+    }
+
+    .field-list dt,
+    .field-list dd {
+      margin: 0;
+      padding: .52rem 0;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .field-list dt {
+      padding-right: 1rem;
+      color: var(--ink-soft);
+      font-size: .82rem;
+    }
+
+    .field-list dd { font-size: .9rem; }
+    .field-list dt:last-of-type,
+    .field-list dd:last-of-type { border-bottom: 0; }
+
+    .status-line {
+      display: inline-block;
+      padding: .1rem .42rem;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: .7rem;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .assumptions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .75rem;
+      margin-top: 1rem;
+    }
+
+    .assumption {
+      padding: 1rem;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: var(--surface-soft);
+    }
+
+    .assumption p { margin-bottom: 0; color: var(--ink-soft); font-size: .9rem; }
+
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .action-group { padding: 1rem; }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem;
+    }
+
+    .action-button,
+    .step-button,
+    .tab-button,
+    .restart-button {
+      border: 1px solid var(--rule);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .action-button,
+    .restart-button {
+      padding: .55rem .72rem;
+      font-size: .84rem;
+    }
+
+    .action-button:hover,
+    .action-button:focus-visible,
+    .step-button:hover,
+    .step-button:focus-visible,
+    .restart-button:hover,
+    .restart-button:focus-visible {
+      border-color: var(--accent);
+      outline: 2px solid transparent;
+      color: var(--accent);
+    }
+
+    .action-button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+    }
+
+    .action-button.illegal { border-style: dashed; }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .35rem;
+      margin-bottom: .75rem;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .tab-button {
+      margin-bottom: -1px;
+      padding: .68rem .8rem;
+      border-width: 0 0 2px;
+      border-radius: 0;
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: .84rem;
+    }
+
+    .tab-button[aria-selected="true"] {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 750;
+    }
+
+    .walkthrough { padding: 1.15rem; }
+
+    .walkthrough-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .walkthrough-head p { max-width: 68ch; color: var(--ink-soft); }
+
+    .steps {
+      display: grid;
+      gap: .55rem;
+      margin-top: .85rem;
+    }
+
+    .step-button {
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr);
+      gap: .7rem;
+      width: 100%;
+      padding: .72rem;
+      text-align: left;
+    }
+
+    .step-button:disabled { cursor: default; opacity: .55; }
+
+    .step-button.current {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      opacity: 1;
+    }
+
+    .step-button.done { opacity: .7; }
+
+    .step-number {
+      display: grid;
+      width: 1.7rem;
+      height: 1.7rem;
+      place-items: center;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      font-size: .72rem;
+      font-weight: 750;
+    }
+
+    .step-copy strong { display: block; font-size: .88rem; }
+    .step-copy small { display: block; margin-top: .15rem; color: var(--ink-soft); }
+
+    .audit-empty { margin: 0; color: var(--ink-soft); font-size: .9rem; }
+
+    .audit-list {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: var(--ink-soft);
+      font-size: .88rem;
+    }
+
+    .audit-list li + li { margin-top: .45rem; }
+
+    code {
+      padding: .08rem .25rem;
+      border-radius: 3px;
+      background: var(--surface-soft);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .88em;
+    }
+
+    footer {
+      max-width: 78ch;
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+      color: var(--ink-soft);
+      font-size: .82rem;
+    }
+
+    @media (max-width: 820px) {
+      .summary-grid,
+      .state-grid,
+      .assumptions,
+      .action-groups { grid-template-columns: 1fr 1fr; }
+
+      .state-grid > :first-child { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 580px) {
+      .page { width: min(100% - 1rem, 1120px); padding-top: 2rem; }
+      .summary-grid,
+      .state-grid,
+      .assumptions,
+      .action-groups { grid-template-columns: 1fr; }
+      .state-grid > :first-child { grid-column: auto; }
+      .field-list { grid-template-columns: 1fr; }
+      .field-list dt { padding-bottom: .1rem; border-bottom: 0; }
+      .field-list dd { padding-top: 0; }
+      .walkthrough-head { display: block; }
+      .restart-button { margin-bottom: .8rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Asterism · Aim 2 recruitment design · 21 August 2026</p>
+      <h1>Does the grant’s recruitment state model hold together?</h1>
+      <p class="question"><strong>Question:</strong> can a manifest for the settled 250-index-case core preserve every case–relative relationship across average yields of 1, 1.5 and 2, add a 250-person family-history route without calling it feasible, and keep outcome and hearing-measurement sensitivities separate? Click through the state below; this prototype describes design structure only and computes no power.</p>
+      <p class="throwaway">Prototype · throwaway · no participant data</p>
+    </header>
+
+    <section aria-labelledby="state-heading">
+      <h2 id="state-heading">Current design state</h2>
+      <p class="section-intro">Every action re-renders the complete manifest. Participant totals are arithmetic design targets, not measured recruitment yields or simulated power results.</p>
+
+      <div id="transition" class="panel transition" aria-live="polite"></div>
+      <dl id="summary" class="summary-grid"></dl>
+
+      <div class="state-grid">
+        <div class="panel state-block">
+          <h3>Participant manifest</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Route</th>
+                  <th scope="col">People</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="participant-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel state-block">
+          <h3>Case-family structure</h3>
+          <dl id="family-state" class="field-list"></dl>
+        </div>
+
+        <div class="panel state-block">
+          <h3>Analysis manifest</h3>
+          <dl id="analysis-state" class="field-list"></dl>
+        </div>
+
+        <div class="panel state-block">
+          <h3>Refused transitions</h3>
+          <div id="refusal-state"></div>
+        </div>
+      </div>
+
+      <div class="assumptions">
+        <article class="assumption">
+          <h3><span class="status-line">Structural assumption</span></h3>
+          <p><strong>All-offspring/full-sibling case units.</strong> Each recruited case relative is represented as an adult offspring; two offspring of one index case are represented as full siblings. The grant permits adult children or siblings, so this composition is a simulation structure, not a settled fact about who will enrol.</p>
+        </article>
+        <article class="assumption">
+          <h3><span class="status-line">Structural assumption</span></h3>
+          <p><strong>Family-history extension.</strong> When included, 250 additional people are represented as structurally connected, unexamined first- or second-degree pedigree candidates anchored to Acoustic participants with positive family-history flags. Candidates need not be siblings or occur one per anchor. The live reports show a route exists, but their relationships have not been normalised into a recruitable roster; neither this count nor its feasibility is an observed fact.</p>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="free-play-heading">
+      <h2 id="free-play-heading">Free play</h2>
+      <p class="section-intro">Actions are always available. Try them in any order; the two dashed buttons deliberately ask the reducer to do something it must refuse.</p>
+      <div class="action-groups">
+        <div class="panel action-group">
+          <h3>Recruitment structure</h3>
+          <div class="button-row">
+            <button class="action-button primary" data-action="RESET">Reset confirmed core</button>
+            <button class="action-button" data-action="SET_YIELD" data-value="1">Yield 1 relative</button>
+            <button class="action-button" data-action="SET_YIELD" data-value="1.5">Yield 1.5 relatives</button>
+            <button class="action-button" data-action="SET_YIELD" data-value="2">Yield 2 relatives</button>
+            <button class="action-button" data-action="ADD_EXTENSION">Add structural extension</button>
+            <button class="action-button" data-action="REMOVE_EXTENSION">Remove extension</button>
+          </div>
+        </div>
+
+        <div class="panel action-group">
+          <h3>AD outcome</h3>
+          <div class="button-row">
+            <button class="action-button" data-action="SET_OUTCOME" data-value="ordered_cdr">Ordered CDR primary</button>
+            <button class="action-button" data-action="SET_OUTCOME" data-value="binary_ad">Binary probable-AD sensitivity</button>
+          </div>
+        </div>
+
+        <div class="panel action-group">
+          <h3>Hearing measurement</h3>
+          <div class="button-row">
+            <button class="action-button" data-action="SET_HEARING" data-value="protocol">Attempt-then-fallback protocol</button>
+            <button class="action-button" data-action="SET_HEARING" data-value="all_audiogram">All-audiogram bound</button>
+            <button class="action-button" data-action="SET_HEARING" data-value="proband_abr">Proband-ABR bound</button>
+          </div>
+        </div>
+
+        <div class="panel action-group">
+          <h3>Illegal attempts</h3>
+          <div class="button-row">
+            <button class="action-button illegal" data-action="ATTEMPT_SPLIT_SECOND_OFFSPRING">Split second offspring from proband</button>
+            <button class="action-button illegal" data-action="ATTEMPT_MARK_EXTENSION_FEASIBLE">Mark extension feasible</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="walkthrough-heading">
+      <h2 id="walkthrough-heading">Guided walkthroughs</h2>
+      <p class="section-intro">Selecting a tab resets the manifest to the same confirmed-core baseline. Press the numbered buttons in order and watch the state panel above.</p>
+      <div id="scenario-tabs" class="tabs" role="tablist" aria-label="Recruitment design walkthroughs"></div>
+      <div id="scenario-panel" class="panel walkthrough" role="tabpanel"></div>
+    </section>
+
+    <footer>
+      <p><strong>Scope:</strong> a self-contained, in-memory logic prototype. It contains no identifiers, does not read files, does not persist state, and does not estimate level, power, cost or feasibility. Open this file directly in a browser; no server or installation is required.</p>
+    </footer>
+  </main>
+
+  <script>
+    // Portable logic module. It is deliberately pure: no DOM access and no persistence.
+    const RecruitmentDesign = (() => {
+      const INDEX_CASES = 250;
+      const ACOUSTIC_TARGET = 600;
+      const EXTENSION_TARGET = 250;
+      const ALLOWED_YIELDS = Object.freeze([1, 1.5, 2]);
+
+      const HEARING = Object.freeze({
+        protocol: "Behavioural audiometry first; passive ABR where it cannot be completed",
+        all_audiogram: "Bounding arm: behavioural audiometry for every participant",
+        proband_abr: "Bounding arm: passive ABR for every index case; audiometry for other participants"
+      });
+
+      const OUTCOMES = Object.freeze({
+        ordered_cdr: "Ordered CDR stage (primary)",
+        binary_ad: "Binary probable-AD diagnosis (prespecified sensitivity)"
+      });
+
+      function initialState() {
+        return {
+          relativeYield: 1,
+          extensionIncluded: false,
+          extensionFeasibility: "not_demonstrated",
+          outcome: "ordered_cdr",
+          hearingScenario: "protocol",
+          secondOffspringDetached: false,
+          transitionNumber: 0,
+          lastTransition: {
+            status: "ready",
+            label: "Baseline",
+            message: "Confirmed core restored at the one-relative sensitivity; all case–relative ties are connected."
+          },
+          refusals: []
+        };
+      }
+
+      function accepted(state, label, message, patch) {
+        return {
+          ...state,
+          ...patch,
+          transitionNumber: state.transitionNumber + 1,
+          lastTransition: { status: "accepted", label, message }
+        };
+      }
+
+      function refused(state, label, message) {
+        const number = state.transitionNumber + 1;
+        return {
+          ...state,
+          transitionNumber: number,
+          lastTransition: { status: "refused", label, message },
+          refusals: [...state.refusals, { number, label, message }].slice(-5)
+        };
+      }
+
+      function reducer(state, action) {
+        switch (action.type) {
+          case "RESET":
+            return initialState();
+
+          case "SET_YIELD": {
+            const value = Number(action.value);
+            if (!ALLOWED_YIELDS.includes(value)) {
+              return refused(state, "Yield refused", "Only the prespecified average yields 1, 1.5 and 2 may enter this prototype.");
+            }
+            return accepted(
+              state,
+              "Yield changed",
+              `Average enrolled relatives per index case set to ${value}. Every enrolled relative remains in the index case’s connected unit.`,
+              { relativeYield: value, secondOffspringDetached: false }
+            );
+          }
+
+          case "ADD_EXTENSION":
+            return accepted(
+              state,
+              "Structural extension added",
+              "Added the 250-person family-history structural scenario. Its feasibility remains not demonstrated.",
+              { extensionIncluded: true, extensionFeasibility: "not_demonstrated" }
+            );
+
+          case "REMOVE_EXTENSION":
+            return accepted(
+              state,
+              "Structural extension removed",
+              "Returned to the confirmed core; no family-history participants are counted.",
+              { extensionIncluded: false, extensionFeasibility: "not_demonstrated" }
+            );
+
+          case "SET_OUTCOME":
+            if (!(action.value in OUTCOMES)) {
+              return refused(state, "Outcome refused", "That outcome is outside the ordered-primary/binary-sensitivity comparison.");
+            }
+            return accepted(
+              state,
+              "Outcome changed",
+              `${OUTCOMES[action.value]} selected. Age-indexed dementia rates and affected-proband conditioning are retained.`,
+              { outcome: action.value }
+            );
+
+          case "SET_HEARING":
+            if (!(action.value in HEARING)) {
+              return refused(state, "Measurement scenario refused", "That hearing scenario is outside the protocol and its two prespecified bounds.");
+            }
+            return accepted(
+              state,
+              "Hearing scenario changed",
+              `${HEARING[action.value]} selected.`,
+              { hearingScenario: action.value }
+            );
+
+          case "ATTEMPT_SPLIT_SECOND_OFFSPRING":
+            return refused(
+              state,
+              "Disconnected offspring refused",
+              "A second offspring cannot become a singleton. The proband and all enrolled offspring stay in one connected unit, retaining both parent–offspring ties and the full-sibling tie."
+            );
+
+          case "ATTEMPT_MARK_EXTENSION_FEASIBLE":
+            return refused(
+              state,
+              "Feasibility claim refused",
+              "A 250-person structural scenario cannot be marked feasible. The family-history relationships have not been normalised into a recruitable roster, so feasibility requires external roster and yield evidence."
+            );
+
+          default:
+            return refused(state, "Unknown action refused", "The requested transition is not part of this bounded prototype.");
+        }
+      }
+
+      function derive(state) {
+        const trios = Math.round(INDEX_CASES * (state.relativeYield - 1));
+        const dyads = INDEX_CASES - trios;
+        const caseRelatives = dyads + (2 * trios);
+        const corePeople = INDEX_CASES + caseRelatives + ACOUSTIC_TARGET;
+        const extensionPeople = state.extensionIncluded ? EXTENSION_TARGET : 0;
+        const parentOffspringTies = caseRelatives;
+        const fullSiblingTies = trios;
+        const claimedCaseTies = parentOffspringTies + fullSiblingTies;
+        const retainedCaseTies = state.secondOffspringDetached ? claimedCaseTies - 1 : claimedCaseTies;
+
+        return {
+          indexCases: INDEX_CASES,
+          acousticTarget: ACOUSTIC_TARGET,
+          relativeYield: state.relativeYield,
+          caseRelatives,
+          corePeople,
+          extensionPeople,
+          totalPeople: corePeople + extensionPeople,
+          dyads,
+          trios,
+          caseFamilyUnits: INDEX_CASES,
+          parentOffspringTies,
+          fullSiblingTies,
+          claimedCaseTies,
+          retainedCaseTies,
+          allCaseFamiliesConnected: retainedCaseTies === claimedCaseTies,
+          extensionConnectedCandidates: state.extensionIncluded ? EXTENSION_TARGET : 0,
+          extensionFeasibility: state.extensionFeasibility,
+          outcomeLabel: OUTCOMES[state.outcome],
+          outcomeDetail: state.outcome === "ordered_cdr"
+            ? "CDR 0, 0.5, 1, 2, 3; shares [1−2r, r, 0.56r, 0.31r, 0.13r] for age-specific dementia rate r"
+            : "Probable AD versus not probable AD, using the same age-specific dementia rate r",
+          hearingLabel: HEARING[state.hearingScenario],
+          hearingIsBound: state.hearingScenario !== "protocol",
+          powerStatus: "not_run"
+        };
+      }
+
+      return Object.freeze({ initialState, reducer, derive });
+    })();
+
+    // Throwaway page shell. All DOM work stays outside the portable module above.
+    const scenarios = [
+      {
+        title: "Yield ladder",
+        description: "Hold 250 index cases and 600 Acoustic participants fixed while changing only the average enrolled-relative yield. Watch dyads become connected trios and the core total rise from 1,100 to 1,350.",
+        steps: [
+          { label: "Use one enrolled relative per index case", watch: "Expect 250 dyads, 250 case relatives and 1,100 core participants.", action: { type: "SET_YIELD", value: 1 } },
+          { label: "Use an average of 1.5 enrolled relatives", watch: "Expect 125 dyads, 125 trios and 1,225 core participants.", action: { type: "SET_YIELD", value: 1.5 } },
+          { label: "Use two enrolled relatives per index case", watch: "Expect 250 intact trios, 500 case relatives and 1,350 core participants.", action: { type: "SET_YIELD", value: 2 } }
+        ]
+      },
+      {
+        title: "Keep the trio",
+        description: "Reproduce the awkward case the prior builder mishandled: a proband with two offspring. The second step asks to detach one offspring; the reducer must refuse and retain every relationship.",
+        steps: [
+          { label: "Build two-offspring case families", watch: "Each of the 250 case units should be a trio with three retained pairwise ties.", action: { type: "SET_YIELD", value: 2 } },
+          { label: "Attempt to split the second offspring", watch: "Expect a refusal, zero singleton offspring and 750 of 750 claimed case-family ties retained.", action: { type: "ATTEMPT_SPLIT_SECOND_OFFSPRING" } }
+        ]
+      },
+      {
+        title: "Extension boundary",
+        description: "Add the extra 250-person family-history route as a structural simulation target, then try to promote it into a feasibility claim without a normalised roster.",
+        steps: [
+          { label: "Use the two-relative core", watch: "The confirmed core should contain 1,350 participants before the extension.", action: { type: "SET_YIELD", value: 2 } },
+          { label: "Add the 250-person structural extension", watch: "The arithmetic target reaches 1,600, but extension status remains structural only.", action: { type: "ADD_EXTENSION" } },
+          { label: "Attempt to mark the extension feasible", watch: "Expect a refusal; a target count cannot substitute for a recruitable roster or demonstrated yield.", action: { type: "ATTEMPT_MARK_EXTENSION_FEASIBLE" } }
+        ]
+      },
+      {
+        title: "Outcome and bounds",
+        description: "Keep recruitment fixed while separating the primary ordered outcome, its binary sensitivity and the two hearing-measurement bounding arms. None is labelled as realised power.",
+        steps: [
+          { label: "Select ordered CDR as primary", watch: "The five-category scenario and age-indexed rate r should be visible.", action: { type: "SET_OUTCOME", value: "ordered_cdr" } },
+          { label: "Select binary probable AD sensitivity", watch: "Only the outcome representation changes; affected-proband conditioning remains.", action: { type: "SET_OUTCOME", value: "binary_ad" } },
+          { label: "Select the all-audiogram bound", watch: "It must be labelled a bounding arm, not the expected realised protocol.", action: { type: "SET_HEARING", value: "all_audiogram" } },
+          { label: "Select the proband-ABR bound", watch: "Index cases use passive ABR in this conservative bound; other participants use audiometry.", action: { type: "SET_HEARING", value: "proband_abr" } }
+        ]
+      }
+    ];
+
+    let state = RecruitmentDesign.initialState();
+    let activeScenario = 0;
+    let activeStep = 0;
+
+    const number = value => new Intl.NumberFormat("en-GB").format(value);
+
+    function renderTransition() {
+      const target = document.getElementById("transition");
+      target.innerHTML = `
+        <div class="transition-label">${state.lastTransition.status}</div>
+        <p><strong>${state.lastTransition.label}.</strong> ${state.lastTransition.message}</p>
+      `;
+    }
+
+    function renderSummary(derived) {
+      const extensionSummary = state.extensionIncluded
+        ? "structural target included"
+        : "structural target excluded";
+      document.getElementById("summary").innerHTML = `
+        <div class="summary-card"><dt>Total people</dt><dd>${number(derived.totalPeople)}</dd><small>${number(derived.corePeople)} confirmed core + ${number(derived.extensionPeople)} extension</small></div>
+        <div class="summary-card"><dt>Index cases</dt><dd>${number(derived.indexCases)}</dd><small>fixed clinically adjudicated target</small></div>
+        <div class="summary-card"><dt>Case relatives</dt><dd>${number(derived.caseRelatives)}</dd><small>average yield ${derived.relativeYield} per index case</small></div>
+        <div class="summary-card"><dt>Extension</dt><dd>${number(derived.extensionPeople)}</dd><small>${extensionSummary}</small></div>
+      `;
+    }
+
+    function renderParticipants(derived) {
+      document.getElementById("participant-rows").innerHTML = `
+        <tr><td>Clinically adjudicated index cases</td><td class="number">${number(derived.indexCases)}</td><td>Settled target</td></tr>
+        <tr><td>Connected adult first-degree case relatives</td><td class="number">${number(derived.caseRelatives)}</td><td>Yield sensitivity: ${derived.relativeYield}</td></tr>
+        <tr><td>Existing Acoustic participants</td><td class="number">up to ${number(derived.acousticTarget)}</td><td>Settled target; existing pedigree retained</td></tr>
+        <tr><td>Family-history extension relatives</td><td class="number">${number(derived.extensionPeople)}</td><td>${state.extensionIncluded ? "Structural scenario only" : "Not included"}</td></tr>
+        <tr><td><strong>Total arithmetic target</strong></td><td class="number"><strong>${number(derived.totalPeople)}</strong></td><td>Not a realised yield</td></tr>
+      `;
+    }
+
+    function renderFamilies(derived) {
+      const integrity = derived.allCaseFamiliesConnected
+        ? `<span class="status-line">Pass</span> ${number(derived.retainedCaseTies)} of ${number(derived.claimedCaseTies)} claimed ties retained`
+        : `${number(derived.retainedCaseTies)} of ${number(derived.claimedCaseTies)} claimed ties retained`;
+      document.getElementById("family-state").innerHTML = `
+        <dt>Index-case units</dt><dd>${number(derived.caseFamilyUnits)}</dd>
+        <dt>Dyads (case + 1)</dt><dd>${number(derived.dyads)}</dd>
+        <dt>Trios (case + 2)</dt><dd>${number(derived.trios)}</dd>
+        <dt>Detached offspring</dt><dd>0 — prohibited by the reducer</dd>
+        <dt>Parent–offspring ties</dt><dd>${number(derived.parentOffspringTies)}</dd>
+        <dt>Full-sibling ties</dt><dd>${number(derived.fullSiblingTies)} <span class="status-line">Assumed</span></dd>
+        <dt>Relationship integrity</dt><dd>${integrity}</dd>
+        <dt>Extension candidates</dt><dd>${number(derived.extensionConnectedCandidates)} structurally connected pedigree members <span class="status-line">Assumed</span></dd>
+      `;
+    }
+
+    function renderAnalysis(derived) {
+      const hearingStatus = derived.hearingIsBound ? "Bounding arm, not expected realised protocol" : "Settled attempt-then-fallback protocol";
+      document.getElementById("analysis-state").innerHTML = `
+        <dt>AD outcome</dt><dd>${derived.outcomeLabel}</dd>
+        <dt>Outcome scenario</dt><dd>${derived.outcomeDetail}</dd>
+        <dt>Dementia rates</dt><dd>Age indexed: &lt;60 .001; 60–64 .005; 65–69 .02; 70–74 .04; 75–79 .08; 80–84 .15; 85+ .25</dd>
+        <dt>Proband conditioning</dt><dd>Affected index case; CDR 1 or worse in the ordered scenario</dd>
+        <dt>Recruitment ascertainment</dt><dd><span class="status-line">Conditional structural assumption</span> fixed relative yield is treated as ignorable after the recorded recruitment variables; the report-based extension denominator is not yet available</dd>
+        <dt>Hearing endpoint</dt><dd>Instrument-harmonised conventional-frequency hearing-loss classification</dd>
+        <dt>Measurement scenario</dt><dd>${derived.hearingLabel}<br><span class="status-line">${hearingStatus}</span></dd>
+        <dt>Extension feasibility</dt><dd><span class="status-line">Not demonstrated</span> normalised recruitable roster required</dd>
+        <dt>Level and power</dt><dd><span class="status-line">Not run</span> no result is implied by these counts</dd>
+      `;
+    }
+
+    function renderRefusals() {
+      const target = document.getElementById("refusal-state");
+      if (state.refusals.length === 0) {
+        target.innerHTML = `<p class="audit-empty">No refused transition yet. Try either dashed free-play action.</p>`;
+        return;
+      }
+      target.innerHTML = `<ol class="audit-list">${state.refusals.map(item => `
+        <li><strong>#${item.number} ${item.label}.</strong> ${item.message}</li>
+      `).join("")}</ol>`;
+    }
+
+    function renderTabs() {
+      document.getElementById("scenario-tabs").innerHTML = scenarios.map((scenario, index) => `
+        <button
+          class="tab-button"
+          role="tab"
+          aria-selected="${index === activeScenario}"
+          data-scenario="${index}"
+        >${scenario.title}</button>
+      `).join("");
+    }
+
+    function renderWalkthrough() {
+      const scenario = scenarios[activeScenario];
+      const completed = activeStep >= scenario.steps.length;
+      document.getElementById("scenario-panel").innerHTML = `
+        <div class="walkthrough-head">
+          <div>
+            <h3>${scenario.title}</h3>
+            <p>${scenario.description}</p>
+          </div>
+          <button class="restart-button" data-restart>Restart walkthrough</button>
+        </div>
+        <div class="steps">
+          ${scenario.steps.map((step, index) => {
+            const status = index < activeStep ? "done" : index === activeStep ? "current" : "future";
+            const disabled = index !== activeStep;
+            return `
+              <button class="step-button ${status}" data-step="${index}" ${disabled ? "disabled" : ""}>
+                <span class="step-number">${index < activeStep ? "✓" : index + 1}</span>
+                <span class="step-copy"><strong>${step.label}</strong><small>${step.watch}</small></span>
+              </button>
+            `;
+          }).join("")}
+          ${completed ? `<p class="audit-empty"><strong>Walkthrough complete.</strong> The state above is the scenario’s final state.</p>` : ""}
+        </div>
+      `;
+    }
+
+    function render() {
+      const derived = RecruitmentDesign.derive(state);
+      renderTransition();
+      renderSummary(derived);
+      renderParticipants(derived);
+      renderFamilies(derived);
+      renderAnalysis(derived);
+      renderRefusals();
+      renderTabs();
+      renderWalkthrough();
+    }
+
+    function dispatch(action) {
+      state = RecruitmentDesign.reducer(state, action);
+      render();
+      document.getElementById("state-heading").scrollIntoView({ block: "start", behavior: "auto" });
+    }
+
+    document.addEventListener("click", event => {
+      const actionButton = event.target.closest("[data-action]");
+      if (actionButton) {
+        dispatch({ type: actionButton.dataset.action, value: actionButton.dataset.value });
+        return;
+      }
+
+      const tab = event.target.closest("[data-scenario]");
+      if (tab) {
+        activeScenario = Number(tab.dataset.scenario);
+        activeStep = 0;
+        state = RecruitmentDesign.reducer(state, { type: "RESET" });
+        render();
+        return;
+      }
+
+      if (event.target.closest("[data-restart]")) {
+        activeStep = 0;
+        state = RecruitmentDesign.reducer(state, { type: "RESET" });
+        render();
+        return;
+      }
+
+      const step = event.target.closest("[data-step]");
+      if (step && Number(step.dataset.step) === activeStep) {
+        state = RecruitmentDesign.reducer(state, scenarios[activeScenario].steps[activeStep].action);
+        activeStep += 1;
+        render();
+        document.getElementById("state-heading").scrollIntoView({ block: "start", behavior: "auto" });
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>
