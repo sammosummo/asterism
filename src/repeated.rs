@@ -2087,9 +2087,15 @@ impl RepeatedModel {
     ///
     /// Returns `None` where there was nothing to move or where moving it made
     /// the fit worse, which is the case of a direction that was small rather
-    /// than absent. A covariance's null space is preserved by the M-step -- it
-    /// appears as a factor on both sides of every term in it -- so nought is an
-    /// exact fixed point and this never has to be done twice.
+    /// than absent.
+    ///
+    /// **A component's** null space is preserved by the M-step -- its covariance
+    /// appears as a factor on both sides of every term in its statistic -- so
+    /// nought is an exact fixed point there and this never has to be done twice.
+    /// Correcting an earlier version of this note, which said that of the
+    /// residual as well: it is not true of the residual, whose statistic is
+    /// built from the mean and contrast errors and carries no such factor. The
+    /// body below rests the two separately for that reason.
     ///
     /// **With a kernel it does nothing at all.** There the covariances are not
     /// free to be singular in one direction: a component collapses by its
@@ -2100,40 +2106,70 @@ impl RepeatedModel {
         if self.kernel.is_some() {
             return None;
         }
-        let mut moved = false;
+        let mut components_moved = false;
         let mut rested = Vec::with_capacity(state.sigmas.len());
         for sigma in &state.sigmas {
             match rest_on_zero(sigma) {
                 Some(matrix) => {
-                    moved = true;
+                    components_moved = true;
                     rested.push(matrix);
                 }
                 None => rested.push(sigma.clone()),
             }
         }
-        let rested_residual = match rest_on_zero(&state.residual) {
-            Some(matrix) => {
-                moved = true;
-                matrix
-            }
-            None => state.residual.clone(),
+        let (rested_residual, residual_moved) = match rest_on_zero(&state.residual) {
+            Some(matrix) => (matrix, true),
+            None => (state.residual.clone(), false),
         };
-        if !moved {
+        if !components_moved && !residual_moved {
             return None;
         }
-        let imputed = self.expectation(prepared, &rested, &rested_residual, &state.fixed, true)?;
-        if imputed.loglik < loglik {
-            return None;
+
+        // **Resting the residual is not the same move as resting a component,
+        // and the two must not stand or fall together.**
+        //
+        // A component's null space is preserved by the M-step -- its covariance
+        // is a factor of every term in its statistic, including the bare one --
+        // so nought is an exact fixed point there and resting it is free. The
+        // residual statistic carries no such factor: it is built from the mean
+        // and contrast errors, so nought is not a fixed point for it. Worse, a
+        // rested residual direction can make a family covariance singular,
+        // because the residual is what separates the two ears of one person.
+        //
+        // When that happens the state cannot be evaluated at all. Collecting
+        // both into one move therefore let a residual with a small eigenvalue
+        // silently discard the component resting as well -- and the component
+        // half is the half that matters, being what takes a fit from twenty
+        // thousand iterations and a wrong answer to three thousand.
+        //
+        // So try both, then the components alone.
+        let mut attempts = Vec::with_capacity(2);
+        if components_moved || residual_moved {
+            attempts.push((rested.clone(), rested_residual));
         }
-        Some((
-            State {
-                sigmas: rested,
-                residual: rested_residual,
-                fixed: state.fixed.clone(),
-                shapes: None,
-            },
-            imputed,
-        ))
+        if residual_moved && components_moved {
+            attempts.push((rested, state.residual.clone()));
+        }
+        for (sigmas, residual) in attempts {
+            let Some(imputed) =
+                self.expectation(prepared, &sigmas, &residual, &state.fixed, true)
+            else {
+                continue;
+            };
+            if imputed.loglik < loglik {
+                continue;
+            }
+            return Some((
+                State {
+                    sigmas,
+                    residual,
+                    fixed: state.fixed.clone(),
+                    shapes: None,
+                },
+                imputed,
+            ));
+        }
+        None
     }
 
     /// The observed-data log-likelihood at these parameters and these fixed
@@ -2559,8 +2595,8 @@ fn rotate_replicates(
 #[cfg(test)]
 mod tests {
     use super::{
-        Imputed, Known, LN_2PI, Prepared, RepeatedModel, Rotated, helmert_matrix,
-        rotate_replicates, symmetric_square_root,
+        Imputed, Known, LN_2PI, Prepared, RESTING_VARIANCE, RepeatedModel, Rotated, State,
+        helmert_matrix, rest_on_zero, rotate_replicates, symmetric_square_root,
     };
     use nalgebra::{DMatrix, DVector};
     use statrs::distribution::Normal;
@@ -2945,6 +2981,81 @@ mod tests {
         let x = design(people * 2);
         let refused = RepeatedModel::build(&[a, household], &x, 2, 2);
         assert_eq!(refused.err(), Some("REPEATED_NOT_SIMULTANEOUSLY_DIAGONAL"));
+    }
+
+    /// Resting a component must not be lost because the residual could not be
+    /// rested with it.
+    ///
+    /// A component's null space survives the M-step and a residual's does not,
+    /// so the two are different moves. They used to be collected into one: if
+    /// the rested residual made a family covariance singular -- which it does,
+    /// because the residual is what separates one person's two ears -- the
+    /// whole state failed to evaluate and the component resting went with it.
+    ///
+    /// Here the residual has a direction below the resting tolerance and a
+    /// component has a collapsed one. Before the two were separated this
+    /// returned `None`, discarding a component resting that was perfectly
+    /// sound.
+    #[test]
+    fn resting_a_component_survives_a_residual_that_cannot_be_rested() {
+        let replicates = 2;
+        let positions = 2;
+        let a = relationship(4);
+        let people = a.nrows();
+        let identity = DMatrix::<f64>::identity(people, people);
+        let rows = people * replicates;
+        let x = design(rows);
+        let y = response(rows, positions);
+        let model = RepeatedModel::build(&[a, identity], &x, replicates, positions)
+            .expect("the model should build");
+
+        let rotated = model.rotate(&y);
+        let state = model
+            .starting_values(&rotated, None)
+            .expect("a start should exist");
+
+        // One component collapsed outright, and a residual with a direction
+        // under the resting tolerance. Resting that direction to nought makes
+        // the residual singular, which is what used to sink the whole move.
+        let mut sigmas = state.sigmas.clone();
+        sigmas[0] = DMatrix::zeros(positions, positions);
+        let mut residual = DMatrix::<f64>::identity(positions, positions);
+        residual[(positions - 1, positions - 1)] = RESTING_VARIANCE / 2.0;
+
+        assert!(
+            rest_on_zero(&residual).is_some(),
+            "the residual must have a direction the resting tolerance catches"
+        );
+        // A second component with a direction to rest, so there is something
+        // for the fallback to keep.
+        let mut small = DMatrix::<f64>::identity(positions, positions);
+        small[(positions - 1, positions - 1)] = RESTING_VARIANCE / 2.0;
+        sigmas[1] = small;
+
+        let prepared = Prepared {
+            known: y.iter().map(|value| Known::Value(*value)).collect(),
+            rotated: Some(rotated.clone()),
+            // The ordinary fit, not a profile: resting is the same move either
+            // way, and holding a correlation would only narrow what is tested.
+            held: None,
+        };
+        let state = State {
+            sigmas,
+            residual,
+            fixed: state.fixed.clone(),
+            shapes: None,
+        };
+        // Nought as the bar to beat, so that what is being tested is whether a
+        // rested state is reachable at all rather than whether this artificial
+        // one happens to be an improvement.
+        let got = model.rested(&prepared, &state, f64::NEG_INFINITY);
+        let (rested_state, _) = got.expect(
+            "the component resting should survive a residual that cannot be rested with it",
+        );
+        assert_eq!(
+            rested_state.residual, state.residual,
+            "the residual should have been left where it was, not zeroed"
+        );
     }
 
     #[test]
