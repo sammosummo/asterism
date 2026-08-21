@@ -1,0 +1,2022 @@
+{
+  "prototype": "mediation grant recruitment design, 21 August 2026",
+  "source_commit": "cca65b3d4ec82a1b3f4db848db33958111350214",
+  "cells": [
+    {
+      "cell_id": 0,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_000.json"
+    },
+    {
+      "cell_id": 1,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_001.json"
+    },
+    {
+      "cell_id": 2,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_002.json"
+    },
+    {
+      "cell_id": 3,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_003.json"
+    },
+    {
+      "cell_id": 4,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_004.json"
+    },
+    {
+      "cell_id": 5,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_005.json"
+    },
+    {
+      "cell_id": 6,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_006.json"
+    },
+    {
+      "cell_id": 7,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_007.json"
+    },
+    {
+      "cell_id": 8,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_008.json"
+    },
+    {
+      "cell_id": 9,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_009.json"
+    },
+    {
+      "cell_id": 10,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_010.json"
+    },
+    {
+      "cell_id": 11,
+      "design_id": "confirmed_core_yield_1_0",
+      "design_file": "confirmed_core_yield_1_0.npz",
+      "design_sha256": "61c63b18e24b42ae6ada0a8f7f7ff0f9fcc4ca86af1f43bfc80c1da9a08c7ff3",
+      "manifest_file": "confirmed_core_yield_1_0.manifest.json",
+      "design_manifest_sha256": "f5796c17f02bbf329e61097cbc2261ec646c3c6021151815d4b3be2f78246ec8",
+      "relative_yield": 1.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_011.json"
+    },
+    {
+      "cell_id": 12,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_012.json"
+    },
+    {
+      "cell_id": 13,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_013.json"
+    },
+    {
+      "cell_id": 14,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_014.json"
+    },
+    {
+      "cell_id": 15,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_015.json"
+    },
+    {
+      "cell_id": 16,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_016.json"
+    },
+    {
+      "cell_id": 17,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_017.json"
+    },
+    {
+      "cell_id": 18,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_018.json"
+    },
+    {
+      "cell_id": 19,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_019.json"
+    },
+    {
+      "cell_id": 20,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_020.json"
+    },
+    {
+      "cell_id": 21,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_021.json"
+    },
+    {
+      "cell_id": 22,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_022.json"
+    },
+    {
+      "cell_id": 23,
+      "design_id": "confirmed_core_yield_1_5",
+      "design_file": "confirmed_core_yield_1_5.npz",
+      "design_sha256": "ac9795d0bdc5c8aeff740b443ed4981be205b7cf801dad1695cbf44cce0d9120",
+      "manifest_file": "confirmed_core_yield_1_5.manifest.json",
+      "design_manifest_sha256": "6a289a2244f709c5399457f43eb1cf5b4d83781f2ba67f14c57e3fdd87519ec5",
+      "relative_yield": 1.5,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_023.json"
+    },
+    {
+      "cell_id": 24,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_024.json"
+    },
+    {
+      "cell_id": 25,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_025.json"
+    },
+    {
+      "cell_id": 26,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_026.json"
+    },
+    {
+      "cell_id": 27,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_027.json"
+    },
+    {
+      "cell_id": 28,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_028.json"
+    },
+    {
+      "cell_id": 29,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_029.json"
+    },
+    {
+      "cell_id": 30,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_030.json"
+    },
+    {
+      "cell_id": 31,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_031.json"
+    },
+    {
+      "cell_id": 32,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_032.json"
+    },
+    {
+      "cell_id": 33,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_033.json"
+    },
+    {
+      "cell_id": 34,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_034.json"
+    },
+    {
+      "cell_id": 35,
+      "design_id": "confirmed_core_yield_2_0",
+      "design_file": "confirmed_core_yield_2_0.npz",
+      "design_sha256": "26f33eb3d4ce1decd12c1859a02ebbb8e8772cc8121f16e0bd5aad778224f6b2",
+      "manifest_file": "confirmed_core_yield_2_0.manifest.json",
+      "design_manifest_sha256": "a42fc1f676c136b43bc8d4aab3d48ceee5de4d8eb108a6bddb28653b2214fe7d",
+      "relative_yield": 2.0,
+      "family_history_extension": 0,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_035.json"
+    },
+    {
+      "cell_id": 36,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_036.json"
+    },
+    {
+      "cell_id": 37,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_037.json"
+    },
+    {
+      "cell_id": 38,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_038.json"
+    },
+    {
+      "cell_id": 39,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_039.json"
+    },
+    {
+      "cell_id": 40,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_040.json"
+    },
+    {
+      "cell_id": 41,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_041.json"
+    },
+    {
+      "cell_id": 42,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_042.json"
+    },
+    {
+      "cell_id": 43,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_043.json"
+    },
+    {
+      "cell_id": 44,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_044.json"
+    },
+    {
+      "cell_id": 45,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_045.json"
+    },
+    {
+      "cell_id": 46,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_046.json"
+    },
+    {
+      "cell_id": 47,
+      "design_id": "core_plus_structural_fh250_yield_1_0",
+      "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+      "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+      "manifest_file": "core_plus_structural_fh250_yield_1_0.manifest.json",
+      "design_manifest_sha256": "47cebddae2a4f25fce9004243611ec8187f1cfbd9625acc13f1b0ffcc66c9748",
+      "relative_yield": 1.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_047.json"
+    },
+    {
+      "cell_id": 48,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_048.json"
+    },
+    {
+      "cell_id": 49,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_049.json"
+    },
+    {
+      "cell_id": 50,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_050.json"
+    },
+    {
+      "cell_id": 51,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_051.json"
+    },
+    {
+      "cell_id": 52,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_052.json"
+    },
+    {
+      "cell_id": 53,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_053.json"
+    },
+    {
+      "cell_id": 54,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_054.json"
+    },
+    {
+      "cell_id": 55,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_055.json"
+    },
+    {
+      "cell_id": 56,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_056.json"
+    },
+    {
+      "cell_id": 57,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_057.json"
+    },
+    {
+      "cell_id": 58,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_058.json"
+    },
+    {
+      "cell_id": 59,
+      "design_id": "core_plus_structural_fh250_yield_1_5",
+      "design_file": "core_plus_structural_fh250_yield_1_5.npz",
+      "design_sha256": "87eb7f1a9224c0f9f0da0ba32358ffcbf3d26870b63673d3f3a06cd0b50cad55",
+      "manifest_file": "core_plus_structural_fh250_yield_1_5.manifest.json",
+      "design_manifest_sha256": "dc7dc2a5bcf678ddffaeb9b496ee19610910a292337689502480a0e7f07d3cb1",
+      "relative_yield": 1.5,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_059.json"
+    },
+    {
+      "cell_id": 60,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_060.json"
+    },
+    {
+      "cell_id": 61,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_061.json"
+    },
+    {
+      "cell_id": 62,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_062.json"
+    },
+    {
+      "cell_id": 63,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_063.json"
+    },
+    {
+      "cell_id": 64,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_064.json"
+    },
+    {
+      "cell_id": 65,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "ordered_cdr",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_065.json"
+    },
+    {
+      "cell_id": 66,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_066.json"
+    },
+    {
+      "cell_id": 67,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_067.json"
+    },
+    {
+      "cell_id": 68,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "all_audiogram_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_068.json"
+    },
+    {
+      "cell_id": 69,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_loading",
+      "truth_parameters": {
+        "a": 0.0,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_069.json"
+    },
+    {
+      "cell_id": 70,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "no_path",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.0
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_070.json"
+    },
+    {
+      "cell_id": 71,
+      "design_id": "core_plus_structural_fh250_yield_2_0",
+      "design_file": "core_plus_structural_fh250_yield_2_0.npz",
+      "design_sha256": "20a7281f5a0699ac47dfaf83cbec184cefe4a3ba4d0a0dc07a6b505d51a8f4cf",
+      "manifest_file": "core_plus_structural_fh250_yield_2_0.manifest.json",
+      "design_manifest_sha256": "cb96bfc6c3e4f856b68eab7729c7cf503f4d642ea0086db9cf73919c377e7472",
+      "relative_yield": 2.0,
+      "family_history_extension": 250,
+      "outcome": "binary_probable_ad",
+      "hearing_arm": "index_proband_abr_bound",
+      "truth": "vertical_0_24",
+      "truth_parameters": {
+        "a": 0.6,
+        "b": 0.4
+      },
+      "fixed_parameters": {
+        "c_prime": 0.2,
+        "d": 0.7,
+        "sigma_m2": 0.5
+      },
+      "alpha": 0.025,
+      "replicates": 200,
+      "bootstrap_replicates": 50,
+      "qmc_points": 0,
+      "seed_base": 2608210,
+      "result_file": "cell_071.json"
+    }
+  ]
+}

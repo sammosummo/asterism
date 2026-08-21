@@ -1,0 +1,88 @@
+{
+  "prototype_warning": "THROWAWAY STRUCTURAL DESIGN. This is not a realised roster, grant text, or an analysis-ready inferential release.",
+  "question": "What level and power does the settled recruitment-count design have under ordered CDR, across relative yield, with and without a separately labelled 250-person family-history structural extension?",
+  "scenario_id": "core_plus_structural_fh250_yield_1_0",
+  "source_commit": "cca65b3d4ec82a1b3f4db848db33958111350214",
+  "builder_sha256": "edd3f23ea658ab622ae5b80e6b85c0b69d438ad7aae66320c6c7bb8b0038a1b1",
+  "design_file": "core_plus_structural_fh250_yield_1_0.npz",
+  "design_sha256": "24fe2f605559d1dd6baf5992ecf180bedc9d92225232e3530867ace6b41df8e4",
+  "counts": {
+    "total": 1350,
+    "roles": {
+      "index_case": 250,
+      "first_case_relative": 250,
+      "second_case_relative": 0,
+      "acoustic": 600,
+      "family_history_extension": 250
+    },
+    "outcomes_observed_by_role": {
+      "index_case": 250,
+      "first_case_relative": 250,
+      "second_case_relative": 0,
+      "acoustic": 600,
+      "family_history_extension": 250
+    },
+    "family_units": 397,
+    "family_size_histogram": {
+      "1": 14,
+      "2": 254,
+      "3": 12,
+      "4": 6,
+      "5": 20,
+      "6": 17,
+      "7": 26,
+      "8": 48
+    },
+    "relative_yield": 1.0,
+    "family_history_extension": 250
+  },
+  "recruitment": {
+    "acoustic_target": 600,
+    "acoustic_target_status": "projected up-to target",
+    "acoustic_observed_ages": 400,
+    "acoustic_projected_ages": 200,
+    "index_cases": 250,
+    "case_relative_policy": "attempt two; these fixed-yield cells retain every family with one",
+    "case_relative_structure": "structural all-adult-offspring scenario; two offspring are treated as full siblings and remain in the index trio",
+    "extension_status": "structural scenario, not demonstrated recruitment feasibility",
+    "extension_route_rule": "identifier-free selection from unexamined first/second-degree pedigree members of an Acoustic participant with a positive authoritative family-history flag; the reported free-text relative is not normalised",
+    "extension_route_candidates": 826,
+    "positive_reporter_anchors": 175,
+    "extension_age_scenario": "Normal(76.0, 8.0^2), clipped to 40-95; not an observed recruit age distribution"
+  },
+  "relationship_audit": {
+    "scale": "twice pedigree kinship with unit diagonal",
+    "claimed_ties": 500,
+    "claimed_ties_within_fitted_unit": 500,
+    "claimed_relationship_type_histogram": {
+      "family_history_route_anchor": 250,
+      "case_relative_to_index": 250
+    },
+    "extension_degree_histogram": {
+      "first_degree": 79,
+      "second_degree": 171
+    },
+    "claimed_tie_failures": 0,
+    "disconnected_units": 0,
+    "nonzero_projected_cross_unit_ties": 0,
+    "source_positive_ties_projected_away": 7283,
+    "source_first_degree_ties_projected_away": 323,
+    "minimum_family_eigenvalue": 0.1703250372923484,
+    "inbred_people_with_diagonal_above_one_before_projection": 0,
+    "largest_dropped_inbreeding_coefficient": 0.0
+  },
+  "outcome_observation": {
+    "index_case": true,
+    "first_case_relative": true,
+    "second_case_relative": false,
+    "acoustic": true,
+    "family_history_extension": true,
+    "note": "The second case relative is enrolled for hearing/genotype/covariates; the current Strategy does not require their dementia outcome."
+  },
+  "ascertainment_boundary": "The available model conditions on the named affected index case. Fixed relative yield additionally assumes invitation and enrolment are ignorable after diagnosis, stage, source, referral route and covariates. The structural extension is fitted population-unconditioned; its report-based selection denominator is not yet implementable from a normalised roster.",
+  "source_files": {
+    "pedigree": "/Users/samuelmathias/MathiasLab/promoted/studies/existing/safs/data/pedigrees/review-history/pedigree.csv",
+    "acoustic_redcap": "/Users/samuelmathias/AcousticIngest/outputs/intermediate/redcap/raw/redcap_acoustic_20260811T150210.json",
+    "family_history_flags": "/Users/samuelmathias/MathiasLab/staging/studies/existing/acoustic/projects/acoustic-ingest/outputs/phenotypes/family_history.csv"
+  }
+}
