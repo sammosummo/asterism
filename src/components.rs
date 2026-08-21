@@ -29,6 +29,7 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use crate::blocks::family_blocks;
 use crate::convergence::{self, TOLERANCE};
 use crate::deviance::{chi2_one_df_upper_tail, chi2_upper_tail};
+use crate::interval::{self, Interval};
 
 /// A fitted multi-component model.
 #[derive(Clone, Debug)]
@@ -716,26 +717,6 @@ impl ComponentModel {
     }
 }
 
-/// A profile-likelihood interval for one raw coefficient proportion.
-#[derive(Clone, Copy, Debug)]
-pub struct ComponentInterval {
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the endpoint is the edge of the parameter space rather than a
-    /// point the data ruled out. Read it beside `profile_failures`: a bound
-    /// reached because the likelihood never crossed and a bound reached because
-    /// the profile could not be evaluated there are both reported here, and
-    /// only a non-zero failure count separates them.
-    pub lower_limited: bool,
-    pub upper_limited: bool,
-    pub level: f64,
-    /// How many profile evaluations could not be made. A failure is unknown
-    /// ground, not ground the data ruled out, so the interval is widened over
-    /// it rather than narrowed; a non-zero count says the endpoints rest partly
-    /// on evaluations that did not come back.
-    pub profile_failures: usize,
-}
-
 /// A likelihood ratio test of one component against no variance at all.
 #[derive(Clone, Debug)]
 pub struct ComponentTest {
@@ -744,8 +725,6 @@ pub struct ComponentTest {
     pub rule: &'static str,
     pub null_loglik: f64,
 }
-
-const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 
 /// One class's difference from the shared baseline.
 #[derive(Clone, Copy, Debug)]
@@ -1046,7 +1025,7 @@ impl ComponentModel {
         y: &DVector<f64>,
         reml: bool,
         component: usize,
-    ) -> Result<ComponentInterval, &'static str> {
+    ) -> Result<Interval, &'static str> {
         if component >= self.parameters() {
             return Err("COMPONENTS_NO_SUCH_COMPONENT");
         }
@@ -1057,62 +1036,19 @@ impl ComponentModel {
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         let scaled = y / variance.sqrt();
 
-        // Both ends of the difference are measured the same way, by pinning and
-        // re-optimising. Taking the maximum from the free fit instead leaves a
-        // constant in the deviance, which is how the two-trait intervals once
-        // came to have zero width.
-        let maximum = self
-            .profile_objective(&scaled, reml, component, fitted)
-            .ok_or("COMPONENTS_PROFILE_MAXIMUM_FAILED")?;
-        let deviance = |proportion: f64| -> Option<f64> {
+        // Everything this family knows -- which component, which response,
+        // whether the fit is restricted -- is resolved here. What crosses into
+        // `interval` is one number in and a log-likelihood out.
+        let got = interval::profile_interval(fitted, (0.0, 1.0 - 1e-9), |proportion| {
             self.profile_objective(&scaled, reml, component, proportion)
-                .map(|ll| 2.0 * (maximum - ll))
-        };
-
-        // **A profile that could not be evaluated is not a likelihood that fell
-        // away.** Read as an infinite deviance it looked like ground the data
-        // had ruled out, so the bisection stepped inward and the interval came
-        // back narrower than the data support -- confidently, and with nothing
-        // to show it had happened. A failure is now covered rather than cut
-        // away, and counted so a reader can see it.
-        let mut failures = 0usize;
-        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
-            match deviance(bound) {
-                None => {
-                    *failures += 1;
-                    return (bound, true);
-                }
-                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
-                Some(_) => {}
-            }
-            let (mut inside, mut outside) = (fitted, bound);
-            for _ in 0..80 {
-                let middle = 0.5 * (inside + outside);
-                if (outside - inside).abs() <= 1e-9 {
-                    break;
-                }
-                match deviance(middle) {
-                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
-                    Some(_) => outside = middle,
-                    None => {
-                        *failures += 1;
-                        inside = middle;
-                    }
-                }
-            }
-            (0.5 * (inside + outside), false)
-        };
-
-        let (lower, lower_limited) = endpoint(0.0, &mut failures);
-        let (upper, upper_limited) = endpoint(1.0 - 1e-9, &mut failures);
-        Ok(ComponentInterval {
-            lower,
-            upper,
-            lower_limited,
-            upper_limited,
-            level: 0.95,
-            profile_failures: failures,
-        })
+        });
+        if got.estimate.is_none() {
+            return Err("COMPONENTS_PROFILE_MAXIMUM_FAILED");
+        }
+        // The mixture verdict stays absent: no coverage simulation has scored
+        // a component proportion at its bounds. `0011` part 5 -- absent means
+        // nobody has measured it here, not that the question does not apply.
+        Ok(got)
     }
 
     /// Test one component against having no variance at all.
