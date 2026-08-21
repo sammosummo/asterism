@@ -248,8 +248,11 @@ fn endpoint(
 /// A 95 per cent profile-likelihood interval.
 ///
 /// `objective` returns the profiled log-likelihood with the quantity held at
-/// the given value, or `None` where that fit could not be made. `bounds` are
-/// the parameter's own limits, lower first.
+/// the given value, or `None` where that fit could not be made. `bounds` are the
+/// parameter's own limits, lower first.
+///
+/// A `Some` carrying a value that is not finite counts as `None`. A family need
+/// not have checked, and several of them do not.
 ///
 /// Where the objective cannot be evaluated at the estimate there is nothing to
 /// bracket from and the result is [`Interval::absent`].
@@ -258,10 +261,25 @@ pub(crate) fn profile_interval(
     bounds: (f64, f64),
     objective: impl Fn(f64) -> Option<f64>,
 ) -> Interval {
-    let Some(maximum) = objective(estimate) else {
+    // **A log-likelihood that is not finite is not a likelihood.** It is a
+    // covariance that would not factorise, or a quadratic form that overflowed,
+    // and it arrives wearing `Some` because the family that produced it checked
+    // whether the fit ran rather than whether the number means anything.
+    //
+    // Left alone it reads as a deviance of infinity, which is ground the data
+    // ruled out, and the end is placed inside the bound on a computation that
+    // was never made. That is the fault this module exists to stop, so the
+    // contract is enforced here rather than trusted: unevaluable is unevaluable,
+    // whichever way a family says it. `components` never returns one -- it
+    // re-evaluates and tests `is_finite` before accepting -- so this moves
+    // nothing today. `prepared` does return one, and will need this when it
+    // moves across.
+    let evaluate = |value: f64| objective(value).filter(|ll| ll.is_finite());
+
+    let Some(maximum) = evaluate(estimate) else {
         return Interval::absent();
     };
-    let deviance_at = |value: f64| objective(value).map(|ll| 2.0 * (maximum - ll));
+    let deviance_at = |value: f64| evaluate(value).map(|ll| 2.0 * (maximum - ll));
 
     let (bottom, top) = bounds;
     let mut failures = 0usize;
@@ -439,6 +457,63 @@ mod tests {
             Some(false),
             "the mixture rule is stricter here and must be allowed to disagree"
         );
+    }
+
+    /// A log-likelihood that is not finite counts as a fit that could not be
+    /// made, whichever way the family reports it.
+    ///
+    /// `Some(-inf)` left alone is a deviance of infinity, which is read as
+    /// ground the data ruled out -- so the end would be placed inside the bound
+    /// on a computation nobody made. Here the profile returns negative infinity
+    /// over the same band as the `None` test above, and must produce the same
+    /// widened interval and the same count.
+    #[test]
+    fn an_infinite_log_likelihood_counts_as_a_fit_that_could_not_be_made() {
+        let (centre, spread) = (0.4, 0.1);
+        let true_crossing = centre - spread * CHI2_ONE_DF_95.sqrt();
+        let infinite = {
+            let base = quadratic(centre, spread);
+            move |v: f64| {
+                if (0.15..0.25).contains(&v) {
+                    Some(f64::NEG_INFINITY)
+                } else {
+                    base(v)
+                }
+            }
+        };
+        let got = profile_interval(centre, (0.0, 1.0), infinite);
+        assert!(
+            got.lower < true_crossing,
+            "an infinite log-likelihood narrowed the interval to {}",
+            got.lower
+        );
+        assert!(got.profile_failures > 0);
+
+        // Identical to the `None` band, which is the point: the two ways of
+        // saying "no answer" must not lead to different intervals.
+        let holed = {
+            let base = quadratic(centre, spread);
+            move |v: f64| {
+                if (0.15..0.25).contains(&v) {
+                    None
+                } else {
+                    base(v)
+                }
+            }
+        };
+        let same = profile_interval(centre, (0.0, 1.0), holed);
+        assert_eq!(got.lower, same.lower);
+        assert_eq!(got.profile_failures, same.profile_failures);
+    }
+
+    /// A profile that is not finite at the estimate leaves no interval, the same
+    /// as one that could not be evaluated there at all.
+    #[test]
+    fn an_infinite_maximum_leaves_no_interval() {
+        let got = profile_interval(0.4, (0.0, 1.0), |_| Some(f64::NEG_INFINITY));
+        assert!(got.estimate.is_none());
+        let nan = profile_interval(0.4, (0.0, 1.0), |_| Some(f64::NAN));
+        assert!(nan.estimate.is_none());
     }
 
     /// An estimate whose own profile fails leaves no interval, and says so by
