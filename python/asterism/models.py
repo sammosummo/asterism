@@ -1924,6 +1924,24 @@ class RepeatedModel:
 
     Leaving ``line`` out leaves every covariance free, which is what says
     whether the shape cost anything.
+
+    ``shape`` chooses how the correlation falls away once the floor is off:
+    ``"exponential"`` is ``exp(-rate * d)`` and ``"gaussian"`` is
+    ``exp(-(rate * d)**2)``. **Both carry a floor and a rate and nothing else**,
+    so the two are comparable like for like — same parameter count, different
+    shape, and the log-likelihood picks between them.
+
+    The difference is the tail, and several components make the tail worse
+    rather than better: the total correlation is a weighted sum of the component
+    curves, so at long separation the slowest of them is all that is left. A
+    model whose components all decay exponentially therefore overstates what
+    distant positions have in common. The Gaussian falls slowly at first and
+    then far faster, and is the one to reach for when a fit sits above the
+    measured correlation at long separations.
+
+    **The Gaussian is the harder of the two numerically.** It is very smooth, so
+    at a low rate its correlation matrix is nearly singular and a fit may refuse
+    where the exponential would not.
     """
 
     def __init__(
@@ -1933,6 +1951,7 @@ class RepeatedModel:
         replicates: int,
         positions: int,
         line: Any = None,
+        shape: str = "exponential",
     ) -> None:
         stacked = np.ascontiguousarray(matrices, dtype=float)
         if stacked.ndim == 2:
@@ -1943,6 +1962,7 @@ class RepeatedModel:
             int(replicates),
             int(positions),
             None if line is None else np.ascontiguousarray(line, dtype=float),
+            shape,
         )
         self.positions = int(positions)
         self.replicates = int(replicates)
@@ -1979,7 +1999,14 @@ class RepeatedModel:
             loglik,
             scaled_gradient,
             censored_shares,
-            (iterations, monotone, converged, largest_family, sequential_dimension),
+            (
+                iterations,
+                monotone,
+                converged,
+                largest_family,
+                sequential_dimension,
+                shape,
+            ),
         ) = self._core.fit(
             np.ascontiguousarray(value, dtype=float),
             np.ascontiguousarray(censoring, dtype=np.int64),
@@ -2006,7 +2033,83 @@ class RepeatedModel:
             "censored_shares": np.asarray(censored_shares, dtype=float),
             "largest_family": largest_family,
             "sequential_dimension": sequential_dimension,
+            "shape": shape,
             "estimator": "ml",
+        }
+
+    def correlation_interval(
+        self,
+        value: Any,
+        censoring: Any,
+        limit: Any,
+        component: int,
+        separation: float,
+    ) -> dict[str, Any]:
+        """A 95 per cent profile-likelihood interval for one component's
+        correlation at one separation.
+
+        **This is the interval this model can carry, and the floor and the rate
+        are not.** They trade off against each other almost exactly — a floor of
+        0.35 with a rate of 0.09, and no floor at all with a rate of 0.043,
+        agree to within a twentieth of a correlation everywhere — so an interval
+        on either would be wide and would not mean what it looked like. The
+        correlation at a separation is what the data speak to, and it is the
+        thing this model knows that a pile of two-frequency models does not.
+
+        The recipe is the one every interval in the package uses: the ends are
+        where twice the drop in the profile log-likelihood reaches 3.8415, found
+        by bisection. Holding a correlation leaves one free parameter where
+        there were two, so a held fit is a fit of the same size — but it takes
+        more iterations to settle, and there are about forty of them. **On real
+        data this is the better part of an hour an interval**: 37 to 63 minutes,
+        measured on ten frequencies, three components and 394 people, where a
+        free fit takes 34 seconds.
+
+        The ends of the range are what the kernel family can express, not nought
+        and one: a correlation of exactly one leaves a component no variance of
+        its own, and a correlation of exactly nought needs an infinite rate. An
+        end that sits there is reported with ``lower_at_bound`` or
+        ``upper_at_bound`` set, and whether it belongs to the interval is
+        decided by the Self-Liang mixture, as it is everywhere else here.
+
+        ``profile_failures`` counts the points along the way that could not be
+        fitted. Each was treated as inside the interval, because a fit that
+        could not be made is unknown ground and not ground the data ruled out,
+        so a large count means an interval resting on ground nobody saw.
+
+        The arrays are the same three :meth:`fit` takes.
+        """
+        (
+            component_at,
+            separation_at,
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level,
+            contains_lower_bound,
+            contains_upper_bound,
+            profile_failures,
+        ) = self._core.correlation_interval(
+            np.ascontiguousarray(value, dtype=float),
+            np.ascontiguousarray(censoring, dtype=np.int64),
+            np.ascontiguousarray(limit, dtype=float),
+            int(component),
+            float(separation),
+        )
+        return {
+            "component": component_at,
+            "separation": separation_at,
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_at_bound": lower_at_bound,
+            "upper_at_bound": upper_at_bound,
+            "level": level,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
+            "profile_failures": profile_failures,
         }
 
     @staticmethod
@@ -2031,4 +2134,7 @@ class RepeatedModel:
             raise ValueError("REPEATED_NO_SUCH_COMPONENT")
         floor = float(floors[component])
         rate = float(rates[component])
-        return floor + (1.0 - floor) * float(np.exp(-rate * abs(separation)))
+        scaled = rate * abs(separation)
+        if fit.get("shape") == "gaussian":
+            scaled = scaled * scaled
+        return floor + (1.0 - floor) * float(np.exp(-scaled))

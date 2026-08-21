@@ -194,3 +194,54 @@ def test_preparing_once_and_fitting_twice_gives_the_same_answer(data):
     assert np.allclose(
         first["component_covariances"][0], again["component_covariances"][0]
     )
+
+
+def test_the_correlation_interval_comes_back_and_brackets_its_estimate(data):
+    """The record's shape and the one thing an interval must always do.
+
+    Whether it covers is `checks/repeated_coverage.py`'s question, not this
+    file's. What is checked here is the translation: that the keys are there,
+    that the ends bracket the estimate, and that the ends of the range are what
+    the kernel family can express rather than nought and one.
+    """
+    a, design, value = data
+    model = asterism.RepeatedModel(
+        a, design, REPLICATES, POSITIONS, line=LINE
+    )
+    censoring, limit = measured(value)
+    got = model.correlation_interval(value, censoring, limit, 0, 3.0)
+
+    assert got["component"] == 0
+    assert got["separation"] == 3.0
+    assert got["level"] == 0.95
+    assert got["lower"] <= got["estimate"] <= got["upper"]
+    assert 0.001 <= got["lower"] and got["upper"] <= 0.999
+    assert isinstance(got["profile_failures"], int)
+    # The estimate is the free fit's own correlation, not a separate number.
+    free = model.fit(value, censoring, limit)
+    assert got["estimate"] == pytest.approx(
+        asterism.RepeatedModel.correlation(free, 0, 3.0), abs=1e-9
+    )
+    # A bound that was not reached asks no question about itself.
+    if not got["lower_at_bound"]:
+        assert got["contains_lower_bound"] is None
+    if not got["upper_at_bound"]:
+        assert got["contains_upper_bound"] is None
+
+
+def test_an_interval_without_a_kernel_is_refused(data):
+    """There is no curve to hold without a line, and saying so beats holding
+    something else."""
+    a, design, value = data
+    censoring, limit = measured(value)
+    plain = asterism.RepeatedModel(a, design, REPLICATES, POSITIONS)
+    with pytest.raises(ValueError, match="REPEATED_NO_KERNEL"):
+        plain.correlation_interval(value, censoring, limit, 0, 3.0)
+
+    shaped = asterism.RepeatedModel(
+        a, design, REPLICATES, POSITIONS, line=LINE
+    )
+    with pytest.raises(ValueError, match="REPEATED_NO_SUCH_COMPONENT"):
+        shaped.correlation_interval(value, censoring, limit, 7, 3.0)
+    with pytest.raises(ValueError, match="REPEATED_SEPARATION_NOT_POSITIVE"):
+        shaped.correlation_interval(value, censoring, limit, 0, 0.0)

@@ -147,7 +147,7 @@ mod kernel;
 #[cfg(feature = "python")]
 pub mod python;
 
-use kernel::{Kernel, Shaped};
+use kernel::{Held, Kernel, Shape, Shaped};
 use nalgebra::{DMatrix, DVector};
 use statrs::distribution::Normal;
 
@@ -273,6 +273,55 @@ struct State {
     shapes: Option<Vec<Shaped>>,
 }
 
+/// Chi-square on one degree of freedom at 0.95, which is ADR 0004's recipe for
+/// a quantity away from its own bound.
+const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+
+/// The Self-Liang 50:50 critical value, for deciding whether an end belongs to
+/// the interval. On a parameter's own bound half the reference distribution's
+/// mass sits at nought, so the plain chi-square value is the wrong threshold
+/// there.
+const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
+
+/// The smallest correlation the kernel family can express at a separation.
+///
+/// Nought itself needs an infinite rate, so it is a limit and not a value. This
+/// is close enough to it that an interval ending here says the data did not rule
+/// out unrelated positions.
+const CORRELATION_LOW: f64 = 1e-3;
+
+/// The largest correlation the kernel family can express.
+///
+/// One itself leaves a component no variance of its own, which is a singular
+/// matrix and not a fit.
+const CORRELATION_HIGH: f64 = 0.999;
+
+/// A profile-likelihood interval for one correlation at one separation.
+#[derive(Clone, Debug)]
+pub struct CorrelationInterval {
+    /// Which component, in the order the matrices were given, replicate level
+    /// last.
+    pub component: usize,
+    /// The separation on the caller's own line, in whatever units it used.
+    pub separation: f64,
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the end sits at the edge of what the kernel family can
+    /// express rather than where the profile fell away.
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+    /// Whether an end belongs to the interval, by the Self-Liang mixture.
+    /// `None` where the end is not at a bound and the question does not arise.
+    pub contains_lower_bound: Option<bool>,
+    pub contains_upper_bound: Option<bool>,
+    /// How many points on the profile could not be fitted. Each was counted as
+    /// inside, so a large number means an interval resting on ground nobody
+    /// saw.
+    pub profile_failures: usize,
+}
+
 /// A fitted repeated-measures model.
 #[derive(Clone, Debug)]
 pub struct RepeatedFit {
@@ -317,6 +366,9 @@ pub struct RepeatedFit {
     /// order with the replicate level last, where there is a kernel. Empty
     /// where every covariance was left free.
     pub floors: Vec<f64>,
+    /// Which shape the decay had. A floor and a rate describe a different
+    /// curve under each, so this has to travel with them.
+    pub shape: &'static str,
     /// Each component's decay rate, in the caller's own separations, in the
     /// same order. **A rate means nothing without the line it was measured
     /// on**, which is why [`RepeatedFit::correlation`] exists.
@@ -417,7 +469,8 @@ impl RepeatedFit {
     pub fn correlation(&self, component: usize, separation: f64) -> Option<f64> {
         let floor = *self.floors.get(component)?;
         let rate = *self.rates.get(component)?;
-        Some(Kernel::at(floor, rate, separation.abs()))
+        let shape = Shape::named(self.shape)?;
+        Some(Kernel::at(shape, floor, rate, separation.abs()))
     }
 }
 
@@ -432,6 +485,9 @@ impl RepeatedFit {
 struct Prepared {
     known: Vec<Known>,
     rotated: Option<Rotated>,
+    /// The component whose correlation is held, and at what, where a profile
+    /// is being taken. `None` is the ordinary fit.
+    held: Option<(usize, Held)>,
 }
 
 /// The result of one expectation step.
@@ -690,7 +746,35 @@ impl RepeatedModel {
         replicates: usize,
         line: &[f64],
     ) -> Result<Self, &'static str> {
-        let kernel = Kernel::new(line)?;
+        Self::build_on_a_line_shaped(matrices, design, replicates, line, "exponential")
+    }
+
+    /// The same, with the shape of the decay chosen.
+    ///
+    /// `"exponential"` is `exp(-rate * separation)` and `"gaussian"` is
+    /// `exp(-(rate * separation)^2)`. **Both carry a floor and a rate and
+    /// nothing else**, so the two are comparable like for like: same parameter
+    /// count, different shape, and the likelihood picks between them.
+    ///
+    /// The difference is the tail, and a model of several components makes the
+    /// tail worse rather than better. The total correlation is a weighted sum
+    /// of the component curves, and at long separation the slowest of them is
+    /// all that is left, so components with heavy tails overstate how much
+    /// distant positions have in common.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`RepeatedModel::build`] returns, everything the line can be
+    /// wrong in, and `REPEATED_KERNEL_SHAPE_UNKNOWN`.
+    pub fn build_on_a_line_shaped(
+        matrices: &[DMatrix<f64>],
+        design: &DMatrix<f64>,
+        replicates: usize,
+        line: &[f64],
+        shape: &str,
+    ) -> Result<Self, &'static str> {
+        let shape = Shape::named(shape).ok_or("REPEATED_KERNEL_SHAPE_UNKNOWN")?;
+        let kernel = Kernel::new(line, shape)?;
         let mut model = Self::build(matrices, design, replicates, kernel.positions())?;
         model.kernel = Some(kernel);
         Ok(model)
@@ -736,6 +820,57 @@ impl RepeatedModel {
     /// nothing measured to set a scale by, or produce a covariance that cannot
     /// be factorised.
     pub fn fit_known(&self, known: &[Known]) -> Result<RepeatedFit, &'static str> {
+        self.fit_holding(known, None)
+    }
+
+    /// Fit with one component's correlation held at a value, at one separation.
+    ///
+    /// **This is the constrained fit a profile interval is made of.** ADR 0010
+    /// records that a floor and a rate are not separately estimable while the
+    /// correlation they describe is, so what is held is the curve at a
+    /// separation and not either number behind it. Holding it leaves one free
+    /// parameter where there were two: the conditional maximisation for that
+    /// component searches over its scales and its rate, and the floor follows.
+    /// Everything else about the fit is untouched, so a constrained fit costs
+    /// what a free one costs.
+    ///
+    /// `component` counts the person-level components in the order they were
+    /// given, with the replicate level last.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`RepeatedModel::fit_known`] returns, and
+    /// `REPEATED_HELD_NOT_REACHABLE` where no member of the kernel family can
+    /// put that correlation at that separation.
+    pub fn fit_holding(
+        &self,
+        known: &[Known],
+        holding: Option<(usize, f64, f64)>,
+    ) -> Result<RepeatedFit, &'static str> {
+        let held = match holding {
+            None => None,
+            Some((component, separation, correlation)) => {
+                if self.kernel.is_none() {
+                    return Err("REPEATED_NO_KERNEL");
+                }
+                if component > self.components() {
+                    return Err("REPEATED_NO_SUCH_COMPONENT");
+                }
+                if !(separation > 0.0) {
+                    return Err("REPEATED_SEPARATION_NOT_POSITIVE");
+                }
+                if !(CORRELATION_LOW..=CORRELATION_HIGH).contains(&correlation) {
+                    return Err("REPEATED_HELD_NOT_REACHABLE");
+                }
+                Some((
+                    component,
+                    Held {
+                        separation,
+                        correlation,
+                    },
+                ))
+            }
+        };
         let rows = self.people * self.replicates;
         let positions = self.positions;
         if known.len() != rows * positions {
@@ -772,9 +907,10 @@ impl RepeatedModel {
         let prepared = Prepared {
             rotated: complete.then(|| crude.clone()),
             known: scaled,
+            held,
         };
 
-        let mut state = self.starting_values(&crude)?;
+        let mut state = self.starting_values(&crude, prepared.held)?;
         let mut imputed = self
             .expectation(
                 &prepared,
@@ -792,6 +928,7 @@ impl RepeatedModel {
         let mut iterations = 0;
         let mut previous_gain = 0.0;
         let mut relaxed = false;
+        let mut settled = false;
         let mut scaled_gradient = f64::INFINITY;
         let mut last_reading: Option<usize> = None;
 
@@ -850,6 +987,7 @@ impl RepeatedModel {
                 };
                 remaining <= REMAINING_GAIN * loglik.abs().max(1.0)
             };
+            settled |= settling;
             if periodic || settling {
                 if let Some((rested, rested_imputed)) = self.rested(&prepared, &state, loglik) {
                     state = rested;
@@ -926,12 +1064,135 @@ impl RepeatedModel {
             loglik: loglik - count * scale.ln(),
             iterations,
             monotone,
-            converged: scaled_gradient < TOLERANCE,
+            // **A held fit is not judged by the free gradient.** At a
+            // constrained maximum the free gradient is not nought -- it points
+            // along the constraint, which is exactly what the constraint is
+            // there to stop -- so reading it would report every profile point
+            // as a failure. Measured on one: 2.3e-7 at the free answer's own
+            // correlation, 2.8e-3 a twentieth away, at maxima that were both
+            // reached. What is left to judge a held fit by is whether the
+            // likelihood settled, so that is what is reported.
+            converged: if prepared.held.is_some() {
+                settled
+            } else {
+                scaled_gradient < TOLERANCE
+            },
             scaled_gradient,
+            shape: self
+                .kernel
+                .as_ref()
+                .map_or("none", |kernel| kernel.shape().name()),
             censored_shares: self.censored_shares(known),
             largest_family: self.blocks.iter().map(Vec::len).max().unwrap_or(0),
             sequential_dimension: self.sequential_dimension(known),
             estimator: "ml",
+        })
+    }
+
+    /// A 95 per cent profile-likelihood interval for one component's
+    /// correlation at one separation.
+    ///
+    /// **This is the interval this model can carry, and the floor and the rate
+    /// are not.** They trade off against each other almost exactly -- a floor
+    /// of 0.35 with a rate of 0.09, and no floor at all with a rate of 0.043,
+    /// agree to within a twentieth of a correlation everywhere -- so an
+    /// interval on either would be wide and would not mean what it looked like.
+    /// The correlation at a separation is what the data speak to.
+    ///
+    /// The recipe is ADR 0004's, as it is everywhere else here: the ends are
+    /// where twice the drop in the profile log-likelihood reaches 3.8415, found
+    /// by bisection inwards from each end of the range. The range is what the
+    /// kernel family can express, which is not nought to one -- a correlation of
+    /// exactly one leaves a component no variance of its own, and a correlation
+    /// of exactly nought needs an infinite rate. An end reached without the
+    /// profile falling away is reported as sitting on the end rather than as a
+    /// crossing, and whether that end belongs to the interval is decided by the
+    /// Self-Liang mixture.
+    ///
+    /// **Every point on the profile is a whole fit**, and about forty of them
+    /// are needed. That is not forty times a free fit's cost: a held fit takes
+    /// more iterations to settle than a free one -- 82 to 328 against 67 on the
+    /// same data -- so the whole interval runs to roughly seventy free fits.
+    /// Measured on ten positions, three components and 394 people, where a free
+    /// fit takes 34 seconds: **37 to 63 minutes an interval**. On seventeen
+    /// positions it is not something to start without meaning to.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the model has no kernel, the component does
+    /// not exist, the separation is not positive, or the free fit fails.
+    pub fn correlation_interval(
+        &self,
+        known: &[Known],
+        component: usize,
+        separation: f64,
+    ) -> Result<CorrelationInterval, &'static str> {
+        if self.kernel.is_none() {
+            return Err("REPEATED_NO_KERNEL");
+        }
+        if component > self.components() {
+            return Err("REPEATED_NO_SUCH_COMPONENT");
+        }
+        if !(separation > 0.0) {
+            return Err("REPEATED_SEPARATION_NOT_POSITIVE");
+        }
+        let free = self.fit_known(known)?;
+        let estimate = free
+            .correlation(component, separation)
+            .ok_or("REPEATED_NO_SUCH_COMPONENT")?
+            .clamp(CORRELATION_LOW, CORRELATION_HIGH);
+        let at_estimate = self
+            .fit_holding(known, Some((component, separation, estimate)))?
+            .loglik;
+
+        let failures = std::cell::Cell::new(0usize);
+        let deviance_at = |value: f64| -> Option<f64> {
+            let Ok(fit) = self.fit_holding(known, Some((component, separation, value))) else {
+                failures.set(failures.get() + 1);
+                return None;
+            };
+            Some(2.0 * (at_estimate - fit.loglik))
+        };
+        // **A fit that could not be made is unknown ground, not ground the data
+        // ruled out**, so it counts as inside and widens the interval rather
+        // than ending the search. The count travels with the answer, because an
+        // interval resting on ground nobody saw should say so.
+        let outside = |value: f64| deviance_at(value).is_some_and(|d| d > CHI2_ONE_95);
+
+        let at_low = deviance_at(CORRELATION_LOW);
+        let at_high = deviance_at(CORRELATION_HIGH);
+        let (lower, lower_at_bound) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
+            (
+                crate::liability::bisect(CORRELATION_LOW, estimate, &outside),
+                false,
+            )
+        } else {
+            (CORRELATION_LOW, true)
+        };
+        let (upper, upper_at_bound) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
+            (
+                crate::liability::bisect(CORRELATION_HIGH, estimate, &outside),
+                false,
+            )
+        } else {
+            (CORRELATION_HIGH, true)
+        };
+        Ok(CorrelationInterval {
+            component,
+            separation,
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+            contains_lower_bound: lower_at_bound
+                .then(|| at_low.map(|d| d <= MIXTURE_CRIT))
+                .flatten(),
+            contains_upper_bound: upper_at_bound
+                .then(|| at_high.map(|d| d <= MIXTURE_CRIT))
+                .flatten(),
+            profile_failures: failures.get(),
         })
     }
 
@@ -1404,7 +1665,11 @@ impl RepeatedModel {
     /// from an even split reaches the same maximum as EM from anywhere else
     /// that can be factorised, only sooner or later. The real model will start
     /// from univariate fits, which are the paper's first table anyway.
-    fn starting_values(&self, rotated: &Rotated) -> Result<State, &'static str> {
+    fn starting_values(
+        &self,
+        rotated: &Rotated,
+        held: Option<(usize, Held)>,
+    ) -> Result<State, &'static str> {
         let cross = self.design_mean.transpose() * &rotated.mean
             + self.design_contrast.transpose() * &rotated.contrast;
         let chol = self
@@ -1432,6 +1697,16 @@ impl RepeatedModel {
                     .collect::<Option<Vec<Shaped>>>()
                     .ok_or("REPEATED_START_NOT_SHAPEABLE")?,
             ),
+        };
+        // A held component has to start somewhere the constraint allows.
+        let shapes = match (shapes, held, &self.kernel) {
+            (Some(mut shapes), Some((which, held)), Some(kernel)) => {
+                let start = shapes.get(which).ok_or("REPEATED_NO_SUCH_COMPONENT")?;
+                shapes[which] = kernel::started_holding(kernel, start, held)
+                    .ok_or("REPEATED_HELD_NOT_REACHABLE")?;
+                Some(shapes)
+            }
+            (shapes, _, _) => shapes,
         };
         let sigmas = match &shapes {
             Some(shapes) => shapes
@@ -1462,7 +1737,12 @@ impl RepeatedModel {
     /// depends only on its own effects, and the fixed effects and the residual
     /// covariance are maximised together, the first without reference to the
     /// second. So there is no search here, only four closed forms.
-    fn one_iteration(&self, imputed: &Imputed, state: &State) -> Option<State> {
+    fn one_iteration(
+        &self,
+        imputed: &Imputed,
+        state: &State,
+        held: Option<(usize, Held)>,
+    ) -> Option<State> {
         let State {
             sigmas,
             residual,
@@ -1582,16 +1862,23 @@ impl RepeatedModel {
         let mut next_shapes = Vec::with_capacity(shapes.len());
         let mut next_sigmas = Vec::with_capacity(self.components());
         for (component, statistic) in statistics.iter().enumerate() {
-            let shaped = kernel::maximise(
-                kernel,
-                statistic,
-                self.ranks[component] as f64,
-                &shapes[component],
-            )?;
+            let weight = self.ranks[component] as f64;
+            let shaped = match held {
+                Some((which, held)) if which == component => {
+                    kernel::maximise_holding(kernel, statistic, weight, &shapes[component], held)?
+                }
+                _ => kernel::maximise(kernel, statistic, weight, &shapes[component])?,
+            };
             next_sigmas.push(shaped.covariance(kernel));
             next_shapes.push(shaped);
         }
-        let shaped = kernel::maximise(kernel, &residual_statistic, rows, shapes.last()?)?;
+        let last = self.components();
+        let shaped = match held {
+            Some((which, held)) if which == last => {
+                kernel::maximise_holding(kernel, &residual_statistic, rows, shapes.last()?, held)?
+            }
+            _ => kernel::maximise(kernel, &residual_statistic, rows, shapes.last()?)?,
+        };
         let next_residual = shaped.covariance(kernel);
         next_shapes.push(shaped);
         Some(State {
@@ -1638,11 +1925,11 @@ impl RepeatedModel {
         state: &State,
         iterations: &mut usize,
     ) -> Option<(State, Imputed)> {
-        let one = self.one_iteration(imputed, state)?;
+        let one = self.one_iteration(imputed, state, prepared.held)?;
         let imputed_one =
             self.expectation(prepared, &one.sigmas, &one.residual, &one.fixed, true)?;
         *iterations += 1;
-        let two = self.one_iteration(&imputed_one, &one)?;
+        let two = self.one_iteration(&imputed_one, &one, prepared.held)?;
         let imputed_two =
             self.expectation(prepared, &two.sigmas, &two.residual, &two.fixed, true)?;
         *iterations += 1;
@@ -1674,7 +1961,7 @@ impl RepeatedModel {
                 candidate
                     .push(base[index] - 2.0 * length * step[index] + length * length * bend[index]);
             }
-            let proposal = self.unflatten(&candidate);
+            let proposal = self.unflatten(&candidate, prepared.held);
             let attempt = self.expectation(
                 prepared,
                 &proposal.sigmas,
@@ -1724,16 +2011,28 @@ impl RepeatedModel {
     /// anyway. Both repairs are the right one rather than the convenient one,
     /// because the case that produces them is a component collapsing and the
     /// boundary is where it was going.
-    fn unflatten(&self, values: &[f64]) -> State {
+    fn unflatten(&self, values: &[f64], held: Option<(usize, Held)>) -> State {
         let positions = self.positions;
         let covariates = self.covariates;
         let (head, tail) = values.split_at(values.len() - covariates * positions);
         let fixed = DMatrix::from_column_slice(covariates, positions, tail);
-        if self.kernel.is_some() {
-            let shapes: Vec<Shaped> = head
+        if let Some(kernel) = &self.kernel {
+            let mut shapes: Vec<Shaped> = head
                 .chunks(positions + 2)
                 .map(|chunk| Shaped::unpacked(chunk).clamped())
                 .collect();
+            // **A constraint is one of the models a guess has to be projected
+            // onto.** Extrapolating a state draws a line through two points on
+            // the constraint surface and lands off it, and the accepted point
+            // is the one the fit reports. Measured without this: a fit told to
+            // hold the correlation at 0.30 stopped after twenty iterations and
+            // reported 0.42.
+            if let Some((which, held)) = held
+                && let Some(shape) = shapes.get(which)
+                && let Some(projected) = kernel::started_holding(kernel, shape, held)
+            {
+                shapes[which] = projected;
+            }
             return self.shaped_state(&shapes, fixed);
         }
         let block = positions * positions;
@@ -2558,6 +2857,7 @@ mod tests {
         let prepared = Prepared {
             known,
             rotated: None,
+            held: None,
         };
         let got = model
             .expectation(&prepared, &sigmas, &residual, &fixed, true)
@@ -2667,7 +2967,7 @@ mod tests {
         };
         let rotated = model.rotate(&(&y / scale));
         let mut state = model
-            .starting_values(&rotated)
+            .starting_values(&rotated, None)
             .expect("a start should exist");
         // Nothing is unmeasured here, so the expectation step has nothing to
         // impute and every rotated row is known exactly.
@@ -2684,7 +2984,7 @@ mod tests {
             .expect("the start should evaluate");
         for step in 0..200 {
             let next_state = model
-                .one_iteration(&complete(&rotated), &state)
+                .one_iteration(&complete(&rotated), &state, None)
                 .expect("an iteration should evaluate");
             let next = model
                 .loglik_at(

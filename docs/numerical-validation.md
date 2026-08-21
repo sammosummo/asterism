@@ -667,12 +667,83 @@ is about 11 per cent censored overall and 52 and 75 per cent at 16 and 18 kHz,
 so the top two frequencies sit in the row where the shift is measurable and the
 rest do not.
 
-**What is not here.** A coverage simulation, which every other family in this
-package has. It needs an interval, and this model has none: ADR 0010 records
-that the kernel's floor and rate are not separately estimable while the
-correlation they describe is, so what an interval should be *of* is an open
-question rather than an unwritten function. Nothing should be reported from this
-model with an interval attached until that is settled.
+### The interval, and what it covers
+
+```sh
+uv run --no-project python checks/repeated_coverage.py
+```
+
+**The interval is on a component's correlation at a named separation, not on a
+heritability and not on the floor or the rate.** ADR 0010 records that the floor
+and the rate are not separately estimable while the correlation they describe is,
+so an interval on either would be wide and would not mean what it looked like.
+The correlation across frequency is also the quantity this model knows that a
+pile of two-frequency models does not, which makes it the one worth carrying an
+interval.
+
+Holding `corr(d) = v` fixes the floor once the rate is chosen, so the constraint
+sits inside one component's conditional maximisation and a constrained fit costs
+what a free fit costs. A profile is about forty of them.
+
+**The range is what the kernel family can express, which is not nought to one.**
+A correlation of exactly one leaves a component no variance of its own; a
+correlation of exactly nought needs an infinite rate. The ends of the search are
+0.001 and 0.999, and an end reached without the profile falling away is reported
+as sitting there rather than as a crossing.
+
+Building it turned up three faults, **all of which made the profile sit below
+the likelihood and so made the interval too narrow** -- the direction that
+matters, and one no check on point estimates would have found. They are recorded
+in ADR 0010: a constrained search starting on the rate's own bound and refusing
+to move, the scales searched on their natural scale where nought is a singular
+corner of the box, and the SQUAREM extrapolation leaving the constraint surface
+so that a fit told to hold 0.30 reported 0.42.
+
+**A held fit is not judged by the free gradient**, which at a constrained maximum
+points along the constraint by construction: 2.3e-7 at the free answer's own
+correlation and 2.8e-3 a twentieth away, at maxima that were both reached. What
+`converged` reports for a held fit is whether the likelihood settled.
+
+There is **no interval on a heritability from this model**. The univariate
+censored model has one, it is coverage checked, and it answers a different
+question -- one frequency at a time, with what the two ears share folded into the
+genetic share. The two must not be tabled side by side.
+
+There is also **no hypothesis test**, which every other family here has. The
+interval tests a correlation by inversion; a test that a whole component is
+absent is a different null and is not written.
+
+**What the coverage says.** Sixty families of four with two ears apiece, six
+positions, three true correlations and censoring up to a half, 300 draws a cell.
+No cell covers less than it claims, nothing was refused, and no point of any
+profile failed to fit.
+
+| true correlation | censored | coverage | 95% on it | mean width |
+| --- | --- | --- | --- | --- |
+| 0.165 | none | 0.980 | [0.957, 0.993] | 0.152 |
+| 0.165 | 25% | 0.947 | [0.915, 0.969] | 0.156 |
+| 0.165 | 50% | 0.950 | [0.919, 0.972] | 0.170 |
+| 0.729 | none | 0.937 | [0.903, 0.961] | 0.128 |
+| 0.729 | 25% | 0.940 | [0.907, 0.964] | 0.136 |
+| 0.729 | 50% | 0.937 | [0.903, 0.961] | 0.154 |
+| 0.977 | none | 0.940 | [0.907, 0.964] | 0.050 |
+| 0.977 | 25% | 0.970 | [0.944, 0.986] | 0.055 |
+| 0.977 | 50% | 0.990 | [0.971, 0.998] | 0.067 |
+
+**This check gates on under-coverage only, which parts company with every other
+family here, and ADR 0010 gives the reason and the measurements.** A correlation
+has hard ends and a likelihood that is not quadratic near them, so exact
+two-sided coverage is not available at any sample size. At 0.977 with half
+censored, 63 per cent of intervals have their upper end on the largest
+correlation the kernel family can express, and a truncated end cannot miss. At
+0.165 with nothing censored, no end sits on a bound and the cell reads 0.961 when
+re-run at 1,200 draws; the interval is genuinely wide upward there, because a
+higher correlation can be had from the floor as readily as from the rate.
+
+Reporting a conservative cell is not tolerating it. The check prints which of the
+two tails is wide and how many ends sat on a bound, so the question ADR 0004 had
+to ask -- over-coverage was how a missing boundary mixture announced itself --
+gets asked again every time it is run.
 
 ## Scale and cost
 
@@ -802,6 +873,7 @@ uv run --no-project python checks/tobit_calibration.py
 uv run --no-project python checks/tobit_coverage.py
 uv run --no-project python checks/mixed_bivariate_calibration.py
 uv run --no-project python checks/mixed_bivariate_coverage.py
+uv run --no-project python checks/repeated_coverage.py
 uv run --no-project python checks/mediation_calibration.py
 uv run --no-project python checks/mediation_ascertainment.py
 uv run --with numpy python checks/mediation_power.py

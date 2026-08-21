@@ -265,9 +265,39 @@ nearly the same curve, and it is the curve the data determine. Leave `line` out
 to fit a free covariance instead, which is what says whether the shape cost
 anything.
 
-**This model has no interval and no test.** What an interval should be *of* is
-an open question rather than an unwritten function, for the reason above.
-Nothing from it should be reported with an interval attached.
+```python
+model.correlation_interval(value, censoring, limit, 0, 6.0)
+```
+
+**The interval is on the correlation, for the reason above** — not on the floor,
+not on the rate, and not on a heritability. Holding `corr(d)` fixes the floor
+once the rate is chosen, so a held fit is a fit of the same size — though it
+takes more iterations to settle. A profile is about forty of them, and on real
+data that is **the better part of an hour an interval**: 37 to 63 minutes,
+measured on ten frequencies, three components and 394 people, where a free fit
+takes 34 seconds. The ends of the range are 0.001 and 0.999, because a correlation of
+exactly one leaves a component no variance of its own and one of exactly nought
+needs an infinite rate.
+
+**There is no interval on a heritability here.** `TobitModel` has one, it is
+coverage checked, and it answers a different question — one position at a time,
+with what the replicates share folded into the genetic part. The two must not be
+tabled side by side.
+
+**Its coverage is counted**, at three true correlations and censoring up to a
+half. No cell covers less than it claims. Two cover more, and both were taken
+apart rather than argued about: near the top of the range the interval runs into
+the largest correlation the family can express and cannot miss upward, and at the
+bottom it is genuinely wide upward because a higher correlation can be had from
+the floor as readily as from the rate. `docs/numerical-validation.md` has the
+table and says why this check gates on under-coverage where the others gate both
+ways.
+
+**And there is no hypothesis test.** Every other family here has one; this model
+has an interval and nothing else. The interval tests a correlation by inversion,
+which covers the question this model is usually asked, but a test that a whole
+component is absent — no genetic variance at any position — is a different null
+and is not written.
 
 **Read `converged` against `censored_shares`.** With nothing censored the fit
 reaches a gradient of about `1e-07` like every other family here. With censoring
