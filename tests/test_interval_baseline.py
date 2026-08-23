@@ -400,7 +400,7 @@ def test_liability_interval(
     same(got["upper"], 1.0, "liability upper")
 
 
-def test_repeated_interval(k):
+def test_repeated_interval(k: npt.NDArray[np.float64]) -> None:
     """The joint model's interval is on a correlation, not on a heritability.
 
     Every other family here profiles a share of variance. This one profiles the
@@ -409,28 +409,53 @@ def test_repeated_interval(k):
     curve is. So the endpoints pinned here are correlations and the range they
     live in is what the kernel family can express -- not nought to one.
     """
-    line = np.array([0.0, 4.0, 9.0, 15.0])
-    people = k.shape[0]
-    rows = people * 2
-    rng = np.random.default_rng(SEED + 9)
-    apart = np.abs(line[:, None] - line[None, :])
-    genetic = 0.35 + 0.65 * np.exp(-0.09 * apart)
-    ear = 0.7 * (0.05 + 0.95 * np.exp(-0.5 * apart))
-    shared = (
+    line: npt.NDArray[np.float64] = np.array([0.0, 4.0, 9.0, 15.0])
+    """Placed four unevenly spaced positions along the continuum."""
+
+    people: int = k.shape[0]
+    """Counted the people represented by the common pedigree."""
+
+    rows: int = people * 2
+    """Counted one row per person-replicate, two replicates each."""
+
+    rng: np.random.Generator = np.random.default_rng(SEED + 9)
+    """Created the deterministic generator reserved for this family."""
+
+    apart: npt.NDArray[np.float64] = np.abs(line[:, None] - line[None, :])
+    """Measured every ordered pair's separation along the continuum."""
+
+    genetic: npt.NDArray[np.float64] = 0.35 + 0.65 * np.exp(-0.09 * apart)
+    """Built the genetic covariance across positions, decaying to a floor."""
+
+    ear: npt.NDArray[np.float64] = 0.7 * (0.05 + 0.95 * np.exp(-0.5 * apart))
+    """Built the replicate-level covariance, decaying faster and lower."""
+
+    shared: npt.NDArray[np.float64] = (
         np.linalg.cholesky(k + 1e-9 * np.eye(people))
         @ rng.standard_normal((people, line.size))
         @ np.linalg.cholesky(genetic).T
     )
-    value = (
+    """Drew each person's genetic curve, shared by both their replicates."""
+
+    value: npt.NDArray[np.float64] = (
         np.repeat(shared, 2, axis=0)
         + rng.standard_normal((rows, line.size)) @ np.linalg.cholesky(ear).T
     )
-    model = asterism.RepeatedModel(
+    """Added the replicate-level variation to each person's shared curve."""
+
+    model: asterism.RepeatedModel = asterism.RepeatedModel(
         k[np.newaxis], np.ones((rows, 1)), 2, line.size, line=line
     )
-    censoring = np.zeros((rows, line.size), dtype=np.int64)
-    limit = np.zeros((rows, line.size))
-    got = model.correlation_interval(value, censoring, limit, 0, 9.0)
+    """Prepared the repeated-measures model on this uncensored design."""
+
+    censoring: npt.NDArray[np.int64] = np.zeros((rows, line.size), dtype=np.int64)
+    """Marked every value measured, so nothing here is censored."""
+
+    limit: npt.NDArray[np.float64] = np.zeros((rows, line.size))
+    """Carried the unused limits the interface still requires."""
+
+    got: dict[str, object] = model.correlation_interval(value, censoring, limit, 0, 9.0)
+    """Profiled the genetic correlation nine apart on the continuum."""
     same(got["lower"], 0.39923498063515517, "repeated lower")
     same(got["upper"], 0.675466258419751, "repeated upper")
 

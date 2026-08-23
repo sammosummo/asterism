@@ -434,6 +434,24 @@ def main() -> int:
     paths: list[Path] = arguments.paths or maintained_paths(arguments.root)
     """Used explicit fixtures when supplied and repository discovery otherwise."""
 
+    if not paths:
+        print(
+            "no maintained Python found under "
+            f"{arguments.root}: this gate checked nothing, which is not the "
+            "same as passing",
+            file=sys.stderr,
+        )
+        return 1
+    """Refused an empty run.
+
+    `EXCLUDED_PARTS` holds `.claude`, and a git worktree made by this project's
+    own tooling lives under `.claude/worktrees/`, so every path inside one is
+    excluded and discovery returns nothing. The checker then printed nothing and
+    exited nought, which reads exactly like success. It is the fault this
+    package keeps finding in its own models -- a calculation that could not be
+    made, read as one that was -- and it belongs to the gates too.
+    """
+
     problems: list[Problem] = []
     """Accumulated failures across every selected file."""
 

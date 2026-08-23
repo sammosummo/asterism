@@ -82,6 +82,7 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import asterism
 import numpy as np
@@ -90,100 +91,174 @@ from scipy.stats import beta
 # Sixty nuclear families of two parents and two children, two ears each: 240
 # people and 480 rows, which is the order of the sample this model was built
 # for.
-FAMILIES = 60
-REPLICATES = 2
+FAMILIES: int = 60
+"""Nuclear families contributing two parents and two children each."""
+
+REPLICATES: int = 2
+"""Repeat measurements per person, which is one per ear."""
 # Six positions, unevenly spaced, because the audiogram's are. An evenly spaced
 # line would not notice a kernel that quietly used the index.
-LINE = np.array([0.0, 3.0, 6.0, 10.0, 15.0, 21.0])
+LINE: np.ndarray = np.array([0.0, 3.0, 6.0, 10.0, 15.0, 21.0])
+"""Unevenly spaced positions along the continuum the kernel is drawn over."""
 # Where the interval is taken. Far enough that the correlation is well below
 # one and near enough that the data have pairs at about that separation.
-SEPARATION = 6.0
+SEPARATION: float = 6.0
+"""Separation at which the pinned correlation interval is taken."""
 
-REPLICATES_PER_CELL = int(os.environ.get("ASTERISM_REPLICATES", "300"))
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "12"))
-NOMINAL = 0.95
+REPLICATES_PER_CELL: int = int(os.environ.get("ASTERISM_REPLICATES", "300"))
+"""Draws scored in every cell, overridable for a shorter exploratory run."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "12"))
+"""Worker processes the cells are spread across."""
+
+NOMINAL: float = 0.95
+"""The coverage the interval claims, which every cell is scored against."""
 
 # Each is a genetic floor and rate. What is checked is the correlation they
 # produce at `SEPARATION`, which is what the interval is of.
-SHAPES = [
+SHAPES: list[tuple[str, float, float]] = [
     ("low", 0.0, 0.30),
     ("middling", 0.35, 0.09),
     ("high", 0.80, 0.02),
 ]
-RATES = [0.0, 0.25, 0.50]
+"""Named genetic floor and rate pairs spanning weak to strong correlation."""
+
+RATES: list[float] = [0.0, 0.25, 0.50]
+"""Censoring shares scored for every shape."""
 
 
-def kernel_at(floor: float, rate: float, separation) -> float:
+def kernel_at(
+    floor: float, rate: float, separation: float | np.ndarray
+) -> float | np.ndarray:
+    """The correlation this kernel draws at one separation, or at many."""
     return floor + (1.0 - floor) * np.exp(-rate * np.abs(separation))
 
 
 def covariance(scale: np.ndarray, floor: float, rate: float) -> np.ndarray:
-    apart = np.abs(LINE[:, None] - LINE[None, :])
+    apart: np.ndarray = np.abs(LINE[:, None] - LINE[None, :])
+    """Measured every ordered pair's separation along the continuum."""
     return np.outer(scale, scale) * kernel_at(floor, rate, apart)
 
 
 def relationship_matrix() -> np.ndarray:
-    people = FAMILIES * 4
-    matrix = np.eye(people)
+    people: int = FAMILIES * 4
+    """Counted the four people every family contributes."""
+
+    matrix: np.ndarray = np.eye(people)
+    """Started the relationship matrix at unrelated identity."""
+
     for family in range(FAMILIES):
-        base = family * 4
+        base: int = family * 4
+        """Located the first row belonging to this family."""
+
         for child in (2, 3):
             for parent in (0, 1):
                 matrix[base + child, base + parent] = 0.5
+                """Related this child to this parent by one half."""
+
                 matrix[base + parent, base + child] = 0.5
+                """Completed that relationship symmetrically."""
         matrix[base + 2, base + 3] = 0.5
+        """Related the first child to the second as a full sibling."""
+
         matrix[base + 3, base + 2] = 0.5
+        """Completed the sibling relationship symmetrically."""
+    """Built every family's block of first-degree relationships."""
     return matrix
 
 
-def draw(floor: float, rate: float, censored: float, replicate: int):
+def draw(
+    floor: float, rate: float, censored: float, replicate: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Generate one replicate: relationship, values, censoring, limits, design."""
     # **The shape belongs in the seed**, or cells at the same censoring rate are
     # fitted to the same random draws and two of them agreeing is one
     # observation rather than two.
-    rng = np.random.default_rng(
+    rng: np.random.Generator = np.random.default_rng(
         830_000
         + 7919 * replicate
         + int(1000 * censored)
         + int(1_000_000 * floor)
         + int(10_000_000 * rate)
     )
-    people = FAMILIES * 4
-    positions = len(LINE)
-    matrix = relationship_matrix()
+    """Created the generator this cell and replicate own alone."""
 
-    genetic = covariance(np.ones(positions), floor, rate)
+    people: int = FAMILIES * 4
+    """Counted the people the families contribute."""
+
+    positions: int = len(LINE)
+    """Counted the positions each person is measured at."""
+
+    matrix: np.ndarray = relationship_matrix()
+    """Built the additive relationship matrix for these families."""
+
+    genetic: np.ndarray = covariance(np.ones(positions), floor, rate)
+    """Built the genetic covariance across positions from this shape."""
     # The ear level decays much faster and has almost no floor, which is what
     # test-retest noise looks like beside a genetic effect.
-    residual = covariance(np.full(positions, 0.9), 0.05, 0.50)
+    residual: np.ndarray = covariance(np.full(positions, 0.9), 0.05, 0.50)
+    """Built the within-person covariance, decaying fast with almost no floor."""
 
-    root = np.linalg.cholesky(matrix + 1e-9 * np.eye(people))
-    shared = root @ rng.normal(size=(people, positions)) @ np.linalg.cholesky(genetic).T
-    rows = people * REPLICATES
-    value = (
+    root: np.ndarray = np.linalg.cholesky(matrix + 1e-9 * np.eye(people))
+    """Factorised the relationship matrix for correlated genetic effects."""
+
+    shared: np.ndarray = (
+        root @ rng.normal(size=(people, positions)) @ np.linalg.cholesky(genetic).T
+    )
+    """Drew each person's genetic curve, shared by both their replicates."""
+
+    rows: int = people * REPLICATES
+    """Counted one row per person-replicate."""
+
+    value: np.ndarray = (
         np.repeat(shared, REPLICATES, axis=0)
         + rng.normal(size=(rows, positions)) @ np.linalg.cholesky(residual).T
     )
+    """Added the replicate-level variation to each person's shared curve."""
 
-    censoring = np.zeros((rows, positions), dtype=np.int64)
-    limit = np.zeros((rows, positions))
+    censoring: np.ndarray = np.zeros((rows, positions), dtype=np.int64)
+    """Marked every value measured until a limit is applied below."""
+
+    limit: np.ndarray = np.zeros((rows, positions))
+    """Held the limit each position is censored at, nought where none is."""
+
     if censored > 0.0:
         for at in range(positions):
-            cut = float(np.quantile(value[:, at], 1.0 - censored))
+            cut: float = float(np.quantile(value[:, at], 1.0 - censored))
+            """Selected the realised quantile giving this censoring share."""
+
             limit[:, at] = cut
+            """Applied the same limit to every row at this position."""
+
             censoring[value[:, at] >= cut, at] = 1
-    design = np.ones((rows, 1))
+            """Marked values at or above the limit as censored from above."""
+    """Censored each position at its own realised quantile."""
+
+    design: np.ndarray = np.ones((rows, 1))
+    """Built the intercept-only fixed-effect design."""
     return matrix, value, censoring, limit, design
 
 
-def one(job):
+def one(job: tuple[str, float, float, float, int]) -> dict[str, Any]:
+    """Fit and score one replicate without dropping refusals."""
     name, floor, rate, censored, replicate = job
+    """Named the fixed scientific cell and its deterministic replicate."""
+
     matrix, value, censoring, limit, design = draw(floor, rate, censored, replicate)
-    truth = float(kernel_at(floor, rate, SEPARATION))
+    """Generated this replicate's people, responses and censoring."""
+
+    truth: float = float(kernel_at(floor, rate, SEPARATION))
+    """Computed the correlation the generating kernel has at this separation."""
     try:
-        model = asterism.RepeatedModel(
+        model: asterism.RepeatedModel = asterism.RepeatedModel(
             matrix[np.newaxis], design, REPLICATES, len(LINE), line=LINE
         )
-        got = model.correlation_interval(value, censoring, limit, 0, SEPARATION)
+        """Prepared the repeated-measures model through the public interface."""
+
+        got: dict[str, Any] = model.correlation_interval(
+            value, censoring, limit, 0, SEPARATION
+        )
+        """Profiled the genetic correlation at the chosen separation."""
     except ValueError as refusal:
         return {
             "shape": name,
@@ -227,8 +302,12 @@ def covers(got: dict, truth: float) -> bool:
 
 
 def clopper_pearson(hits: int, n: int) -> tuple[float, float]:
-    low = beta.ppf(0.025, hits, n - hits + 1) if hits else 0.0
-    high = beta.ppf(0.975, hits + 1, n - hits) if hits < n else 1.0
+    """The exact interval on a binomial proportion."""
+    low: float = beta.ppf(0.025, hits, n - hits + 1) if hits else 0.0
+    """Took the lower Clopper-Pearson limit, or nought with no hits."""
+
+    high: float = beta.ppf(0.975, hits + 1, n - hits) if hits < n else 1.0
+    """Took the upper Clopper-Pearson limit, or one when every draw hit."""
     return float(low), float(high)
 
 
@@ -246,13 +325,16 @@ def main() -> int:
         )
     print(f"  censoring {[f'{r:.0%}' for r in RATES]}\n", flush=True)
 
-    jobs = [
+    jobs: list[tuple[str, float, float, float, int]] = [
         (name, floor, rate, censored, replicate)
         for name, floor, rate in SHAPES
         for censored in RATES
         for replicate in range(REPLICATES_PER_CELL)
     ]
-    rows = []
+    """Enumerated every replicate of every shape and censoring share."""
+
+    rows: list[dict[str, Any]] = []
+    """Accumulated one scored record per replicate, refusals included."""
     with ProcessPoolExecutor(max_workers=WORKERS) as pool:
         for row in pool.map(one, jobs, chunksize=1):
             rows.append(row)
@@ -265,34 +347,66 @@ def main() -> int:
         f"{'misses':>9} | {'fails':>5}"
     )
     print("-" * 116)
-    failures = []
-    conservatives = []
-    summary = []
+    failures: list[str] = []
+    """Collected every cell that covers less than it claims."""
+
+    conservatives: list[str] = []
+    """Collected every cell that over-covers, which is reported not failed."""
+
+    summary: list[dict[str, Any]] = []
+    """Accumulated one machine-readable record per cell."""
+
     for name, floor, rate in SHAPES:
-        truth = float(kernel_at(floor, rate, SEPARATION))
+        truth: float = float(kernel_at(floor, rate, SEPARATION))
+        """Computed the correlation this shape has at the pinned separation."""
+
         for censored in RATES:
-            cell = [r for r in rows if r["shape"] == name and r["censored"] == censored]
-            refused = [r for r in cell if "refusal" in r]
-            hits = sum(1 for r in cell if r.get("covered"))
+            cell: list[dict[str, Any]] = [
+                r for r in rows if r["shape"] == name and r["censored"] == censored
+            ]
+            """Selected every replicate belonging to this cell."""
+
+            refused: list[dict[str, Any]] = [r for r in cell if "refusal" in r]
+            """Separated the refusals, which are scored rather than dropped."""
+
+            hits: int = sum(1 for r in cell if r.get("covered"))
+            """Counted the replicates whose interval contained the truth."""
+
             low, high = clopper_pearson(hits, len(cell))
-            width = (
+            """Took the exact interval on this cell's coverage."""
+
+            width: float = (
                 np.mean([r["width"] for r in cell if "refusal" not in r])
                 if (len(cell) > len(refused))
                 else float("nan")
             )
-            fails = sum(r.get("profile_failures", 0) for r in cell)
-            on_bound = sum(
+            """Averaged the width over the fits that could be made."""
+
+            fails: int = sum(r.get("profile_failures", 0) for r in cell)
+            """Totalled the failed profile evaluations behind these intervals."""
+
+            on_bound: int = sum(
                 bool(r.get("lower_limited")) or bool(r.get("upper_limited"))
                 for r in cell
             )
-            missed_low = sum(bool(r.get("missed_low")) for r in cell)
-            missed_high = sum(bool(r.get("missed_high")) for r in cell)
+            """Counted the intervals with at least one end on its bound."""
+
+            missed_low: int = sum(bool(r.get("missed_low")) for r in cell)
+            """Counted the misses that fell below the interval."""
+
+            missed_high: int = sum(bool(r.get("missed_high")) for r in cell)
+            """Counted the misses that fell above the interval."""
             # Under-covering fails. Over-covering is reported. See rule 3
             # for why this check parts company with the others there, and for
             # why reporting is not the same as tolerating.
-            passed = high >= NOMINAL
-            conservative = passed and low > NOMINAL
-            why = "" if passed else "covers less than it claims"
+            passed: bool = high >= NOMINAL
+            """Decided the cell on whether its interval reaches the nominal."""
+
+            conservative: bool = passed and low > NOMINAL
+            """Noted a cell that passes by covering more than it claims."""
+
+            why: str = "" if passed else "covers less than it claims"
+            """Named the failure, empty where there is none."""
             print(
                 f"{name:>9} | {truth:>6.3f} | {censored:>7.0%} | "
                 f"{len(refused):>7} | {hits / len(cell):>8.3f} "
@@ -324,22 +438,26 @@ def main() -> int:
                     "conservative": conservative,
                 }
             )
-            record = (
+            record: str = (
                 f"{name} at {censored:.0%} censored: coverage "
                 f"{hits / len(cell):.3f}, interval [{low:.3f}, {high:.3f}], "
                 f"{missed_low} misses below and {missed_high} above, "
                 f"{on_bound / len(cell):.1%} of ends on a bound"
             )
+            """Rendered this cell for the human-readable summary."""
+
             if not passed:
                 failures.append(f"{why}. {record}")
             elif conservative:
                 conservatives.append(record)
+            """Filed the cell as a failure, a conservative note, or neither."""
 
-    out = (
+    out: Path = (
         Path(__file__).resolve().parent.parent
         / "evidence"
         / f"repeated-coverage-{date.today().isoformat()}.json"
     )
+    """Named the dated evidence file this run writes."""
     out.parent.mkdir(exist_ok=True)
     out.write_text(
         json.dumps(

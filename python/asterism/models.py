@@ -2509,9 +2509,13 @@ class RepeatedModel:
         line: Any = None,
         shape: str = "exponential",
     ) -> None:
-        stacked = np.ascontiguousarray(matrices, dtype=float)
+        stacked: Any = np.ascontiguousarray(matrices, dtype=float)
+        """Copied the covariance bases without trusting caller memory order."""
+
         if stacked.ndim == 2:
             stacked = stacked[np.newaxis, :, :]
+            """Accepted a single matrix as a one-component stack."""
+
         self._core = _core.RepeatedCore(
             stacked,
             np.ascontiguousarray(design, dtype=float),
@@ -2520,10 +2524,19 @@ class RepeatedModel:
             None if line is None else np.ascontiguousarray(line, dtype=float),
             shape,
         )
+        """Prepared the compiled model once, at construction."""
+
         self.positions = int(positions)
+        """Recorded how many positions each replicate carries."""
+
         self.replicates = int(replicates)
+        """Recorded how many times each person is measured."""
+
         self.components = stacked.shape[0]
+        """Recorded how many structured covariance components were given."""
+
         self.line = None if line is None else np.ascontiguousarray(line, dtype=float)
+        """Held the continuum the positions sit on, where one was given."""
 
     def fit(self, value: Any, censoring: Any, limit: Any) -> dict[str, Any]:
         """Fit a response.
@@ -2568,7 +2581,10 @@ class RepeatedModel:
             np.ascontiguousarray(censoring, dtype=np.int64),
             np.ascontiguousarray(limit, dtype=float),
         )
-        size = self.positions
+        """Fitted the model by expectation-maximisation on the complete scale."""
+
+        size: int = self.positions
+        """Named the square covariance dimension the components unpack to."""
         return {
             "component_covariances": [
                 np.asarray(each, dtype=float).reshape(size, size)
@@ -2654,6 +2670,8 @@ class RepeatedModel:
             int(component),
             float(separation),
         )
+        """Profiled the requested quantity through the compiled model."""
+
         return {
             "component": component_at,
             "separation": separation_at,
@@ -2726,6 +2744,8 @@ class RepeatedModel:
             int(component),
             int(position),
         )
+        """Profiled the requested quantity through the compiled model."""
+
         return {
             "component": component_at,
             "position": position_at,
@@ -2754,15 +2774,26 @@ class RepeatedModel:
         Components are in the order the matrices were given, with the
         replicate level last. Raises where the fit had no kernel.
         """
-        floors = fit["floors"]
-        rates = fit["rates"]
+        floors: Any = fit["floors"]
+        """Took each component's kernel floor from the fit record."""
+
+        rates: Any = fit["rates"]
+        """Took each component's decay rate from the fit record."""
+
         if len(floors) == 0:
             raise ValueError("REPEATED_NO_KERNEL")
         if not 0 <= component < len(floors):
             raise ValueError("REPEATED_NO_SUCH_COMPONENT")
-        floor = float(floors[component])
-        rate = float(rates[component])
-        scaled = rate * abs(separation)
+        floor: float = float(floors[component])
+        """Selected the floor belonging to the requested component."""
+
+        rate: float = float(rates[component])
+        """Selected the decay rate belonging to the requested component."""
+
+        scaled: float = rate * abs(separation)
+        """Scaled the separation by this component's rate."""
+
         if fit.get("shape") == "gaussian":
             scaled = scaled * scaled
+            """Squared it where the kernel decays as a Gaussian rather than an exponential."""
         return floor + (1.0 - floor) * float(np.exp(-scaled))
