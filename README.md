@@ -384,3 +384,27 @@ uv run --locked python checks/against_famskat.py
 
 The full list of simulation and package-comparison commands is in
 [numerical-validation.md](docs/numerical-validation.md).
+
+## Citing Asterism
+
+Cite the archived version you actually ran, not the repository. A development
+checkout is not a citable version: only a release wheel carries the build
+identity a result can be traced back to, and only a release has had its pass
+rules and design ranges measured.
+
+Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
+publication rather than before it, so the DOI is added there when the first
+release is published — see
+[ADR 0018](docs/adr/0018-published-with-the-papers-that-cite-it.md).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+Asterism is original work. It depends on third-party packages, named in
+`Cargo.lock` and `uv.lock` and used under their own licences, and derives from
+nothing else. It has no affiliation with SOLAR or with any other quantitative
+genetics package. Where its answers are compared with SOLAR, R, `spaMM`,
+MCMCglmm or a published analysis, those are benchmarks: agreement proves
+fidelity and never correctness, which is
+[ADR 0006](docs/adr/0006-agreement-proves-fidelity.md).

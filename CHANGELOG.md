@@ -6,6 +6,17 @@ tag and saved wheels.
 
 ## Unreleased
 
+- Asterism is MIT licensed, carries a `CITATION.cff`, and is archived with a
+  DOI at publication rather than before it. ADR 0018 restores the citation
+  requirement ADR 0001 made and ADR 0012 dropped, and records that Asterism is
+  original work with no affiliation to SOLAR or any other package.
+- The censored model now takes the shared convergence rule. It had tested an
+  unprojected, unscaled gradient against a threshold a thousand times looser
+  than every other family, which reported about half of all null fits as
+  failures because a heritability of nought rests on its own lower bound.
+- Pinned interval endpoints are compared within a written tolerance rather than
+  to the last digit, which is what ADR 0012 already required of two platforms.
+
 - The release contract, support limits and pass rules are being made
   machine-readable.
 - The codebase-quality, installed-wheel and fail-closed release workflows are
