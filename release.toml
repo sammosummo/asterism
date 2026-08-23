@@ -697,7 +697,7 @@ design_facts = { participant_free = true, sample_size = { min = 800, max = 800 }
 
 [[analyses.pass_rules]]
 id = "tobit_coverage_52_percent"
-command = ["checks/tobit_coverage.py", "--rate", "0.52", "--replicates", "300", "--workers", "12", "--no-write"]
+command = ["checks/tobit_coverage.py", "--rate", "0.52", "--replicates", "1000", "--workers", "12", "--no-write"]
 expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
@@ -705,7 +705,7 @@ design_facts = { participant_free = true, sample_size = { min = 600, max = 600 }
 
 [[analyses.pass_rules]]
 id = "tobit_coverage_75_percent"
-command = ["checks/tobit_coverage.py", "--rate", "0.75", "--replicates", "300", "--workers", "12", "--no-write"]
+command = ["checks/tobit_coverage.py", "--rate", "0.75", "--replicates", "1000", "--workers", "12", "--no-write"]
 expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
@@ -759,7 +759,7 @@ max = 0.0
 
 [[analyses.pass_rules]]
 id = "mixed_binary_censored_exact_combination"
-command = ["checks/mixed_binary_censored_exact_combination.py", "--replicates", "300", "--workers", "8"]
+command = ["checks/mixed_binary_censored_exact_combination.py", "--replicates", "1000", "--workers", "8"]
 expected_exit_code = 0
 timeout_seconds = 86400
 status = "ready"
