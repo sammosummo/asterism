@@ -1,0 +1,132 @@
+{
+  "acceptance": {
+    "maximum_difference_in_solar_standard_errors": 0.25,
+    "solar_must_use_liability_model": true,
+    "solar_standard_error_required_for_interior_cases": true,
+    "zero_control_must_agree_exactly": true
+  },
+  "adapter": {
+    "path": "checks/liability_against_solar.py",
+    "sha256": "245a4dab09820d69e9d737421f2cb9012c685b1286e8118e518616a2a9e0cee3"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "liability_against_solar",
+  "external_outputs": {
+    "cases": [
+      {
+        "families": 30,
+        "heritability": 0.4400438,
+        "loglik": -257.330037,
+        "p_value": 0.0004984,
+        "people": 420,
+        "seed": 8311,
+        "standard_error": 0.1560345,
+        "true_heritability": 0.5,
+        "true_prevalence": 0.25,
+        "used_the_liability_model": true
+      },
+      {
+        "families": 45,
+        "heritability": 0.3518466,
+        "loglik": -380.233574,
+        "p_value": 0.0003996,
+        "people": 630,
+        "seed": 8312,
+        "standard_error": 0.1145866,
+        "true_heritability": 0.4,
+        "true_prevalence": 0.3,
+        "used_the_liability_model": true
+      },
+      {
+        "families": 30,
+        "heritability": 0.0,
+        "loglik": -273.701004,
+        "p_value": 0.5,
+        "people": 420,
+        "seed": 8313,
+        "standard_error": null,
+        "true_heritability": 0.0,
+        "true_prevalence": 0.3,
+        "used_the_liability_model": true
+      }
+    ]
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/solar_reference_adapter.py",
+      "sha256": "6ff5c2c57b1730d5406be07f31b6ea249cce994fcae904c940ea63dcb5bbc6cb"
+    },
+    {
+      "name": "design:liability_against_solar",
+      "sha256": "0c2540316939b103c232aee15d8113a1d1653da713ee8641591e908c494931f3"
+    },
+    {
+      "name": "relationship:h2=0.5,prevalence=0.25,families=30,seed=8311",
+      "sha256": "dfbdfcc478cf1451d72b1f06bf7ba17bbc6661c00617ae8935d31c55665201cf"
+    },
+    {
+      "name": "covariates:h2=0.5,prevalence=0.25,families=30,seed=8311",
+      "sha256": "785935bef84ccd777dfd66ebc36bc64e71698b076c2b39b1b812a68b4bb59792"
+    },
+    {
+      "name": "affected:h2=0.5,prevalence=0.25,families=30,seed=8311",
+      "sha256": "40496b0007e54bce18a998465859e2f529a295fd50c45e4cae1a9fed09fe8642"
+    },
+    {
+      "name": "pedigree_csv:h2=0.5,prevalence=0.25,families=30,seed=8311",
+      "sha256": "9a7d492f59f902162bde31832a5c5fae896443ff436446a4b6d6a2f656664b95"
+    },
+    {
+      "name": "phenotype_csv:h2=0.5,prevalence=0.25,families=30,seed=8311",
+      "sha256": "aaa26bbf121da6e3c1ef0e8a9a4c3dc80571a9b8f47943b1b87d7b79cb8e1d2b"
+    },
+    {
+      "name": "relationship:h2=0.4,prevalence=0.3,families=45,seed=8312",
+      "sha256": "5ba1fcfb92d065914e0f8f7813b18f79a66bbe102bf45560179244788da3a05a"
+    },
+    {
+      "name": "covariates:h2=0.4,prevalence=0.3,families=45,seed=8312",
+      "sha256": "bda5c0cba6a224da3cf678982a3fdf9851297ed93cb7b04a64b56e28288f7d5b"
+    },
+    {
+      "name": "affected:h2=0.4,prevalence=0.3,families=45,seed=8312",
+      "sha256": "b7314f8d3ab2c5e59fab0c6bd040a5d03b9d56a91cd25275f385ecc2ab85f3c3"
+    },
+    {
+      "name": "pedigree_csv:h2=0.4,prevalence=0.3,families=45,seed=8312",
+      "sha256": "e1280281e7e4b4b52cdc3c536197bbec4523f2888ec8b43fbdf218ff0f3e1906"
+    },
+    {
+      "name": "phenotype_csv:h2=0.4,prevalence=0.3,families=45,seed=8312",
+      "sha256": "abf82152493c2f45ccd79cfbcf6756130fc67f94f37a848884bbd96bb802e935"
+    },
+    {
+      "name": "relationship:h2=0,prevalence=0.3,families=30,seed=8313",
+      "sha256": "dfbdfcc478cf1451d72b1f06bf7ba17bbc6661c00617ae8935d31c55665201cf"
+    },
+    {
+      "name": "covariates:h2=0,prevalence=0.3,families=30,seed=8313",
+      "sha256": "79f150a2f87837f492e0f1a6e2cdd03730ce866c6624057fbf6000752a6261fc"
+    },
+    {
+      "name": "affected:h2=0,prevalence=0.3,families=30,seed=8313",
+      "sha256": "b35a3251513d64a4e6326f15b1bbec1b022d61f8904f82469aa59063bf23100b"
+    },
+    {
+      "name": "pedigree_csv:h2=0,prevalence=0.3,families=30,seed=8313",
+      "sha256": "9a7d492f59f902162bde31832a5c5fae896443ff436446a4b6d6a2f656664b95"
+    },
+    {
+      "name": "phenotype_csv:h2=0,prevalence=0.3,families=30,seed=8313",
+      "sha256": "8d6e9d042c77c43e052da92be667b8414ce0fdc46b30a6fb8bdcf1413460e212"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "/usr/local/bin/solar",
+      "packages": [],
+      "version": "SOLAR Eclipse 9.0.0 (2022-01-01)"
+    }
+  ]
+}

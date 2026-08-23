@@ -1019,9 +1019,9 @@ impl LatentMediationFamily {
             return Err("LATENT_MEDIATION_OUTCOME_CATEGORIES_WRONG_LENGTH");
         }
         for person in 0..size {
-            let shares = categories.get(person).map(Vec::as_slice).unwrap_or(&[]);
+            let shares = categories.get(person).map_or(&[] as &[f64], Vec::as_slice);
             if shares.is_empty() {
-                if !matches!(input.outcome_status[person], None | Some(0) | Some(1)) {
+                if !matches!(input.outcome_status[person], None | Some(0 | 1)) {
                     return Err("LATENT_MEDIATION_STATUS_NOT_BINARY");
                 }
                 continue;
@@ -1043,10 +1043,10 @@ impl LatentMediationFamily {
             if (shares.iter().sum::<f64>() - 1.0).abs() > 1e-9 {
                 return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_SHARES_NOT_ONE");
             }
-            if let Some(status) = input.outcome_status[person] {
-                if status < 0 || (status as usize) >= shares.len() {
-                    return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_OUT_OF_RANGE");
-                }
+            if let Some(status) = input.outcome_status[person]
+                && !matches!(usize::try_from(status), Ok(category) if category < shares.len())
+            {
+                return Err("LATENT_MEDIATION_OUTCOME_CATEGORY_OUT_OF_RANGE");
             }
         }
         for index in 0..size {
@@ -1120,9 +1120,12 @@ impl LatentMediationFamily {
                 // it is what a clinic roster means: recruited for dementia, not
                 // for a questionable rating.
                 let case_from = input.ascertainment_category.unwrap_or(1);
-                if !matches!(input.outcome_status[proband],
-                             Some(status) if status >= 0 && (status as usize) >= case_from)
-                {
+                if !matches!(
+                    input.outcome_status[proband],
+                    Some(status)
+                        if usize::try_from(status)
+                            .is_ok_and(|category| category >= case_from)
+                ) {
                     return Err("LATENT_MEDIATION_NAMED_PROBAND_NOT_OUTCOME_CASE");
                 }
                 Ascertainment::NamedProbandCase(proband)
@@ -1250,8 +1253,7 @@ impl LatentMediationFamily {
             sets.push(cut_set_for(
                 self.outcome_category_prevalence
                     .get(person)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
+                    .map_or(&[] as &[f64], Vec::as_slice),
                 self.outcome_prevalence[person],
                 self.outcome_threshold[person],
                 covariance[(size + person, size + person)],
@@ -1362,8 +1364,7 @@ impl LatentMediationFamily {
                     .checked_sub(1)
                     .filter(|index| *index < cuts.len())
                     .ok_or("LATENT_MEDIATION_ASCERTAINMENT_CATEGORY_OUT_OF_RANGE")?;
-                let standardised =
-                    (cuts[boundary] - latent_mean[latent_index]) / variance.sqrt();
+                let standardised = (cuts[boundary] - latent_mean[latent_index]) / variance.sqrt();
                 (normal_sf(standardised)?, "condition_on_named_proband_case")
             }
         };
@@ -1511,8 +1512,7 @@ fn resimulate(
                 input
                     .outcome_category_prevalence
                     .get(person)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
+                    .map_or(&[] as &[f64], Vec::as_slice),
                 input.outcome_prevalence.get(person).copied().flatten(),
                 input.outcome_threshold[person],
                 covariance[(size + person, size + person)],
@@ -1535,7 +1535,7 @@ fn resimulate(
             let latent = &factor * draw + DVector::from_column_slice(&shift);
             let stage = |person: usize| category_of(latent[size + person], &cuts[person]);
             if let Some(proband) = conditioned
-                && (stage(proband) as usize) < case_from
+                && usize::try_from(stage(proband)).is_ok_and(|category| category < case_from)
             {
                 continue;
             }
@@ -1554,8 +1554,7 @@ fn resimulate(
                         };
                         i8::from(truth == (stream.uniform() < right))
                     });
-                next.outcome_status[person] =
-                    input.outcome_status[person].map(|_| stage(person));
+                next.outcome_status[person] = input.outcome_status[person].map(|_| stage(person));
             }
             break next;
         };
@@ -1757,7 +1756,7 @@ fn cut_set_for(
 /// clears. Nought and one for a binary outcome, so a drawn category is the
 /// drawn status it has always been.
 fn category_of(liability: f64, cuts: &[f64]) -> i8 {
-    cuts.iter().filter(|cut| liability > **cut).count() as i8
+    i8::try_from(cuts.iter().filter(|cut| liability > **cut).count()).unwrap_or(i8::MAX)
 }
 
 /// The interval of liability that puts somebody in this ordered category.
@@ -1769,7 +1768,7 @@ fn category_of(liability: f64, cuts: &[f64]) -> i8 {
 /// the integrator needs no change -- it has always taken a rectangle, and a
 /// half-line is the rectangle with one side at infinity.
 fn category_bounds(category: i8, cuts: &[f64]) -> (f64, f64) {
-    let category = category.max(0) as usize;
+    let category = usize::try_from(category.max(0)).unwrap_or(0);
     let lower = if category == 0 {
         f64::NEG_INFINITY
     } else {
@@ -1873,7 +1872,11 @@ fn sequential_rectangle(
         };
         let truncated_mean = at_low - at_high;
         let weighted_low = if low.is_finite() { low * at_low } else { 0.0 };
-        let weighted_high = if high.is_finite() { high * at_high } else { 0.0 };
+        let weighted_high = if high.is_finite() {
+            high * at_high
+        } else {
+            0.0
+        };
         let truncated_variance =
             (1.0 + weighted_low - weighted_high - truncated_mean * truncated_mean)
                 .clamp(1e-12, 1.0);
@@ -2933,8 +2936,7 @@ pub fn simulate(
                 design
                     .outcome_category_prevalence
                     .get(person)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
+                    .map_or(&[] as &[f64], Vec::as_slice),
                 design.outcome_prevalence[person],
                 design.outcome_threshold[person],
                 covariance[(size + person, size + person)],
@@ -2957,7 +2959,8 @@ pub fn simulate(
             let latent = &factor * draw + DVector::from_column_slice(&shift);
             let stage = |person: usize| category_of(latent[size + person], &cuts[person]);
             if let Some(proband) = conditioned
-                && (stage(proband) as usize) < design.ascertainment_category.unwrap_or(1)
+                && usize::try_from(stage(proband))
+                    .is_ok_and(|category| category < design.ascertainment_category.unwrap_or(1))
             {
                 continue;
             }
@@ -3403,15 +3406,13 @@ impl LatentMediationModel {
         };
 
         // Nought belongs to the union test, not to the profile.
-        let contains_zero = match self.test_vertical_with(bootstrap_replicates) {
-            Ok(test) => test.p_value > 1.0 - 0.975,
-            Err(_) => {
-                failures.set(failures.get() + 1);
-                true // a test that could not be made has not excluded anything
-            }
+        let contains_zero = if let Ok(test) = self.test_vertical_with(bootstrap_replicates) {
+            test.p_value > 1.0 - 0.975
+        } else {
+            failures.set(failures.get() + 1);
+            true // a test that could not be made has not excluded anything
         };
-        let spans_zero = lower.is_none_or(|low| low <= 0.0)
-            && upper.is_none_or(|high| high >= 0.0);
+        let spans_zero = lower.is_none_or(|low| low <= 0.0) && upper.is_none_or(|high| high >= 0.0);
 
         Ok(VerticalSet {
             estimate,
@@ -3456,16 +3457,15 @@ impl LatentMediationModel {
             return Err("LATENT_MEDIATION_HORIZONTAL_UNIDENTIFIED_AT_A_ZERO");
         }
         let estimate = free.parameters.c_prime;
-        let at_estimate = self
-            .fit_holding_at(&[(2, estimate)])?
-            .log_likelihood;
+        let at_estimate = self.fit_holding_at(&[(2, estimate)])?.log_likelihood;
         // Chi-square on one degree of freedom at 0.975.
         let threshold = at_estimate - 0.5 * 5.023_886_187_353_339;
 
         let failures = std::cell::Cell::new(0usize);
-        let outside = |value: f64| match self.fit_holding_at(&[(2, value)]) {
-            Ok(fit) => fit.log_likelihood < threshold,
-            Err(_) => {
+        let outside = |value: f64| {
+            if let Ok(fit) = self.fit_holding_at(&[(2, value)]) {
+                fit.log_likelihood < threshold
+            } else {
                 failures.set(failures.get() + 1);
                 false
             }
@@ -4017,8 +4017,8 @@ mod tests {
 
         // Two pieces exactly when the ends span nought and the union test
         // excludes it.
-        let spans = got.lower.is_none_or(|low| low <= 0.0)
-            && got.upper.is_none_or(|high| high >= 0.0);
+        let spans =
+            got.lower.is_none_or(|low| low <= 0.0) && got.upper.is_none_or(|high| high >= 0.0);
         assert_eq!(
             got.disjoint,
             spans && !got.contains_zero,
@@ -4447,10 +4447,7 @@ mod tests {
     }
 
     /// One family, with the outcome declared as ordered categories.
-    fn ordinal_family(
-        statuses: Vec<Option<i8>>,
-        shares: Vec<f64>,
-    ) -> LatentMediationFamilyInput {
+    fn ordinal_family(statuses: Vec<Option<i8>>, shares: Vec<f64>) -> LatentMediationFamilyInput {
         let size = statuses.len();
         LatentMediationFamilyInput {
             outcome_prevalence: Vec::new(),

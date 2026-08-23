@@ -40,8 +40,8 @@ import sys
 import time
 from pathlib import Path
 
+import asterism
 import numpy as np
-from asterism import _core
 
 sys.path.insert(0, str(Path(__file__).parent))
 import bivariate_reference as reference
@@ -54,33 +54,72 @@ import bivariate_reference as reference
 # tolerance of 2e-3 was eighty times looser than that and would have passed a
 # real regression; 2e-4 keeps roughly eight times headroom over the worst
 # measured gap.
-TOLERANCE = 2e-4
+TOLERANCE: float = 2e-4
+"""Maximum accepted absolute disagreement at either interval endpoint."""
 
-QUANTITIES = (
+QUANTITIES: tuple[tuple[str, int, str], ...] = (
     ("h2_first", 2, "h2_trait_a"),
     ("h2_second", 3, "h2_trait_b"),
     ("rho_g", 4, "rho_g"),
     ("rho_e", 5, "rho_e"),
 )
+"""Mapped public interval names to independent parameter indices and fit fields."""
 
 
-def simulate(families: int, per_family: int, seed: int):
-    """Unbalanced two-trait data with a known answer."""
-    n = families * per_family
-    relationship = np.zeros((n, n))
+def simulate(
+    families: int,
+    per_family: int,
+    seed: int,
+) -> tuple[
+    np.ndarray,
+    list[list[bool]],
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    dict[str, float],
+    int,
+]:
+    """Generate unbalanced two-trait data with a known answer.
+
+    Args:
+        families: Number of independent full-sibling families.
+        per_family: Full siblings represented within each family.
+        seed: Reproducible random-number seed.
+
+    Returns:
+        Relationship matrix, public observation mask, reference observation mask,
+        full reference design and outcome, observed public design and outcome,
+        true parameters, and sample size.
+    """
+    n: int = families * per_family
+    """Calculated the number of simulated people."""
+
+    relationship: np.ndarray = np.zeros((n, n))
+    """Initialised the block-diagonal additive relationship matrix."""
+
     for family in range(families):
-        block = slice(family * per_family, (family + 1) * per_family)
+        block: slice = slice(family * per_family, (family + 1) * per_family)
+        """Located this family's contiguous rows and columns."""
+
         relationship[block, block] = 0.5
+        """Set every within-family relationship to the full-sibling coefficient."""
+
     np.fill_diagonal(relationship, 1.0)
 
-    truth = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
-    genetic = np.array(
+    truth: dict[str, float] = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
+    """Fixed both heritabilities and covariance correlations for simulation."""
+
+    genetic: np.ndarray = np.array(
         [
             [truth["h1"], truth["rg"] * np.sqrt(truth["h1"] * truth["h2"])],
             [truth["rg"] * np.sqrt(truth["h1"] * truth["h2"]), truth["h2"]],
         ]
     )
-    residual = np.array(
+    """Constructed the two-trait additive covariance from the fixed truth."""
+
+    residual: np.ndarray = np.array(
         [
             [
                 1 - truth["h1"],
@@ -92,27 +131,59 @@ def simulate(families: int, per_family: int, seed: int):
             ],
         ]
     )
-    full = np.kron(genetic, relationship) + np.kron(residual, np.eye(n))
-    draw = np.linalg.cholesky(full + 1e-10 * np.eye(2 * n)) @ np.random.default_rng(
-        seed
-    ).standard_normal(2 * n)
+    """Constructed the two-trait residual covariance from the fixed truth."""
+
+    full: np.ndarray = np.kron(genetic, relationship) + np.kron(
+        residual,
+        np.eye(n),
+    )
+    """Expanded trait covariances across the relationship and identity bases."""
+
+    draw: np.ndarray = np.linalg.cholesky(
+        full + 1e-10 * np.eye(2 * n)
+    ) @ np.random.default_rng(seed).standard_normal(2 * n)
+    """Drew the reproducible outcome after the fixed diagonal stabiliser."""
 
     # Unbalanced, because that is the case eigen-simplification cannot take.
-    observed = np.array([[True, person % 8 != 0] for person in range(n)])
-    mask = [[bool(observed[p, 0]), bool(observed[p, 1])] for p in range(n)]
+    observed: np.ndarray = np.array([[True, person % 8 != 0] for person in range(n)])
+    """Applied the fixed unbalanced second-trait observation pattern."""
+
+    mask: list[list[bool]] = [
+        [bool(observed[person, 0]), bool(observed[person, 1])] for person in range(n)
+    ]
+    """Converted the observation pattern to the public nested-list contract."""
 
     # The two implementations want the same data laid out differently. The
     # reference takes the full 2n rows with `observed` saying which are real;
     # Asterism takes only the real ones. Getting this backwards is not an error
     # either of them raises — it is a different data set quietly fitted — so the
     # two layouts are built from one draw here rather than separately.
-    full_values = np.zeros(2 * n)
+    full_values: np.ndarray = np.zeros(2 * n)
+    """Initialised the reference's complete interleaved outcome layout."""
+
     full_values[0::2] = draw[:n]
+    """Placed first-trait values in the reference's even rows."""
+
     full_values[1::2] = draw[n:]
-    full_design = np.zeros((2 * n, 2))
+    """Placed second-trait values in the reference's odd rows."""
+
+    full_design: np.ndarray = np.zeros((2 * n, 2))
+    """Initialised the reference's complete trait-specific intercept design."""
+
     full_design[0::2, 0] = 1.0
+    """Activated the first-trait intercept on even rows."""
+
     full_design[1::2, 1] = 1.0
-    rows = [p * 2 + t for p in range(n) for t in (0, 1) if observed[p, t]]
+    """Activated the second-trait intercept on odd rows."""
+
+    rows: list[int] = [
+        person * 2 + trait
+        for person in range(n)
+        for trait in (0, 1)
+        if observed[person, trait]
+    ]
+    """Selected interleaved rows observed by Asterism's compact public layout."""
+
     return (
         relationship,
         mask,
@@ -127,6 +198,11 @@ def simulate(families: int, per_family: int, seed: int):
 
 
 def main() -> int:
+    """Compare every supported bivariate profile endpoint with the reference.
+
+    Returns:
+        Zero when convergence and all endpoint-agreement checks pass, otherwise one.
+    """
     (
         relationship,
         mask,
@@ -138,17 +214,34 @@ def main() -> int:
         truth,
         n,
     ) = simulate(25, 6, 707)
+    """Generated the fixed unbalanced data in both required row layouts."""
 
-    theirs_fit = reference.fit(relationship, full_values, observed, full_design, True)
-    theta, _, gradient, converged = _core.bivariate_fit(
-        relationship, mask, design, values, True
+    theirs_fit: dict[str, float | bool | str] = reference.fit(
+        relationship,
+        full_values,
+        observed,
+        full_design,
+        True,
     )
-    ours_point = {
-        "h2_first": theta[2],
-        "h2_second": theta[3],
-        "rho_g": theta[4],
-        "rho_e": theta[5],
+    """Fitted the independent NumPy and SciPy point reference."""
+
+    model: asterism.BivariateModel = asterism.BivariateModel(
+        relationship,
+        mask,
+        design,
+    )
+    """Built the documented bivariate model for the independently simulated data."""
+
+    fit: dict[str, float | bool | list[float]] = model.fit(values, reml=True)
+    """Fitted the point estimates through the same public boundary users call."""
+
+    ours_point: dict[str, float] = {
+        "h2_first": fit["h2_first"],
+        "h2_second": fit["h2_second"],
+        "rho_g": fit["rho_g"],
+        "rho_e": fit["rho_e"],
     }
+    """Selected the point estimates independently compared with profile endpoints."""
 
     print(
         f"Two-trait profile intervals, REML, n = {n}, "
@@ -162,18 +255,27 @@ def main() -> int:
         f"{'lower gap':>11}{'upper gap':>11}"
     )
 
-    failures = []
-    if not converged:
-        failures.append("Asterism did not declare convergence")
-    if not gradient < 1e-7:
-        failures.append(f"Asterism scaled projected gradient was {gradient:.3e}")
+    failures: list[str] = []
+    """Collected convergence, gradient and endpoint-agreement failures."""
 
-    recorded, started = {}, time.perf_counter()
-    for name, index, reference_key in QUANTITIES:
-        ours = _core.bivariate_interval(
-            relationship, mask, design, values, name, True
+    if not fit["converged"]:
+        failures.append("Asterism did not declare convergence")
+    if not fit["scaled_gradient"] < 1e-7:
+        failures.append(
+            f"Asterism scaled projected gradient was {fit['scaled_gradient']:.3e}"
         )
-        theirs = reference.profile_interval(
+
+    recorded: dict[str, dict[str, dict[str, float] | float]] = {}
+    """Accumulated both interval routes and their endpoint differences."""
+
+    started: float = time.perf_counter()
+    """Started timing the four independent constrained profile comparisons."""
+
+    for name, index, reference_key in QUANTITIES:
+        ours: dict[str, float | bool] = model.interval(values, name, reml=True)
+        """Computed one profile interval through its documented named record."""
+
+        theirs: dict[str, float | bool] = reference.profile_interval(
             relationship,
             full_values,
             observed,
@@ -182,16 +284,22 @@ def main() -> int:
             theirs_fit[reference_key],
             True,
         )
-        low_gap = abs(ours[0] - theirs["lower"])
-        high_gap = abs(ours[1] - theirs["upper"])
+        """Computed the same profile interval through the independent route."""
+        low_gap: float = abs(ours["lower"] - theirs["lower"])
+        """Measured disagreement at the lower profile endpoint."""
+
+        high_gap: float = abs(ours["upper"] - theirs["upper"])
+        """Measured disagreement at the upper profile endpoint."""
+
         recorded[name] = {
-            "asterism": {"lower": ours[0], "upper": ours[1]},
+            "asterism": {"lower": ours["lower"], "upper": ours["upper"]},
             "reference": {"lower": theirs["lower"], "upper": theirs["upper"]},
             "lower_gap": low_gap,
             "upper_gap": high_gap,
         }
+        """Recorded both routes and their endpoint differences for release evidence."""
         print(
-            f"{name:<12}[{ours[0]:>9.5f},{ours[1]:>9.5f}]"
+            f"{name:<12}[{ours['lower']:>9.5f},{ours['upper']:>9.5f}]"
             f"[{theirs['lower']:>9.5f},{theirs['upper']:>9.5f}]"
             f"{low_gap:>11.2e}{high_gap:>11.2e}"
         )
@@ -206,8 +314,10 @@ def main() -> int:
             print(f"  {failure}")
         return 1
 
-    print(f"\nBoth routes agree on every endpoint to {TOLERANCE:.0e}, in "
-          f"{time.perf_counter() - started:.0f}s.")
+    print(
+        f"\nBoth routes agree on every endpoint to {TOLERANCE:.0e}, in "
+        f"{time.perf_counter() - started:.0f}s."
+    )
     print("Different optimisers, different constrained refits, different")
     print("bisections, same interval. Calibration alone cannot establish this:")
     print("two implementations can both cover at 95 per cent and still disagree")

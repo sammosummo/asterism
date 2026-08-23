@@ -39,6 +39,7 @@ use nalgebra::{DMatrix, DVector};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 
 use crate::convergence::{self, TOLERANCE};
+use crate::interval::{self, Interval};
 
 /// The factorisation of one dense covariance, and what the likelihood needs
 /// from it.
@@ -252,6 +253,12 @@ impl SpatialModel {
         if distance.nrows() != n || distance.ncols() != n {
             return Err("SPATIAL_DISTANCE_WRONG_SIZE");
         }
+        if design.iter().any(|value| !value.is_finite()) {
+            return Err("SPATIAL_DESIGN_NOT_FINITE");
+        }
+        if distance.iter().any(|value| !value.is_finite()) {
+            return Err("SPATIAL_DISTANCE_NOT_FINITE");
+        }
         for i in 0..n {
             if distance[(i, i)].abs() > 1e-9 {
                 return Err("SPATIAL_DISTANCE_DIAGONAL_NOT_ZERO");
@@ -268,6 +275,9 @@ impl SpatialModel {
         for matrix in fixed {
             if matrix.nrows() != n || matrix.ncols() != n {
                 return Err("SPATIAL_MATRIX_WRONG_SIZE");
+            }
+            if matrix.iter().any(|value| !value.is_finite()) {
+                return Err("SPATIAL_MATRIX_NOT_FINITE");
             }
         }
         let xtx = design.transpose() * design;
@@ -502,6 +512,9 @@ impl SpatialModel {
         if y.len() != self.rows {
             return Err("SPATIAL_RESPONSE_WRONG_LENGTH");
         }
+        if y.iter().any(|value| !value.is_finite()) {
+            return Err("SPATIAL_RESPONSE_NOT_FINITE");
+        }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
@@ -548,7 +561,9 @@ impl SpatialModel {
                 .iter()
                 .enumerate()
                 .map(|(k, g)| {
-                    if par[k] <= lower[k] {
+                    if (k < variance_count && crate::components::resting_on_zero(par[k]))
+                        || par[k] <= lower[k]
+                    {
                         g.min(0.0)
                     } else if par[k] >= upper[k] {
                         g.max(0.0)
@@ -828,6 +843,9 @@ impl SpatialModel {
         if y.len() != self.rows {
             return Err("SPATIAL_RESPONSE_WRONG_LENGTH");
         }
+        if y.iter().any(|value| !value.is_finite()) {
+            return Err("SPATIAL_RESPONSE_NOT_FINITE");
+        }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
@@ -1014,6 +1032,7 @@ impl SpatialModel {
             return Err("SPATIAL_NO_SUCH_COMPONENT_TO_PREDICT");
         }
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "SPATIAL_FIT_NOT_CONVERGED")?;
         let n = self.rows;
         let p = self.design.ncols();
 
@@ -1075,7 +1094,9 @@ impl SpatialModel {
     /// Returns a stable code where the reduced fit fails.
     pub fn null_loglik(&self, y: &DVector<f64>, reml: bool) -> Result<f64, &'static str> {
         let reduced = crate::components::ComponentModel::build(&self.fixed, &self.design)?;
-        Ok(reduced.fit(y, reml)?.loglik)
+        let fit = reduced.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "SPATIAL_NULL_FIT_NOT_CONVERGED")?;
+        Ok(fit.loglik)
     }
 
     /// The observed likelihood ratio for no spatial variance at all.
@@ -1098,6 +1119,7 @@ impl SpatialModel {
         } else {
             self.fit(y, reml)?
         };
+        crate::convergence::require(full.converged, "SPATIAL_FIT_NOT_CONVERGED")?;
         let null = self.null_loglik(y, reml)?;
         Ok((2.0 * (full.loglik - null)).max(0.0))
     }
@@ -1112,17 +1134,8 @@ pub enum SpatialQuantity {
     Lambda,
 }
 
-/// A profile-likelihood interval.
-#[derive(Clone, Copy, Debug)]
-pub struct SpatialInterval {
-    pub lower: f64,
-    pub upper: f64,
-    pub lower_limited: bool,
-    pub upper_limited: bool,
-    pub level: f64,
-}
-
-const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
+/// Compatibility name for the one shared interval record.
+pub type SpatialInterval = Interval;
 
 impl SpatialModel {
     /// The best log-likelihood with one quantity held fixed.
@@ -1147,9 +1160,9 @@ impl SpatialModel {
         }
         let count = self.parameters();
         let variances = count - 1;
-        let (free, factor): (Vec<usize>, f64) = match quantity {
+        let (free, held): (Vec<usize>, f64) = match quantity {
             SpatialQuantity::RawCoefficientProportion(index) => {
-                if index >= variances || !(0.0..=1.0).contains(&value) || value > 1.0 - 1e-9 {
+                if index >= variances || !(0.0..=1.0).contains(&value) {
                     return None;
                 }
                 // **The decay rate is not a free coordinate when it has been
@@ -1161,7 +1174,7 @@ impl SpatialModel {
                 } else {
                     (0..count).filter(|k| *k != index).collect()
                 };
-                (free, value / (1.0 - value))
+                (free, value)
             }
             SpatialQuantity::Lambda => {
                 if !(self.lambda_lower..=self.lambda_upper).contains(&value) {
@@ -1175,14 +1188,23 @@ impl SpatialModel {
             let mut theta = vec![0.0; count];
             match quantity {
                 SpatialQuantity::RawCoefficientProportion(index) => {
-                    let mut others = 0.0;
+                    let remaining = 1.0 - held;
+                    let mut total_scale = 0.0;
                     for (slot, &k) in free.iter().enumerate() {
-                        theta[k] = packed[slot];
                         if k < variances {
-                            others += packed[slot];
+                            // Variance search coordinates stay on the total
+                            // covariance scale. The old substitution made all
+                            // of them collapse toward nought as the held share
+                            // approached one, which could manufacture a
+                            // likelihood crossing from an unfinished search.
+                            theta[k] = remaining * packed[slot];
+                            total_scale += packed[slot];
+                        } else {
+                            // Lambda is not part of the variance total.
+                            theta[k] = packed[slot];
                         }
                     }
-                    theta[index] = factor * others;
+                    theta[index] = held * total_scale;
                 }
                 SpatialQuantity::Lambda => {
                     for (slot, &k) in free.iter().enumerate() {
@@ -1248,8 +1270,10 @@ impl SpatialModel {
                             || vec![0.0; free.len()],
                             |e| match quantity {
                                 SpatialQuantity::RawCoefficientProportion(index) => {
-                                    let through = e.gradient[index] * factor;
-                                    free.iter().map(|&k| e.gradient[k] + through).collect()
+                                    let through = e.gradient[index] * held;
+                                    free.iter()
+                                        .map(|&k| e.gradient[k] * (1.0 - held) + through)
+                                        .collect()
                                 }
                                 SpatialQuantity::Lambda => vec![0.0; free.len()],
                             },
@@ -1263,9 +1287,15 @@ impl SpatialModel {
                             // variances together, so each picks up the same
                             // share of its slope. The decay rate carries none of
                             // it, being no part of the total.
-                            let through = e.gradient[index] * factor;
+                            let through = e.gradient[index] * held;
                             free.iter()
-                                .map(|&k| e.gradient[k] + if k < variances { through } else { 0.0 })
+                                .map(|&k| {
+                                    if k < variances {
+                                        e.gradient[k] * (1.0 - held) + through
+                                    } else {
+                                        e.gradient[k]
+                                    }
+                                })
                                 .collect()
                         }
                         SpatialQuantity::Lambda => free.iter().map(|&k| e.gradient[k]).collect(),
@@ -1298,8 +1328,18 @@ impl SpatialModel {
                 } else {
                     self.evaluate(&theta, y, reml, false)
                 };
+                let projected = gradient_of(&solution.par)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(k, gradient)| {
+                        let at_lower = solution.par[k] <= lower[k] + 1e-12 && gradient > 0.0;
+                        let at_upper = solution.par[k] >= upper[k] - 1e-12 && gradient < 0.0;
+                        if at_lower || at_upper { 0.0 } else { gradient }
+                    })
+                    .fold(0.0_f64, |worst, gradient| worst.max(gradient.abs()));
                 if let Some(at) = at
                     && at.negative_loglik.is_finite()
+                    && projected / at.negative_loglik.abs().max(1.0) < TOLERANCE
                     && best.is_none_or(|b: f64| at.negative_loglik < b)
                 {
                     best = Some(at.negative_loglik);
@@ -1342,12 +1382,15 @@ impl SpatialModel {
         } else {
             self.fit(y, reml)?
         };
+        if !fit.converged {
+            return Err("SPATIAL_FIT_NOT_CONVERGED");
+        }
         let (fitted, bottom, top) = match quantity {
             SpatialQuantity::RawCoefficientProportion(index) => {
                 if index >= self.parameters() - 1 {
                     return Err("SPATIAL_NO_SUCH_COMPONENT");
                 }
-                (fit.raw_coefficient_proportions[index], 0.0, 1.0 - 1e-9)
+                (fit.raw_coefficient_proportions[index], 0.0, 1.0)
             }
             SpatialQuantity::Lambda => (fit.lambda, self.lambda_lower, self.lambda_upper),
         };
@@ -1356,47 +1399,13 @@ impl SpatialModel {
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         let scaled = y / variance.sqrt();
 
-        let maximum = self
-            .profile_objective(&scaled, reml, quantity, fitted, integrated)
-            .ok_or("SPATIAL_PROFILE_MAXIMUM_FAILED")?;
-        let deviance = |value: f64| -> f64 {
+        let got = interval::profile_interval(fitted, (bottom, top), |value| {
             self.profile_objective(&scaled, reml, quantity, value, integrated)
-                .map_or(f64::INFINITY, |ll| 2.0 * (maximum - ll))
-        };
-        let endpoint = |bound: f64| -> (f64, bool) {
-            if deviance(bound) <= CHI2_ONE_DF_95 {
-                return (bound, true);
-            }
-            // **The endpoint is bisected to a ten-thousandth and no further.**
-            // Each halving re-optimises every other parameter over several
-            // starts, so the last twenty halvings cost as much as the first
-            // twenty and buy digits nobody reports. Pinning an endpoint to 1e-9
-            // was most of the cost of a spatial interval and none of its
-            // meaning.
-            let tolerance = 1e-4 * fitted.abs().max(1e-3);
-            let (mut inside, mut outside) = (fitted, bound);
-            for _ in 0..60 {
-                let middle = 0.5 * (inside + outside);
-                if (outside - inside).abs() <= tolerance {
-                    break;
-                }
-                if deviance(middle) <= CHI2_ONE_DF_95 {
-                    inside = middle;
-                } else {
-                    outside = middle;
-                }
-            }
-            (0.5 * (inside + outside), false)
-        };
-        let (lower, lower_limited) = endpoint(bottom);
-        let (upper, upper_limited) = endpoint(top);
-        Ok(SpatialInterval {
-            lower,
-            upper,
-            lower_limited,
-            upper_limited,
-            level: 0.95,
-        })
+        });
+        if got.estimate.is_none() {
+            return Err("SPATIAL_PROFILE_MAXIMUM_FAILED");
+        }
+        Ok(got)
     }
 }
 
@@ -1474,14 +1483,28 @@ impl Stream {
 pub struct SpatialBootstrap {
     pub observed: f64,
     pub exceedances: usize,
-    /// Replicates that produced a usable statistic. A replicate whose fit fails
-    /// is counted out rather than counted as a non-exceedance, which would bias
-    /// the p-value downward.
+    /// Replicates that produced a usable statistic. A reportable bootstrap
+    /// requires this to equal `requested`.
     pub replicates: usize,
     pub requested: usize,
     pub p_value: f64,
     pub seed: u64,
     pub rule: &'static str,
+}
+
+/// Require the exact predeclared bootstrap denominator.
+///
+/// A failed refit is not evidence that its statistic fell below the observed
+/// one. It leaves that comparison unknown, so neither the numerator nor the
+/// denominator may be reported as though the replicate completed.
+fn require_complete_bootstrap(usable: usize, requested: usize) -> Result<(), &'static str> {
+    if usable == 0 {
+        return Err("SPATIAL_BOOTSTRAP_NO_USABLE_REPLICATE");
+    }
+    if usable != requested {
+        return Err("SPATIAL_BOOTSTRAP_REPLICATE_FAILED");
+    }
+    Ok(())
 }
 
 impl SpatialModel {
@@ -1519,6 +1542,7 @@ impl SpatialModel {
 
         let reduced = crate::components::ComponentModel::build(&self.fixed, &self.design)?;
         let null = reduced.fit(y, reml)?;
+        crate::convergence::require(null.converged, "SPATIAL_NULL_FIT_NOT_CONVERGED")?;
         let n = self.rows;
         let mut covariance = DMatrix::<f64>::zeros(n, n);
         for (index, matrix) in self.fixed.iter().enumerate() {
@@ -1540,8 +1564,8 @@ impl SpatialModel {
         for _ in 0..replicates {
             let draw = DVector::from_iterator(n, (0..n).map(|_| stream.normal()));
             let simulated = &mean + &factor * draw;
-            // A replicate that cannot be fitted is left out of the count
-            // rather than counted as a non-exceedance.
+            // A failed replicate is not a non-exceedance. It is retained in the
+            // requested count and makes the whole inferential result unusable.
             if let Ok(statistic) = self.spatial_statistic(&simulated, reml, integrated) {
                 usable += 1;
                 if statistic >= observed {
@@ -1549,9 +1573,7 @@ impl SpatialModel {
                 }
             }
         }
-        if usable == 0 {
-            return Err("SPATIAL_BOOTSTRAP_NO_USABLE_REPLICATE");
-        }
+        require_complete_bootstrap(usable, replicates)?;
         Ok(SpatialBootstrap {
             observed,
             exceedances,
@@ -1696,6 +1718,7 @@ mod python {
     /// `quantity` is an index into the variances, or the string `lambda`.
     #[pyfunction]
     #[pyo3(signature = (fixed, distance, design, y, quantity, reml=true, integrated=false))]
+    #[allow(clippy::type_complexity)]
     pub fn spatial_interval(
         fixed: Vec<PyReadonlyArray2<'_, f64>>,
         distance: PyReadonlyArray2<'_, f64>,
@@ -1704,7 +1727,17 @@ mod python {
         quantity: &str,
         reml: bool,
         integrated: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64)> {
+    ) -> PyResult<(
+        f64,
+        f64,
+        f64,
+        bool,
+        bool,
+        f64,
+        usize,
+        Option<bool>,
+        Option<bool>,
+    )> {
         let wanted = if quantity == "lambda" {
             SpatialQuantity::Lambda
         } else {
@@ -1719,11 +1752,17 @@ mod python {
             .profile_interval(&response(&y), reml, wanted, integrated)
             .map_err(PyValueError::new_err)?;
         Ok((
+            interval
+                .estimate
+                .ok_or_else(|| PyValueError::new_err("SPATIAL_PROFILE_MAXIMUM_FAILED"))?,
             interval.lower,
             interval.upper,
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
+            interval.profile_failures,
+            interval.contains_lower_bound,
+            interval.contains_upper_bound,
         ))
     }
 
@@ -2100,6 +2139,21 @@ mod tests {
         assert!(once.p_value >= 1.0 / 13.0 - 1e-12);
         assert!(once.p_value <= 1.0);
         assert_eq!(once.rule, "parametric_bootstrap_add_one");
+    }
+
+    /// A failed simulated refit leaves a comparison unknown; it must never be
+    /// silently counted as a non-exceedance or removed from the denominator.
+    #[test]
+    fn the_bootstrap_requires_every_requested_refit() {
+        assert_eq!(super::require_complete_bootstrap(20, 20), Ok(()));
+        assert_eq!(
+            super::require_complete_bootstrap(19, 20),
+            Err("SPATIAL_BOOTSTRAP_REPLICATE_FAILED")
+        );
+        assert_eq!(
+            super::require_complete_bootstrap(0, 20),
+            Err("SPATIAL_BOOTSTRAP_NO_USABLE_REPLICATE")
+        );
     }
 
     /// Distances must be the great-circle ones, symmetric, and nought on the

@@ -20,40 +20,71 @@ from __future__ import annotations
 import time
 
 import asterism
-import numpy as np
 from asterism.latent_mediation import simulate
+from scipy.stats import norm
 
-TRUTH = {"a": 0.6, "b": 0.4, "c_prime": 0.2, "d": 0.7, "sigma_m2": 0.5}
+TRUTH: dict[str, float] = {
+    "a": 0.6,
+    "b": 0.4,
+    "c_prime": 0.2,
+    "d": 0.7,
+    "sigma_m2": 0.5,
+}
+"""Specified the shared latent-mediation parameters for route comparisons."""
 # Sizes 1 and 2 are exact under both routes, so they are not informative here.
-PLAN = [(4, 120), (6, 90), (8, 70)]
+PLAN: list[tuple[int, int]] = [(4, 120), (6, 90), (8, 70)]
+"""Selected informative family sizes and affordable family counts."""
 
 print("the biggest families in the design, both integrators", flush=True)
-print(f"{'size':>5} | {'people':>6} | {'quantity':>10} | {'qmc 2048':>13} | "
-      f"{'sequential':>13} | {'diff':>9} | {'qmc s':>7} | {'seq s':>6}",
-      flush=True)
+print(
+    f"{'size':>5} | {'people':>6} | {'quantity':>10} | {'qmc 2048':>13} | "
+    f"{'sequential':>13} | {'diff':>9} | {'qmc s':>7} | {'seq s':>6}",
+    flush=True,
+)
 print("-" * 92, flush=True)
 
 for size, count in PLAN:
-    relationship = [[1.0 if i == j else 0.5 for j in range(size)]
-                    for i in range(size)]
-    families = []
+    relationship: list[list[float]] = [
+        [1.0 if i == j else 0.5 for j in range(size)] for i in range(size)
+    ]
+    """Constructed the exchangeable relationship matrix for this family size."""
+    families: list[dict[str, object]] = []
+    """Initialised the families shared by both integration routes."""
     for unit in range(count):
-        families.extend(simulate(
-            relationship=relationship, **TRUTH, families=1,
-            seed=90_000 + 977 * unit + 31 * size,
-            outcome_prevalence=[0.08] * size, observe_outcome=[True] * size,
-            measurement_error_variance=0.15,
-            ascertainment="population_unconditioned", proband_index=None,
-        ))
+        families.extend(
+            simulate(
+                relationship=relationship,
+                **TRUTH,
+                families=1,
+                seed=90_000 + 977 * unit + 31 * size,
+                outcome_prevalence=[0.08] * size,
+                observe_outcome=[True] * size,
+                measurement_error_variance=0.15,
+                ascertainment="population_unconditioned",
+                proband_index=None,
+            )
+        )
+    """Simulated deterministic independent families for this comparison cell."""
 
-    got, seconds = {}, {}
+    got: dict[str, dict[str, float]] = {}
+    """Initialised the scientific quantities returned by each integration route."""
+    seconds: dict[str, float] = {}
+    """Initialised the elapsed-time measurement for each integration route."""
     for label, points in (("qmc", 2048), ("seq", 0)):
-        model = asterism.LatentMediationModel(families, qmc_points=points)
-        started = time.time()
-        fit = model.fit()
-        vertical = model.test_vertical(bootstrap_replicates=0)
-        horizontal = model.test_horizontal()
+        model: asterism.LatentMediationModel = asterism.LatentMediationModel(
+            families, qmc_points=points
+        )
+        """Prepared the same families with the selected integration route."""
+        started: float = time.time()
+        """Captured the route's wall-clock start time."""
+        fit: dict[str, object] = model.fit()
+        """Fitted the full latent-mediation model through this route."""
+        vertical: dict[str, object] = model.test_vertical(bootstrap_replicates=0)
+        """Evaluated the vertical-path test without a bootstrap campaign."""
+        horizontal: dict[str, object] = model.test_horizontal()
+        """Evaluated the horizontal direct-path test."""
         seconds[label] = time.time() - started
+        """Recorded the total fit-and-test duration for this route."""
         got[label] = {
             "loglik": fit["loglik"],
             "vertical": fit["estimands"]["theta_vertical"],
@@ -61,27 +92,47 @@ for size, count in PLAN:
             "vp": vertical["p_value"],
             "hp": horizontal["p_value"],
         }
+        """Stored like-for-like estimates and tests for route comparison."""
+    """Ran both integration routes on the same simulated families."""
 
     for quantity in got["qmc"]:
         accurate, cheap = got["qmc"][quantity], got["seq"][quantity]
-        print(f"{size:>5} | {count * size:>6} | {quantity:>10} | "
-              f"{accurate:>13.6f} | {cheap:>13.6f} | "
-              f"{abs(accurate - cheap):>9.2e} | {seconds['qmc']:>7.1f} | "
-              f"{seconds['seq']:>6.1f}", flush=True)
+        """Paired the quasi-Monte Carlo and sequential values for one quantity."""
+        print(
+            f"{size:>5} | {count * size:>6} | {quantity:>10} | "
+            f"{accurate:>13.6f} | {cheap:>13.6f} | "
+            f"{abs(accurate - cheap):>9.2e} | {seconds['qmc']:>7.1f} | "
+            f"{seconds['seq']:>6.1f}",
+            flush=True,
+        )
+    """Printed the absolute route difference for every shared quantity."""
 
     # The comparison that decides it: the disagreement against the sampling
     # error of the same estimand, recovered from its own test.
     for estimand, p_name in (("vertical", "vp"), ("horizontal", "hp")):
-        from scipy.stats import norm
-        p = got["qmc"][p_name]
-        z = abs(norm.ppf(max(p, 1e-12) / 2))
+        p: float = got["qmc"][p_name]
+        """Selected the accurate route's p-value for this estimand."""
+        z: float = abs(float(norm.ppf(max(p, 1e-12) / 2)))
+        """Recovered the corresponding two-sided normal statistic."""
         if z > 1e-6:
-            standard_error = abs(got["qmc"][estimand]) / z
-            share = abs(got["qmc"][estimand] - got["seq"][estimand]) / standard_error
-            print(f"      -> {estimand} disagreement is {share:.1%} of one "
-                  f"standard error", flush=True)
+            standard_error: float = abs(got["qmc"][estimand]) / z
+            """Recovered the estimand's approximate sampling standard error."""
+            share: float = (
+                abs(got["qmc"][estimand] - got["seq"][estimand]) / standard_error
+            )
+            """Expressed route disagreement as a share of sampling error."""
+            print(
+                f"      -> {estimand} disagreement is {share:.1%} of one "
+                f"standard error",
+                flush=True,
+            )
+    """Scaled each estimand disagreement by its own approximate sampling error."""
     print("", flush=True)
+"""Compared both routes across every planned informative family size."""
 
-print("A difference matters when it is large against sampling error, not when "
-      "it is\nlarge against nought. Half the design's people sit in families of "
-      "three or more.", flush=True)
+print(
+    "A difference matters when it is large against sampling error, not when "
+    "it is\nlarge against nought. Half the design's people sit in families of "
+    "three or more.",
+    flush=True,
+)

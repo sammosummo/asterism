@@ -69,6 +69,7 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::Normal;
 
 use crate::blocks::family_blocks;
+use crate::interval::{self, Interval};
 use crate::liability::LiabilityModel;
 
 const LOG_TWO_PI: f64 = 1.837_877_066_409_345_3;
@@ -126,16 +127,6 @@ pub struct TobitFit {
     pub largest_family: usize,
 }
 
-/// Chi-square on one degree of freedom at 0.95.
-const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
-/// The Self-Liang 50:50 critical value. Under a null that sits on the
-/// parameter's bound, half the reference distribution's mass is at nought, so
-/// the correct threshold is not the plain chi-square one above. ADR 0004
-/// records what the difference costs: taking an end of nought to mean the
-/// interval contains nought gives 0.977 coverage at a true heritability of
-/// nought, where this gives 0.953.
-const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
-
 /// The result of testing the heritability against nought.
 #[derive(Clone, Debug)]
 pub struct TobitTest {
@@ -148,32 +139,8 @@ pub struct TobitTest {
     pub alternative_loglik: f64,
 }
 
-/// A profile-likelihood interval for the heritability.
-#[derive(Clone, Debug)]
-pub struct TobitInterval {
-    pub estimate: f64,
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the end sits on the parameter's own bound rather than where
-    /// the profile fell away -- the data did not rule that end out.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
-    pub level: f64,
-    /// Whether a boundary point belongs to the interval, decided by the
-    /// Self-Liang mixture rather than by the end having landed on the bound.
-    /// Present only where the corresponding end is on its bound and the fit
-    /// there could be made; absent means nobody measured it, not that the
-    /// question does not apply.
-    pub contains_lower_bound: Option<bool>,
-    pub contains_upper_bound: Option<bool>,
-    /// How many profile fits failed or did not converge. Each one widened the
-    /// interval rather than narrowing it, which is the safe direction, but a
-    /// large count means the interval rests on fewer points than it looks.
-    pub profile_failures: usize,
-    /// Reported beside the interval, because how far the model can be trusted
-    /// depends on it.
-    pub censored_share: f64,
-}
+/// Compatibility name for the one shared interval record.
+pub type TobitInterval = Interval;
 
 /// One trait, one relationship matrix, per-observation censoring.
 pub struct TobitModel {
@@ -355,15 +322,9 @@ impl TobitModel {
                 });
                 let solved = chol.solve(&deviation);
                 let quadratic = deviation.dot(&solved);
-                let log_determinant = 2.0
-                    * chol
-                        .l()
-                        .diagonal()
-                        .iter()
-                        .map(|d| d.ln())
-                        .sum::<f64>();
-                let density = -0.5
-                    * (measured.len() as f64 * LOG_TWO_PI + log_determinant + quadratic);
+                let log_determinant = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+                let density =
+                    -0.5 * (measured.len() as f64 * LOG_TWO_PI + log_determinant + quadratic);
                 if !density.is_finite() {
                     return None;
                 }
@@ -469,6 +430,8 @@ impl TobitModel {
     pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
         let free = self.fit()?;
         let null = self.fit_holding(Some(0.0))?;
+        crate::convergence::require(free.converged, "TOBIT_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "TOBIT_NULL_FIT_NOT_CONVERGED")?;
         let statistic = crate::deviance::deviance(free.loglik, null.loglik);
         Ok(TobitTest {
             statistic,
@@ -481,60 +444,28 @@ impl TobitModel {
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns a stable code if the free fit or the profile at its estimate is
+    /// not evaluable as a converged likelihood.
     pub fn heritability_interval(&self) -> Result<TobitInterval, &'static str> {
         let free = self.fit()?;
+        if !free.converged {
+            return Err("TOBIT_FIT_NOT_CONVERGED");
+        }
         let estimate = free.heritability;
-        let at_estimate = self.fit_holding(Some(estimate))?.loglik;
-
-        let failures = std::cell::Cell::new(0usize);
-        // The deviance rather than a bare verdict, because the boundary rule
-        // below needs the number and not only whether it crossed.
-        let deviance_at = |value: f64| -> Option<f64> {
-            match self.fit_holding(Some(value)) {
-                Ok(fit) if fit.converged => Some(2.0 * (at_estimate - fit.loglik)),
-                _ => {
-                    failures.set(failures.get() + 1);
-                    None
-                }
-            }
-        };
-        let outside = |value: f64| deviance_at(value).is_some_and(|d| d > CHI2_ONE_95);
-
-        // Each bound is fitted once and the answer used twice: to place the
-        // end, and to decide whether the bound itself belongs to the interval.
-        let at_zero = deviance_at(0.0);
-        let at_one = deviance_at(1.0);
-
-        let (lower, lower_at_bound) = if at_zero.is_some_and(|d| d > CHI2_ONE_95) {
-            (crate::liability::bisect(0.0, estimate, &outside), false)
-        } else {
-            (0.0, true)
-        };
-        let (upper, upper_at_bound) = if at_one.is_some_and(|d| d > CHI2_ONE_95) {
-            (crate::liability::bisect(1.0, estimate, &outside), false)
-        } else {
-            (1.0, true)
-        };
-        Ok(TobitInterval {
-            estimate,
-            lower,
-            upper,
-            lower_at_bound,
-            upper_at_bound,
-            level: 0.95,
-            contains_lower_bound: if lower == 0.0 {
-                at_zero.map(|d| d <= MIXTURE_CRIT)
-            } else {
-                None
-            },
-            contains_upper_bound: if upper == 1.0 {
-                at_one.map(|d| d <= MIXTURE_CRIT)
-            } else {
-                None
-            },
-            profile_failures: failures.get(),
-            censored_share: self.censored_share(),
-        })
+        let got = interval::profile_interval(estimate, (0.0, 1.0), |value| {
+            self.fit_holding(Some(value))
+                .ok()
+                .filter(|fit| fit.converged)
+                .map(|fit| fit.loglik)
+        });
+        if got.estimate.is_none() {
+            return Err("TOBIT_PROFILE_NOT_EVALUABLE");
+        }
+        // This family's coverage check scored the boundary rule through three
+        // quarters censoring, so it may fill the mixture verdict.
+        Ok(got.scored_by_mixture())
     }
 
     /// Fit with the heritability held, or free where `held` is `None`.
@@ -543,10 +474,10 @@ impl TobitModel {
     ///
     /// Returns a stable code where no start converges.
     pub fn fit_holding(&self, held: Option<f64>) -> Result<TobitFit, &'static str> {
-        if let Some(value) = held {
-            if !(0.0..=1.0).contains(&value) {
-                return Err("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE");
-            }
+        if let Some(value) = held
+            && !(0.0..=1.0).contains(&value)
+        {
+            return Err("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE");
         }
         let columns = self.design.ncols();
         let count = columns + 2;
@@ -559,10 +490,7 @@ impl TobitModel {
             .map(|i| self.value[i])
             .collect();
         let centre = measured.iter().sum::<f64>() / measured.len() as f64;
-        let spread = (measured
-            .iter()
-            .map(|v| (v - centre).powi(2))
-            .sum::<f64>()
+        let spread = (measured.iter().map(|v| (v - centre).powi(2)).sum::<f64>()
             / measured.len() as f64)
             .max(1e-12);
 
@@ -633,17 +561,85 @@ impl TobitModel {
             }
         }
 
-        let (objective, theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
-        let gradient = gradient_of(&theta);
-        let scaled_gradient = gradient
-            .iter()
-            .fold(0.0_f64, |worst, g| worst.max(g.abs()));
+        // The search is bound constrained, so what says whether it has arrived
+        // is the projected gradient, not the raw one. At an optimum resting on
+        // a bound the raw gradient points out of the feasible region and does
+        // not go to nought, so testing it reports a correct fit as a failure.
+        // A heritability of nought is the lower bound and a true nought leaves
+        // about half of all samples resting there, which is why about half of
+        // every null fit refused -- at three quarters censored, at half, and
+        // at none at all, where this model is the one-trait model and that one
+        // fits every time.
+        //
+        // This is the reading `components.rs` takes, in this family's
+        // parameterisation: only the heritability has bounds to rest on, while
+        // the log total variance and the fixed effects are free. Scaling by the
+        // objective is part of that reading and was missing too, so the value
+        // once called `scaled_gradient` here was neither projected nor scaled.
+        let scaled_projected = |candidate: &[f64], objective: f64| -> f64 {
+            gradient_of(candidate)
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if lower[k] == upper[k] {
+                        // A held coordinate is not a direction the search may
+                        // act on, whichever way its gradient points.
+                        0.0
+                    } else if crate::components::resting_on_zero(candidate[k] - lower[k]) {
+                        g.min(0.0)
+                    } else if crate::components::resting_on_zero(upper[k] - candidate[k]) {
+                        g.max(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0_f64, |worst, g| worst.max(g.abs()))
+                / objective.abs().max(1.0)
+        };
+
+        let (mut objective, mut theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
+        let mut scaled_gradient = scaled_projected(&theta, objective);
+
+        // Where the gradient test fails, search once more from the point
+        // already found with the objective tolerance switched off. This is the
+        // shared second search, and it fires only where the flag already says
+        // failure, so every passing fit is left untouched to the last bit. The
+        // reasons it is bounded, and why its result is checked rather than
+        // trusted, are in `convergence`.
+        if scaled_gradient >= crate::convergence::TOLERANCE
+            && let Some(better) = crate::convergence::polish(
+                &theta,
+                objective,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    let negative = value_of(candidate);
+                    if !negative.is_finite() || negative >= INFEASIBLE {
+                        return None;
+                    }
+                    Some((negative, scaled_projected(candidate, negative)))
+                },
+            )
+        {
+            theta = better.par;
+            objective = better.negative_loglik;
+            scaled_gradient = better.scaled_gradient;
+        }
+
         Ok(TobitFit {
             heritability: theta[0],
             total_variance: theta[1].exp(),
             fixed_effects: theta[2..].to_vec(),
             loglik: -objective,
-            converged: scaled_gradient < 1e-3,
+            // The shared rule, at last. This family had been testing a raw
+            // unscaled gradient against a hard-coded thousandth, which is a
+            // thousand times looser than every other family and was loosened
+            // to accommodate the very boundary readings the projection above
+            // removes. `convergence` records what the number means.
+            converged: scaled_gradient < crate::convergence::TOLERANCE,
             scaled_gradient,
             censored_share: self.censored_share(),
             estimator: "ml",
@@ -768,6 +764,7 @@ mod tests {
     ///
     /// Returns the relationship, the values as the instrument would record
     /// them, the censoring status, the limits, and the design.
+    #[allow(clippy::type_complexity)]
     fn simulate(
         pairs: usize,
         heritability: f64,
@@ -843,8 +840,8 @@ mod tests {
     fn with_nothing_censored_it_is_the_gaussian_likelihood() {
         let (relationship, value, censoring, limit, design) =
             simulate(60, 0.5, 2.0, 3.0, None, 20_260_818);
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("builds");
+        let model =
+            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
         let (heritability, variance, mean) = (0.4, 1.7, 2.5);
         let ours = model
             .loglik(heritability, variance, &[mean])
@@ -862,10 +859,8 @@ mod tests {
                     covariance[(r, c)] = variance * (additive + residual);
                 }
             }
-            let deviation =
-                DVector::from_fn(2, |r, _| value[block[r]] - mean);
-            let determinant =
-                covariance[(0, 0)] * covariance[(1, 1)] - covariance[(0, 1)].powi(2);
+            let deviation = DVector::from_fn(2, |r, _| value[block[r]] - mean);
+            let determinant = covariance[(0, 0)] * covariance[(1, 1)] - covariance[(0, 1)].powi(2);
             let inverse = DMatrix::from_row_slice(
                 2,
                 2,
@@ -907,14 +902,17 @@ mod tests {
             Some(cut),
             20_260_819,
         );
-        let censored = censoring.iter().filter(|c| **c != Censoring::Measured).count();
+        let censored = censoring
+            .iter()
+            .filter(|c| **c != Censoring::Measured)
+            .count();
         assert!(
             censored > 40,
             "the fixture censored {censored} values, too few to test with"
         );
 
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("builds");
+        let model =
+            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
         let fit = model.fit().expect("fits");
         assert_eq!(fit.estimator, "ml");
 
@@ -963,32 +961,36 @@ mod tests {
     /// asserted.
     #[test]
     fn the_profile_interval_reaches_where_the_likelihood_falls_away() {
-        let (relationship, value, censoring, limit, design) = simulate(
-            300, 0.5, 4.0, 10.0, Some(11.0), 20_260_818);
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("builds");
+        let (relationship, value, censoring, limit, design) =
+            simulate(300, 0.5, 4.0, 10.0, Some(11.0), 20_260_818);
+        let model =
+            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
         let got = model.heritability_interval().expect("intervals");
+        let estimate = got.estimate.expect("an interval has an estimate");
 
         assert!(
-            got.lower <= got.estimate && got.estimate <= got.upper,
+            got.lower <= estimate && estimate <= got.upper,
             "the estimate {} is outside its own interval [{}, {}]",
-            got.estimate, got.lower, got.upper
+            estimate,
+            got.lower,
+            got.upper
         );
         assert!((got.level - 0.95).abs() < 1e-12);
 
-        let peak = model.fit_holding(Some(got.estimate)).expect("held fit").loglik;
+        let peak = model.fit_holding(Some(estimate)).expect("held fit").loglik;
         for (name, end, at_bound) in [
-            ("lower", got.lower, got.lower_at_bound),
-            ("upper", got.upper, got.upper_at_bound),
+            ("lower", got.lower, got.lower_limited),
+            ("upper", got.upper, got.upper_limited),
         ] {
             if at_bound {
-                continue;   // the data did not rule that end out
+                continue; // the data did not rule that end out
             }
             let there = model.fit_holding(Some(end)).expect("held fit").loglik;
             let cost = 2.0 * (peak - there);
+            let claimed = 3.841_458_820_694_124;
             assert!(
-                (cost - CHI2_ONE_95).abs() < 0.05,
-                "the {name} end costs {cost} in deviance, not the {CHI2_ONE_95} \
+                (cost - claimed).abs() < 0.05,
+                "the {name} end costs {cost} in deviance, not the {claimed} \
                  an interval at this level claims"
             );
         }
@@ -997,10 +999,9 @@ mod tests {
     /// A heritability held outside its range is refused rather than clamped.
     #[test]
     fn a_held_heritability_outside_the_range_is_refused() {
-        let (relationship, value, censoring, limit, design) =
-            simulate(40, 0.5, 1.0, 0.0, None, 3);
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("builds");
+        let (relationship, value, censoring, limit, design) = simulate(40, 0.5, 1.0, 0.0, None, 3);
+        let model =
+            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
         assert_eq!(
             model.fit_holding(Some(1.5)).err(),
             Some("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE")

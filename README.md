@@ -9,28 +9,46 @@ The model equations and interpretation are in
 coverage simulations, and known numerical limitations are summarised in
 [numerical-validation.md](docs/numerical-validation.md).
 
+This checkout is a development build, not an analysis-ready release. Its
+embedded `release.toml` deliberately refuses reportable status until every 0.1
+design range and scientific pass rule has been rerun on the exact release
+artifact. [Python API support status](docs/api-support.md) distinguishes what is
+planned for 0.1 from public capabilities outside its scientific support. The
+[analysis-receipt guide](docs/analysis-receipts.md) shows the fixed-wheel
+preflight, three outcomes and caller-owned JSON boundary.
+
 ## Installation
 
-Python 3.13, Rust, and `uv` are required.
+CPython 3.13 or 3.14, the repository-pinned Rust 1.97.1 toolchain, and `uv` are
+required for development. Build isolation, the development environment, and
+hosted wheel builds all use the locked Maturin 1.14.1 release.
 
 ```sh
-uv venv --python 3.13
-uv pip install 'maturin>=1.10,<2' numpy pytest 'scipy>=1.15'
-uv run --no-project maturin develop --release
+uv sync --locked --all-groups
+uv run maturin develop --release --locked
 ```
+
+An analysis that may become reportable installs a checksummed wheel saved by a
+fixed release; it never builds from an editable checkout.
 
 ## One trait, one relationship matrix
 
 ```python
 import asterism
+import numpy as np
 
 k, order = asterism.relationship_matrix(ids, father, mother, keep=analysed_ids)
 
 # Line the values up with the matrix by identifier, not by hope.
 data = asterism.align(k, order, table_ids, y=height, age=age)
+order_sha256 = asterism.subject_order_commitment(data["order"])
 
-model = asterism.prepare(np.column_stack([np.ones(len(data["order"])), data["age"]]), k)
-fit = model.fit(data["y"])             # REML by default
+model = asterism.prepare(
+    np.column_stack([np.ones(len(data["order"])), data["age"]]),
+    data["relationship"],
+    subject_order_sha256=order_sha256,
+)
+fit = model.fit(data["y"])  # REML by default
 fit["h2"], fit["interval"], fit["test"]
 
 ml = model.fit(data["y"], estimator="ml")
@@ -52,6 +70,13 @@ separate identifier file, is exactly where this goes wrong.
 one is wanted. `prepare` checks the matrix and design, diagonalises the
 relationship matrix, and stores everything independent of the response. Reuse
 one prepared model for multiple responses with the same rows and design.
+Every supported 0.1 fit record carries immutable build identity and a
+`subject_order_sha256` field. Supplying the commitment to its public fit route
+echoes the digest without retaining identifiers; the standard analysis runner
+also verifies and attaches it before a result can be reportable. Build identity
+binds the source commit, release manifest, `Cargo.lock`, and `uv.lock`, so two
+builds with the same public version but different source or dependencies remain
+distinguishable.
 
 One fit returns everything about that fit: `interval` is the profile interval
 for the heritability and `test` is the test against nought, both already inside
@@ -68,18 +93,22 @@ model = asterism.ComponentModel([relationship, household], x)
 fit = model.fit(y)
 interval = model.interval(y, component=1)
 test = model.test(y, component=1)
-prediction = model.predict(y, component=0)
 ```
 
 `fit["variances"]` contains the raw covariance coefficients, and
 `fit["raw_coefficient_proportions"]` divides those coefficients by their sum.
 The proportions depend on how each matrix is scaled and are not generic
-variance shares. `interval(..., component=...)` likewise
-profiles a raw coefficient proportion.
+variance shares. `interval(..., component=...)` profiles the matching
+scale-invariant mean-diagonal proportion by default. The raw coefficient
+proportion remains available explicitly as a diagnostic quantity.
 
 When every structured matrix has a positive mean diagonal, the fit also returns
 `mean_diagonal_component_contributions` and `mean_diagonal_proportions`. These
 are invariant to positive rescaling of a matrix and its reciprocal coefficient.
+The numerical model rejects linearly dependent covariance bases, including a
+submitted identity matrix that duplicates the implicit residual. Passing that
+exact-rank check does not by itself prove that nearly collinear components are
+estimated precisely.
 
 For a relationship matrix split into off-diagonal kinship classes, the class
 bases have zero diagonal. Report coefficients and class contrasts, not shares:
@@ -105,6 +134,8 @@ model.test(y, "rho_g", null=0.0)
 `observed` is one Boolean pair per person, permitting different missingness for
 the two traits. `design` and `y` contain only observed person-trait rows, in
 person order with trait within person.
+The 0.1 reportable target is `rho_g` with its interval and test; the other fitted
+quantities describe the joint fit but are not additional 0.1 claims.
 
 ## Spatial covariance
 
@@ -128,6 +159,8 @@ the fixed covariance matrices. When their mean diagonals are positive,
 `mean_diagonal_proportions` gives the scale-invariant marginal covariance
 decomposition. Component-index intervals profile the raw coefficient
 proportion and identify that quantity explicitly in their result.
+
+Prediction methods remain public but are outside 0.1 scientific support.
 
 ## Gene by environment, continuous and discrete
 
@@ -155,6 +188,7 @@ Available GxE surfaces are `exponential`, `powered_exponential`, and
 `random_regression`. They are different covariance families; choose the family
 and any powered-exponential shape independently of the fitted outcome. Only
 random regression can represent negative genetic correlations and crossovers.
+The powered-exponential family remains outside 0.1 scientific support.
 
 `GxeModel` takes an environment measured on a range and smooths across it.
 `DiscreteGxeModel` takes one measured as a binary label — any two distinct
@@ -162,6 +196,9 @@ finite values, with the smaller naming the first group — and smooths nothing:
 it carries a genetic and a residual variance per group and one correlation
 between them. Sex is the canonical use, and `fit` returns the two `levels` so a
 reader can tell which group is which.
+Group-specific heritabilities remain descriptive in 0.1; the genetic
+correlation, its interval, and the calibrated genetic tests are the supported
+targets.
 
 The principal `gene_by_environment` test leaves residual variances free in the
 two environments; `any_difference` additionally equates them and therefore is
@@ -207,6 +244,8 @@ comparable with one fitted to values where the censored ones were replaced by
 their limit, which is the usual practice and the thing this exists to replace.
 It is maximum likelihood, never REML, because a censored observation has no
 response to project onto the null space of the design.
+The 16 and 18 kHz uses remain blocked until coverage at their approximately 52
+and 75 per cent censoring levels passes on the fixed release artifact.
 
 ## Two traits measured differently
 
@@ -229,13 +268,18 @@ heritability while a continuous or censored trait's is not, and the two must not
 be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
+Only the prespecified binary psychiatric diagnosis/right-censored hearing pair
+is planned for 0.1 support. Its independent SOLAR fixture is now frozen, but
+the exact fixed-wheel simulation campaigns and supported design range remain
+unfinished. Other trait-kind combinations remain public but scientifically
+unsupported.
 
-## Marker association
+## Marker association — outside 0.1 scientific support
 
 ```python
 scan = asterism.AssociationModel(relationship, design_with_pcs, y)
 
-fast = scan.sweep(markers)                    # covariance held
+fast = scan.sweep(markers)  # covariance held
 staged = scan.sweep(markers, refit_below=1e-3)
 full = scan.sweep(markers, variance="refitted")
 ```
@@ -245,14 +289,14 @@ marker effects. Selective refitting is usually the useful compromise. The
 marker remains inside the relationship matrix; Asterism does not perform a
 leave-one-chromosome-out analysis or multiple-testing correction.
 
-## Variant sets: genes and pathways
+## Variant sets: genes and pathways — outside 0.1 scientific support
 
 ```python
 model = asterism.VariantSetModel([relationship], design, y)
 
-weighted = dosages * variant_weights          # Z = G W, one column per variant
-result = model.test(weighted)                 # variance-component test
-family = model.test_family(weighted)          # across burden-to-variance-component
+weighted = dosages * variant_weights  # Z = G W, one column per variant
+result = model.test(weighted)  # variance-component test
+family = model.test_family(weighted)  # across burden-to-variance-component
 ```
 
 Rare variants tested one at a time find nothing, because each has a handful of
@@ -272,7 +316,7 @@ is a variance weight of `w**2`, and the usual rare-focused choice is a
 `Beta(1, 25)` density at each minor allele frequency. Under the null that shape
 is unidentified, so it cannot be fitted; run a few and combine them instead.
 
-## Latent mediation with continuous and threshold observations
+## Latent mediation with continuous and threshold observations — outside 0.1 scientific support
 
 ```python
 families = [
@@ -334,9 +378,33 @@ stability is a numerical diagnostic rather than an inferential error bound.
 
 ```sh
 cargo test --release
-uv run --no-project pytest tests/ -q
-uv run --locked --no-sync python checks/against_famskat.py
+uv run pytest tests/ -q
+uv run --locked python checks/against_famskat.py
 ```
 
 The full list of simulation and package-comparison commands is in
 [numerical-validation.md](docs/numerical-validation.md).
+
+## Citing Asterism
+
+Cite the archived version you actually ran, not the repository. A development
+checkout is not a citable version: only a release wheel carries the build
+identity a result can be traced back to, and only a release has had its pass
+rules and design ranges measured.
+
+Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
+publication rather than before it, so the DOI is added there when the first
+release is published — see
+[ADR 0018](docs/adr/0018-published-with-the-papers-that-cite-it.md).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+Asterism is original work. It depends on third-party packages, named in
+`Cargo.lock` and `uv.lock` and used under their own licences, and derives from
+nothing else. It has no affiliation with SOLAR or with any other quantitative
+genetics package. Where its answers are compared with SOLAR, R, `spaMM`,
+MCMCglmm or a published analysis, those are benchmarks: agreement proves
+fidelity and never correctness, which is
+[ADR 0006](docs/adr/0006-agreement-proves-fidelity.md).

@@ -93,6 +93,7 @@ use crate::convergence::TOLERANCE;
 
 use crate::blocks::family_blocks;
 use crate::deviance::chi2_one_df_upper_tail;
+use crate::interval::{self, Interval};
 
 /// How many free parameters: two total variances, two heritabilities, two
 /// correlations.
@@ -1816,6 +1817,7 @@ mod python {
     /// `quantity` is `h2_first`, `h2_second`, `rho_g`, `rho_e` or `rho_p`.
     #[pyfunction]
     #[pyo3(signature = (relationship, observed, design, y, quantity, reml=true))]
+    #[allow(clippy::type_complexity)]
     pub fn bivariate_interval(
         relationship: PyReadonlyArray2<'_, f64>,
         observed: Vec<[bool; 2]>,
@@ -1823,7 +1825,17 @@ mod python {
         y: PyReadonlyArray1<'_, f64>,
         quantity: &str,
         reml: bool,
-    ) -> PyResult<(f64, f64, bool, bool, f64, usize)> {
+    ) -> PyResult<(
+        f64,
+        f64,
+        f64,
+        bool,
+        bool,
+        f64,
+        usize,
+        Option<bool>,
+        Option<bool>,
+    )> {
         let wanted = match quantity {
             "h2_first" => super::Reported::HeritabilityFirst,
             "h2_second" => super::Reported::HeritabilitySecond,
@@ -1843,12 +1855,17 @@ mod python {
             .profile_interval(&y, reml, wanted)
             .map_err(PyValueError::new_err)?;
         Ok((
+            interval
+                .estimate
+                .ok_or_else(|| PyValueError::new_err("BIVARIATE_PROFILE_MAXIMUM_FAILED"))?,
             interval.lower,
             interval.upper,
             interval.lower_limited,
             interval.upper_limited,
             interval.level,
             interval.profile_failures,
+            interval.contains_lower_bound,
+            interval.contains_upper_bound,
         ))
     }
 
@@ -1896,34 +1913,8 @@ pub use python::{
     bivariate_correlation_test, bivariate_fit, bivariate_interval, bivariate_objective,
 };
 
-/// The 0.95 quantile of chi-square with one degree of freedom.
-const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
-
-/// A profile-likelihood interval for one reported quantity.
-///
-/// The same shape whatever the fit did: a lower and an upper
-/// endpoint, and a flag on each saying whether it reached a bound without the
-/// deviance ever crossing. A `limited` endpoint is the bound itself, not a
-/// crossing, and reporting it as though it were one would overstate what the
-/// data said.
-#[derive(Clone, Copy, Debug)]
-pub struct ProfileInterval {
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the endpoint is the edge of the parameter space rather than a
-    /// point the data ruled out. Read it beside `profile_failures`: a bound
-    /// reached because the likelihood never crossed and a bound reached because
-    /// the profile could not be evaluated there are both reported here, and
-    /// only a non-zero failure count separates them.
-    pub lower_limited: bool,
-    pub upper_limited: bool,
-    pub level: f64,
-    /// How many profile evaluations could not be made. A failure is unknown
-    /// ground, not ground the data ruled out, so the interval is widened over
-    /// it rather than narrowed; a non-zero count says the endpoints rest partly
-    /// on evaluations that did not come back.
-    pub profile_failures: usize,
-}
+/// Compatibility name for the one shared interval record.
+pub type ProfileInterval = Interval;
 
 /// Which reported quantity an interval is for. These are parameters in this
 /// parameterisation, which is what makes profiling them a constrained refit
@@ -1973,6 +1964,7 @@ impl BivariateModel {
         reml: bool,
         index: usize,
         value: f64,
+        warm_start: &[f64; PARAMETERS],
     ) -> Option<f64> {
         let standardised = self.standardised_problem(y).ok()?;
         let free: Vec<usize> = (0..PARAMETERS).filter(|k| *k != index).collect();
@@ -1988,8 +1980,12 @@ impl BivariateModel {
             theta
         };
 
+        let mut standardised_warm_start = *warm_start;
+        standardised_warm_start[0] /= standardised.variance_scale[0];
+        standardised_warm_start[1] /= standardised.variance_scale[1];
         let mut best: Option<f64> = None;
         for start in [
+            standardised_warm_start,
             [1.0f64, 1.0, 0.5, 0.5, 0.0, 0.0],
             [1.0f64, 1.0, 0.3, 0.3, 0.4, 0.4],
             [1.0f64, 1.0, 0.7, 0.7, -0.3, 0.3],
@@ -2026,12 +2022,23 @@ impl BivariateModel {
             control.factr = 0.0;
             control.pgtol = 1e-8;
             control.lmm = free.len();
+            let mut candidates = vec![packed.clone()];
             if let Ok(solution) =
-                optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
+                optim_lbfgsb_with_gradient(packed, bounds, &value_of, &gradient_of, control)
             {
-                let theta = expand(&solution.par);
-                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                candidates.push(solution.par);
+            }
+            for candidate in candidates {
+                let theta = expand(&candidate);
+                if let Some(at) = self.evaluate(&theta, &standardised.y, reml, true)
                     && at.negative_loglik.is_finite()
+                    && projected_gradient_norm(
+                        &candidate,
+                        &free.iter().map(|&k| at.gradient[k]).collect::<Vec<_>>(),
+                        &lower,
+                        &upper,
+                        at.negative_loglik,
+                    ) < TOLERANCE
                     && best.is_none_or(|b: f64| at.negative_loglik < b)
                 {
                     best = Some(at.negative_loglik);
@@ -2073,6 +2080,7 @@ impl BivariateModel {
         y: &DVector<f64>,
         reml: bool,
         value: f64,
+        warm_start: &[f64; PARAMETERS],
     ) -> Option<f64> {
         let standardised = self.standardised_problem(y).ok()?;
         // Everything except the residual correlation, which is derived.
@@ -2109,8 +2117,18 @@ impl BivariateModel {
             ])
         };
 
+        let mut standardised_warm_start = *warm_start;
+        standardised_warm_start[0] /= standardised.variance_scale[0];
+        standardised_warm_start[1] /= standardised.variance_scale[1];
         let mut best: Option<f64> = None;
         for start in [
+            [
+                standardised_warm_start[0],
+                standardised_warm_start[1],
+                standardised_warm_start[2],
+                standardised_warm_start[3],
+                standardised_warm_start[4],
+            ],
             [1.0f64, 1.0, 0.5, 0.5, 0.0],
             [1.0f64, 1.0, 0.3, 0.3, 0.4],
             [1.0f64, 1.0, 0.7, 0.7, -0.3],
@@ -2191,14 +2209,29 @@ impl BivariateModel {
             control.factr = 0.0;
             control.pgtol = 1e-8;
             control.lmm = 5;
+            let mut candidates = vec![packed.clone()];
             if let Ok(solution) =
-                optim_lbfgsb_with_gradient(packed.clone(), bounds, value_of, gradient_of, control)
-                && let Some(theta) = expand(&solution.par)
-                && let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
-                && at.negative_loglik.is_finite()
-                && best.is_none_or(|b: f64| at.negative_loglik < b)
+                optim_lbfgsb_with_gradient(packed, bounds, &value_of, &gradient_of, control)
             {
-                best = Some(at.negative_loglik);
+                candidates.push(solution.par);
+            }
+            for candidate in candidates {
+                if let Some(theta) = expand(&candidate)
+                    && let Some(at) = self.evaluate(&theta, &standardised.y, reml, false)
+                    && at.negative_loglik.is_finite()
+                {
+                    let gradient = gradient_of(&candidate);
+                    let norm = projected_gradient_norm(
+                        &candidate,
+                        &gradient,
+                        &lower,
+                        &upper,
+                        at.negative_loglik,
+                    );
+                    if norm < TOLERANCE && best.is_none_or(|b: f64| at.negative_loglik < b) {
+                        best = Some(at.negative_loglik);
+                    }
+                }
             }
         }
         best.map(|negative| -negative)
@@ -2211,10 +2244,11 @@ impl BivariateModel {
         reml: bool,
         quantity: Reported,
         value: f64,
+        warm_start: &[f64; PARAMETERS],
     ) -> Option<f64> {
         match quantity.coordinate() {
-            Some(index) => self.profile_objective(y, reml, index, value),
-            None => self.profile_objective_phenotypic(y, reml, value),
+            Some(index) => self.profile_objective(y, reml, index, value, warm_start),
+            None => self.profile_objective_phenotypic(y, reml, value, warm_start),
         }
     }
 
@@ -2239,6 +2273,7 @@ impl BivariateModel {
         quantity: Reported,
     ) -> Result<ProfileInterval, &'static str> {
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "BIVARIATE_FIT_NOT_CONVERGED")?;
         let fitted = match quantity {
             Reported::HeritabilityFirst => fit.h2[0],
             Reported::HeritabilitySecond => fit.h2[1],
@@ -2246,73 +2281,35 @@ impl BivariateModel {
             Reported::ResidualCorrelation => fit.rho_e.ok_or("BIVARIATE_QUANTITY_ABSENT")?,
             Reported::PhenotypicCorrelation => fit.rho_p,
         };
-        // The maximum must be measured in the same coordinates as the profile
-        // points, and it is not enough to take it from the fit: `fit` reports a
-        // log-likelihood in the response's own units while `profile_objective`
-        // works in the trait-standardised ones the optimiser uses. Subtracting
-        // across that gap leaves a large constant in the deviance, which never
-        // falls below the threshold, and both endpoints collapse onto the point
-        // estimate — every interval comes back with zero width.
-        //
-        // Pinning the quantity at its own fitted value and re-optimising the
-        // rest recovers the same maximum by the same route, so the difference is
-        // a deviance and nothing else.
-        let maximum = self
-            .profile_at(y, reml, quantity, fitted)
-            .ok_or("BIVARIATE_PROFILE_MAXIMUM_FAILED")?;
-
-        // Deviance at a value: how much log-likelihood is given up by holding
-        // the quantity there. Infinite where the value cannot be supported.
-        let deviance = |value: f64| -> Option<f64> {
-            self.profile_at(y, reml, quantity, value)
-                .map(|ll| 2.0 * (maximum - ll))
-        };
-
-        // **A profile that could not be evaluated is not a likelihood that fell
-        // away.** Read as an infinite deviance it looked like ground the data
-        // had ruled out, so the bisection stepped inward and the interval came
-        // back narrower than the data support, with nothing to show for it.
-        let mut failures = 0usize;
-        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
-            match deviance(bound) {
-                None => {
-                    *failures += 1;
-                    return (bound, true);
-                }
-                // The threshold is never reached: the endpoint is the bound and
-                // the interval is limited by the parameter space, not the data.
-                Some(value) if value <= CHI2_ONE_DF_95 => return (bound, true),
-                Some(_) => {}
-            }
-            let (mut inside, mut outside) = (fitted, bound);
-            for _ in 0..80 {
-                let middle = 0.5 * (inside + outside);
-                if (outside - inside).abs() <= 1e-9 {
-                    break;
-                }
-                match deviance(middle) {
-                    Some(value) if value <= CHI2_ONE_DF_95 => inside = middle,
-                    Some(_) => outside = middle,
-                    None => {
-                        *failures += 1;
-                        inside = middle;
-                    }
-                }
-            }
-            (0.5 * (inside + outside), false)
-        };
-
+        let warm_start = [
+            fit.total_variance[0],
+            fit.total_variance[1],
+            fit.h2[0],
+            fit.h2[1],
+            fit.rho_g.unwrap_or(0.0),
+            fit.rho_e.unwrap_or(0.0),
+        ];
+        // The fitted value is already a converged constrained optimum: adding
+        // the statement that a reported quantity equals the value it has does
+        // not create a new direction to optimise. This matters at an exact
+        // heritability boundary, where the correlation of the vanished
+        // component is absent and an interior substitution has a singular
+        // derivative. Reuse the converged free maximum there, on the same
+        // standardised response scale as every held profile point.
+        let standardised = self.standardised_problem(y)?;
+        let maximum = fit.loglik + standardised.objective_shift[usize::from(reml)];
         let (bottom, top) = quantity.range();
-        let (lower, lower_limited) = endpoint(bottom, &mut failures);
-        let (upper, upper_limited) = endpoint(top, &mut failures);
-        Ok(ProfileInterval {
-            lower,
-            upper,
-            lower_limited,
-            upper_limited,
-            level: 0.95,
-            profile_failures: failures,
-        })
+        let got = interval::profile_interval(fitted, (bottom, top), |value| {
+            if value == fitted {
+                Some(maximum)
+            } else {
+                self.profile_at(y, reml, quantity, value, &warm_start)
+            }
+        });
+        if got.estimate.is_none() {
+            return Err("BIVARIATE_PROFILE_MAXIMUM_FAILED");
+        }
+        Ok(got)
     }
 }
 
@@ -2375,6 +2372,7 @@ impl BivariateModel {
             return Err("BIVARIATE_NOT_A_CORRELATION");
         }
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "BIVARIATE_FIT_NOT_CONVERGED")?;
         let present = match quantity {
             Reported::GeneticCorrelation => fit.rho_g.is_some(),
             Reported::ResidualCorrelation => fit.rho_e.is_some(),
@@ -2384,10 +2382,16 @@ impl BivariateModel {
         if !present {
             return Err("BIVARIATE_QUANTITY_ABSENT");
         }
-
-        let null_loglik = self
-            .profile_at(y, reml, quantity, null)
-            .ok_or("BIVARIATE_NULL_FIT_FAILED")?;
+        let warm_start = [
+            fit.total_variance[0],
+            fit.total_variance[1],
+            fit.h2[0],
+            fit.h2[1],
+            fit.rho_g.unwrap_or(0.0),
+            fit.rho_e.unwrap_or(0.0),
+        ];
+        let standardised = self.standardised_problem(y)?;
+        let maximum = fit.loglik + standardised.objective_shift[usize::from(reml)];
 
         // Both ends of the difference must be measured the same way. `fit`
         // reports a log-likelihood in the response's own units while
@@ -2404,9 +2408,12 @@ impl BivariateModel {
             _ => Some(fit.rho_p),
         }
         .ok_or("BIVARIATE_QUANTITY_ABSENT")?;
-        let maximum = self
-            .profile_at(y, reml, quantity, fitted)
-            .ok_or("BIVARIATE_MAXIMUM_FAILED")?;
+        let null_loglik = if null == fitted {
+            maximum
+        } else {
+            self.profile_at(y, reml, quantity, null, &warm_start)
+                .ok_or("BIVARIATE_NULL_FIT_FAILED")?
+        };
         let statistic = crate::deviance::deviance(maximum, null_loglik);
 
         let interior = null.abs() < 1.0;

@@ -1,0 +1,109 @@
+{
+  "acceptance": {
+    "maximum_loglik_offset_drift": 1e-08,
+    "maximum_relative_estimate_difference": 1e-06,
+    "maximum_unexplained_loglik_offset": 1e-06
+  },
+  "adapter": {
+    "path": "checks/against_r.py",
+    "sha256": "e6d5052a9966fb39eb9c39de5c4fa8b9ae1ecb57a6bc3e861b6710f4f6a8f72e"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "against_r",
+  "external_outputs": {
+    "cases": [
+      {
+        "beta": [
+          1.9917557697792525,
+          0.25810105362105074,
+          -0.1426471990991213,
+          0.28375276020487017,
+          0.17906678705337706,
+          0.08615662324442272
+        ],
+        "llik": -160.86128553286446,
+        "seed": 101,
+        "sigma_e": 0.6322363566095709,
+        "sigma_k": 0.3573693427874816,
+        "true_h2": 0.5
+      },
+      {
+        "beta": [
+          1.8286888831426282,
+          0.34831884935838936,
+          0.04689437077318717,
+          0.7077916065135547,
+          -0.046884173117371426,
+          -0.4149070214140871
+        ],
+        "llik": -173.37351058307934,
+        "seed": 102,
+        "sigma_e": 0.8546268137916763,
+        "sigma_k": 0.16611130192243945,
+        "true_h2": 0.25
+      },
+      {
+        "beta": [
+          2.0543054187246,
+          0.39412560147627207,
+          -0.004062977038572702,
+          0.2910120779202835,
+          -0.16811025790417816,
+          -0.1365438959213727
+        ],
+        "llik": -130.02893879853633,
+        "seed": 103,
+        "sigma_e": 0.12241612569409449,
+        "sigma_k": 0.9624259742396641,
+        "true_h2": 0.75
+      }
+    ]
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/external_reference_adapter.py",
+      "sha256": "ccce0425c083e314bcb539dce671b252f5b9e7b18ff38f492759d6d517aa29a6"
+    },
+    {
+      "name": "one-trait relationship matrix",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "one-trait fixed-effect design",
+      "sha256": "d91418e8a7201bed97f85f3893e7b702579680b6e69bf6be9dd629ab1253829e"
+    },
+    {
+      "name": "one-trait simulation coefficients",
+      "sha256": "16817b5f9007fcd2d8b1cdb88a8fed9e3c31206f53a9dd0cb1846920c959992a"
+    },
+    {
+      "name": "one-trait simulation cells",
+      "sha256": "b18fb58f9157f81910e84a3d392e57c9b19c4328b50527527a6360aaf9bc6f21"
+    },
+    {
+      "name": "one-trait phenotype h2=0.5 seed=101",
+      "sha256": "74d4f1f85c5f88a840bdfa767f32146424b12d39f2b6fbee345f918917c78d54"
+    },
+    {
+      "name": "one-trait phenotype h2=0.25 seed=102",
+      "sha256": "38468e6c81b1ba1ffaee9d762f41d6579fa5c24e676758a239f1cc9c6fb2a570"
+    },
+    {
+      "name": "one-trait phenotype h2=0.75 seed=103",
+      "sha256": "e732a0b9c343dd12c72a113c1b4a9843ca8f1c16a319100e846e2d3247a78ec5"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "Rscript",
+      "packages": [
+        {
+          "name": "regress",
+          "version": "1.3.22"
+        }
+      ],
+      "version": "4.5.2"
+    }
+  ]
+}

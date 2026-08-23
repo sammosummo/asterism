@@ -167,7 +167,7 @@ pub fn gxe_test(
 /// `correlation`, which uses both.
 #[pyfunction]
 #[pyo3(signature = (relationship, environment, design, y, surface, quantity, first, second=0.0, shape=1.0, reml=true))]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn gxe_interval(
     relationship: PyReadonlyArray2<'_, f64>,
     environment: Vec<f64>,
@@ -179,7 +179,17 @@ pub fn gxe_interval(
     second: f64,
     shape: f64,
     reml: bool,
-) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
+) -> PyResult<(
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    usize,
+    Option<bool>,
+    Option<bool>,
+)> {
     let model = build(&relationship, &environment, &design, surface, shape)?;
     let wanted = match quantity {
         "heritability" => Reported::Heritability { at: first },
@@ -194,11 +204,15 @@ pub fn gxe_interval(
         .profile_interval(&response(&y), reml, wanted)
         .map_err(PyValueError::new_err)?;
     Ok((
-        got.estimate,
+        got.estimate
+            .ok_or_else(|| PyValueError::new_err("GXE_QUANTITY_NOT_HELD_AT_ITS_OWN_ESTIMATE"))?,
         got.lower,
         got.upper,
-        got.lower_at_bound,
-        got.upper_at_bound,
+        got.lower_limited,
+        got.upper_limited,
+        got.level,
         got.profile_failures,
+        got.contains_lower_bound,
+        got.contains_upper_bound,
     ))
 }

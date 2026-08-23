@@ -189,10 +189,7 @@ impl PyLatentMediationCore {
                     .get(index)
                     .cloned()
                     .unwrap_or_default(),
-                ascertainment_category: ascertainment_categories
-                    .get(index)
-                    .copied()
-                    .flatten(),
+                ascertainment_category: ascertainment_categories.get(index).copied().flatten(),
                 latent_mean: latent_means[index].clone(),
                 mediator_measurement: mediator_measurements[index].clone(),
                 mediator_measurement_error_variance: mediator_measurement_error_variances[index]

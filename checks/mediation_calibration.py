@@ -61,8 +61,11 @@ import numpy as np
 from asterism.latent_mediation import simulate
 from scipy import stats
 
-REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "400"))
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+REPLICATES: int = int(os.environ.get("ASTERISM_REPLICATES", "400"))
+"""Set the number of simulations run under each generating truth."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "6"))
+"""Set the number of worker processes used for calibration fits."""
 # **How many draws a simulated reference may rest on.** Where the outcome
 # loading is also on a bound the even mixture is the wrong reference and one is
 # simulated instead, at two more fits per draw. Two hundred is right for a
@@ -70,23 +73,43 @@ WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
 # here and reported with the result. It coarsens the smallest p-value the
 # reference can return -- fifty puts it near 0.02 -- which matters for the 0.01
 # column and is why that column is read with the refusal counts beside it.
-BOOTSTRAP = int(os.environ.get("ASTERISM_BOOTSTRAP", "50"))
-FAMILIES = int(os.environ.get("ASTERISM_FAMILIES", "400"))
-LEVELS = (0.01, 0.05, 0.10)
+BOOTSTRAP: int = int(os.environ.get("ASTERISM_BOOTSTRAP", "50"))
+"""Set the simulated-reference draws used for boundary vertical tests."""
 
-TRUTHS = {
+FAMILIES: int = int(os.environ.get("ASTERISM_FAMILIES", "400"))
+"""Set the sibling-pair count in every calibration replicate."""
+
+LEVELS: tuple[float, ...] = (0.01, 0.05, 0.10)
+"""Selected nominal rejection levels at which calibration is measured."""
+
+TRUTHS: dict[str, dict[str, float]] = {
     "a = 0, b free": {"a": 0.0, "b": 0.4},
     "b = 0, a free": {"a": 0.6, "b": 0.0},
     "both nought": {"a": 0.0, "b": 0.0},
     "real mediation": {"a": 0.6, "b": 0.4},
 }
-FIXED = {"c_prime": 0.2, "d": 0.7, "sigma_m2": 0.5}
-RELATIONSHIP = [[1.0, 0.5], [0.5, 1.0]]
+"""Defined the two null branches, their corner and a mediated alternative."""
+
+FIXED: dict[str, float] = {"c_prime": 0.2, "d": 0.7, "sigma_m2": 0.5}
+"""Held nuisance mediation parameters fixed across generating truths."""
+
+RELATIONSHIP: list[list[float]] = [[1.0, 0.5], [0.5, 1.0]]
+"""Defined the twice-kinship matrix for each full-sibling pair."""
 
 
 def one(job: tuple[str, int]) -> tuple[float | None, str | None]:
+    """Return the vertical-test p-value or stable refusal for one replicate.
+
+    Args:
+        job: Named generating truth and deterministic replicate index.
+
+    Returns:
+        Available p-value paired with no refusal, or the converse.
+    """
     truth, replicate = job
-    drawn = simulate(
+    """Unpacked the generating truth and deterministic replicate index."""
+
+    drawn: list[dict[str, object]] = simulate(
         relationship=RELATIONSHIP,
         **TRUTHS[truth],
         **FIXED,
@@ -97,9 +120,14 @@ def one(job: tuple[str, int]) -> tuple[float | None, str | None]:
         observe_outcome=True,
         ascertainment="population_unconditioned",
     )
+    """Simulated one population-sampled sibling-pair calibration replicate."""
+
     try:
-        return float(asterism.LatentMediationModel(drawn)
-            .test_vertical(bootstrap_replicates=BOOTSTRAP)["p_value"]), None
+        return float(
+            asterism.LatentMediationModel(drawn).test_vertical(
+                bootstrap_replicates=BOOTSTRAP
+            )["p_value"]
+        ), None
     except ValueError as refusal:
         return None, str(refusal).replace("LATENT_MEDIATION_", "")
 
@@ -111,60 +139,113 @@ def main() -> int:
         f"Truth elsewhere: c' {FIXED['c_prime']}, d {FIXED['d']}, "
         f"sigma_m2 {FIXED['sigma_m2']}.\n"
     )
-    jobs = [(truth, replicate) for truth in TRUTHS for replicate in range(REPLICATES)]
-    started = time.perf_counter()
+    jobs: list[tuple[str, int]] = [
+        (truth, replicate) for truth in TRUTHS for replicate in range(REPLICATES)
+    ]
+    """Enumerated every generating truth and replicate combination."""
+
+    started: float = time.perf_counter()
+    """Captured the start of the complete calibration campaign."""
+
     with ProcessPoolExecutor(WORKERS) as pool:
-        answers = list(pool.map(one, jobs, chunksize=1))
-    print(f"{len(jobs):,} fits in {(time.perf_counter() - started) / 60:.0f} minutes.\n")
+        answers: list[tuple[float | None, str | None]] = list(
+            pool.map(one, jobs, chunksize=1)
+        )
+        """Ran every calibration replicate across worker processes."""
+
+    print(
+        f"{len(jobs):,} fits in {(time.perf_counter() - started) / 60:.0f} minutes.\n"
+    )
 
     gathered: dict[str, list[float]] = {truth: [] for truth in TRUTHS}
-    refused: dict[str, Counter] = {truth: Counter() for truth in TRUTHS}
+    """Initialised available p-values indexed by their generating truth."""
+
+    refused: dict[str, Counter[str]] = {truth: Counter() for truth in TRUTHS}
+    """Initialised stable refusal counts indexed by their generating truth."""
+
     for (truth, _), (answer, refusal) in zip(jobs, answers, strict=True):
         if answer is None:
             refused[truth][refusal] += 1
+            """Counted the stable reason this replicate supplied no vertical test."""
+
         else:
             gathered[truth].append(answer)
 
     failures: list[str] = []
-    recorded: dict[str, dict] = {}
-    header = "".join(f"{level:>10g}" for level in LEVELS)
+    """Collected inadequate fit availability and anti-conservative null cells."""
+
+    recorded: dict[str, dict[str, object]] = {}
+    """Initialised the machine-readable evidence record by generating truth."""
+
+    header: str = "".join(f"{level:>10g}" for level in LEVELS)
+    """Rendered aligned column headings for the selected nominal levels."""
+
     print(f"  {'truth':<18}{header}{'of':>7}{'refused':>9}  verdict")
     for truth in TRUTHS:
-        values = np.array(gathered[truth])
-        gone = refused[truth]
+        values: np.ndarray = np.array(gathered[truth])
+        """Collected available p-values under the current generating truth."""
+
+        gone: Counter[str] = refused[truth]
+        """Collected refusal-code frequencies under the same truth."""
+
         if values.size < 0.25 * REPLICATES:
-            worst = gone.most_common(1)[0][0] if gone else "nothing fitted"
+            worst: str = gone.most_common(1)[0][0] if gone else "nothing fitted"
+            """Selected the dominant reason for inadequate test availability."""
+
             failures.append(
                 f"{truth}: only {values.size} of {REPLICATES} fitted, mostly {worst}"
             )
         if values.size == 0:
-            print(f"  {truth:<18}{'--':>30}{0:>7}{sum(gone.values()):>9}  nothing fitted")
+            print(
+                f"  {truth:<18}{'--':>30}{0:>7}{sum(gone.values()):>9}  nothing fitted"
+            )
             continue
-        rates = [float((values < level).mean()) for level in LEVELS]
-        is_null = TRUTHS[truth]["a"] == 0.0 or TRUTHS[truth]["b"] == 0.0
-        verdict = "power"
+        rates: list[float] = [float((values < level).mean()) for level in LEVELS]
+        """Calculated conditional rejection rates at every nominal level."""
+
+        is_null: bool = TRUTHS[truth]["a"] == 0.0 or TRUTHS[truth]["b"] == 0.0
+        """Identified whether the generating paths satisfied the union null."""
+
+        verdict: str = "power"
+        """Initialised the alternative-cell interpretation before null checks."""
+
         if is_null:
-            over = []
+            over: list[str] = []
+            """Initialised descriptions of nominal levels exceeding calibration bounds."""
+
             for level, rate in zip(LEVELS, rates, strict=True):
-                ceiling = level + 1.96 * np.sqrt(level * (1 - level) / values.size)
+                ceiling: float = float(
+                    level + 1.96 * np.sqrt(level * (1 - level) / values.size)
+                )
+                """Calculated the upper 95 per cent binomial calibration bound."""
+
                 if rate > ceiling:
                     over.append(f"{rate:.3f} at {level:g} where at most {ceiling:.3f}")
             if over:
                 verdict = "OVER"
+                """Marked a null truth as anti-conservative at one or more levels."""
+
                 failures.append(f"{truth} rejects " + "; ".join(over))
             else:
                 # An intersection-union test is meant to be conservative, and
                 # saying which it is matters: conservative costs power, over
                 # costs correctness.
                 verdict = "level" if rates[1] > 0.5 * LEVELS[1] else "conservative"
+                """Distinguished approximately level from deliberately conservative tests."""
+
         recorded[truth] = {
             "rejected": dict(zip([str(level) for level in LEVELS], rates, strict=True)),
             "fitted": int(values.size),
             "refused": dict(gone),
             "judged_as": "level" if is_null else "power",
         }
+        """Recorded rejection, availability and interpretation under this truth."""
+
         if is_null:
-            recorded[truth]["uniform_ks_p"] = float(stats.kstest(values, "uniform").pvalue)
+            recorded[truth]["uniform_ks_p"] = float(
+                stats.kstest(values, "uniform").pvalue
+            )
+            """Recorded a descriptive uniformity test for available null p-values."""
         print(
             f"  {truth:<18}"
             + "".join(f"{rate:>10.3f}" for rate in rates)

@@ -33,12 +33,12 @@ pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel}
 pub use components::{ComponentFit, ComponentModel};
 pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
+pub use interval::Interval;
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};
 pub use latent_mediation::{
-    HorizontalSet, VerticalSet,
-    HorizontalTest, LatentMediationDesign, LatentMediationEvaluation,
+    HorizontalSet, HorizontalTest, LatentMediationDesign, LatentMediationEvaluation,
     LatentMediationFamilyEvaluation, LatentMediationFamilyInput, LatentMediationFit,
-    LatentMediationModel, LatentMediationParameters, VerticalTest,
+    LatentMediationModel, LatentMediationParameters, VerticalSet, VerticalTest,
     simulate as simulate_latent_mediation,
 };
 pub use liability::{LiabilityFit, LiabilityModel};
@@ -46,11 +46,11 @@ pub use mixed_bivariate::{
     GENETIC_CORRELATION, HERITABILITY_ONE, HERITABILITY_TWO, MixedBivariateFit,
     MixedBivariateInterval, MixedBivariateModel, RESIDUAL_CORRELATION, TraitData, TraitKind,
 };
-pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
-pub use prepared::{Boundary, Fit, Interval, LikelihoodRatioTest, PreparedModel};
+pub use prepared::{Boundary, Fit, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
+pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
 
 #[cfg(feature = "python")]
@@ -89,6 +89,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(pyo3::wrap_pyfunction!(components::component_fit, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         components::component_interval,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        components::component_mean_diagonal_interval,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(components::component_test, module)?)?;
@@ -177,6 +181,17 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         bivariate::bivariate_correlation_test,
         module
     )?)?;
-    module.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    module.add("__release_manifest__", include_str!("../release.toml"))?;
+    module.add("__cargo_lock__", include_str!("../Cargo.lock"))?;
+    module.add("__uv_lock__", include_str!("../uv.lock"))?;
+    module.add(
+        "__release_manifest_sha256__",
+        env!("ASTERISM_RELEASE_MANIFEST_SHA256"),
+    )?;
+    module.add("__cargo_lock_sha256__", env!("ASTERISM_CARGO_LOCK_SHA256"))?;
+    module.add("__uv_lock_sha256__", env!("ASTERISM_UV_LOCK_SHA256"))?;
+    module.add("__source_commit__", env!("ASTERISM_SOURCE_COMMIT"))?;
+    module.add("__source_dirty__", env!("ASTERISM_SOURCE_DIRTY") == "true")?;
+    module.add("__version__", env!("ASTERISM_PUBLIC_VERSION"))?;
     Ok(())
 }

@@ -36,79 +36,131 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import asterism
 import numpy as np
 from scipy.stats import beta
 
-PAIRS = 300
-TRUE_VARIANCE = 4.0
-TRUE_MEAN = 10.0
-REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "300"))
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "12"))
-NOMINAL = 0.95
+PAIRS: int = 300
+"""Number of independent sibling pairs in every coverage replicate."""
+
+TRUE_VARIANCE: float = 4.0
+"""Generating complete-trait variance."""
+
+TRUE_MEAN: float = 10.0
+"""Generating complete-trait mean before censoring."""
+
+REPLICATES: int = int(os.environ.get("ASTERISM_REPLICATES", "300"))
+"""Default replicates retained for non-release exploratory runs."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "12"))
+"""Default process count retained for non-release exploratory runs."""
+
+NOMINAL: float = 0.95
+"""Profile-interval coverage level used by the fixed acceptance rule."""
+
 # The cells: a heritability worth finding, one at the boundary, and censoring
-# from none to the half where the real audiometry stops working.
-HERITABILITIES = [0.0, 0.3, 0.5]
-RATES = [0.0, 0.25, 0.50]
+# from none through the two observed high-frequency audiogram censoring levels.
+HERITABILITIES: list[float] = [0.0, 0.3, 0.5]
+"""Boundary and interior generating heritabilities scored in every rate cell."""
+
+RATES: list[float] = [0.0, 0.25, 0.50, 0.52, 0.75]
+"""Exploratory and exact high-frequency censoring shares available to argv."""
 
 
-def draw(heritability: float, rate: float, replicate: int):
+def draw(
+    heritability: float, rate: float, replicate: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """Draw one fixed sibling-pair response and censoring cell."""
     # **The heritability belongs in the seed.** Without it, cells at the
     # same censoring rate are fitted to the same random draws, so two of
     # them agreeing is one observation rather than two -- and a first run
     # of this check read exactly that as corroboration.
-    rng = np.random.default_rng(
+    rng: np.random.Generator = np.random.default_rng(
         910_000 + 7919 * replicate + int(1000 * rate) + int(1_000_000 * heritability)
     )
-    n = 2 * PAIRS
-    shared = rng.normal(size=PAIRS) * np.sqrt(heritability / 2.0)
-    own = rng.normal(size=n) * np.sqrt(1.0 - heritability / 2.0)
-    complete = TRUE_MEAN + np.sqrt(TRUE_VARIANCE) * (np.repeat(shared, 2) + own)
-    relationship = np.eye(n)
+    """Created a disjoint deterministic random stream for the scientific cell."""
+
+    people: int = 2 * PAIRS
+    """Counted rows in the fixed sibling-pair roster."""
+
+    shared: np.ndarray = rng.normal(size=PAIRS) * np.sqrt(heritability / 2.0)
+    """Drew shared pair-level genetic effects."""
+
+    own: np.ndarray = rng.normal(size=people) * np.sqrt(1.0 - heritability / 2.0)
+    """Drew independent remaining genetic and residual variation."""
+
+    complete: np.ndarray = TRUE_MEAN + np.sqrt(TRUE_VARIANCE) * (
+        np.repeat(shared, 2) + own
+    )
+    """Constructed complete observations before applying the instrument limit."""
+
+    relationship: np.ndarray = np.eye(people)
+    """Started from independent unit marginal additive covariance."""
+
     for pair in range(PAIRS):
         relationship[2 * pair, 2 * pair + 1] = 0.5
+        """Recorded the first directed sibling relationship entry."""
+
         relationship[2 * pair + 1, 2 * pair] = 0.5
+        """Completed the symmetric sibling relationship entry."""
+
     if rate <= 0.0:
-        return relationship, complete, np.zeros(n, dtype=bool), 0.0
-    limit = float(np.quantile(complete, 1.0 - rate))
+        return relationship, complete, np.zeros(people, dtype=bool), 0.0
+    limit: float = float(np.quantile(complete, 1.0 - rate))
+    """Selected the realized quantile yielding the configured censoring share."""
+
     return relationship, complete, complete >= limit, limit
 
 
-def one(job):
+def one(job: tuple[float, float, int]) -> dict[str, Any]:
+    """Fit and score one interval without dropping refusals."""
     heritability, rate, replicate = job
+    """Named the fixed scientific cell and deterministic replicate."""
+
     relationship, complete, censored, limit = draw(heritability, rate, replicate)
-    n = complete.size
+    """Generated one complete response and its observed censoring mask."""
+
+    people: int = complete.size
+    """Counted observations supplied to the public interval function."""
+
     try:
-        got = asterism.tobit_interval(
+        got: dict[str, Any] = asterism.tobit_interval(
             relationship,
             np.where(censored, np.nan, complete),
             np.where(censored, 1, 0).astype(np.int64),
-            np.full(n, limit),
-            np.ones((n, 1)),
+            np.full(people, limit),
+            np.ones((people, 1)),
         )
+        """Profiled the reportable interval through the documented public API."""
     except ValueError as refusal:
-        return {"heritability": heritability, "rate": rate,
-                "refusal": str(refusal).replace("TOBIT_", "")}
+        return {
+            "heritability": heritability,
+            "rate": rate,
+            "refusal": str(refusal).replace("TOBIT_", ""),
+        }
     return {
-        "heritability": heritability, "rate": rate,
+        "heritability": heritability,
+        "rate": rate,
         "covered": covers(got, heritability),
         "width": got["upper"] - got["lower"],
-        "lower_at_bound": got["lower_at_bound"],
-        "upper_at_bound": got["upper_at_bound"],
+        "lower_limited": got["lower_limited"],
+        "upper_limited": got["upper_limited"],
         "contains_lower_bound": got["contains_lower_bound"],
         "contains_upper_bound": got["contains_upper_bound"],
         "profile_failures": got["profile_failures"],
     }
 
 
-def covers(got: dict, truth: float) -> bool:
+def covers(got: dict[str, Any], truth: float) -> bool:
     """Does the interval contain the truth, by ADR 0004's rule?
 
     Inside the two ends is containment and outside them is not, as anywhere
@@ -128,57 +180,145 @@ def covers(got: dict, truth: float) -> bool:
 
 
 def clopper_pearson(hits: int, n: int) -> tuple[float, float]:
-    low = beta.ppf(0.025, hits, n - hits + 1) if hits else 0.0
-    high = beta.ppf(0.975, hits + 1, n - hits) if hits < n else 1.0
+    """Return the exact two-sided 95% binomial interval."""
+    low: float = float(beta.ppf(0.025, hits, n - hits + 1)) if hits else 0.0
+    """Computed the exact lower Monte Carlo confidence limit."""
+
+    high: float = float(beta.ppf(0.975, hits + 1, n - hits)) if hits < n else 1.0
+    """Computed the exact upper Monte Carlo confidence limit."""
+
     return float(low), float(high)
 
 
-def main() -> int:
-    print(f"{PAIRS} sibling pairs, {REPLICATES} replicates per cell, "
-          f"nominal {NOMINAL}")
-    print(f"true variance {TRUE_VARIANCE}, heritabilities {HERITABILITIES}, "
-          f"censoring {[f'{r:.0%}' for r in RATES]}\n", flush=True)
+def parse_arguments() -> argparse.Namespace:
+    """Read exact coverage cells without changing their acceptance rule."""
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
+    """Built the explicit cell, replicate, worker, and output command contract."""
 
-    jobs = [(h, r, k) for h in HERITABILITIES for r in RATES
-            for k in range(REPLICATES)]
-    rows = []
-    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
+    parser.add_argument(
+        "--rate",
+        action="append",
+        type=float,
+        choices=RATES,
+        dest="rates",
+        help="run one configured censoring share; repeat for multiple cells",
+    )
+    parser.add_argument(
+        "--no-write",
+        action="store_true",
+        help="print evidence only, leaving the fixed release checkout unchanged",
+    )
+    parser.add_argument("--replicates", type=int, default=REPLICATES)
+    parser.add_argument("--workers", type=int, default=WORKERS)
+    arguments: argparse.Namespace = parser.parse_args()
+    """Read exact release counts before any process workers start."""
+
+    if arguments.replicates < 1 or arguments.workers < 1:
+        parser.error("--replicates and --workers must be positive")
+    return arguments
+
+
+def main() -> int:
+    arguments: argparse.Namespace = parse_arguments()
+    """Selected either the complete configured grid or exact requested cells."""
+
+    rates: list[float] = RATES if arguments.rates is None else arguments.rates
+    """Retained request order so the evidence command determines its exact cells."""
+
+    print(
+        f"{PAIRS} sibling pairs, {arguments.replicates} replicates per cell, "
+        f"nominal {NOMINAL}"
+    )
+    print(
+        f"true variance {TRUE_VARIANCE}, heritabilities {HERITABILITIES}, "
+        f"censoring {[f'{r:.0%}' for r in rates]}\n",
+        flush=True,
+    )
+
+    jobs: list[tuple[float, float, int]] = [
+        (heritability, rate, replicate)
+        for heritability in HERITABILITIES
+        for rate in rates
+        for replicate in range(arguments.replicates)
+    ]
+    """Enumerated every exact cell before starting parallel execution."""
+
+    rows: list[dict[str, Any]] = []
+    """Reserved every replicate result, including explicit refusals."""
+
+    with ProcessPoolExecutor(max_workers=arguments.workers) as pool:
         for got in pool.map(one, jobs, chunksize=2):
             rows.append(got)
             if len(rows) % 100 == 0:
                 print(f"  {len(rows)}/{len(jobs)}", flush=True)
 
-    print(f"\n{'h2':>5} | {'censored':>8} | {'refused':>9} | "
-          f"{'coverage':>19} | {'width':>7} | verdict")
+    print(
+        f"\n{'h2':>5} | {'censored':>8} | {'refused':>9} | "
+        f"{'coverage':>19} | {'width':>7} | verdict"
+    )
     print("-" * 74)
-    report, failures = {}, []
+    report: dict[str, Any] = {}
+    """Collected per-cell quantities needed to audit the pass decision."""
+
+    failures: list[str] = []
+    """Collected every coverage cell excluding the prewritten nominal level."""
+
     for heritability in HERITABILITIES:
-        for rate in RATES:
-            here = [r for r in rows
-                    if r["heritability"] == heritability and r["rate"] == rate]
-            refused = [r for r in here if "refusal" in r]
+        for rate in rates:
+            here: list[dict[str, Any]] = [
+                r
+                for r in rows
+                if r["heritability"] == heritability and r["rate"] == rate
+            ]
+            """Selected every attempted replicate in this exact scientific cell."""
+
+            refused: list[dict[str, Any]] = [r for r in here if "refusal" in r]
+            """Retained failures in the denominator rather than silently dropping them."""
+
             # Every replicate is scored: one that could not be computed never
             # covers, so it stays in the denominator.
-            hits = sum(1 for r in here if r.get("covered"))
+            hits: int = sum(1 for r in here if r.get("covered"))
+            """Counted only explicit containment decisions as coverage."""
+
             low, high = clopper_pearson(hits, len(here))
-            width = np.mean([r["width"] for r in here if "width" in r]) \
-                if len(here) > len(refused) else float("nan")
+            """Quantified Monte Carlo uncertainty without a visual tolerance."""
+
+            width: float = float(
+                np.mean([r["width"] for r in here if "width" in r])
+                if len(here) > len(refused)
+                else float("nan")
+            )
+            """Summarized interval precision among successfully computed profiles."""
+
             # Two-sided everywhere, including at nought. Over-covering is a
             # fault of the recipe as much as under-covering is, and the whole
             # point of the mixture is that the boundary cell no longer needs
             # an allowance.
-            at_boundary = heritability <= 0.0
-            ok = low <= NOMINAL <= high
-            print(f"{heritability:>5.2f} | {rate:>7.0%} | "
-                  f"{len(refused):>3}/{len(here):<5} | "
-                  f"{hits / len(here):>6.3f} [{low:.3f},{high:.3f}] | "
-                  f"{width:>7.3f} | {'ok' if ok else 'OFF NOMINAL'}", flush=True)
+            at_boundary: bool = heritability <= 0.0
+            """Recorded whether the generating truth uses boundary containment rules."""
+
+            ok: bool = low <= NOMINAL <= high
+            """Applied the fixed two-sided exact-binomial acceptance criterion."""
+
+            print(
+                f"{heritability:>5.2f} | {rate:>7.0%} | "
+                f"{len(refused):>3}/{len(here):<5} | "
+                f"{hits / len(here):>6.3f} [{low:.3f},{high:.3f}] | "
+                f"{width:>7.3f} | {'ok' if ok else 'OFF NOMINAL'}",
+                flush=True,
+            )
             report[f"h2={heritability} censored={rate}"] = {
-                "replicates": len(here), "refused": len(refused),
-                "covered": hits, "coverage": hits / len(here),
-                "clopper_pearson": [low, high], "mean_width": float(width),
-                "within_nominal": ok, "at_boundary": at_boundary,
+                "replicates": len(here),
+                "refused": len(refused),
+                "covered": hits,
+                "coverage": hits / len(here),
+                "clopper_pearson": [low, high],
+                "mean_width": float(width),
+                "within_nominal": ok,
+                "at_boundary": at_boundary,
             }
+            """Retained enough facts to independently recompute this verdict."""
+
             if not ok:
                 failures.append(
                     f"at h2 {heritability} and {rate:.0%} censored, coverage "
@@ -186,17 +326,31 @@ def main() -> int:
                     f"the nominal {NOMINAL}"
                 )
 
-    receipt = {
+    receipt: dict[str, Any] = {
         "what": "coverage of the censored model's profile interval",
         "date": date.today().isoformat(),
-        "pairs": PAIRS, "replicates": REPLICATES, "nominal": NOMINAL,
+        "pairs": PAIRS,
+        "replicates": arguments.replicates,
+        "workers": arguments.workers,
+        "nominal": NOMINAL,
         "true_variance": TRUE_VARIANCE,
-        "cells": report, "passed": not failures, "failures": failures,
+        "censoring_shares": rates,
+        "cells": report,
+        "passed": not failures,
+        "failures": failures,
     }
-    out = Path(__file__).resolve().parent.parent / "evidence" / (
-        f"tobit-coverage-{receipt['date']}.json")
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
+    """Built the complete exact-cell scientific evidence record."""
+
+    out: Path = (
+        Path(__file__).resolve().parent.parent
+        / "evidence"
+        / (f"tobit-coverage-{receipt['date']}.json")
+    )
+    """Selected the optional exploratory evidence path outside release mode."""
+    if not arguments.no_write:
+        out.write_text(json.dumps(receipt, indent=2) + "\n")
+        print(f"\nwritten to {out}")
+    print(json.dumps(receipt, indent=2))
     if failures:
         print("\nFAILED:")
         for failure in failures:

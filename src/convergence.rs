@@ -56,6 +56,18 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 /// A fit is converged when its scaled projected gradient is below this.
 pub(crate) const TOLERANCE: f64 = 1e-6;
 
+/// Require a fit that will feed an inferential or predictive result to have
+/// passed the shared convergence rule.
+///
+/// Fit records themselves remain available when this fails: they are useful
+/// diagnostics. What this gate prevents is turning such a diagnostic candidate
+/// into a test, interval, or prediction. The caller supplies its family- and
+/// stage-specific stable refusal code so the public API says which required fit
+/// failed.
+pub(crate) fn require(converged: bool, refusal: &'static str) -> Result<(), &'static str> {
+    if converged { Ok(()) } else { Err(refusal) }
+}
+
 /// How much further [`polish`] may search. It never runs where the gradient
 /// test already passes, so this is spent only on fits that would otherwise be
 /// reported as failures.
@@ -153,4 +165,20 @@ where
         stop_code: again.convergence,
         stop_message: again.message,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require;
+
+    /// Diagnostic candidates remain diagnostic: the common gate never lets a
+    /// false convergence verdict feed a reportable calculation.
+    #[test]
+    fn required_fits_must_have_converged() {
+        assert_eq!(require(true, "FAMILY_FIT_NOT_CONVERGED"), Ok(()));
+        assert_eq!(
+            require(false, "FAMILY_FIT_NOT_CONVERGED"),
+            Err("FAMILY_FIT_NOT_CONVERGED")
+        );
+    }
 }

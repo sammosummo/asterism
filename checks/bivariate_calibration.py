@@ -41,66 +41,161 @@ from __future__ import annotations
 import json
 import sys
 import time
+from typing import Any
 
+import asterism
 import numpy as np
-from asterism import _core
 from scipy import stats
 
-FAMILIES, PER_FAMILY = 30, 6
-INTERVAL_REPLICATES = 300
-TEST_REPLICATES = 400
-LEVELS = (0.01, 0.05, 0.10)
+FAMILIES: int = 30
+"""Fixed the number of independent simulated families."""
 
-TRUTH = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
-QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
+PER_FAMILY: int = 6
+"""Fixed the number of people within each simulated family."""
+
+INTERVAL_REPLICATES: int = 300
+"""Fixed the number of replicates used to measure interval coverage."""
+
+TEST_REPLICATES: int = 400
+"""Fixed the number of replicates used to measure test calibration."""
+
+LEVELS: tuple[float, ...] = (0.01, 0.05, 0.10)
+"""Fixed the nominal rejection levels checked by the calibration."""
+
+TRUTH: dict[str, float] = {"h1": 0.6, "h2": 0.35, "rg": 0.55, "re": 0.25}
+"""Set the generating heritabilities and component correlations."""
+
+QUANTITIES: tuple[str, ...] = (
+    "h2_first",
+    "h2_second",
+    "rho_g",
+    "rho_e",
+    "rho_p",
+)
+"""Named every bivariate quantity whose interval coverage is measured."""
 
 
 def phenotypic(h1: float, h2: float, rg: float, re_: float) -> float:
-    """The phenotypic correlation the other four imply. The total variances
-    cancel, so this is the whole of it."""
+    """Return the phenotypic correlation implied by component quantities.
+
+    Args:
+        h1: First-trait heritability.
+        h2: Second-trait heritability.
+        rg: Genetic correlation.
+        re_: Residual correlation.
+
+    Returns:
+        The phenotypic correlation when both total variances cancel.
+    """
     return rg * np.sqrt(h1 * h2) + re_ * np.sqrt((1 - h1) * (1 - h2))
 
 
 def relationship() -> np.ndarray:
-    """Unrelated families of six, everybody within a family a half relative."""
-    n = FAMILIES * PER_FAMILY
-    k = np.zeros((n, n))
+    """Build unrelated families whose members are all half relatives.
+
+    Returns:
+        The block-diagonal additive relationship matrix.
+    """
+    n: int = FAMILIES * PER_FAMILY
+    """Computed the simulated roster size from family counts."""
+
+    k: np.ndarray = np.zeros((n, n))
+    """Initialised the block-diagonal additive relationship matrix."""
+
     for family in range(FAMILIES):
-        block = slice(family * PER_FAMILY, (family + 1) * PER_FAMILY)
+        block: slice = slice(family * PER_FAMILY, (family + 1) * PER_FAMILY)
+        """Located the roster rows belonging to one simulated family."""
+
         k[block, block] = 0.5
+        """Set all within-family off-diagonal relationships to one half."""
     np.fill_diagonal(k, 1.0)
     return k
 
 
 def factor(k: np.ndarray, h1: float, h2: float, rg: float, re_: float) -> np.ndarray:
-    genetic = np.array([[h1, rg * np.sqrt(h1 * h2)], [rg * np.sqrt(h1 * h2), h2]])
-    residual = np.array(
+    """Factor the stacked two-trait covariance for deterministic simulation.
+
+    Args:
+        k: Additive relationship matrix.
+        h1: First-trait heritability.
+        h2: Second-trait heritability.
+        rg: Genetic correlation.
+        re_: Residual correlation.
+
+    Returns:
+        Lower Cholesky factor of the interleaved full covariance.
+    """
+    genetic: np.ndarray = np.array(
+        [[h1, rg * np.sqrt(h1 * h2)], [rg * np.sqrt(h1 * h2), h2]]
+    )
+    """Constructed the two-trait additive covariance at unit total variances."""
+
+    residual: np.ndarray = np.array(
         [
             [1 - h1, re_ * np.sqrt((1 - h1) * (1 - h2))],
             [re_ * np.sqrt((1 - h1) * (1 - h2)), 1 - h2],
         ]
     )
-    n = k.shape[0]
-    full = np.kron(genetic, k) + np.kron(residual, np.eye(n))
+    """Constructed the two-trait residual covariance at unit total variances."""
+
+    n: int = k.shape[0]
+    """Read the participant count from the relationship matrix."""
+
+    full: np.ndarray = np.kron(genetic, k) + np.kron(residual, np.eye(n))
+    """Combined additive and residual terms into the stacked full covariance."""
     return np.linalg.cholesky(full + 1e-9 * np.eye(2 * n))
 
 
 def draw(chol: np.ndarray, n: int, seed: int) -> np.ndarray:
-    """One data set, interleaved as Asterism wants: person by person, trait
-    within person."""
-    z = chol @ np.random.default_rng(seed).standard_normal(2 * n)
-    values = np.empty(2 * n)
+    """Draw one data set in Asterism's person-then-trait order.
+
+    Args:
+        chol: Lower factor of the stacked two-trait covariance.
+        n: Number of simulated people.
+        seed: Deterministic random seed for this replicate.
+
+    Returns:
+        An interleaved two-trait response vector.
+    """
+    z: np.ndarray = chol @ np.random.default_rng(seed).standard_normal(2 * n)
+    """Drew the two stacked traits from their joint covariance."""
+
+    values: np.ndarray = np.empty(2 * n)
+    """Initialised the interleaved response vector expected by Asterism."""
+
     values[0::2] = z[:n]
+    """Placed first-trait values in the even response positions."""
+
     values[1::2] = z[n:]
+    """Placed second-trait values in the odd response positions."""
     return values
 
 
-def coverage(k: np.ndarray) -> dict:
-    n = k.shape[0]
-    chol = factor(k, TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"])
-    design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
-    observed = [[True, True]] * n
-    true_value = dict(
+def coverage(k: np.ndarray) -> dict[str, Any]:
+    """Measure coverage for every reportable bivariate interval.
+
+    Args:
+        k: Additive relationship matrix for the simulation design.
+
+    Returns:
+        Per-quantity attempt and containment counts plus generating truths.
+    """
+    n: int = k.shape[0]
+    """Read the participant count from the relationship matrix."""
+
+    chol: np.ndarray = factor(k, TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"])
+    """Factorised the covariance under the interval-generating truth."""
+
+    design: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
+    """Constructed separate intercept columns for the two traits."""
+
+    observed: list[list[bool]] = [[True, True]] * n
+    """Marked both traits observed for every simulated person."""
+
+    model: asterism.BivariateModel = asterism.BivariateModel(k, observed, design)
+    """Built the public bivariate model reused across all interval replicates."""
+
+    true_value: dict[str, float] = dict(
         zip(
             QUANTITIES,
             (
@@ -109,42 +204,58 @@ def coverage(k: np.ndarray) -> dict:
                 TRUTH["rg"],
                 TRUTH["re"],
                 phenotypic(TRUTH["h1"], TRUTH["h2"], TRUTH["rg"], TRUTH["re"]),
-            ), strict=True,
+            ),
+            strict=True,
         )
     )
+    """Mapped every interval quantity to the exact value used to generate data."""
 
-    contained = dict.fromkeys(QUANTITIES, 0)
+    contained: dict[str, int] = dict.fromkeys(QUANTITIES, 0)
+    """Initialised interval-containment counts for every reported quantity."""
+
     # Each quantity is counted over the replicates where *its own* interval was
     # computed. Sharing one denominator across all four is wrong: a replicate
     # that fails on the third interval has already contributed to the first two,
     # so their numerators advance while the shared denominator does not, and the
     # ratio can exceed one. It did -- 1.040 -- which is how this was found.
-    attempted = dict.fromkeys(QUANTITIES, 0)
-    complete = 0
-    started = time.perf_counter()
+    attempted: dict[str, int] = dict.fromkeys(QUANTITIES, 0)
+    """Initialised successful interval-attempt counts by quantity."""
+
+    complete: int = 0
+    """Initialised the number of replicates producing every interval."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement before the simulation loop."""
+
     for replicate in range(INTERVAL_REPLICATES):
-        y = draw(chol, n, 20000 + replicate)
-        whole = True
+        y: np.ndarray = draw(chol, n, 20000 + replicate)
+        """Drew one deterministic response under the interval-generating truth."""
+
+        whole: bool = True
+        """Assumed every interval complete until a profile fit refused."""
+
         for quantity in QUANTITIES:
             try:
-                interval = _core.bivariate_interval(
-                    k, observed, design, y, quantity, True
-                )
+                interval: dict[str, Any] = model.interval(y, quantity, reml=True)
+                """Computed the named public interval for this quantity."""
             except ValueError:
                 # An interval that will not compute does not contribute to the
                 # measured coverage. It is counted out rather than as a miss.
                 whole = False
+                """Marked the replicate incomplete after an interval refusal."""
                 continue
-            lower, upper, _, _, _, _ = interval
             attempted[quantity] += 1
-            if lower <= true_value[quantity] <= upper:
+            """Counted this quantity's successfully computed interval."""
+
+            if interval["lower"] <= true_value[quantity] <= interval["upper"]:
                 contained[quantity] += 1
+                """Counted an interval containing its generating quantity."""
         if whole:
             complete += 1
+            """Counted a replicate that produced every required interval."""
         if (replicate + 1) % 50 == 0:
             print(
-                f"  {replicate + 1} replicates, "
-                f"{time.perf_counter() - started:.0f}s",
+                f"  {replicate + 1} replicates, {time.perf_counter() - started:.0f}s",
                 flush=True,
             )
     return {
@@ -155,42 +266,58 @@ def coverage(k: np.ndarray) -> dict:
     }
 
 
-def calibration(k: np.ndarray) -> dict:
-    n = k.shape[0]
+def calibration(k: np.ndarray) -> dict[str, list[float]]:
+    """Measure the genetic-correlation test under an interior null.
+
+    Args:
+        k: Additive relationship matrix for the simulation design.
+
+    Returns:
+        P-values from every completed genetic-correlation test.
+    """
+    n: int = k.shape[0]
+    """Read the participant count from the relationship matrix."""
+
     # The null is true: no genetic correlation at all. The residual correlation
     # is left non-zero so that the two traits are still related, which is the
     # case a test could most easily mistake for a genetic one.
-    chol = factor(k, TRUTH["h1"], TRUTH["h2"], 0.0, TRUTH["re"])
-    design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
-    observed = [[True, True]] * n
+    chol: np.ndarray = factor(k, TRUTH["h1"], TRUTH["h2"], 0.0, TRUTH["re"])
+    """Factorised the covariance under a true zero genetic correlation."""
 
-    p_values = []
-    started = time.perf_counter()
+    design: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
+    """Constructed separate intercept columns for the two traits."""
+
+    observed: list[list[bool]] = [[True, True]] * n
+    """Marked both traits observed for every simulated person."""
+
+    model: asterism.BivariateModel = asterism.BivariateModel(k, observed, design)
+    """Built the public bivariate model reused across null replicates."""
+
+    p_values: list[float] = []
+    """Initialised p-values returned by completed interior-null tests."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement before the simulation loop."""
+
     for replicate in range(TEST_REPLICATES):
-        y = draw(chol, n, 70000 + replicate)
-        # **Unpacked outside the `try`.** A tuple of the wrong length raises
-        # `ValueError`, which is also what the Rust layer raises for a fit that
-        # could not be made, so catching around the unpacking hid a changed
-        # return arity as four hundred failed replicates -- and the calibration
-        # reported nothing at all rather than reporting a fault.
+        y: np.ndarray = draw(chol, n, 70000 + replicate)
+        """Drew one deterministic response under the interior null."""
+
         try:
-            outcome = _core.bivariate_correlation_test(
-                k, observed, design, y, "rho_g", 0.0, True
-            )
+            outcome: dict[str, Any] = model.test(y, "rho_g", 0.0, reml=True)
+            """Tested the interior genetic-correlation null through named fields."""
         except ValueError:
             continue
-        _, p_value, _, _, _ = outcome
-        p_values.append(p_value)
+        p_values.append(outcome["p_value"])
         if (replicate + 1) % 100 == 0:
             print(
-                f"  {replicate + 1} replicates, "
-                f"{time.perf_counter() - started:.0f}s",
+                f"  {replicate + 1} replicates, {time.perf_counter() - started:.0f}s",
                 flush=True,
             )
     return {"p_values": p_values}
 
 
-def boundary(k: np.ndarray) -> dict:
+def boundary(k: np.ndarray) -> dict[str, Any]:
     """The other branch of the test: a null sitting on a bound.
 
     Against zero the correlation is interior and a plain chi-squared applies.
@@ -205,41 +332,59 @@ def boundary(k: np.ndarray) -> dict:
     rejected six times in ten at a nominal one in a hundred, which would have
     called two traits genetically distinct in most samples where they were
     genetically identical.
-    """
-    n = k.shape[0]
-    chol = factor(k, TRUTH["h1"], TRUTH["h2"], 1.0, TRUTH["re"])
-    design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
-    observed = [[True, True]] * n
 
-    p_values, at_zero = [], 0
-    started = time.perf_counter()
+    Args:
+        k: Additive relationship matrix for the simulation design.
+
+    Returns:
+        Completed-test p-values and the number of zero likelihood-ratio statistics.
+    """
+    n: int = k.shape[0]
+    """Read the participant count from the relationship matrix."""
+
+    chol: np.ndarray = factor(k, TRUTH["h1"], TRUTH["h2"], 1.0, TRUTH["re"])
+    """Factorised the singular genetic covariance at correlation one."""
+
+    design: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
+    """Constructed separate intercept columns for the two traits."""
+
+    observed: list[list[bool]] = [[True, True]] * n
+    """Marked both traits observed for every simulated person."""
+
+    model: asterism.BivariateModel = asterism.BivariateModel(k, observed, design)
+    """Built the public bivariate model reused across boundary replicates."""
+
+    p_values: list[float] = []
+    """Initialised p-values returned by completed boundary-null tests."""
+
+    at_zero: int = 0
+    """Initialised the count of zero likelihood-ratio statistics."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement before the simulation loop."""
+
     for replicate in range(TEST_REPLICATES):
-        y = draw(chol, n, 90000 + replicate)
-        # **Unpacked outside the `try`.** A tuple of the wrong length raises
-        # `ValueError`, which is also what the Rust layer raises for a fit that
-        # could not be made, so catching around the unpacking hid a changed
-        # return arity as four hundred failed replicates -- and the calibration
-        # reported nothing at all rather than reporting a fault.
+        y: np.ndarray = draw(chol, n, 90000 + replicate)
+        """Drew one deterministic response under the correlation-one null."""
+
         try:
-            outcome = _core.bivariate_correlation_test(
-                k, observed, design, y, "rho_g", 1.0, True
-            )
+            outcome: dict[str, Any] = model.test(y, "rho_g", 1.0, reml=True)
+            """Tested the boundary genetic-correlation null through named fields."""
         except ValueError:
             continue
-        statistic, p_value, _, _, _ = outcome
-        p_values.append(p_value)
-        if statistic <= 0.0:
+        p_values.append(outcome["p_value"])
+        if outcome["statistic"] <= 0.0:
             at_zero += 1
+            """Counted a likelihood-ratio statistic in the boundary atom."""
         if (replicate + 1) % 100 == 0:
             print(
-                f"  {replicate + 1} replicates, "
-                f"{time.perf_counter() - started:.0f}s",
+                f"  {replicate + 1} replicates, {time.perf_counter() - started:.0f}s",
                 flush=True,
             )
     return {"p_values": p_values, "at_zero": at_zero}
 
 
-def phenotypic_null(k: np.ndarray) -> dict:
+def phenotypic_null(k: np.ndarray) -> dict[str, Any]:
     """The test of the derived correlation against zero, under a hard null.
 
     A phenotypic correlation of nought could come from both components being
@@ -248,47 +393,73 @@ def phenotypic_null(k: np.ndarray) -> dict:
     from zero and cancel exactly, so the traits are genetically correlated and
     residually anti-correlated and only the sum is nought. A test that quietly
     ignored the substitution would pass the easy version of this and fail here.
-    """
-    n = k.shape[0]
-    rho_g = 0.45
-    rho_e = -rho_g * np.sqrt(TRUTH["h1"] * TRUTH["h2"]) / np.sqrt(
-        (1 - TRUTH["h1"]) * (1 - TRUTH["h2"])
-    )
-    assert abs(phenotypic(TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)) < 1e-15
-    chol = factor(k, TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)
-    design = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
-    observed = [[True, True]] * n
 
-    p_values = []
-    started = time.perf_counter()
+    Args:
+        k: Additive relationship matrix for the simulation design.
+
+    Returns:
+        Completed-test p-values and the cancelling generating correlations.
+    """
+    n: int = k.shape[0]
+    """Read the participant count from the relationship matrix."""
+
+    rho_g: float = 0.45
+    """Set the non-zero genetic correlation used by the hard derived null."""
+
+    rho_e: float = (
+        -rho_g
+        * np.sqrt(TRUTH["h1"] * TRUTH["h2"])
+        / np.sqrt((1 - TRUTH["h1"]) * (1 - TRUTH["h2"]))
+    )
+    """Solved the residual correlation that exactly cancels the genetic term."""
+
+    assert abs(phenotypic(TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)) < 1e-15
+    chol: np.ndarray = factor(k, TRUTH["h1"], TRUTH["h2"], rho_g, rho_e)
+    """Factorised the covariance under the exact derived-correlation null."""
+
+    design: np.ndarray = np.array([[1.0, 0.0], [0.0, 1.0]] * n)
+    """Constructed separate intercept columns for the two traits."""
+
+    observed: list[list[bool]] = [[True, True]] * n
+    """Marked both traits observed for every simulated person."""
+
+    model: asterism.BivariateModel = asterism.BivariateModel(k, observed, design)
+    """Built the public bivariate model reused across derived-null replicates."""
+
+    p_values: list[float] = []
+    """Initialised p-values returned by completed derived-null tests."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement before the simulation loop."""
+
     for replicate in range(TEST_REPLICATES):
-        y = draw(chol, n, 130000 + replicate)
-        # **Unpacked outside the `try`.** A tuple of the wrong length raises
-        # `ValueError`, which is also what the Rust layer raises for a fit that
-        # could not be made, so catching around the unpacking hid a changed
-        # return arity as four hundred failed replicates -- and the calibration
-        # reported nothing at all rather than reporting a fault.
+        y: np.ndarray = draw(chol, n, 130000 + replicate)
+        """Drew one deterministic response under the derived-correlation null."""
+
         try:
-            outcome = _core.bivariate_correlation_test(
-                k, observed, design, y, "rho_p", 0.0, True
-            )
+            outcome: dict[str, Any] = model.test(y, "rho_p", 0.0, reml=True)
+            """Tested the derived phenotypic-correlation null through named fields."""
         except ValueError:
             continue
-        _, p_value, _, _, _ = outcome
-        p_values.append(p_value)
+        p_values.append(outcome["p_value"])
         if (replicate + 1) % 100 == 0:
             print(
-                f"  {replicate + 1} replicates, "
-                f"{time.perf_counter() - started:.0f}s",
+                f"  {replicate + 1} replicates, {time.perf_counter() - started:.0f}s",
                 flush=True,
             )
     return {"p_values": p_values, "rho_g": rho_g, "rho_e": rho_e}
 
 
 def main() -> int:
-    k = relationship()
-    n = k.shape[0]
-    failures = []
+    """Run interval and test campaigns and print their evidence receipt."""
+    k: np.ndarray = relationship()
+    """Built the fixed block-diagonal relationship design."""
+
+    n: int = k.shape[0]
+    """Read the simulated roster size from the relationship matrix."""
+
+    failures: list[str] = []
+    """Initialised the scientific pass-rule failure messages."""
 
     print(
         f"Two-trait calibration. {FAMILIES} families of {PER_FAMILY}, n = {n}, REML.\n"
@@ -299,29 +470,44 @@ def main() -> int:
     )
 
     print("Profile interval coverage, nominal 95 per cent.")
-    covered = coverage(k)
-    complete = covered["complete"]
+    covered: dict[str, Any] = coverage(k)
+    """Measured interval coverage across the fixed simulation campaign."""
+
+    complete: int = covered["complete"]
+    """Read the number of replicates producing every required interval."""
+
     if complete < INTERVAL_REPLICATES * 0.9:
         failures.append(
             f"only {complete} of {INTERVAL_REPLICATES} replicates gave a whole set "
             "of intervals"
         )
-    print(
-        f"\n  {complete} of {INTERVAL_REPLICATES} replicates gave every "
-        "interval.\n"
-    )
+    print(f"\n  {complete} of {INTERVAL_REPLICATES} replicates gave every interval.\n")
     print(f"  {'quantity':<12}{'coverage':>10}{'binomial 95%':>22}{'of':>8}")
-    interval_results = {}
+    interval_results: dict[str, float] = {}
+    """Initialised the recorded quantity-specific coverage rates."""
+
     for quantity in QUANTITIES:
-        counted = covered["attempted"][quantity]
-        hit = covered["contained"][quantity] / counted
+        counted: int = covered["attempted"][quantity]
+        """Read the number of computed intervals for this quantity."""
+
+        hit: float = covered["contained"][quantity] / counted
+        """Computed this quantity's empirical interval coverage."""
+
         interval_results[quantity] = hit
-        standard_error = np.sqrt(0.95 * 0.05 / counted)
+        """Recorded the quantity's empirical interval coverage."""
+
+        standard_error: float = float(np.sqrt(0.95 * 0.05 / counted))
+        """Computed the Monte Carlo standard error at nominal coverage."""
+
         low, high = 0.95 - 1.96 * standard_error, 0.95 + 1.96 * standard_error
+        """Constructed the two-sided binomial approximation band."""
+
         # Under the band is the direction that matters. Over it means the
         # interval is wider than it needs to be, which costs power and misleads
         # nobody, so it is reported and not failed.
-        inside = low <= hit <= high
+        inside: bool = low <= hit <= high
+        """Scored whether empirical coverage fell inside its sampling band."""
+
         print(
             f"  {quantity:<12}{hit:>10.3f}   [{low:.3f}, {high:.3f}]  "
             f"{'ok' if inside else ('conservative' if hit > high else 'UNDER')}"
@@ -331,9 +517,15 @@ def main() -> int:
             failures.append(f"{quantity} covers {hit:.3f}, below the band")
 
     print("\n\nLikelihood ratio test for the genetic correlation, null true at zero.")
-    calibrated = calibration(k)
-    p_values = np.array(calibrated["p_values"])
-    replicates = len(p_values)
+    calibrated: dict[str, list[float]] = calibration(k)
+    """Measured genetic-correlation testing under the true interior null."""
+
+    p_values: np.ndarray = np.array(calibrated["p_values"])
+    """Converted completed interior-null p-values to a numerical vector."""
+
+    replicates: int = len(p_values)
+    """Counted interior-null replicates that produced a usable test."""
+
     if replicates < TEST_REPLICATES * 0.9:
         failures.append(f"only {replicates} of {TEST_REPLICATES} replicates tested")
     print(f"\n  {replicates} of {TEST_REPLICATES} replicates tested.\n")
@@ -344,13 +536,25 @@ def main() -> int:
             print(f"  {failure}")
         return 1
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
-    rates = {}
+    rates: dict[str, float] = {}
+    """Initialised empirical interior-null rejection rates by nominal level."""
+
     for level in LEVELS:
-        rate = float((p_values < level).mean())
+        rate: float = float((p_values < level).mean())
+        """Computed the empirical interior-null rejection rate at this level."""
+
         rates[str(level)] = rate
-        error = np.sqrt(level * (1 - level) / replicates)
+        """Recorded the rejection rate using the level's stable string key."""
+
+        error: float = float(np.sqrt(level * (1 - level) / replicates))
+        """Computed the binomial Monte Carlo standard error for this level."""
+
         lower, upper = level - 1.96 * error, level + 1.96 * error
+        """Constructed the two-sided binomial approximation band."""
+
         inside = lower <= rate <= upper
+        """Scored whether the rejection rate fell inside its sampling band."""
+
         print(
             f"  {level:>8.2f}{rate:>12.3f}   [{lower:.3f}, {upper:.3f}]  "
             f"{'ok' if inside else 'OUT'}"
@@ -362,7 +566,8 @@ def main() -> int:
 
     # Three rates can look right while the distribution behind them is not, so
     # the whole thing is checked against uniform as well.
-    test = stats.kstest(p_values, "uniform")
+    test: Any = stats.kstest(p_values, "uniform")
+    """Compared the complete interior-null p-value distribution with uniformity."""
     print(
         f"\n  Kolmogorov-Smirnov against uniform: D = {test.statistic:.4f}, "
         f"p = {test.pvalue:.3f}"
@@ -371,17 +576,33 @@ def main() -> int:
         failures.append(f"p-values are not uniform, KS p = {test.pvalue:.4f}")
 
     print("\n\nLikelihood ratio test at the boundary, null true at one.")
-    edge = boundary(k)
-    edge_p = np.array(edge["p_values"])
-    edge_n = len(edge_p)
+    edge: dict[str, Any] = boundary(k)
+    """Measured genetic-correlation testing under the true boundary null."""
+
+    edge_p: np.ndarray = np.array(edge["p_values"])
+    """Converted completed boundary-null p-values to a numerical vector."""
+
+    edge_n: int = len(edge_p)
+    """Counted boundary-null replicates that produced a usable test."""
+
     print(f"\n  {edge_n} of {TEST_REPLICATES} replicates tested.\n")
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
-    edge_rates = {}
+    edge_rates: dict[str, float] = {}
+    """Initialised empirical boundary-null rejection rates by nominal level."""
+
     for level in LEVELS:
         rate = float((edge_p < level).mean())
+        """Computed the empirical boundary-null rejection rate at this level."""
+
         edge_rates[str(level)] = rate
+        """Recorded the boundary rejection rate using the level's stable key."""
+
         error = np.sqrt(level * (1 - level) / edge_n)
+        """Computed the binomial Monte Carlo standard error for this level."""
+
         lower, upper = level - 1.96 * error, level + 1.96 * error
+        """Constructed the two-sided binomial approximation band."""
+
         # Only over-rejection fails. A boundary test that rejects too rarely
         # under-calls two traits as genetically distinct, which is the direction
         # that costs power rather than the one that manufactures a finding.
@@ -394,7 +615,9 @@ def main() -> int:
                 f"boundary test rejects {rate:.3f} at the {level:.2f} level, "
                 "above the band"
             )
-    atom = edge["at_zero"] / edge_n
+    atom: float = edge["at_zero"] / edge_n
+    """Measured the boundary mixture's empirical probability mass at zero."""
+
     print(
         f"\n  Statistic exactly zero in {atom:.1%} of samples; the mixture "
         f"expects about 50%."
@@ -402,25 +625,41 @@ def main() -> int:
     if atom < 0.35:
         failures.append(f"the atom at zero is {atom:.1%}, too small for the mixture")
 
-    print(
-        "\n\nLikelihood ratio test for the derived correlation, null true at zero."
-    )
-    derived = phenotypic_null(k)
-    derived_p = np.array(derived["p_values"])
-    derived_n = len(derived_p)
+    print("\n\nLikelihood ratio test for the derived correlation, null true at zero.")
+    derived: dict[str, Any] = phenotypic_null(k)
+    """Measured the phenotypic-correlation test under an exact derived null."""
+
+    derived_p: np.ndarray = np.array(derived["p_values"])
+    """Converted completed derived-null p-values to a numerical vector."""
+
+    derived_n: int = len(derived_p)
+    """Counted derived-null replicates that produced a usable test."""
+
     print(
         f"\n  Genetic correlation {derived['rho_g']:.2f} and residual "
         f"{derived['rho_e']:.4f} cancel exactly.\n"
         f"  {derived_n} of {TEST_REPLICATES} replicates tested.\n"
     )
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
-    derived_rates = {}
+    derived_rates: dict[str, float] = {}
+    """Initialised empirical derived-null rejection rates by nominal level."""
+
     for level in LEVELS:
         rate = float((derived_p < level).mean())
+        """Computed the empirical derived-null rejection rate at this level."""
+
         derived_rates[str(level)] = rate
+        """Recorded the derived rejection rate using the level's stable key."""
+
         error = np.sqrt(level * (1 - level) / derived_n)
+        """Computed the binomial Monte Carlo standard error for this level."""
+
         lower, upper = level - 1.96 * error, level + 1.96 * error
+        """Constructed the two-sided binomial approximation band."""
+
         inside = lower <= rate <= upper
+        """Scored whether the rejection rate fell inside its sampling band."""
+
         print(
             f"  {level:>8.2f}{rate:>12.3f}   [{lower:.3f}, {upper:.3f}]  "
             f"{'ok' if inside else 'OUT'}"
@@ -430,7 +669,8 @@ def main() -> int:
                 f"derived-correlation test rejects {rate:.3f} at the {level:.2f} "
                 "level, outside the band"
             )
-    derived_ks = stats.kstest(derived_p, "uniform")
+    derived_ks: Any = stats.kstest(derived_p, "uniform")
+    """Compared the complete derived-null p-value distribution with uniformity."""
     print(
         f"\n  Kolmogorov-Smirnov against uniform: D = {derived_ks.statistic:.4f}, "
         f"p = {derived_ks.pvalue:.3f}"
@@ -465,7 +705,6 @@ def main() -> int:
                     "replicates_by_quantity": covered["attempted"],
                     "nominal": 0.95,
                     "coverage": interval_results,
-
                 },
                 "derived_correlation_test": {
                     "replicates_requested": TEST_REPLICATES,

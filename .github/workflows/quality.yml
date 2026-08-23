@@ -1,0 +1,63 @@
+name: Codebase quality
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.1
+    steps:
+      - uses: actions/checkout@v4
+      # `--all-features` turns on the `python` feature, so both steps below
+      # build pyo3 and need an interpreter at least as new as the `abi3-py313`
+      # floor. Ubuntu 24.04 ships 3.12, on which pyo3 refuses to configure, so
+      # without this the Rust half of this gate has never run: `cargo fmt`
+      # passed, and clippy and the Rust suite both stopped in pyo3's build
+      # script before reaching any of this crate's code.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install the declared Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Refuse Clippy warnings
+        run: cargo clippy --locked --all-features --all-targets -- -D warnings
+      - name: Run the complete Rust suite
+        run: cargo test --release --locked --all-features
+
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          version: "0.11.21"
+      - name: Verify the locked environment
+        run: uv lock --check
+      - name: Install the locked development environment
+        run: uv sync --locked --all-groups
+      - name: Build the extension used by source-level tests
+        run: uv run maturin develop --release --locked
+      - name: Check Python formatting
+        run: uv run ruff format --check python tests checks campaigns tools
+      - name: Check Python lint
+        run: uv run ruff check python tests checks campaigns tools
+      - name: Check Asterism Python style
+        run: uv run python tools/check_python_style.py
+      - name: Check release metadata
+        run: uv run python tools/check_release.py --metadata
+      - name: Run the Python suite
+        run: uv run pytest -q tests

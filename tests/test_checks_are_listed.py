@@ -20,18 +20,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DOCUMENT = ROOT / "docs" / "numerical-validation.md"
-CHECKS = ROOT / "checks"
+ROOT: Path = Path(__file__).resolve().parent.parent
+"""Located the repository root from this test module."""
+
+DOCUMENT: Path = ROOT / "docs" / "numerical-validation.md"
+"""Located the canonical numerical-validation inventory."""
+
+CHECKS: Path = ROOT / "checks"
+"""Located the maintained independent-check scripts."""
 
 
 def test_every_check_is_listed_in_the_validation_document() -> None:
-    text = DOCUMENT.read_text()
-    unlisted = sorted(
-        script.name
-        for script in CHECKS.glob("*.py")
-        if script.name not in text
+    """Require every maintained check script to appear in the inventory."""
+    text: str = DOCUMENT.read_text()
+    """Read the human-facing validation inventory."""
+
+    unlisted: list[str] = sorted(
+        script.name for script in CHECKS.glob("*.py") if script.name not in text
     )
+    """Collected check scripts absent from the inventory."""
+
     assert not unlisted, (
         "these scripts in checks/ are not named in "
         f"docs/numerical-validation.md, so nobody runs them: "
@@ -46,14 +54,22 @@ def test_the_document_does_not_name_a_check_that_has_gone() -> None:
     the document fails at the shell rather than silently doing nothing, but it
     still says the suite covers something it does not.
     """
-    text = DOCUMENT.read_text()
-    present = {script.name for script in CHECKS.glob("*.py")}
-    named = {
+    text: str = DOCUMENT.read_text()
+    """Read the human-facing validation inventory."""
+
+    present: set[str] = {script.name for script in CHECKS.glob("*.py")}
+    """Collected the check scripts that currently exist."""
+
+    named: set[str] = {
         word.split("checks/")[1]
         for word in text.split()
         if "checks/" in word and word.endswith(".py")
     }
-    gone = sorted(named - present)
+    """Extracted check-script names promised by the inventory."""
+
+    gone: list[str] = sorted(named - present)
+    """Collected promised check scripts that no longer exist."""
+
     assert not gone, (
         "docs/numerical-validation.md names scripts that are not in checks/: "
         f"{', '.join(gone)}"

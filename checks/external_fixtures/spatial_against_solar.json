@@ -1,0 +1,159 @@
+{
+  "acceptance": {
+    "maximum_same_model_variance_difference": 5e-06,
+    "maximum_solar_dense_vs_block_variance_difference": 5e-06,
+    "maximum_unexplained_loglik_offset": 0.0001,
+    "minimum_asterism_dense_vs_solar_variance_separation": 5e-06,
+    "solar_must_analyse_all_generated_people": true
+  },
+  "adapter": {
+    "path": "checks/spatial_against_solar.py",
+    "sha256": "dd9db1bbfe4678c7fd008fbb149d2cbbff3dff1eaf7c432a48f92025e7a46579"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "spatial_against_solar",
+  "external_outputs": {
+    "cases": [
+      {
+        "dense": {
+          "genetic": 0.31034135747241004,
+          "iterations": 19,
+          "loglik": -246.133354,
+          "people": 350,
+          "residual": 0.92258464686129,
+          "spatial": 0.3192033043686399
+        },
+        "people": 350,
+        "seed": 301,
+        "true_variances": [
+          0.5,
+          0.3,
+          0.7
+        ],
+        "within": {
+          "genetic": 0.31034135747241004,
+          "iterations": 19,
+          "loglik": -246.133354,
+          "people": 350,
+          "residual": 0.92258464686129,
+          "spatial": 0.3192033043686399
+        }
+      },
+      {
+        "dense": {
+          "genetic": 0.33692812311601,
+          "iterations": 21,
+          "loglik": -222.67567,
+          "people": 350,
+          "residual": 0.59792283107209,
+          "spatial": 0.46251383900568993
+        },
+        "people": 350,
+        "seed": 302,
+        "true_variances": [
+          0.2,
+          0.6,
+          0.9
+        ],
+        "within": {
+          "genetic": 0.33692812311601,
+          "iterations": 21,
+          "loglik": -222.67567,
+          "people": 350,
+          "residual": 0.59792283107209,
+          "spatial": 0.46251383900568993
+        }
+      }
+    ]
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/solar_reference_adapter.py",
+      "sha256": "6ff5c2c57b1730d5406be07f31b6ea249cce994fcae904c940ea63dcb5bbc6cb"
+    },
+    {
+      "name": "design:spatial_against_solar",
+      "sha256": "a3dfdc3ba65220cdcfb3e4b2cee08752bda6b831da55ff79e965172869edc925"
+    },
+    {
+      "name": "relationship:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "dense_kernel:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "be1a83100de13b3b79f97a6e44d845e50b5c24d1c9833c4501c0f8a824939de4"
+    },
+    {
+      "name": "block_kernel:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "070066c3527e8bb76d6c2f17b5e8c38bec2b783ad0c83382f516f5b827e3bba0"
+    },
+    {
+      "name": "design:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "7300ea1f8300114aea5ec70d102857028a5f0c6b18f113cce58ca490b7e097af"
+    },
+    {
+      "name": "outcome:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "dda77d7b6968fe46449afa20ed47b2139f2b82d25cb57eb968aab15d9c7570db"
+    },
+    {
+      "name": "pedigree_csv:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "b9189e677711fecf5f798b80ea7d5a5cb98e7249666f65190d651f243c1b0bbb"
+    },
+    {
+      "name": "dense_matrix_csv:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "4df3b7552abd172896ce330deec9bfc2d3822bfb262c6073f6d8807e18e3a400"
+    },
+    {
+      "name": "block_matrix_csv:variances=0.5/0.3/0.7,seed=301",
+      "sha256": "ee6f47075aced10067e3d5617968ca6a6dd1e5bbbd8df2493d4cbeeebbcb0a2f"
+    },
+    {
+      "name": "relationship:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "dense_kernel:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "af5e225778eb7b254d9cd3fbef145ebe593d4ebe930e09f9ec77d818f6dd95b0"
+    },
+    {
+      "name": "block_kernel:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "a72fb93a0c0bd39b5ffbfa29d34023b97459d3799fcdeb3cb5aaee4d880bcc54"
+    },
+    {
+      "name": "design:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "7300ea1f8300114aea5ec70d102857028a5f0c6b18f113cce58ca490b7e097af"
+    },
+    {
+      "name": "outcome:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "6cea221f3e8ce5d4250fea226ceeed80cbdb84757abe6daec53b2629cbed2c5c"
+    },
+    {
+      "name": "pedigree_csv:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "49cde854ab2ee5918eb189d65eabc36e0cc79a6f83f20403b5d034b3144e0736"
+    },
+    {
+      "name": "dense_matrix_csv:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "ab37eb24d055eca0a6073d67c5dd1f1c35b94d56c3573544557c5020bc74a8bb"
+    },
+    {
+      "name": "block_matrix_csv:variances=0.2/0.6/0.9,seed=302",
+      "sha256": "37b161fb7e1b785a8e99e18a007da1fc075ae21dddaeb3492f6020a21f1814cd"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "/usr/local/bin/solar",
+      "packages": [],
+      "version": "SOLAR Eclipse 9.0.0 (2022-01-01)"
+    }
+  ]
+}

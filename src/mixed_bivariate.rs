@@ -53,6 +53,7 @@ use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::Normal;
 
 use crate::blocks::family_blocks;
+use crate::interval::{self, Interval};
 use crate::liability::LiabilityModel;
 use crate::tobit::Censoring;
 
@@ -100,9 +101,6 @@ pub struct MixedBivariateFit {
     pub largest_family: usize,
 }
 
-/// Chi-square on one degree of freedom at 0.95.
-const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
-
 /// Which coordinate an interval is for. The variances are deliberately absent:
 /// a binary trait's is fixed at one and means nothing, so an interval on it
 /// would be an interval on an assumption.
@@ -125,22 +123,8 @@ pub struct MixedBivariateTest {
     pub alternative_loglik: f64,
 }
 
-/// A profile-likelihood interval for one coordinate.
-#[derive(Clone, Debug)]
-pub struct MixedBivariateInterval {
-    pub what: &'static str,
-    pub estimate: f64,
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the end sits on the coordinate's own bound rather than where
-    /// the profile fell away -- the data did not rule that end out.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
-    pub level: f64,
-    /// Profile fits that failed or did not converge. Each widened the interval
-    /// rather than narrowing it, which is the safe direction.
-    pub profile_failures: usize,
-}
+/// The common profile-likelihood interval record.
+pub type MixedBivariateInterval = Interval;
 
 /// Two traits, one relationship matrix, a measurement kind for each.
 pub struct MixedBivariateModel {
@@ -173,23 +157,33 @@ impl MixedBivariateModel {
         if design.ncols() == 0 {
             return Err("MIXED_BIVARIATE_DESIGN_HAS_NO_COLUMNS");
         }
+        if !relationship.iter().all(|value| value.is_finite())
+            || !design.iter().all(|value| value.is_finite())
+        {
+            return Err("MIXED_BIVARIATE_NOT_FINITE");
+        }
         for each in [&first, &second] {
-            if each.value.len() != rows
-                || each.censoring.len() != rows
-                || each.limit.len() != rows
+            if each.value.len() != rows || each.censoring.len() != rows || each.limit.len() != rows
             {
                 return Err("MIXED_BIVARIATE_TRAIT_WRONG_LENGTH");
+            }
+            for index in 0..rows {
+                match each.censoring[index] {
+                    Censoring::Measured if !each.value[index].is_finite() => {
+                        return Err("MIXED_BIVARIATE_MEASURED_VALUE_NOT_FINITE");
+                    }
+                    Censoring::Above | Censoring::Below if !each.limit[index].is_finite() => {
+                        return Err("MIXED_BIVARIATE_LIMIT_NOT_FINITE");
+                    }
+                    _ => {}
+                }
             }
             match each.kind {
                 // A binary trait is all region and no density, which is what
                 // makes its scale unidentified; a measured value there would
                 // mean the trait is not binary.
                 TraitKind::Binary => {
-                    if each
-                        .censoring
-                        .iter()
-                        .any(|c| *c == Censoring::Measured)
-                    {
+                    if each.censoring.contains(&Censoring::Measured) {
                         return Err("MIXED_BIVARIATE_BINARY_TRAIT_HAS_A_MEASURED_VALUE");
                     }
                     let cases = each
@@ -208,11 +202,7 @@ impl MixedBivariateModel {
                     }
                 }
                 TraitKind::Censored => {
-                    if !each
-                        .censoring
-                        .iter()
-                        .any(|c| *c == Censoring::Measured)
-                    {
+                    if !each.censoring.contains(&Censoring::Measured) {
                         return Err("MIXED_BIVARIATE_CENSORED_TRAIT_HAS_NO_SCALE");
                     }
                 }
@@ -261,6 +251,7 @@ impl MixedBivariateModel {
                 || !(variance[t] > 0.0)
                 || !variance[t].is_finite()
                 || beta[t].len() != self.design.ncols()
+                || beta[t].iter().any(|value| !value.is_finite())
             {
                 return None;
             }
@@ -333,8 +324,7 @@ impl MixedBivariateModel {
                 });
                 let solution = chol.solve(&deviation);
                 let quadratic = deviation.dot(&solution);
-                let log_determinant =
-                    2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+                let log_determinant = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
                 let density =
                     -0.5 * (exact.len() as f64 * LOG_TWO_PI + log_determinant + quadratic);
                 if !density.is_finite() {
@@ -412,25 +402,26 @@ impl MixedBivariateModel {
     /// The statistic and the p-value both come from `deviance`, which honours
     /// the point mass at nought: two searches that land on the same likelihood
     /// give a deviance that is rounding rather than evidence.
-    pub fn correlation_test(
-        &self,
-        coordinate: usize,
-    ) -> Result<MixedBivariateTest, &'static str> {
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code if the coordinate is not testable or either
+    /// required fit did not converge.
+    pub fn correlation_test(&self, coordinate: usize) -> Result<MixedBivariateTest, &'static str> {
         let what = match coordinate {
             GENETIC_CORRELATION => "genetic_correlation",
             RESIDUAL_CORRELATION => "residual_correlation",
             _ => return Err("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST"),
         };
         let free = self.fit()?;
+        crate::convergence::require(free.converged, "MIXED_BIVARIATE_FIT_NOT_CONVERGED")?;
         let null = self.fit_holding(Some((coordinate, 0.0)))?;
+        crate::convergence::require(null.converged, "MIXED_BIVARIATE_NULL_FIT_NOT_CONVERGED")?;
         let statistic = crate::deviance::deviance(free.loglik, null.loglik);
         Ok(MixedBivariateTest {
             what,
             statistic,
-            p_value: crate::deviance::p_value(
-                statistic,
-                crate::deviance::chi2_one_df_upper_tail,
-            ),
+            p_value: crate::deviance::p_value(statistic, crate::deviance::chi2_one_df_upper_tail),
             rule: "chi2_1",
             null_loglik: null.loglik,
             alternative_loglik: free.loglik,
@@ -457,51 +448,29 @@ impl MixedBivariateModel {
         &self,
         coordinate: usize,
     ) -> Result<MixedBivariateInterval, &'static str> {
-        let (what, low_bound, high_bound) = match coordinate {
-            HERITABILITY_ONE => ("heritability_one", 0.0, 1.0),
-            HERITABILITY_TWO => ("heritability_two", 0.0, 1.0),
-            GENETIC_CORRELATION => ("genetic_correlation", -1.0, 1.0),
-            RESIDUAL_CORRELATION => ("residual_correlation", -1.0, 1.0),
+        let (low_bound, high_bound) = match coordinate {
+            HERITABILITY_ONE | HERITABILITY_TWO => (0.0, 1.0),
+            GENETIC_CORRELATION | RESIDUAL_CORRELATION => (-1.0, 1.0),
             _ => return Err("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL"),
         };
         let free = self.fit()?;
+        crate::convergence::require(free.converged, "MIXED_BIVARIATE_FIT_NOT_CONVERGED")?;
         let estimate = match coordinate {
             HERITABILITY_ONE => free.heritability[0],
             HERITABILITY_TWO => free.heritability[1],
             GENETIC_CORRELATION => free.genetic_correlation,
             _ => free.residual_correlation,
         };
-        let at_estimate = self.fit_holding(Some((coordinate, estimate)))?.loglik;
-        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
-
-        let failures = std::cell::Cell::new(0usize);
-        let outside = |value: f64| match self.fit_holding(Some((coordinate, value))) {
-            Ok(fit) if fit.converged => fit.loglik < threshold,
-            _ => {
-                failures.set(failures.get() + 1);
-                false
-            }
-        };
-        let (lower, lower_at_bound) = if outside(low_bound) {
-            (crate::liability::bisect(low_bound, estimate, &outside), false)
-        } else {
-            (low_bound, true)
-        };
-        let (upper, upper_at_bound) = if outside(high_bound) {
-            (crate::liability::bisect(high_bound, estimate, &outside), false)
-        } else {
-            (high_bound, true)
-        };
-        Ok(MixedBivariateInterval {
-            what,
-            estimate,
-            lower,
-            upper,
-            lower_at_bound,
-            upper_at_bound,
-            level: 0.95,
-            profile_failures: failures.get(),
-        })
+        let got = interval::profile_interval(estimate, (low_bound, high_bound), |value| {
+            self.fit_holding(Some((coordinate, value)))
+                .ok()
+                .filter(|fit| fit.converged)
+                .map(|fit| fit.loglik)
+        });
+        if got.estimate.is_none() {
+            return Err("MIXED_BIVARIATE_PROFILE_NOT_EVALUABLE");
+        }
+        Ok(got)
     }
 
     /// Fit with one coordinate held, or everything free where `held` is `None`.
@@ -715,9 +684,7 @@ mod tests {
             total - 6.0
         };
         // A correlated pair from two independent draws.
-        let correlated = |rho: f64, a: f64, b: f64| {
-            (a, rho * a + (1.0 - rho * rho).sqrt() * b)
-        };
+        let correlated = |rho: f64, a: f64, b: f64| (a, rho * a + (1.0 - rho * rho).sqrt() * b);
 
         let mut out = [Vec::with_capacity(2 * pairs), Vec::with_capacity(2 * pairs)];
         for _ in 0..pairs {
@@ -725,8 +692,7 @@ mod tests {
             let (shared_one, shared_two) = correlated(genetic_correlation, draw(), draw());
             for _ in 0..2 {
                 let (own_one, own_two) = correlated(genetic_correlation, draw(), draw());
-                let (residual_one, residual_two) =
-                    correlated(residual_correlation, draw(), draw());
+                let (residual_one, residual_two) = correlated(residual_correlation, draw(), draw());
                 let genetic = [
                     (0.5_f64).sqrt() * shared_one + (0.5_f64).sqrt() * own_one,
                     (0.5_f64).sqrt() * shared_two + (0.5_f64).sqrt() * own_two,
@@ -776,7 +742,13 @@ mod tests {
         let (rho_g, rho_e) = (0.3_f64, 0.15_f64);
         let mean = [0.4_f64, -0.2_f64];
         let ours = model
-            .loglik(heritability, variance, rho_g, rho_e, [&[mean[0]], &[mean[1]]])
+            .loglik(
+                heritability,
+                variance,
+                rho_g,
+                rho_e,
+                [&[mean[0]], &[mean[1]]],
+            )
             .expect("evaluates");
 
         let additive = [heritability[0] * variance[0], heritability[1] * variance[1]];
@@ -797,9 +769,9 @@ mod tests {
                     let environmental = if a == b { residual[a] } else { residual_cross };
                     for (row, &i) in block.iter().enumerate() {
                         for (column, &j) in block.iter().enumerate() {
-                            covariance[(a * 2 + row, b * 2 + column)] =
-                                genetic * relationship[(i, j)]
-                                    + if i == j { environmental } else { 0.0 };
+                            covariance[(a * 2 + row, b * 2 + column)] = genetic
+                                * relationship[(i, j)]
+                                + if i == j { environmental } else { 0.0 };
                         }
                     }
                 }
@@ -810,10 +782,8 @@ mod tests {
             });
             let chol = Cholesky::new(covariance).expect("positive definite");
             let solved = chol.solve(&deviation);
-            let log_determinant =
-                2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
-            theirs +=
-                -0.5 * (4.0 * LOG_TWO_PI + log_determinant + deviation.dot(&solved));
+            let log_determinant = 2.0 * chol.l().diagonal().iter().map(|d| d.ln()).sum::<f64>();
+            theirs += -0.5 * (4.0 * LOG_TWO_PI + log_determinant + deviation.dot(&solved));
         }
         assert!(
             (ours - theirs).abs() < 1e-9,
@@ -839,7 +809,7 @@ mod tests {
         // A third affected, so the threshold is well inside the distribution.
         let mut sorted = values[0].clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let cut = sorted[(0.667 * n as f64) as usize];
+        let cut = sorted[2 * n / 3];
 
         let binary = TraitData {
             kind: TraitKind::Binary,
@@ -899,26 +869,31 @@ mod tests {
         )
         .expect("builds");
 
-        let got = model.profile_interval(GENETIC_CORRELATION).expect("intervals");
-        assert_eq!(got.what, "genetic_correlation");
+        let got = model
+            .profile_interval(GENETIC_CORRELATION)
+            .expect("intervals");
+        let estimate = got.estimate.expect("profile maximum");
         assert!(
-            got.lower <= got.estimate && got.estimate <= got.upper,
+            got.lower <= estimate && estimate <= got.upper,
             "the estimate {} is outside its own interval [{}, {}]",
-            got.estimate, got.lower, got.upper
+            estimate,
+            got.lower,
+            got.upper
         );
         assert!(
             got.lower <= truth && truth <= got.upper,
             "the interval [{}, {}] misses the true {truth}",
-            got.lower, got.upper
+            got.lower,
+            got.upper
         );
 
         let peak = model
-            .fit_holding(Some((GENETIC_CORRELATION, got.estimate)))
+            .fit_holding(Some((GENETIC_CORRELATION, estimate)))
             .expect("held fit")
             .loglik;
         for (name, end, at_bound) in [
-            ("lower", got.lower, got.lower_at_bound),
-            ("upper", got.upper, got.upper_at_bound),
+            ("lower", got.lower, got.lower_limited),
+            ("upper", got.upper, got.upper_limited),
         ] {
             if at_bound {
                 continue;
@@ -929,8 +904,8 @@ mod tests {
                 .loglik;
             let cost = 2.0 * (peak - there);
             assert!(
-                (cost - CHI2_ONE_95).abs() < 0.05,
-                "the {name} end costs {cost} in deviance, not {CHI2_ONE_95}"
+                (cost - 3.841_458_820_694_124).abs() < 0.05,
+                "the {name} end costs {cost} in deviance, not the 95% chi-square threshold"
             );
         }
     }
@@ -943,8 +918,12 @@ mod tests {
         let values = simulate(pairs, [0.5, 0.5], [1.0, 1.0], 0.2, 0.0, 17);
         let design = DMatrix::from_element(2 * pairs, 1, 1.0);
         let model = MixedBivariateModel::build(
-            &relationship, continuous(&values[0]), continuous(&values[1]), &design)
-            .expect("builds");
+            &relationship,
+            continuous(&values[0]),
+            continuous(&values[1]),
+            &design,
+        )
+        .expect("builds");
         // Coordinates two and three are the variances, one of which is fixed
         // at one whenever a trait is binary.
         assert_eq!(
