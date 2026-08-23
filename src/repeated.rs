@@ -3343,8 +3343,8 @@ mod tests {
             known: y.iter().map(|value| Known::Value(*value)).collect(),
             rotated: Some(rotated.clone()),
             // The ordinary fit, not a profile: resting is the same move either
-            // way, and holding a correlation would only narrow what is tested.
-            held: None,
+            // way, and holding anything would only narrow what is tested.
+            constraint: None,
         };
         let state = State {
             sigmas,
