@@ -59,31 +59,5 @@ jobs:
         run: uv run python tools/check_python_style.py
       - name: Check release metadata
         run: uv run python tools/check_release.py --metadata
-      # TEMPORARY. Names which frozen input identity Linux regenerates
-      # differently, which the adapter's own message does not say. Remove once
-      # the answer is recorded.
-      - name: Which liability fixture identity differs here
-        continue-on-error: true
-        run: |
-          uv run python - <<'PY'
-          import hashlib, platform, sys
-          sys.path.insert(0, "checks")
-          import numpy
-          import liability_against_solar as L
-          def h(text):
-              return hashlib.sha256(text.encode()).hexdigest()[:16]
-          print("PLATFORM", platform.system(), platform.machine(), "numpy", numpy.__version__)
-          for case in L.generated_cases():
-              if case.seed != 8312:
-                  continue
-              rows = case.phenotype_csv.strip().split("\n")
-              cols = list(zip(*[r.split(",") for r in rows]))
-              print("ROWS", len(rows))
-              for name, col in zip(rows[0].split(","), cols):
-                  print("COL", name, h("|".join(col)))
-              ages = [r.split(",")[2] for r in rows[1:]]
-              print("AGE_FIRST", ages[:3])
-              print("AGE_LAST", ages[-3:])
-          PY
       - name: Run the Python suite
         run: uv run pytest -q tests

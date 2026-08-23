@@ -35,6 +35,35 @@ drops cross-pedigree covariance and therefore reproduces its own block result;
 that dense run is a tested limitation, not evidence that SOLAR fits Asterism's
 cross-family spatial model.
 
+## Generated inputs must be quantised, and text has no tolerance
+
+A fixture is verified by regenerating its inputs and checking their identities,
+so a fixture is only portable if generation is. `array_identity` already
+quantises floating-point arrays to twelve decimals before hashing, which is why
+relationship matrices and covariates regenerate identically on Mac and Linux.
+
+Native input **files** escaped that, because they are text and text has no
+tolerance. The liability check rendered a raw generated age at twelve decimal
+places. A draw differs between the two platforms in its last bit, about seven
+parts in a thousand million million on a number of order fifty, and that is
+enough to change the twelfth decimal whenever a value sits near the rounding
+boundary. Over six hundred draws one of them did, so the phenotype table hashed
+on the Mac could not be regenerated on Linux and the check could only ever
+verify where it was made. Nothing scientific differed: the binary phenotype
+itself agreed exactly, and refreshing after quantisation returned every native
+heritability, log likelihood and p-value unchanged to six significant figures,
+with only two standard errors moving in their fifth and fourth.
+
+So a generated value that reaches a native input file is quantised at
+generation, far coarser than the arithmetic underneath it. The liability check
+quantises age at six decimals, which is nine orders of magnitude above the
+difference between platforms.
+
+The other four checks pass on both platforms today. That is not the same as
+being safe: any of them that writes a raw generated float into a native input
+file has the same latent fault, and it would appear the first time a value
+landed near a boundary. Each is worth checking deliberately rather than waiting.
+
 ## Refresh with native SOLAR
 
 Run one explicit live refresh from the repository root, substituting the check

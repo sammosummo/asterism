@@ -7,7 +7,7 @@
   },
   "adapter": {
     "path": "checks/liability_against_solar.py",
-    "sha256": "7114e59343a75499a32eb1e59146ea3cb420076614c0eae24a44333594ca36a1"
+    "sha256": "245a4dab09820d69e9d737421f2cb9012c685b1286e8118e518616a2a9e0cee3"
   },
   "adapter_contract_version": 1,
   "check_id": "liability_against_solar",
@@ -20,7 +20,7 @@
         "p_value": 0.0004984,
         "people": 420,
         "seed": 8311,
-        "standard_error": 0.1560379,
+        "standard_error": 0.1560345,
         "true_heritability": 0.5,
         "true_prevalence": 0.25,
         "used_the_liability_model": true
@@ -32,7 +32,7 @@
         "p_value": 0.0003996,
         "people": 630,
         "seed": 8312,
-        "standard_error": 0.1146106,
+        "standard_error": 0.1145866,
         "true_heritability": 0.4,
         "true_prevalence": 0.3,
         "used_the_liability_model": true
@@ -66,7 +66,7 @@
     },
     {
       "name": "covariates:h2=0.5,prevalence=0.25,families=30,seed=8311",
-      "sha256": "8ad32da68f3747ef948f6f8fd61ae80e7ff6bb1b386dacd1dbd2e3700c3708bb"
+      "sha256": "785935bef84ccd777dfd66ebc36bc64e71698b076c2b39b1b812a68b4bb59792"
     },
     {
       "name": "affected:h2=0.5,prevalence=0.25,families=30,seed=8311",
@@ -78,7 +78,7 @@
     },
     {
       "name": "phenotype_csv:h2=0.5,prevalence=0.25,families=30,seed=8311",
-      "sha256": "83b6fbb937186e5fee36266df393d42cb315c11605109602141522584bd6f145"
+      "sha256": "aaa26bbf121da6e3c1ef0e8a9a4c3dc80571a9b8f47943b1b87d7b79cb8e1d2b"
     },
     {
       "name": "relationship:h2=0.4,prevalence=0.3,families=45,seed=8312",
@@ -86,7 +86,7 @@
     },
     {
       "name": "covariates:h2=0.4,prevalence=0.3,families=45,seed=8312",
-      "sha256": "95d9917009f7299c1613a15db87637bc0ade286c1c186fbf0ca0bcb43f4ada67"
+      "sha256": "bda5c0cba6a224da3cf678982a3fdf9851297ed93cb7b04a64b56e28288f7d5b"
     },
     {
       "name": "affected:h2=0.4,prevalence=0.3,families=45,seed=8312",
@@ -98,7 +98,7 @@
     },
     {
       "name": "phenotype_csv:h2=0.4,prevalence=0.3,families=45,seed=8312",
-      "sha256": "0d1dabbfe626f97a00146a8b064dc4b535d99422dccf78193adf65a7cd67e280"
+      "sha256": "abf82152493c2f45ccd79cfbcf6756130fc67f94f37a848884bbd96bb802e935"
     },
     {
       "name": "relationship:h2=0,prevalence=0.3,families=30,seed=8313",
@@ -106,7 +106,7 @@
     },
     {
       "name": "covariates:h2=0,prevalence=0.3,families=30,seed=8313",
-      "sha256": "7b35f0158607e687af28a1d0b15cd916a09b36d23824210e1f32f2334c1040da"
+      "sha256": "79f150a2f87837f492e0f1a6e2cdd03730ce866c6624057fbf6000752a6261fc"
     },
     {
       "name": "affected:h2=0,prevalence=0.3,families=30,seed=8313",
@@ -118,7 +118,7 @@
     },
     {
       "name": "phenotype_csv:h2=0,prevalence=0.3,families=30,seed=8313",
-      "sha256": "54a39f0077bf8b557c8b49df158fe6ed208e6e7feab9757427f9e57c0b3e7195"
+      "sha256": "8d6e9d042c77c43e052da92be667b8414ce0fdc46b30a6fb8bdcf1413460e212"
     }
   ],
   "schema_version": 1,

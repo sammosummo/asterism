@@ -108,6 +108,26 @@ class LiabilityCase:
         return int(self.affected.shape[0])
 
 
+AGE_DECIMALS: int = 6
+"""How coarsely the generated age is quantised, and why it has to be.
+
+The native phenotype table renders age as text, and text has no tolerance. A
+draw differs between Mac and Linux in its last bit -- about seven parts in a
+thousand million million on a number of order fifty -- which is far below
+anything scientific and still enough to change the twelfth decimal whenever a
+value happens to sit near that rounding boundary. Over six hundred draws one of
+them does, so the frozen phenotype table hashed on one platform could never be
+regenerated on the other, and this check could only ever verify where it was
+made.
+
+Everything else here already survives, because generated arrays are quantised
+to twelve decimals before hashing. Only the text escaped that. Six decimals
+puts the quantisation nine orders of magnitude above the arithmetic, which
+makes a boundary crossing not merely unlikely but not worth thinking about, and
+a millionth of a year of age is not a quantity any of this can see.
+"""
+
+
 def generate_case(
     true_heritability: float,
     true_prevalence: float,
@@ -161,8 +181,9 @@ def generate_case(
     generator: np.random.Generator = np.random.default_rng(seed)
     """Created the deterministic participant-free random generator."""
 
-    age: np.ndarray = generator.uniform(20.0, 70.0, people)
-    """Generated a non-degenerate continuous age covariate."""
+    age: np.ndarray = np.round(generator.uniform(20.0, 70.0, people), AGE_DECIMALS)
+    """Generated a non-degenerate continuous age covariate, quantised to survive
+    two platforms."""
 
     male: np.ndarray = np.array(
         [1.0 if SEX[row % block] == 1 else 0.0 for row in range(people)]
