@@ -273,10 +273,10 @@ def one(job: tuple[str, float, int]) -> dict[str, object]:
         out["width"] = got["upper"] - got["lower"]
         """Recorded the interval width as a precision diagnostic."""
 
-        out["lower_at_bound"] = got["lower_at_bound"]
+        out["lower_limited"] = got["lower_limited"]
         """Recorded whether the lower endpoint reached the parameter bound."""
 
-        out["upper_at_bound"] = got["upper_at_bound"]
+        out["upper_limited"] = got["upper_limited"]
         """Recorded whether the upper endpoint reached the parameter bound."""
 
         out["profile_failures"] = got["profile_failures"]
