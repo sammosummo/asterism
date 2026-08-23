@@ -1,5 +1,6 @@
 """Repository-level contracts for ordinary and release automation."""
 
+import ast
 import tomllib
 from pathlib import Path
 
@@ -128,3 +129,54 @@ def test_release_workflow_fails_closed_and_publishes_checksums() -> None:
     assert "--wheel dist/*.whl" in workflow
     assert "sha256sum" in workflow
     assert "gh release create" in workflow
+
+
+def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:
+    """The step that decides whether to release must run where nothing is built.
+
+    `release.yml` decides whether a release was asked for before it builds
+    anything, so its `detect` job sets up a bare interpreter and installs no
+    dependencies at all. That is deliberate: the question is only what version
+    the manifest names.
+
+    `check_release.py` answered it by importing `measure_target_resources` and
+    `run_scientific_release` at module scope, and both of those import
+    `asterism` and NumPy because measuring a release means running it. So the
+    only step that can start a release could not run, and a release could never
+    have started. It failed on `main` exactly that way.
+
+    The two siblings are imported where they are used instead. This checks the
+    import graph rather than the behaviour, because reproducing the job means
+    reproducing an interpreter with nothing installed.
+    """
+    source: str = (ROOT / "tools/check_release.py").read_text(encoding="utf-8")
+    """Read the script the detect job runs, as automation sees it."""
+
+    tree: ast.Module = ast.parse(source)
+    """Parsed it without importing it, which would need what it must not need."""
+
+    forbidden: frozenset[str] = frozenset(
+        {"asterism", "numpy", "measure_target_resources", "run_scientific_release"}
+    )
+    """Named what the detect job does not have and must not be asked for."""
+
+    at_module_scope: list[str] = []
+    """Collected every name imported before any function body runs."""
+
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            at_module_scope.extend(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            at_module_scope.append(node.module.lstrip(".").split(".")[0])
+    """Walked only the top level, which is what an import of this module runs."""
+
+    assert forbidden.isdisjoint(at_module_scope), (
+        "tools/check_release.py imports "
+        f"{sorted(forbidden.intersection(at_module_scope))} at module scope, which "
+        "the release workflow's detect job does not install"
+    )
+
+    workflow: str = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    """Read the release workflow to confirm the detect step is still that script."""
+
+    assert "check_release.py --requested" in workflow

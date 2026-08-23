@@ -16,25 +16,31 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-if __package__:
-    from .measure_target_resources import (
-        target_resource_configuration_errors,
-        target_resource_record_errors,
-    )
-    from .run_scientific_release import (
-        agreement_record_errors,
-        scientific_inventory_errors,
-    )
-else:
-    from measure_target_resources import (
-        target_resource_configuration_errors,
-        target_resource_record_errors,
-    )
-    from run_scientific_release import (
-        agreement_record_errors,
-        scientific_inventory_errors,
-    )
-"""Imported shared evidence validation in both module and direct-script execution."""
+
+def sibling(name: str) -> ModuleType:
+    """Import one of this tool's heavier siblings, at the moment it is needed.
+
+    `measure_target_resources` and `run_scientific_release` both reach for
+    `asterism` and NumPy, because measuring a release means running it. This
+    module needs neither: everything it does itself is reading and checking
+    files.
+
+    That mattered. Importing them at module scope made every entry point pay
+    for the compiled package, including `--requested`, which only reads the
+    version out of the manifest and answers whether a release was asked for at
+    all. The release workflow runs exactly that, in a job that deliberately
+    installs nothing because it decides whether anything should be built. So
+    the step gating the release could not run, and the release could not start.
+
+    Args:
+        name: Sibling module name, without a package prefix.
+
+    Returns:
+        The imported sibling, in both package and direct-script execution.
+    """
+    if __package__:
+        return importlib.import_module(f".{name}", __package__)
+    return importlib.import_module(name)
 
 
 def sha256(path: Path) -> str:
@@ -1242,7 +1248,7 @@ def release_evidence_errors(
         """Selected exactly the immutable public build fields returned by Asterism."""
 
         errors.extend(
-            target_resource_record_errors(
+            sibling("measure_target_resources").target_resource_record_errors(
                 embedded_resource_record,
                 manifest=release_manifest,
                 root=root,
@@ -1319,7 +1325,7 @@ def release_evidence_errors(
             )
         else:
             errors.extend(
-                agreement_record_errors(
+                sibling("run_scientific_release").agreement_record_errors(
                     record=embedded_record,
                     manifest=manifest,
                     source_commit=str(getattr(core, "__source_commit__", "")),
@@ -1607,7 +1613,7 @@ def main() -> int:
         """Kept installed-wheel testing distinct from actual result agreement."""
 
         errors.extend(
-            target_resource_configuration_errors(
+            sibling("measure_target_resources").target_resource_configuration_errors(
                 manifest.get("target_resource_budgets"),
                 root,
                 identifiers,
@@ -1707,7 +1713,11 @@ def main() -> int:
             errors.extend(measured_design_range_errors(analysis))
         """Required every scientific claim to have measured limits and pass rules."""
 
-        errors.extend(scientific_inventory_errors(manifest, root))
+        errors.extend(
+            sibling("run_scientific_release").scientific_inventory_errors(
+                manifest, root
+            )
+        )
         """Required exact one-to-one commands and participant-free design facts."""
 
         for analysis in analyses:
