@@ -14,6 +14,15 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.97.1
     steps:
       - uses: actions/checkout@v4
+      # `--all-features` turns on the `python` feature, so both steps below
+      # build pyo3 and need an interpreter at least as new as the `abi3-py313`
+      # floor. Ubuntu 24.04 ships 3.12, on which pyo3 refuses to configure, so
+      # without this the Rust half of this gate has never run: `cargo fmt`
+      # passed, and clippy and the Rust suite both stopped in pyo3's build
+      # script before reaching any of this crate's code.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - name: Install the declared Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
       - name: Check Rust formatting
