@@ -56,6 +56,20 @@ from pathlib import Path
 import asterism
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from external_reference_adapter import (
+    CONTRACT_VERSION,
+    ReferenceAdapterError,
+    array_identity,
+    emit_reference_record,
+    json_identity,
+    load_fixture,
+    parse_reference_arguments,
+    r_tool_identity,
+    require_r_versions,
+    support_source_identity,
+)
+
 # Both sides stop on their own tolerances, so the agreement is bounded by two
 # optimisers rather than by arithmetic. The tolerance is set from what the
 # comparison actually achieves, not chosen for comfort.
@@ -67,9 +81,30 @@ import numpy as np
 # hair above. Dividing by a vanishing estimate turns a difference of three
 # millionths into a relative difference of one, which says nothing about either
 # fit. A share of the trait's variance is the scale a reader cares about.
-TOLERANCE = 1e-4
+TOLERANCE: float = 1e-4
+"""Maximum accepted scaled difference across fitted spatial quantities."""
 
-R_SCRIPT = r"""
+CHECK_ID: str = "spatial_against_spamm"
+"""Matched the independent spatial manifest check identifier exactly."""
+
+REFERENCE_ACCEPTANCE: dict[str, float | str] = {
+    "maximum_difference": TOLERANCE,
+    "variance_difference_scale": "absolute gap divided by Asterism total variance",
+    "decay_difference_scale": "absolute gap divided by absolute spaMM decay",
+}
+"""Prewrote the historical four-quantity spatial agreement rule."""
+
+QUALIFIED_R_VERSION: str = "4.5.2"
+"""Named the R release on which the spatial independent output is qualified."""
+
+QUALIFIED_PACKAGES: dict[str, str] = {
+    "spaMM": "4.6.65",
+    "geoR": "1.9.6",
+    "jsonlite": "2.0.0",
+}
+"""Named the exact spatial fitter, independent generator and JSON bridge."""
+
+R_SCRIPT: str = r"""
 suppressMessages(library(spaMM))
 args <- commandArgs(trailingOnly = TRUE)
 here <- args[1]
@@ -89,8 +124,9 @@ out <- list(
 )
 cat(jsonlite::toJSON(out, auto_unbox = TRUE, digits = 15))
 """
+"""R program fitting spaMM's equivalent REML spatial covariance model."""
 
-GEOR_SCRIPT = r"""
+GEOR_SCRIPT: str = r"""
 suppressMessages(library(geoR))
 args <- commandArgs(trailingOnly = TRUE)
 here <- args[1]
@@ -103,60 +139,146 @@ field <- grf(nrow(coords), grid = coords, cov.model = "exponential",
              cov.pars = c(spec$spatial, 1 / spec$decay), messages = FALSE)
 cat(jsonlite::toJSON(list(field = field$data), auto_unbox = TRUE, digits = 15))
 """
+"""R program drawing the independently generated geoR exponential field."""
 
 
 def relationship(families: int, sibs: int) -> np.ndarray:
-    """Full sibs in families, the simplest structure that is not the identity."""
-    n = families * sibs
-    a = np.eye(n)
+    """Build full-sibling families, the simplest non-identity structure.
+
+    Args:
+        families: Number of independent families.
+        sibs: Full siblings represented per family.
+
+    Returns:
+        Additive relationship matrix in family-major person order.
+    """
+    n: int = families * sibs
+    """Calculated the number of people in the family design."""
+
+    a: np.ndarray = np.eye(n)
+    """Initialised unrelated people with unit diagonal relationships."""
+
     for f in range(families):
-        index = np.arange(f * sibs, (f + 1) * sibs)
+        index: np.ndarray = np.arange(f * sibs, (f + 1) * sibs)
+        """Located this family's contiguous people in matrix order."""
+
         a[np.ix_(index, index)] = 0.5
+        """Set all within-family entries to the full-sibling coefficient."""
+
         a[index, index] = 1.0
+        """Restored the unit diagonal for every person in this family."""
+
     return a
 
 
-def run_r(script: str, directory: Path) -> dict:
-    path = directory / "script.R"
+def run_r(script: str, directory: Path) -> dict[str, float | list[float]]:
+    """Run one independent R program in an isolated problem directory.
+
+    Args:
+        script: Complete R source for the requested external calculation.
+        directory: Directory containing the calculation's input files.
+
+    Returns:
+        Parsed final-line JSON values emitted by the R program.
+
+    Raises:
+        SystemExit: If the external R process fails.
+    """
+    path: Path = directory / "script.R"
+    """Selected the transient R program path beside its inputs."""
+
     path.write_text(script)
-    finished = subprocess.run(
+    finished: subprocess.CompletedProcess[str] = subprocess.run(
         ["Rscript", str(path), str(directory)],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
+    """Ran the external program while retaining output for strict parsing."""
+
     if finished.returncode != 0:
         raise SystemExit(f"R failed:\n{finished.stderr[-3000:]}")
     return json.loads(finished.stdout.strip().splitlines()[-1])
 
 
-def one(name: str, families: int, sibs: int, truth: dict, seed: int,
-        generator: str, directory: Path) -> dict:
-    rng = np.random.default_rng(seed)
-    n = families * sibs
-    a = relationship(families, sibs)
+def one(
+    name: str,
+    families: int,
+    sibs: int,
+    truth: dict[str, float],
+    seed: int,
+    generator: str,
+    directory: Path,
+) -> dict[str, str | int | float | bool | dict[str, float]]:
+    """Fit one fixed scenario with Asterism and spaMM.
+
+    Args:
+        name: Human-readable scenario label.
+        families: Number of independent sibling families.
+        sibs: Full siblings represented per family.
+        truth: Additive, spatial, residual and decay generation values.
+        seed: Reproducible scenario seed.
+        generator: ``asterism`` or the independently generated ``geoR`` field.
+        directory: Isolated workspace for shared R inputs.
+
+    Returns:
+        Scenario inputs, both fitted records and maximum scaled difference.
+    """
+    rng: np.random.Generator = np.random.default_rng(seed)
+    """Selected the fixed coordinate and phenotype stream for this scenario."""
+
+    n: int = families * sibs
+    """Calculated the scenario's person count."""
+
+    a: np.ndarray = relationship(families, sibs)
+    """Built the scenario's additive relationship matrix."""
+
     # One location per person, so the geography crosses the families.
-    coordinates = rng.uniform(0.0, 100.0, size=(n, 2))
-    distance = np.sqrt(
+    coordinates: np.ndarray = rng.uniform(0.0, 100.0, size=(n, 2))
+    """Drew one person-specific two-dimensional location."""
+
+    distance: np.ndarray = np.sqrt(
         ((coordinates[:, None, :] - coordinates[None, :, :]) ** 2).sum(-1)
     )
+    """Calculated all Euclidean distances across and within families."""
 
     if generator == "geoR":
-        (directory / "spec.json").write_text(json.dumps({
-            "seed": seed, "x": coordinates[:, 0].tolist(),
-            "y": coordinates[:, 1].tolist(),
-            "spatial": truth["spatial"], "decay": truth["decay"],
-        }))
-        spatial_part = np.asarray(run_r(GEOR_SCRIPT, directory)["field"])
-        genetic = np.linalg.cholesky(
-            truth["additive"] * a + 1e-10 * np.eye(n)) @ rng.standard_normal(n)
-        residual = np.sqrt(truth["residual"]) * rng.standard_normal(n)
-        y = spatial_part + genetic + residual
+        (directory / "spec.json").write_text(
+            json.dumps(
+                {
+                    "seed": seed,
+                    "x": coordinates[:, 0].tolist(),
+                    "y": coordinates[:, 1].tolist(),
+                    "spatial": truth["spatial"],
+                    "decay": truth["decay"],
+                }
+            )
+        )
+        spatial_part: np.ndarray = np.asarray(run_r(GEOR_SCRIPT, directory)["field"])
+        """Drew this scenario's spatial field through independent geoR code."""
+
+        genetic: np.ndarray = np.linalg.cholesky(
+            truth["additive"] * a + 1e-10 * np.eye(n)
+        ) @ rng.standard_normal(n)
+        """Drew the additive contribution through the fixed relationship matrix."""
+
+        residual: np.ndarray = np.sqrt(truth["residual"]) * rng.standard_normal(n)
+        """Drew the independent residual contribution."""
+
+        y: np.ndarray = spatial_part + genetic + residual
+        """Combined geoR, additive and residual contributions into the outcome."""
     else:
-        covariance = (
+        covariance: np.ndarray = (
             truth["additive"] * a
             + truth["spatial"] * np.exp(-truth["decay"] * distance)
             + truth["residual"] * np.eye(n)
         )
-        y = np.linalg.cholesky(covariance + 1e-10 * np.eye(n)) @ rng.standard_normal(n)
+        """Constructed the stated additive, spatial and residual covariance."""
+
+        y: np.ndarray = np.linalg.cholesky(
+            covariance + 1e-10 * np.eye(n)
+        ) @ rng.standard_normal(n)
+        """Drew the outcome after the fixed numerical diagonal stabiliser."""
 
     np.savetxt(directory / "A.csv", a, delimiter=",")
     # `cx` and `cy` rather than `x` and `y`: the response is already `y`, and a
@@ -164,43 +286,74 @@ def one(name: str, families: int, sibs: int, truth: dict, seed: int,
     np.savetxt(
         directory / "data.csv",
         np.column_stack([y, coordinates]),
-        delimiter=",", header="y,cx,cy", comments="", fmt="%.17g",
+        delimiter=",",
+        header="y,cx,cy",
+        comments="",
+        fmt="%.17g",
     )
 
-    theirs = run_r(R_SCRIPT, directory)
-    fit = asterism.SpatialModel(
+    theirs: dict[str, float | list[float]] = run_r(R_SCRIPT, directory)
+    """Fitted the shared scenario with the independent spaMM implementation."""
+
+    fit: dict[str, object] = asterism.SpatialModel(
         [np.ascontiguousarray(a)], distance, np.ones((n, 1))
     ).fit(y)
-    ours = {
+    """Fitted the shared scenario through Asterism's public spatial model."""
+
+    ours: dict[str, float] = {
         "additive": fit["variances"][0],
         "spatial": fit["variances"][1],
         "residual": fit["variances"][2],
         "decay": fit["decay_per_km"],
     }
+    """Selected the four directly comparable Asterism quantities."""
 
-    total = sum(ours[q] for q in ("additive", "spatial", "residual"))
+    total: float = sum(ours[q] for q in ("additive", "spatial", "residual"))
+    """Calculated Asterism's total fitted variance for component scaling."""
 
     def difference(quantity: str) -> float:
-        gap = abs(ours[quantity] - theirs[quantity])
+        """Scale one fitted difference by its prewritten denominator.
+
+        Args:
+            quantity: One component or the decay-rate field name.
+
+        Returns:
+            Protected relative decay gap or total-variance-scaled component gap.
+        """
+        gap: float = abs(ours[quantity] - theirs[quantity])
+        """Calculated the absolute cross-implementation difference."""
+
         if quantity == "decay":
             # No total for a rate to be a share of, so this one is relative.
             return gap / max(abs(theirs[quantity]), 1e-12)
         return gap / max(total, 1e-12)
 
-    worst = max(difference(q) for q in ("additive", "spatial", "residual", "decay"))
+    worst: float = max(
+        difference(quantity)
+        for quantity in ("additive", "spatial", "residual", "decay")
+    )
+    """Selected the maximum scaled difference across the four quantities."""
 
     print(f"\n{name}   {n} people, {families} families, generated by {generator}")
     print(f"  {'':<10}{'asterism':>14}{'spaMM':>14}{'difference':>12}{'true':>12}")
     for quantity in ("additive", "spatial", "residual", "decay"):
-        print(f"  {quantity:<10}{ours[quantity]:>14.8f}{theirs[quantity]:>14.8f}"
-              f"{difference(quantity):>12.2e}{truth[quantity]:>12.4f}")
-    print(f"  converged {fit['converged']}, |g| {fit['scaled_gradient']:.2e}, "
-          f"polished {fit['polished']}")
+        print(
+            f"  {quantity:<10}{ours[quantity]:>14.8f}{theirs[quantity]:>14.8f}"
+            f"{difference(quantity):>12.2e}{truth[quantity]:>12.4f}"
+        )
+    print(
+        f"  converged {fit['converged']}, |g| {fit['scaled_gradient']:.2e}, "
+        f"polished {fit['polished']}"
+    )
 
     return {
-        "scenario": name, "people": n, "families": families,
-        "generator": generator, "truth": truth,
-        "asterism": ours, "spamm": theirs,
+        "scenario": name,
+        "people": n,
+        "families": families,
+        "generator": generator,
+        "truth": truth,
+        "asterism": ours,
+        "spamm": theirs,
         "worst_difference": worst,
         "converged": bool(fit["converged"]),
         "scaled_gradient": float(fit["scaled_gradient"]),
@@ -208,43 +361,639 @@ def one(name: str, families: int, sibs: int, truth: dict, seed: int,
     }
 
 
-SCENARIOS = [
+SCENARIOS: list[tuple[str, int, int, dict[str, float], int, str]] = [
     # A range well inside the spread of the locations, so it is identified.
-    ("a range the data can see", 60, 4,
-     {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.08},
-     20_260_819, "asterism"),
+    (
+        "a range the data can see",
+        60,
+        4,
+        {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.08},
+        20_260_819,
+        "asterism",
+    ),
     # A short range: correlation dies within a few units, so the kernel is
     # close to an identity and the spatial variance is hard to separate from
     # the residual. Both fitters should still land in the same place.
-    ("a range shorter than the spacing", 60, 4,
-     {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 1.50},
-     20_260_820, "asterism"),
+    (
+        "a range shorter than the spacing",
+        60,
+        4,
+        {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 1.50},
+        20_260_820,
+        "asterism",
+    ),
     # A long range: the kernel is nearly constant, which is the degenerate case
     # three GOBS traits fall into. Agreement here is what says a fit at a bound
     # is the data's doing rather than one implementation's.
-    ("a range longer than the map", 60, 4,
-     {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.002},
-     20_260_821, "asterism"),
+    (
+        "a range longer than the map",
+        60,
+        4,
+        {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.002},
+        20_260_821,
+        "asterism",
+    ),
     # No genetic variance at all, so the spatial component carries everything
     # it is going to carry.
-    ("no additive variance", 60, 4,
-     {"additive": 0.0001, "spatial": 0.50, "residual": 0.50, "decay": 0.08},
-     20_260_822, "asterism"),
+    (
+        "no additive variance",
+        60,
+        4,
+        {"additive": 0.0001, "spatial": 0.50, "residual": 0.50, "decay": 0.08},
+        20_260_822,
+        "asterism",
+    ),
     # The field drawn by geoR rather than by us.
-    ("a field drawn by geoR", 50, 4,
-     {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.08},
-     20_260_823, "geoR"),
+    (
+        "a field drawn by geoR",
+        50,
+        4,
+        {"additive": 0.40, "spatial": 0.30, "residual": 0.30, "decay": 0.08},
+        20_260_823,
+        "geoR",
+    ),
 ]
+"""Fixed scenarios spanning identifiable, boundary and independent-field cases."""
+
+
+def scenario_coordinates(
+    scenario: tuple[str, int, int, dict[str, float], int, str],
+) -> np.ndarray:
+    """Regenerate one scenario's exact participant-free coordinates.
+
+    Args:
+        scenario: Name, family design, truth, seed and generator label.
+
+    Returns:
+        Person-specific two-dimensional coordinates.
+    """
+    # asterism-style: allow missing-following-doc -- tuple unpacking names one scenario contract
+    _, families, sibs, _, seed, _ = scenario
+    generator: np.random.Generator = np.random.default_rng(seed)
+    """Selected the scenario's fixed coordinate and phenotype stream."""
+
+    return generator.uniform(0.0, 100.0, size=(families * sibs, 2))
+
+
+def draw_geor_reference_field(
+    scenario: tuple[str, int, int, dict[str, float], int, str],
+) -> np.ndarray:
+    """Run live geoR for the one independently generated spatial field.
+
+    Args:
+        scenario: Fixed geoR scenario specification.
+
+    Returns:
+        Independent spatial field in canonical person order.
+
+    Raises:
+        ReferenceAdapterError: If the scenario or live geoR output is malformed.
+    """
+    # asterism-style: allow missing-following-doc -- tuple unpacking names one scenario contract
+    name, _, _, truth, seed, generator_name = scenario
+    if generator_name != "geoR":
+        raise ReferenceAdapterError(f"scenario {name!r} is not generated by geoR")
+    coordinates: np.ndarray = scenario_coordinates(scenario)
+    """Regenerated the coordinates passed to the independent field generator."""
+
+    with tempfile.TemporaryDirectory() as temporary:
+        directory: Path = Path(temporary)
+        """Isolated geoR's transient JSON input and R program."""
+
+        (directory / "spec.json").write_text(
+            json.dumps(
+                {
+                    "seed": seed,
+                    "x": coordinates[:, 0].tolist(),
+                    "y": coordinates[:, 1].tolist(),
+                    "spatial": truth["spatial"],
+                    "decay": truth["decay"],
+                }
+            )
+        )
+        result: dict[str, object] = run_r(GEOR_SCRIPT, directory)
+        """Invoked geoR's independently authored exponential-field generator."""
+
+    field: np.ndarray = np.asarray(result.get("field"), dtype=float)
+    """Converted geoR's JSON field without changing its values or ordering."""
+
+    expected_people: int = scenario[1] * scenario[2]
+    """Calculated the exact field length from the fixed family design."""
+
+    if field.shape != (expected_people,) or not np.all(np.isfinite(field)):
+        raise ReferenceAdapterError(f"geoR returned malformed field for {name!r}")
+    return field
+
+
+def build_reference_problem(
+    scenario: tuple[str, int, int, dict[str, float], int, str],
+    geor_field: np.ndarray | None,
+) -> dict[str, object]:
+    """Regenerate one exact participant-free spatial comparison input.
+
+    Args:
+        scenario: Name, family design, truth, seed and generator label.
+        geor_field: Frozen independent field for the geoR scenario only.
+
+    Returns:
+        Named relationship, geography, outcome and scenario metadata.
+
+    Raises:
+        ReferenceAdapterError: If a field is supplied or omitted for the wrong case.
+    """
+    # asterism-style: allow missing-following-doc -- tuple unpacking names one scenario contract
+    name, families, sibs, truth, seed, generator_name = scenario
+    generator: np.random.Generator = np.random.default_rng(seed)
+    """Selected the scenario's fixed coordinate and phenotype stream."""
+
+    people: int = families * sibs
+    """Calculated the scenario's fixed participant-free sample size."""
+
+    relationship_matrix: np.ndarray = relationship(families, sibs)
+    """Built the block-diagonal full-sibling additive relationship matrix."""
+
+    coordinates: np.ndarray = generator.uniform(0.0, 100.0, size=(people, 2))
+    """Generated one location per person so geography crosses family boundaries."""
+
+    distances: np.ndarray = np.sqrt(
+        ((coordinates[:, None, :] - coordinates[None, :, :]) ** 2).sum(-1)
+    )
+    """Calculated the exact pairwise Euclidean distance matrix supplied to Asterism."""
+
+    if generator_name == "geoR":
+        if geor_field is None or geor_field.shape != (people,):
+            raise ReferenceAdapterError(f"geoR field is absent for {name!r}")
+        genetic: np.ndarray = np.linalg.cholesky(
+            truth["additive"] * relationship_matrix + 1e-10 * np.eye(people)
+        ) @ generator.standard_normal(people)
+        """Generated the additive contribution after the fixed coordinate stream."""
+
+        residual: np.ndarray = np.sqrt(truth["residual"]) * generator.standard_normal(
+            people
+        )
+        """Generated individual residuals after the fixed additive stream."""
+
+        response: np.ndarray = geor_field + genetic + residual
+        """Combined the frozen independent field with Python genetic and residual draws."""
+    else:
+        if geor_field is not None:
+            raise ReferenceAdapterError(f"unexpected geoR field for {name!r}")
+        covariance: np.ndarray = (
+            truth["additive"] * relationship_matrix
+            + truth["spatial"] * np.exp(-truth["decay"] * distances)
+            + truth["residual"] * np.eye(people)
+        )
+        """Assembled the prewritten additive, spatial and residual simulation model."""
+
+        response = np.linalg.cholesky(
+            covariance + 1e-10 * np.eye(people)
+        ) @ generator.standard_normal(people)
+        """Generated the participant-free Gaussian response for this scenario."""
+
+    return {
+        "name": name,
+        "families": families,
+        "sibs": sibs,
+        "truth": truth,
+        "seed": seed,
+        "generator": generator_name,
+        "relationship": relationship_matrix,
+        "coordinates": coordinates,
+        "distance": distances,
+        "response": response,
+        "geor_field": geor_field,
+    }
+
+
+def reference_input_identities(
+    problems: list[dict[str, object]],
+) -> list[dict[str, str]]:
+    """Return canonical hashes for every generated spatial input.
+
+    Args:
+        problems: Ordered fixed scenarios with their final model inputs.
+
+    Returns:
+        Ordered strict input identities for all five scenarios.
+    """
+    identities: list[dict[str, str]] = [support_source_identity()]
+    """Bound shared canonicalisation and R identity mechanics before model inputs."""
+
+    for problem in problems:
+        name: str = str(problem["name"])
+        """Selected one stable scenario label for every identity name."""
+
+        identities.extend(
+            [
+                json_identity(
+                    f"spatial scenario {name}",
+                    {
+                        "families": problem["families"],
+                        "sibs": problem["sibs"],
+                        "truth": problem["truth"],
+                        "seed": problem["seed"],
+                        "generator": problem["generator"],
+                    },
+                ),
+                array_identity(
+                    f"spatial relationship {name}",
+                    problem["relationship"],  # type: ignore[arg-type]
+                ),
+                array_identity(
+                    f"spatial coordinates {name}",
+                    problem["coordinates"],  # type: ignore[arg-type]
+                ),
+                array_identity(
+                    f"spatial distances {name}",
+                    problem["distance"],  # type: ignore[arg-type]
+                ),
+                array_identity(
+                    f"spatial response {name}",
+                    problem["response"],  # type: ignore[arg-type]
+                ),
+            ]
+        )
+        if problem["geor_field"] is not None:
+            identities.append(
+                array_identity(
+                    f"independent geoR field {name}",
+                    problem["geor_field"],  # type: ignore[arg-type]
+                )
+            )
+    return identities
+
+
+def fit_asterism_reference(problem: dict[str, object]) -> dict[str, object]:
+    """Fit one frozen scenario through Asterism's public spatial API.
+
+    Args:
+        problem: Generated relationship, distance and outcome arrays.
+
+    Returns:
+        Public component, decay and convergence quantities under comparison.
+    """
+    relationship_matrix: np.ndarray = problem["relationship"]  # type: ignore[assignment]
+    """Read the generated additive relationship matrix."""
+
+    distance_matrix: np.ndarray = problem["distance"]  # type: ignore[assignment]
+    """Read the generated pairwise distance matrix."""
+
+    response: np.ndarray = problem["response"]  # type: ignore[assignment]
+    """Read the generated continuous phenotype."""
+
+    model: asterism.SpatialModel = asterism.SpatialModel(
+        [np.ascontiguousarray(relationship_matrix)],
+        np.ascontiguousarray(distance_matrix),
+        np.ones((response.size, 1)),
+    )
+    """Constructed the public three-component spatial model."""
+
+    fit: dict[str, object] = model.fit(np.ascontiguousarray(response))
+    """Recomputed the candidate implementation from frozen participant-free inputs."""
+
+    return {
+        "scenario": problem["name"],
+        "additive": float(fit["variances"][0]),
+        "spatial": float(fit["variances"][1]),
+        "residual": float(fit["variances"][2]),
+        "decay": float(fit["decay_per_km"]),
+        "converged": bool(fit["converged"]),
+        "scaled_gradient": float(fit["scaled_gradient"]),
+        "polished": bool(fit["polished"]),
+    }
+
+
+def fit_spamm_reference(problem: dict[str, object]) -> dict[str, float]:
+    """Run live spaMM and retain only four independent numerical outputs.
+
+    Args:
+        problem: Generated relationship, coordinates and outcome arrays.
+
+    Returns:
+        Independent additive, spatial, residual and decay estimates.
+    """
+    relationship_matrix: np.ndarray = problem["relationship"]  # type: ignore[assignment]
+    """Read the generated additive relationship matrix."""
+
+    coordinates: np.ndarray = problem["coordinates"]  # type: ignore[assignment]
+    """Read the generated person-specific map coordinates."""
+
+    response: np.ndarray = problem["response"]  # type: ignore[assignment]
+    """Read the generated continuous phenotype."""
+
+    with tempfile.TemporaryDirectory() as temporary:
+        directory: Path = Path(temporary)
+        """Isolated transient spaMM CSV input and R program."""
+
+        np.savetxt(directory / "A.csv", relationship_matrix, delimiter=",")
+        np.savetxt(
+            directory / "data.csv",
+            np.column_stack([response, coordinates]),
+            delimiter=",",
+            header="y,cx,cy",
+            comments="",
+            fmt="%.17g",
+        )
+        raw: dict[str, object] = run_r(R_SCRIPT, directory)
+        """Ran spaMM's independently authored REML spatial fitter."""
+
+    required: tuple[str, ...] = ("additive", "spatial", "residual", "decay")
+    """Named only the independent outputs needed by portable verification."""
+
+    if any(quantity not in raw for quantity in required):
+        raise ReferenceAdapterError(
+            f"spaMM omitted an output for scenario {problem['name']!r}"
+        )
+    return {quantity: float(raw[quantity]) for quantity in required}
+
+
+def live_external_outputs() -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Run geoR and spaMM for every fixed spatial scenario.
+
+    Returns:
+        Frozen independent outputs and the exact generated Asterism problems.
+    """
+    fields: dict[str, list[float]] = {}
+    """Retained only the one independent field required to reconstruct verify input."""
+
+    records: list[dict[str, object]] = []
+    """Collected one spaMM fit per fixed scenario."""
+
+    problems: list[dict[str, object]] = []
+    """Retained generated model inputs for public Asterism recomputation."""
+
+    for scenario in SCENARIOS:
+        name: str = scenario[0]
+        """Selected the stable scenario identity used in outputs and hashes."""
+
+        field: np.ndarray | None = (
+            draw_geor_reference_field(scenario) if scenario[5] == "geoR" else None
+        )
+        """Invoked geoR only for the prewritten independently generated scenario."""
+
+        if field is not None:
+            fields[name] = field.tolist()
+            """Froze the independent field required to reconstruct portable input."""
+        problem: dict[str, object] = build_reference_problem(scenario, field)
+        """Combined the field and deterministic Python draws into final model input."""
+
+        problems.append(problem)
+        records.append({"scenario": name, "spamm": fit_spamm_reference(problem)})
+    return {"scenarios": records, "geor_fields": fields}, problems
+
+
+def problems_from_external_outputs(
+    external_outputs: object,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Reconstruct all spatial inputs from frozen independent outputs without R.
+
+    Args:
+        external_outputs: Frozen spaMM fits and the one required geoR field.
+
+    Returns:
+        Generated problems and ordered frozen spaMM records.
+
+    Raises:
+        ReferenceAdapterError: If any scenario or independent field is malformed.
+    """
+    if not isinstance(external_outputs, dict):
+        raise ReferenceAdapterError("spaMM external_outputs must be an object")
+    records_object: object = external_outputs.get("scenarios")
+    """Read the frozen spaMM records before validating exact scenario coverage."""
+
+    fields_object: object = external_outputs.get("geor_fields")
+    """Read the frozen independent field required by the geoR-generated case."""
+
+    if not isinstance(records_object, list) or not isinstance(fields_object, dict):
+        raise ReferenceAdapterError("spaMM scenarios or geoR fields are malformed")
+    records: list[dict[str, object]] = []
+    """Collected shape-validated independent scenario records."""
+
+    for record_object in records_object:
+        if not isinstance(record_object, dict) or not isinstance(
+            record_object.get("spamm"), dict
+        ):
+            raise ReferenceAdapterError("spaMM scenario record is malformed")
+        records.append(record_object)
+    expected_names: list[str] = [scenario[0] for scenario in SCENARIOS]
+    """Named the exact fixed scenario inventory and ordering."""
+
+    if [record.get("scenario") for record in records] != expected_names:
+        raise ReferenceAdapterError("spaMM frozen scenario inventory is stale")
+    if set(fields_object) != {
+        scenario[0] for scenario in SCENARIOS if scenario[5] == "geoR"
+    }:
+        raise ReferenceAdapterError("geoR frozen field inventory is stale")
+    problems: list[dict[str, object]] = []
+    """Regenerated model inputs in the same fixed scenario ordering."""
+
+    for scenario in SCENARIOS:
+        field_values: object = fields_object.get(scenario[0])
+        """Read a frozen independent field only for the geoR scenario."""
+
+        field: np.ndarray | None = (
+            np.asarray(field_values, dtype=float) if field_values is not None else None
+        )
+        """Converted JSON values without invoking the independent R generator."""
+
+        problems.append(build_reference_problem(scenario, field))
+    return problems, records
+
+
+def compare_reference(
+    ours: list[dict[str, object]], records: list[dict[str, object]]
+) -> tuple[bool, dict[str, object]]:
+    """Apply the immutable spaMM agreement rule across all five scenarios.
+
+    Args:
+        ours: Fresh public Asterism results in fixed scenario order.
+        records: Frozen independent spaMM results in the same order.
+
+    Returns:
+        Pass decision and all component/decay differences.
+
+    Raises:
+        ReferenceAdapterError: If a frozen spaMM quantity is absent.
+    """
+    if len(ours) != len(records):
+        raise ReferenceAdapterError("spaMM result count does not match scenarios")
+    diagnostics: list[dict[str, object]] = []
+    """Collected each four-quantity comparison without averaging scenarios."""
+
+    failures: list[str] = []
+    """Collected every scenario whose worst difference exceeds acceptance."""
+
+    for our_result, record in zip(ours, records, strict=True):
+        if record.get("scenario") != our_result.get("scenario"):
+            raise ReferenceAdapterError("spaMM scenario identity changed during verify")
+        spamm_object: object = record.get("spamm")
+        """Read the raw independent fit only after matching scenario identity."""
+
+        if not isinstance(spamm_object, dict):
+            raise ReferenceAdapterError("spaMM scenario has no independent fit")
+        quantities: tuple[str, ...] = ("additive", "spatial", "residual", "decay")
+        """Named the three components and spatial decay under comparison."""
+
+        if any(quantity not in spamm_object for quantity in quantities):
+            raise ReferenceAdapterError("spaMM independent fit is incomplete")
+        total: float = sum(
+            float(our_result[quantity])
+            for quantity in ("additive", "spatial", "residual")
+        )
+        """Defined the reportable trait-variance scale for component differences."""
+
+        differences: dict[str, float] = {
+            quantity: (
+                abs(float(our_result[quantity]) - float(spamm_object[quantity]))
+                / (
+                    max(abs(float(spamm_object[quantity])), 1e-12)
+                    if quantity == "decay"
+                    else max(total, 1e-12)
+                )
+            )
+            for quantity in quantities
+        }
+        """Applied the historical component-share and relative-decay scales."""
+
+        worst: float = max(differences.values())
+        """Required all four quantities to agree within the fixed threshold."""
+
+        diagnostics.append(
+            {
+                "scenario": our_result["scenario"],
+                "asterism": our_result,
+                "spamm": spamm_object,
+                "differences": differences,
+                "worst_difference": worst,
+            }
+        )
+        if worst > float(REFERENCE_ACCEPTANCE["maximum_difference"]):
+            failures.append(f"scenario {our_result['scenario']!r} exceeds tolerance")
+    return not failures, {"scenarios": diagnostics, "failures": failures}
+
+
+def reference_record(mode: str, fixture_path: Path) -> dict[str, object]:
+    """Build one live-refresh or portable-verification adapter response.
+
+    Args:
+        mode: Strict ``refresh`` or ``verify`` operation.
+        fixture_path: Frozen envelope supplied by the external fixture driver.
+
+    Returns:
+        Version-one adapter response consumed by the strict driver.
+    """
+    tools: list[dict[str, object]] | None = None
+    """Held live independent software identity only during explicit refresh."""
+
+    external_outputs: object = {}
+    """Held frozen independent fields and fits in either strict adapter mode."""
+
+    problems: list[dict[str, object]] = []
+    """Held regenerated public Asterism inputs in fixed scenario order."""
+
+    records: list[dict[str, object]] = []
+    """Held frozen spaMM fits matched to those regenerated scenarios."""
+
+    if mode == "refresh":
+        tools = r_tool_identity(tuple(QUALIFIED_PACKAGES))
+        """Loaded and identified spaMM, geoR and their JSON bridge."""
+
+        require_r_versions(
+            tools,
+            r_version=QUALIFIED_R_VERSION,
+            packages=QUALIFIED_PACKAGES,
+        )
+        # asterism-style: allow missing-following-doc -- frozen outputs and their exact inputs are one live result
+        external_outputs, problems = live_external_outputs()
+        records = external_outputs["scenarios"]  # type: ignore[index,assignment]
+        """Selected the freshly obtained independent fits for comparison."""
+    else:
+        fixture: dict[str, object] = load_fixture(fixture_path, CHECK_ID)
+        """Loaded the driver-validated frozen independent envelope without R."""
+
+        if fixture.get("acceptance") != REFERENCE_ACCEPTANCE:
+            raise ReferenceAdapterError("spatial spaMM fixture acceptance was altered")
+        external_outputs = fixture.get("external_outputs")
+        """Read only the independent field and fits required by portable comparison."""
+
+        # asterism-style: allow missing-following-doc -- regenerated inputs and matched frozen records are one transform
+        problems, records = problems_from_external_outputs(external_outputs)
+    identities: list[dict[str, str]] = reference_input_identities(problems)
+    """Recomputed canonical participant-free inputs in both adapter modes."""
+
+    ours: list[dict[str, object]] = [
+        fit_asterism_reference(problem) for problem in problems
+    ]
+    """Recomputed every scenario through the public SpatialModel API."""
+
+    # asterism-style: allow missing-following-doc -- paired decision and diagnostics are one result
+    passed, diagnostics = compare_reference(ours, records)
+    response: dict[str, object] = {
+        "reference_fixture_contract": CONTRACT_VERSION,
+        "check_id": CHECK_ID,
+        "passed": passed,
+        "external_tool_invoked": mode == "refresh",
+        "asterism_recomputed": True,
+        "input_identities": identities,
+        "comparison": diagnostics,
+    }
+    """Declared external execution and public recomputation explicitly."""
+
+    if mode == "refresh":
+        response.update(
+            {
+                "tools": tools,
+                "external_outputs": external_outputs,
+                "acceptance": REFERENCE_ACCEPTANCE,
+            }
+        )
+    return response
+
+
+def entrypoint() -> int:
+    """Preserve the live no-argument check and expose strict fixture modes."""
+    arguments: object = parse_reference_arguments(__doc__)
+    """Selected historical live output or the machine-only adapter contract."""
+
+    if not hasattr(arguments, "reference_mode"):
+        raise ReferenceAdapterError("argument parser returned no reference_mode")
+    if arguments.reference_mode is None:  # type: ignore[attr-defined]
+        return main()
+    try:
+        record: dict[str, object] = reference_record(
+            arguments.reference_mode,  # type: ignore[attr-defined]
+            arguments.reference_fixture,  # type: ignore[attr-defined]
+        )
+        """Ran exactly one strict mode with paired arguments guaranteed by parsing."""
+    except (ReferenceAdapterError, ValueError, TypeError, KeyError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return emit_reference_record(record)
 
 
 def main() -> int:
+    """Run all live spaMM scenarios and write their comparison receipt.
+
+    Returns:
+        Zero when the worst scenario agrees within tolerance.
+
+    Raises:
+        SystemExit: If R packages are unavailable or agreement exceeds tolerance.
+    """
     if shutil.which("Rscript") is None:
         raise SystemExit("Rscript is not on the path; this check needs R")
-    probe = subprocess.run(
-        ["Rscript", "-e",
-         'for (p in c("spaMM","geoR","jsonlite")) library(p, character.only=TRUE)'],
-        capture_output=True, text=True, check=False,
+    probe: subprocess.CompletedProcess[str] = subprocess.run(
+        [
+            "Rscript",
+            "-e",
+            'for (p in c("spaMM","geoR","jsonlite")) library(p, character.only=TRUE)',
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
+    """Checked that spaMM, geoR and jsonlite load before running scenarios."""
+
     if probe.returncode != 0:
         raise SystemExit(
             "R is missing spaMM, geoR or jsonlite. Install them with\n"
@@ -256,34 +1005,54 @@ def main() -> int:
     print("At nu = 0.5 the Matern correlation is exp(-rho d), which is our kernel,")
     print("and spaMM's rho is our decay rate in the same units.")
 
-    records = []
+    records: list[dict[str, str | int | float | bool | dict[str, float]]] = []
+    """Accumulated complete cross-implementation records for every scenario."""
+
     with tempfile.TemporaryDirectory() as raw:
-        directory = Path(raw)
+        directory: Path = Path(raw)
+        """Converted the isolated shared R workspace to a path object."""
+
         for name, families, sibs, truth, seed, generator in SCENARIOS:
             records.append(one(name, families, sibs, truth, seed, generator, directory))
 
-    worst = max(r["worst_difference"] for r in records)
+    worst: float = max(record["worst_difference"] for record in records)
+    """Selected the largest scaled difference across all scenarios."""
     print(f"\n{'=' * 74}")
-    print(f"worst difference across {len(records)} scenarios and 4 quantities "
-          f"each: {worst:.2e}")
+    print(
+        f"worst difference across {len(records)} scenarios and 4 quantities "
+        f"each: {worst:.2e}"
+    )
     print("\nThis checks that the two implementations agree, not that either")
     print("recovers the truth. The long-range scenario is one neither recovers,")
     print("and they agree on the same wrong answer -- which is what makes it")
     print("evidence about the code rather than about the data.")
 
-    out = (Path(__file__).resolve().parents[1] / "evidence"
-           / f"spatial-against-spamm-{date.today().isoformat()}.json")
+    out: Path = (
+        Path(__file__).resolve().parents[1]
+        / "evidence"
+        / f"spatial-against-spamm-{date.today().isoformat()}.json"
+    )
+    """Selected the dated receipt path for the ordinary live comparison."""
+
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps({
-        "what": "Asterism's spatial model against R's spaMM, decay rate included",
-        "date": date.today().isoformat(),
-        "comparator": "spaMM, Matern with nu fixed at 0.5, REML",
-        "tolerance": TOLERANCE,
-        "difference_is": ("variances as a share of the total, the decay rate "
-                          "relative to itself"),
-        "worst_difference": worst,
-        "scenarios": records,
-    }, indent=2) + "\n")
+    out.write_text(
+        json.dumps(
+            {
+                "what": "Asterism's spatial model against R's spaMM, decay rate included",
+                "date": date.today().isoformat(),
+                "comparator": "spaMM, Matern with nu fixed at 0.5, REML",
+                "tolerance": TOLERANCE,
+                "difference_is": (
+                    "variances as a share of the total, the decay rate "
+                    "relative to itself"
+                ),
+                "worst_difference": worst,
+                "scenarios": records,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"written to {out}")
 
     if worst > TOLERANCE:
@@ -294,4 +1063,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(entrypoint())

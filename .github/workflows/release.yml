@@ -1,0 +1,98 @@
+name: Private release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - release.toml
+      - Cargo.toml
+      - pyproject.toml
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-24.04
+    outputs:
+      requested: ${{ steps.request.outputs.requested }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - id: request
+        name: Detect a deliberate release version
+        run: python tools/check_release.py --requested >> "$GITHUB_OUTPUT"
+
+  wheels:
+    needs: detect
+    if: needs.detect.outputs.requested == 'true'
+    uses: ./.github/workflows/wheels.yml
+
+  release:
+    needs: [detect, wheels]
+    if: needs.detect.outputs.requested == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: asterism-wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: asterism-cross-platform-agreement
+          path: cross-platform-agreement
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+      - name: Install the saved Linux wheel for release checks
+        run: |
+          uv venv --python 3.13 .release-venv
+          uv export --frozen --all-groups --no-emit-project --output-file .release-requirements.txt
+          uv pip install --python .release-venv/bin/python --requirements .release-requirements.txt
+          uv pip install --python .release-venv/bin/python --no-deps dist/*manylinux*.whl
+      - name: Run the configured scientific release checks
+        run: >-
+          .release-venv/bin/python tools/run_scientific_release.py
+          --manifest release.toml
+          --output release-evidence
+          --cross-platform-agreement cross-platform-agreement/agreement.json
+          --wheel dist/*.whl
+      - name: Refuse stale build identity or incomplete release evidence
+        run: >-
+          .release-venv/bin/python tools/check_release.py --release
+          --evidence release-evidence/evidence.json
+          --wheel dist/*.whl
+      - name: Package evidence and create artifact checksums
+        run: |
+          tar -czf dist/release-evidence.tar.gz release-evidence
+          sha256sum dist/*.whl dist/release-evidence.tar.gz > dist/SHA256SUMS
+      - id: identity
+        name: Read the release identity
+        run: |
+          VERSION=$(python -c 'import tomllib; print(tomllib.load(open("release.toml", "rb"))["version"])')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Tag the measured commit
+        env:
+          TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+      - name: Create the private GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: >-
+          gh release create "$TAG" dist/*.whl dist/release-evidence.tar.gz dist/SHA256SUMS
+          --title "Asterism $VERSION"
+          --notes-file "docs/release-notes/$VERSION.md"

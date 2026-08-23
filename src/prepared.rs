@@ -20,6 +20,7 @@ use statrs::function::erf::erfc;
 
 use crate::blocks::family_blocks;
 use crate::deviance::chi2_one_df_upper_tail;
+use crate::interval::{self, Interval};
 #[cfg(feature = "python")]
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 #[cfg(feature = "python")]
@@ -33,12 +34,6 @@ use pyo3::types::PyDict;
 /// units in the last place below zero; anything under this floor is a genuine
 /// violation rather than rounding.
 const EIGENVALUE_FLOOR: f64 = -1e-9;
-/// The 0.95 quantile of chi-square with one degree of freedom.
-const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
-/// The 0.95 quantile of the 50:50 mixture of chi-square with zero and one
-/// degrees of freedom — the Self–Liang rule deciding whether a boundary *point*
-/// belongs to the interval.
-const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
 /// Snap width at the upper bound only. With a singular relationship matrix and
 /// a response duplicated within a zero-eigenvalue direction the likelihood has
 /// a pole as h² approaches one, and the search chases it. Snapping within 1e-7
@@ -119,25 +114,6 @@ fn golden_minimise(f: &dyn Fn(f64) -> f64, mut lo: f64, mut hi: f64, xatol: f64)
     0.5 * (lo + hi)
 }
 
-/// Bisection root of `f` on a bracket carrying a sign change, deterministic.
-fn bisect_root(f: &dyn Fn(f64) -> f64, mut lo: f64, mut hi: f64) -> f64 {
-    let mut flo = f(lo);
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if hi - lo <= 1e-13 {
-            return mid;
-        }
-        let fmid = f(mid);
-        if (flo <= 0.0) == (fmid <= 0.0) {
-            lo = mid;
-            flo = fmid;
-        } else {
-            hi = mid;
-        }
-    }
-    0.5 * (lo + hi)
-}
-
 /// A validated, eigendecomposed design and relationship matrix; the only way in.
 #[cfg_attr(feature = "python", pyclass(frozen))]
 pub struct PreparedModel {
@@ -149,6 +125,7 @@ pub struct PreparedModel {
     dfr: f64,
     logdet_xtx: f64,
     min_eigenvalue: f64,
+    subject_order_sha256: Option<String>,
 }
 
 impl PreparedModel {
@@ -349,6 +326,7 @@ impl PreparedModel {
             dfr: (n - p) as f64,
             logdet_xtx,
             min_eigenvalue,
+            subject_order_sha256: None,
         })
     }
 
@@ -466,66 +444,16 @@ impl PreparedModel {
             Boundary::Interior
         };
 
-        // The interval: profile chi-square endpoints, limited flags, and the
-        // mixture rule deciding whether a boundary point belongs.
-        let mut interval = Interval::absent();
-        if converged {
-            let optimum = -loglik;
-            let deviance = |h2: f64| -> f64 {
-                let value = objective(h2);
-                if value.is_finite() {
-                    2.0 * (value - optimum)
-                } else {
-                    f64::INFINITY
-                }
-            };
-            let endpoint = |bound: f64| -> (f64, bool) {
-                let mut outer = bound;
-                if !deviance(outer).is_finite() {
-                    // Bisect on feasibility toward the bound. Taking the first
-                    // finite candidate stopped at the midpoint and truncated the
-                    // interval whenever a crossing lay beyond it, which a
-                    // singular relationship matrix made the common case.
-                    let mut feasible = best_h2;
-                    let mut infeasible = bound;
-                    for _ in 0..200 {
-                        if (infeasible - feasible).abs() <= 1e-15 {
-                            break;
-                        }
-                        let candidate = 0.5 * (feasible + infeasible);
-                        if deviance(candidate).is_finite() {
-                            feasible = candidate;
-                        } else {
-                            infeasible = candidate;
-                        }
-                    }
-                    outer = feasible;
-                }
-                if outer == best_h2 {
-                    return (best_h2, true);
-                }
-                if deviance(outer) <= CHI2_ONE_DF_95 {
-                    return (outer, true);
-                }
-                let crossing = |h2: f64| deviance(h2) - CHI2_ONE_DF_95;
-                let (a, b) = if best_h2 < outer {
-                    (best_h2, outer)
-                } else {
-                    (outer, best_h2)
-                };
-                (bisect_root(&crossing, a, b), false)
-            };
-            let (lower, lower_limited) = endpoint(0.0);
-            let (upper, upper_limited) = endpoint(1.0);
-            interval = Interval {
-                lower,
-                upper,
-                lower_limited,
-                upper_limited,
-                contains_lower_bound: (lower == 0.0).then(|| deviance(0.0) <= MIXTURE_CRIT),
-                contains_upper_bound: (upper == 1.0).then(|| deviance(1.0) <= MIXTURE_CRIT),
-            };
-        }
+        // This family has scored both boundary points in its coverage check, so
+        // it is one of the two allowed to fill the mixture verdict.
+        let interval = if converged {
+            interval::profile_interval(best_h2, (0.0, 1.0), |h2| {
+                self.profile(&yt, h2, reml).map(|profiled| profiled.loglik)
+            })
+            .scored_by_mixture()
+        } else {
+            Interval::absent()
+        };
 
         // The likelihood ratio test against no additive variance. Two fits, and
         // the second is free: the null is h² = 0 exactly, where the profiled
@@ -637,29 +565,6 @@ impl Boundary {
     }
 }
 
-/// The interval keeps one shape whether the optimum is interior or on a bound.
-pub struct Interval {
-    pub lower: f64,
-    pub upper: f64,
-    pub lower_limited: bool,
-    pub upper_limited: bool,
-    pub contains_lower_bound: Option<bool>,
-    pub contains_upper_bound: Option<bool>,
-}
-
-impl Interval {
-    fn absent() -> Self {
-        Self {
-            lower: f64::NAN,
-            upper: f64::NAN,
-            lower_limited: false,
-            upper_limited: false,
-            contains_lower_bound: None,
-            contains_upper_bound: None,
-        }
-    }
-}
-
 /// The test of no additive variance.
 pub struct LikelihoodRatioTest {
     pub statistic: f64,
@@ -690,13 +595,27 @@ pub struct Fit {
 #[allow(clippy::needless_pass_by_value)]
 impl PreparedModel {
     #[new]
-    #[pyo3(signature = (x, k))]
-    fn py_new(x: PyReadonlyArray2<'_, f64>, k: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
+    #[pyo3(signature = (x, k, subject_order_sha256=None))]
+    fn py_new(
+        x: PyReadonlyArray2<'_, f64>,
+        k: PyReadonlyArray2<'_, f64>,
+        subject_order_sha256: Option<String>,
+    ) -> PyResult<Self> {
+        if subject_order_sha256.as_ref().is_some_and(|commitment| {
+            commitment.len() != 64
+                || !commitment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
+            return Err(code("PREPARE_SUBJECT_ORDER_SHA256_INVALID"));
+        }
         let x = x.as_array();
         let k = k.as_array();
         let x_matrix = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
         let k_matrix = DMatrix::from_fn(k.shape()[0], k.shape()[1], |i, j| k[(i, j)]);
-        Self::build(&x_matrix, &k_matrix).map_err(code)
+        let mut prepared = Self::build(&x_matrix, &k_matrix).map_err(code)?;
+        prepared.subject_order_sha256 = subject_order_sha256;
+        Ok(prepared)
     }
 
     #[getter(n)]
@@ -748,15 +667,32 @@ impl PreparedModel {
         record.set_item("converged", fit.converged)?;
         record.set_item("boundary", fit.boundary.as_str())?;
         record.set_item("warnings", fit.warnings)?;
+        record.set_item("subject_order_sha256", self.subject_order_sha256.as_deref())?;
+
+        let build = PyDict::new(py);
+        build.set_item("version", env!("ASTERISM_PUBLIC_VERSION"))?;
+        build.set_item("cargo_version", env!("CARGO_PKG_VERSION"))?;
+        build.set_item("source_commit", env!("ASTERISM_SOURCE_COMMIT"))?;
+        build.set_item("source_dirty", env!("ASTERISM_SOURCE_DIRTY") == "true")?;
+        build.set_item("release", env!("ASTERISM_RELEASE_BUILD") == "true")?;
+        build.set_item(
+            "release_manifest_sha256",
+            env!("ASTERISM_RELEASE_MANIFEST_SHA256"),
+        )?;
+        build.set_item("cargo_lock_sha256", env!("ASTERISM_CARGO_LOCK_SHA256"))?;
+        build.set_item("uv_lock_sha256", env!("ASTERISM_UV_LOCK_SHA256"))?;
+        record.set_item("build", build)?;
 
         let interval = PyDict::new(py);
+        interval.set_item("estimate", fit.interval.estimate)?;
         interval.set_item("lower", fit.interval.lower)?;
         interval.set_item("upper", fit.interval.upper)?;
         interval.set_item("lower_limited", fit.interval.lower_limited)?;
         interval.set_item("upper_limited", fit.interval.upper_limited)?;
         interval.set_item("contains_lower_bound", fit.interval.contains_lower_bound)?;
         interval.set_item("contains_upper_bound", fit.interval.contains_upper_bound)?;
-        interval.set_item("level", 0.95)?;
+        interval.set_item("level", fit.interval.level)?;
+        interval.set_item("profile_failures", fit.interval.profile_failures)?;
         interval.set_item("recipe", "profile_mixture")?;
         record.set_item("interval", interval)?;
 

@@ -1,54 +1,82 @@
-"""Does a binary trait beside a continuous one agree with native SOLAR?
+"""Compare Asterism's binary-continuous fit with qualified native SOLAR.
 
-ADR 0007 records that mixed binary/continuous is the one two-trait combination
-with native parity behind it, and this is the cell the psychiatric diagnosis
-against hearing analysis needs. SOLAR fits it with its own discrete and mixed
-trait machinery, written by other people over decades, which is what ADR 0006
-means by a check arrived at separately.
-
-**What agreement here proves is fidelity, not correctness.** Both engines could
-be wrong in the same way, and SOLAR is a comparator rather than the definition
-of correct. What it rules out is the far more likely failure: that a new
-likelihood written this week has a sign, a scale or an ordering wrong.
-
-The genetic correlation is the quantity to read. Both engines fix a liability's
-variance at one, so the binary trait's heritability is on the liability scale in
-each, and the correlation is scale free either way.
-
-Run with:
-
-    uv run --no-project python checks/mixed_bivariate_against_solar.py
-
-It needs `solar` on the path and fails rather than skips when it is missing.
+The deterministic nuclear-family simulation gives both implementations a
+binary liability trait beside a continuous quantity. Both fix liability
+variance at one, making the reported heritability and correlations directly
+comparable. Explicit refresh invokes native SOLAR; verify uses only its frozen
+outputs while recomputing Asterism.
 """
 
 from __future__ import annotations
 
-import json
+import argparse
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import date
+from dataclasses import dataclass
 from pathlib import Path
+from statistics import NormalDist
 
 import asterism
 import numpy as np
 
-FAMILIES = 300
-SIBS = 4
-TRUE_HERITABILITY = [0.5, 0.5]
-TRUE_GENETIC_CORRELATION = 0.5
-TRUE_RESIDUAL_CORRELATION = 0.2
-CONTINUOUS_VARIANCE = 3.0
-PREVALENCE = 0.3
-# Two engines fitting the same likelihood by different searches will not agree
-# to machine precision on a simulated data set; they should agree well inside
-# the standard error of either.
-TOLERANCE = 0.05
+sys.path.insert(0, str(Path(__file__).parent))
+from solar_reference_adapter import (
+    CONTRACT_VERSION,
+    SolarReferenceError,
+    array_identity,
+    check_sex_survived,
+    emit_reference_record,
+    fixture_mapping,
+    json_identity,
+    load_fixture,
+    parse_reference_arguments,
+    require_fixture_inputs,
+    require_solar_version,
+    required_number,
+    run_solar,
+    solar_tool_identity,
+    support_source_identity,
+)
 
-RUN = """load pedigree ped.csv
+CHECK_ID: str = "mixed_bivariate_against_solar"
+"""Matched the release-manifest check identifier and fixture filename."""
+
+FAMILIES: int = 300
+"""Retained the historical number of generated nuclear families."""
+
+SIBLINGS: int = 4
+"""Retained four full siblings beside two founders per family."""
+
+SEED: int = 20_260_818
+"""Fixed the participant-free pseudo-random design before external observation."""
+
+TRUE_HERITABILITY: tuple[float, float] = (0.5, 0.5)
+"""Fixed liability-scale and continuous-trait heritabilities."""
+
+TRUE_GENETIC_CORRELATION: float = 0.5
+"""Fixed the generating cross-trait additive correlation."""
+
+TRUE_RESIDUAL_CORRELATION: float = 0.2
+"""Fixed the generating cross-trait residual correlation."""
+
+CONTINUOUS_VARIANCE: float = 3.0
+"""Set the scale of the generated continuous quantity."""
+
+PREVALENCE: float = 0.3
+"""Set the binary liability threshold through population prevalence."""
+
+TOLERANCE: float = 0.05
+"""Retained the historical direct-parameter agreement threshold."""
+
+REFERENCE_ACCEPTANCE: dict[str, object] = {
+    "maximum_absolute_reported_difference": TOLERANCE,
+    "solar_must_use_discrete_model": True,
+}
+"""Prewrote the historical model-identity and direct-difference rules."""
+
+RUN: str = """load pedigree ped.csv
 load phenotypes phen.csv
 model new
 trait affected quantity
@@ -56,186 +84,507 @@ outdir out
 polygenic
 exit
 """
+"""Defined the native SOLAR mixed binary-continuous analysis."""
 
 
-def main() -> int:
-    if shutil.which("solar") is None:
-        raise SystemExit("solar is not on the path")
+@dataclass(frozen=True)
+class MixedCase:
+    """Hold the deterministic participant-free mixed bivariate case."""
 
-    block = 2 + SIBS
-    n = FAMILIES * block
-    rng = np.random.default_rng(20_260_818)
+    relationship: np.ndarray
+    """Held the additive relationship matrix shared by both implementations."""
+    affected: np.ndarray
+    """Held the generated binary liability-threshold phenotype."""
+    quantity: np.ndarray
+    """Held the generated continuous phenotype."""
+    pedigree_csv: str
+    """Held the exact generated native pedigree input."""
+    phenotype_csv: str
+    """Held the exact generated native phenotype input."""
 
-    # Additive relationship: two founders and their full sibs.
-    a = np.eye(block)
-    for kid in range(2, block):
-        a[0, kid] = a[kid, 0] = 0.5
-        a[1, kid] = a[kid, 1] = 0.5
-        for other in range(2, block):
-            if other != kid:
-                a[kid, other] = 0.5
-    relationship = np.kron(np.eye(FAMILIES), a)
+    @property
+    def people(self) -> int:
+        """Return the generated sample size."""
+        return int(self.affected.shape[0])
 
-    # A correlated bivariate liability and quantity.
-    sigma_a = np.array([
-        [TRUE_HERITABILITY[0],
-         TRUE_GENETIC_CORRELATION
-         * np.sqrt(TRUE_HERITABILITY[0] * TRUE_HERITABILITY[1] * CONTINUOUS_VARIANCE)],
-        [TRUE_GENETIC_CORRELATION
-         * np.sqrt(TRUE_HERITABILITY[0] * TRUE_HERITABILITY[1] * CONTINUOUS_VARIANCE),
-         TRUE_HERITABILITY[1] * CONTINUOUS_VARIANCE],
-    ])
-    sigma_e = np.array([
-        [1.0 - TRUE_HERITABILITY[0],
-         TRUE_RESIDUAL_CORRELATION
-         * np.sqrt((1.0 - TRUE_HERITABILITY[0])
-                   * (1.0 - TRUE_HERITABILITY[1]) * CONTINUOUS_VARIANCE)],
-        [TRUE_RESIDUAL_CORRELATION
-         * np.sqrt((1.0 - TRUE_HERITABILITY[0])
-                   * (1.0 - TRUE_HERITABILITY[1]) * CONTINUOUS_VARIANCE),
-         (1.0 - TRUE_HERITABILITY[1]) * CONTINUOUS_VARIANCE],
-    ])
-    genetic = np.linalg.cholesky(np.kron(sigma_a, relationship) + 1e-9 * np.eye(2 * n))
-    residual = np.linalg.cholesky(np.kron(sigma_e, np.eye(n)) + 1e-9 * np.eye(2 * n))
-    latent = (genetic @ rng.standard_normal(2 * n)
-              + residual @ rng.standard_normal(2 * n)).reshape(2, n)
 
-    from statistics import NormalDist
-    cut = NormalDist().inv_cdf(1.0 - PREVALENCE)
-    affected = (latent[0] > cut).astype(int)
-    quantity = latent[1]
-    print(f"{n} people in {FAMILIES} families of {block}. "
-          f"{affected.sum()} affected ({affected.mean():.1%}).")
+def family_relationship() -> np.ndarray:
+    """Return the additive relationship matrix for one generated nuclear family.
 
-    ours = asterism.mixed_bivariate_fit(
+    Returns:
+        Founder-and-four-full-sibling additive relationship matrix.
+    """
+    block: int = 2 + SIBLINGS
+    """Counted two founders and the fixed number of full siblings."""
+
+    relationship: np.ndarray = np.eye(block)
+    """Started with each person's unit additive variance."""
+
+    for child in range(2, block):
+        relationship[0, child] = 0.5
+        """Set the father's relationship with this child."""
+
+        relationship[child, 0] = 0.5
+        """Mirrored the father-child relationship."""
+
+        relationship[1, child] = 0.5
+        """Set the mother's relationship with this child."""
+
+        relationship[child, 1] = 0.5
+        """Mirrored the mother-child relationship."""
+
+        for sibling in range(2, block):
+            if sibling != child:
+                relationship[child, sibling] = 0.5
+                """Set the full-sibling additive relationship."""
+    """Filled all founder-offspring and full-sibling relationships."""
+
+    return relationship
+
+
+def generate_case() -> MixedCase:
+    """Generate the fixed binary-continuous nuclear-family problem.
+
+    Returns:
+        Generated arrays and exact native-SOLAR input text.
+    """
+    block_relationship: np.ndarray = family_relationship()
+    """Built the additive covariance for one six-person family."""
+
+    block: int = block_relationship.shape[0]
+    """Counted people in each generated family."""
+
+    people: int = FAMILIES * block
+    """Counted all generated individuals."""
+
+    relationship: np.ndarray = np.kron(np.eye(FAMILIES), block_relationship)
+    """Replicated the additive relationship matrix across independent families."""
+
+    additive_cross: float = TRUE_GENETIC_CORRELATION * np.sqrt(
+        TRUE_HERITABILITY[0] * TRUE_HERITABILITY[1] * CONTINUOUS_VARIANCE
+    )
+    """Computed the generating cross-trait additive covariance."""
+
+    additive: np.ndarray = np.array(
+        [
+            [TRUE_HERITABILITY[0], additive_cross],
+            [additive_cross, TRUE_HERITABILITY[1] * CONTINUOUS_VARIANCE],
+        ]
+    )
+    """Constructed the generating two-trait additive covariance."""
+
+    residual_cross: float = TRUE_RESIDUAL_CORRELATION * np.sqrt(
+        (1.0 - TRUE_HERITABILITY[0])
+        * (1.0 - TRUE_HERITABILITY[1])
+        * CONTINUOUS_VARIANCE
+    )
+    """Computed the generating cross-trait residual covariance."""
+
+    residual: np.ndarray = np.array(
+        [
+            [1.0 - TRUE_HERITABILITY[0], residual_cross],
+            [
+                residual_cross,
+                (1.0 - TRUE_HERITABILITY[1]) * CONTINUOUS_VARIANCE,
+            ],
+        ]
+    )
+    """Constructed the generating two-trait residual covariance."""
+
+    family_covariance: np.ndarray = np.kron(additive, block_relationship) + np.kron(
+        residual, np.eye(block)
+    )
+    """Combined additive and residual covariance within one family."""
+
+    family_factor: np.ndarray = np.linalg.cholesky(
+        family_covariance + 1e-9 * np.eye(2 * block)
+    )
+    """Factored the small repeated family covariance exactly once."""
+
+    generator: np.random.Generator = np.random.default_rng(SEED)
+    """Created the deterministic participant-free random generator."""
+
+    family_draws: np.ndarray = generator.standard_normal((FAMILIES, 2 * block))
+    """Drew independent standard-normal vectors for every nuclear family."""
+
+    transformed: np.ndarray = family_draws @ family_factor.T
+    """Applied the shared family covariance to every generated draw."""
+
+    latent: np.ndarray = np.empty((2, people))
+    """Allocated trait-major outcomes in Asterism's person order."""
+
+    for family_index in range(FAMILIES):
+        start: int = family_index * block
+        """Located the first array row for this family."""
+
+        stop: int = start + block
+        """Located the exclusive last array row for this family."""
+
+        latent[0, start:stop] = transformed[family_index, :block]
+        """Stored this family's generated binary-trait liabilities."""
+
+        latent[1, start:stop] = transformed[family_index, block:]
+        """Stored this family's generated continuous quantities."""
+    """Assembled all independent family draws into the shared person order."""
+
+    threshold: float = NormalDist().inv_cdf(1.0 - PREVALENCE)
+    """Computed the liability threshold from the fixed population prevalence."""
+
+    affected: np.ndarray = (latent[0] > threshold).astype(np.int64)
+    """Thresholded the generated liabilities into case indicators."""
+
+    quantity: np.ndarray = latent[1].copy()
+    """Retained the generated continuous trait in shared person order."""
+
+    pedigree_rows: list[str] = ["FAMID,ID,FA,MO,SEX"]
+    """Started the native nuclear-family pedigree table."""
+
+    phenotype_rows: list[str] = ["ID,FAMID,affected,quantity"]
+    """Started the matching native mixed-trait phenotype table."""
+
+    for family_index in range(FAMILIES):
+        for person_index in range(block):
+            identifier: str = f"F{family_index:04d}_{person_index:02d}"
+            """Built the stable generated person identifier."""
+
+            if person_index < 2:
+                father_id: str = "0"
+                """Marked this founder as having no recorded father."""
+
+                mother_id: str = "0"
+                """Marked this founder as having no recorded mother."""
+
+                sex: int = 1 if person_index == 0 else 2
+                """Assigned founder sex consistently with parental role."""
+            else:
+                father_id = f"F{family_index:04d}_00"
+                """Linked this full sibling to the generated father."""
+
+                mother_id = f"F{family_index:04d}_01"
+                """Linked this full sibling to the generated mother."""
+
+                sex = 1 + person_index % 2
+                """Alternated sibling sex without contradicting parental roles."""
+
+            pedigree_rows.append(
+                f"F{family_index:04d},{identifier},{father_id},{mother_id},{sex}"
+            )
+            row: int = family_index * block + person_index
+            """Located this person in both generated trait arrays."""
+
+            phenotype_rows.append(
+                f"{identifier},F{family_index:04d},{affected[row]},{quantity[row]:.12f}"
+            )
+    """Rendered all pedigrees and traits in the shared native person order."""
+
+    pedigree_csv: str = "\n".join(pedigree_rows) + "\n"
+    """Finalised the exact generated native pedigree text."""
+
+    phenotype_csv: str = "\n".join(phenotype_rows) + "\n"
+    """Finalised the exact generated native phenotype text."""
+
+    return MixedCase(
         relationship,
+        affected,
+        quantity,
+        pedigree_csv,
+        phenotype_csv,
+    )
+
+
+def reference_input_identities(case: MixedCase) -> list[dict[str, str]]:
+    """Identify all generated mixed-trait inputs and adapter mechanics.
+
+    Args:
+        case: Fixed participant-free mixed bivariate case.
+
+    Returns:
+        Stable named SHA-256 records.
+    """
+    return [
+        support_source_identity(),
+        json_identity(
+            "design:mixed_bivariate_against_solar",
+            {
+                "families": FAMILIES,
+                "siblings": SIBLINGS,
+                "seed": SEED,
+                "heritability": TRUE_HERITABILITY,
+                "genetic_correlation": TRUE_GENETIC_CORRELATION,
+                "residual_correlation": TRUE_RESIDUAL_CORRELATION,
+                "continuous_variance": CONTINUOUS_VARIANCE,
+                "prevalence": PREVALENCE,
+            },
+        ),
+        array_identity("relationship", case.relationship),
+        array_identity("affected", case.affected),
+        array_identity("quantity", case.quantity),
+        json_identity("pedigree_csv", case.pedigree_csv),
+        json_identity("phenotype_csv", case.phenotype_csv),
+    ]
+
+
+def fit_asterism(case: MixedCase) -> dict[str, object]:
+    """Fit the generated case through Asterism's public mixed interface.
+
+    Args:
+        case: Fixed participant-free mixed bivariate case.
+
+    Returns:
+        Directly comparable model parameters and optimiser diagnostics.
+    """
+    people: int = case.people
+    """Read the common generated sample size."""
+
+    fit: dict[str, object] = asterism.mixed_bivariate_fit(
+        case.relationship,
         {
             "kind": "binary",
-            "value": np.full(n, np.nan),
-            # 1 is a case, 2 is not; the threshold rides on the intercept.
-            "censoring": np.where(affected == 1, 1, 2).astype(np.int64),
-            "limit": np.zeros(n),
+            "value": np.full(people, np.nan),
+            "censoring": np.where(case.affected == 1, 1, 2).astype(np.int64),
+            "limit": np.zeros(people),
         },
         {
             "kind": "continuous",
-            "value": quantity,
-            "censoring": np.zeros(n, dtype=np.int64),
-            "limit": np.zeros(n),
+            "value": case.quantity,
+            "censoring": np.zeros(people, dtype=np.int64),
+            "limit": np.zeros(people),
         },
-        np.ones((n, 1)),
+        np.ones((people, 1)),
     )
-    print(f"\nAsterism : h2 {ours['heritability'][0]:.4f} / "
-          f"{ours['heritability'][1]:.4f}   RhoG {ours['genetic_correlation']:.4f}"
-          f"   RhoE {ours['residual_correlation']:.4f}")
-    print(f"           converged {ours['converged']}, "
-          f"scaled gradient {ours['scaled_gradient']:.2e}")
+    """Fitted the documented binary-continuous model on generated inputs."""
 
-    with tempfile.TemporaryDirectory() as tmp:
-        directory = Path(tmp)
-        ped = ["FAMID,ID,FA,MO,SEX"]
-        phen = ["ID,FAMID,affected,quantity"]
-        for family in range(FAMILIES):
-            for i in range(block):
-                who = f"F{family:04d}_{i:02d}"
-                if i < 2:
-                    fa = mo = "0"
-                    sex = 1 if i == 0 else 2
-                else:
-                    fa, mo = f"F{family:04d}_00", f"F{family:04d}_01"
-                    sex = 1 + (i % 2)
-                ped.append(f"F{family:04d},{who},{fa},{mo},{sex}")
-                row = family * block + i
-                phen.append(f"{who},F{family:04d},{affected[row]},"
-                            f"{quantity[row]:.12f}")
-        (directory / "ped.csv").write_text("\n".join(ped) + "\n")
-        (directory / "phen.csv").write_text("\n".join(phen) + "\n")
-        (directory / "run.tcl").write_text(RUN)
-        finished = subprocess.run(
-            ["solar"], stdin=(directory / "run.tcl").open(),
-            capture_output=True, text=True, cwd=directory, check=False,
-        )
-        text = ""
-        for name in ("polygenic.out", "polygenic.logs.out", "null0.out"):
-            path = directory / "out" / name
-            if path.exists():
-                text += path.read_text()
-        if not text:
-            raise SystemExit(
-                f"SOLAR produced nothing:\n{finished.stdout[-2000:]}\n"
-                f"{finished.stderr[-1000:]}"
+    heritability: object = fit["heritability"]
+    """Read the two reported trait heritabilities."""
+
+    if (
+        not isinstance(heritability, list | tuple | np.ndarray)
+        or len(heritability) != 2
+    ):
+        raise SolarReferenceError("Asterism returned no two-trait heritability")
+    return {
+        "h2_affected": float(heritability[0]),
+        "h2_quantity": float(heritability[1]),
+        "rho_g": float(fit["genetic_correlation"]),
+        "rho_e": float(fit["residual_correlation"]),
+        "loglik": float(fit["loglik"]),
+        "scaled_gradient": float(fit["scaled_gradient"]),
+        "converged": bool(fit["converged"]),
+    }
+
+
+def write_solar_inputs(directory: Path, case: MixedCase) -> None:
+    """Write exact generated mixed-trait inputs to a temporary directory.
+
+    Args:
+        directory: Fresh native-SOLAR working directory.
+        case: Generated case whose exact inputs are bound by fixture hashes.
+    """
+    (directory / "ped.csv").write_text(case.pedigree_csv, encoding="utf-8")
+    (directory / "phen.csv").write_text(case.phenotype_csv, encoding="utf-8")
+    (directory / "run.tcl").write_text(RUN, encoding="utf-8")
+    """Wrote only deterministic participant-free inputs and the fixed command."""
+
+
+def fit_solar(case: MixedCase) -> dict[str, object]:
+    """Fit the generated mixed-trait case with qualified native SOLAR.
+
+    Args:
+        case: Fixed participant-free mixed bivariate case.
+
+    Returns:
+        Raw directly reported native parameters and model identity.
+    """
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        directory: Path = Path(temporary_directory)
+        """Isolated all generated native inputs and outputs outside the workspace."""
+
+        write_solar_inputs(directory, case)
+        completed: subprocess.CompletedProcess[str] = run_solar(directory)
+        """Ran the qualified executable on the fixed mixed-trait command."""
+
+        report: str = ""
+        """Started the compact collection of native reports."""
+
+        for report_name in ("polygenic.out", "polygenic.logs.out", "null0.out"):
+            report_path: Path = directory / "out" / report_name
+            """Selected one possible native mixed-trait report."""
+
+            if report_path.is_file():
+                report += report_path.read_text(encoding="utf-8")
+                """Included the existing native report in result parsing."""
+        """Combined primary and secondary native output without retaining raw text."""
+
+        if not report:
+            raise SolarReferenceError(
+                "SOLAR produced no mixed result: "
+                + (completed.stdout + completed.stderr)[-2000:]
             )
+        check_sex_survived(directory)
+        used_discrete_model: bool = bool(re.search(r"[Dd]iscrete", report))
+        """Recorded whether native SOLAR announced its discrete trait machinery."""
 
-    # **Confirm it used the liability model.** A Gaussian fit to a 0/1 column
-    # would disagree with ours for a reason that has nothing to do with our
-    # code, and the announcement is in the log rather than the result file.
-    discrete = bool(re.search(r"[Dd]iscrete", text))
-    theirs = {}
-    for label, pattern in [
-        ("h2_affected", r"H2r\(affected\) is\s+([0-9.eE+-]+)"),
-        ("h2_quantity", r"H2r\(quantity\) is\s+([0-9.eE+-]+)"),
-        ("rho_g", r"RhoG is\s+(-?[0-9.eE+-]+)"),
-        ("rho_e", r"RhoE is\s+(-?[0-9.eE+-]+)"),
-    ]:
-        found = re.search(pattern, text)
-        theirs[label] = float(found.group(1)) if found else None
-    print(f"\nSOLAR    : h2 {theirs['h2_affected']} / {theirs['h2_quantity']}"
-          f"   RhoG {theirs['rho_g']}   RhoE {theirs['rho_e']}")
-    print(f"           used the discrete model: {discrete}")
+        result: dict[str, object] = {
+            "people": case.people,
+            "affected": int(case.affected.sum()),
+            "h2_affected": required_number(
+                report,
+                r"H2r\(affected\) is\s+([0-9.eE+-]+)",
+                "H2r(affected)",
+            ),
+            "h2_quantity": required_number(
+                report,
+                r"H2r\(quantity\) is\s+([0-9.eE+-]+)",
+                "H2r(quantity)",
+            ),
+            "rho_g": required_number(report, r"RhoG is\s+(-?[0-9.eE+-]+)", "RhoG"),
+            "rho_e": required_number(report, r"RhoE is\s+(-?[0-9.eE+-]+)", "RhoE"),
+            "used_the_discrete_model": used_discrete_model,
+        }
+        """Retained compact raw native fields and generated-case summaries."""
 
-    failures = []
-    if not discrete:
-        failures.append(
-            "SOLAR did not use its discrete model, so it fitted a different "
-            "model and the comparison says nothing"
+    return result
+
+
+def compare_outputs(
+    asterism_outputs: dict[str, object], external_outputs: dict[str, object]
+) -> dict[str, object]:
+    """Apply the prewritten direct mixed-trait acceptance rule.
+
+    Args:
+        asterism_outputs: Newly recomputed Asterism result.
+        external_outputs: Live or frozen raw native-SOLAR result.
+
+    Returns:
+        Detailed pass/fail record for four directly reported parameters.
+    """
+    failures: list[str] = []
+    """Collected model-identity and numerical disagreements."""
+
+    if external_outputs.get("used_the_discrete_model") is not True:
+        failures.append("SOLAR did not use its discrete trait model")
+
+    differences: dict[str, float] = {}
+    """Retained every direct absolute parameter difference."""
+
+    for field in ("h2_affected", "h2_quantity", "rho_g", "rho_e"):
+        difference: float = abs(
+            float(asterism_outputs[field]) - float(external_outputs[field])
         )
-    ours_named = {
-        "h2_affected": ours["heritability"][0],
-        "h2_quantity": ours["heritability"][1],
-        "rho_g": ours["genetic_correlation"],
-        "rho_e": ours["residual_correlation"],
-    }
-    print(f"\n{'quantity':<12} | {'Asterism':>10} | {'SOLAR':>10} | difference")
-    print("-" * 52)
-    for name, value in ours_named.items():
-        other = theirs[name]
-        if other is None:
-            failures.append(f"SOLAR printed no {name}")
-            continue
-        difference = abs(value - other)
-        print(f"{name:<12} | {value:10.4f} | {other:10.4f} | {difference:.4f}")
-        if difference > TOLERANCE:
-            failures.append(f"{name} differs by {difference:.4f}, over {TOLERANCE}")
+        """Computed one direct liability-scale or correlation disagreement."""
 
-    receipt = {
-        "what": "a binary trait beside a continuous one, against native SOLAR",
-        "date": date.today().isoformat(),
-        "people": n,
-        "families": FAMILIES,
-        "affected": int(affected.sum()),
-        "truth": {
-            "heritability": TRUE_HERITABILITY,
-            "genetic_correlation": TRUE_GENETIC_CORRELATION,
-            "residual_correlation": TRUE_RESIDUAL_CORRELATION,
-        },
-        "asterism": ours_named,
-        "solar": theirs,
-        "solar_used_the_discrete_model": discrete,
-        "tolerance": TOLERANCE,
-        "passed": not failures,
-        "failures": failures,
+        differences[field] = difference
+        """Stored the derived difference beside its native parameter name."""
+
+        if difference > TOLERANCE:
+            failures.append(f"{field} differs by {difference:.4f}, over {TOLERANCE}")
+    """Applied the unchanged historical threshold to all direct parameters."""
+
+    return {"passed": not failures, "failures": failures, "differences": differences}
+
+
+def reference_record(mode: str, fixture_path: Path | None) -> dict[str, object]:
+    """Build one strict mixed-trait refresh or portable verification record.
+
+    Args:
+        mode: Either ``refresh`` or ``verify``.
+        fixture_path: Frozen envelope required only for verification.
+
+    Returns:
+        Machine record consumed by the strict fixture driver.
+
+    Raises:
+        SolarReferenceError: If mode, fixture provenance or tool identity fails.
+    """
+    case: MixedCase = generate_case()
+    """Regenerated the fixed participant-free mixed-trait inputs."""
+
+    identities: list[dict[str, str]] = reference_input_identities(case)
+    """Hashed every exact generated input and shared adapter mechanics."""
+
+    asterism_outputs: dict[str, object] = fit_asterism(case)
+    """Recomputed Asterism before consulting live or frozen external outputs."""
+
+    if mode == "refresh":
+        tools: object = solar_tool_identity()
+        """Probed the exact native executable before the live comparison."""
+
+        require_solar_version(tools)
+        external_outputs: dict[str, object] = fit_solar(case)
+        """Ran native SOLAR only in explicit live-refresh mode."""
+
+        external_tool_invoked: bool = True
+        """Recorded the genuine independent-software execution."""
+    elif mode == "verify":
+        if fixture_path is None:
+            raise SolarReferenceError("verify mode requires a fixture path")
+        fixture: dict[str, object] = load_fixture(fixture_path, CHECK_ID)
+        """Loaded the frozen envelope without executing native SOLAR."""
+
+        require_fixture_inputs(fixture, identities)
+        tools = fixture.get("tools")
+        """Read the qualified external-tool identity frozen during refresh."""
+
+        require_solar_version(tools)
+        acceptance: dict[str, object] = fixture_mapping(fixture, "acceptance")
+        """Read the acceptance rule frozen before the external outputs."""
+
+        if acceptance != REFERENCE_ACCEPTANCE:
+            raise SolarReferenceError("fixture acceptance rule differs from adapter")
+        external_outputs = fixture_mapping(fixture, "external_outputs")
+        """Loaded raw native outputs without invoking the external executable."""
+
+        external_tool_invoked = False
+        """Recorded that portable verification used only frozen outputs."""
+    else:
+        raise SolarReferenceError(f"unsupported reference mode: {mode}")
+
+    comparison: dict[str, object] = compare_outputs(asterism_outputs, external_outputs)
+    """Applied the same prewritten rule to live and frozen native results."""
+
+    return {
+        "reference_fixture_contract": CONTRACT_VERSION,
+        "check_id": CHECK_ID,
+        "passed": comparison["passed"],
+        "external_tool_invoked": external_tool_invoked,
+        "asterism_recomputed": True,
+        "input_identities": identities,
+        "tools": tools,
+        "external_outputs": external_outputs,
+        "acceptance": REFERENCE_ACCEPTANCE,
+        "asterism_outputs": asterism_outputs,
+        "comparison": comparison,
     }
-    out = Path(__file__).resolve().parent.parent / "evidence" / (
-        f"mixed-bivariate-against-solar-{receipt['date']}.json")
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
-    if failures:
-        print("\nFAILED:")
-        for failure in failures:
-            print(f"  - {failure}")
-        return 1
-    print("\nPASSED")
-    return 0
+
+
+def main() -> int:
+    """Run the historical live native-SOLAR mixed-trait comparison."""
+    record: dict[str, object] = reference_record("refresh", None)
+    """Performed the same qualified comparison used to create a fixture."""
+
+    return emit_reference_record(record)
+
+
+def entrypoint() -> int:
+    """Dispatch historical live use or the strict two-mode fixture contract."""
+    arguments: argparse.Namespace = parse_reference_arguments(
+        __doc__ or "native SOLAR mixed-trait comparison"
+    )
+    """Parsed the optional explicit fixture operation."""
+
+    if arguments.reference_mode is None:
+        return main()
+    fixture_path: Path = arguments.reference_fixture
+    """Selected the paired fixture path required by strict adapter mode."""
+
+    record: dict[str, object] = reference_record(arguments.reference_mode, fixture_path)
+    """Ran exactly one explicit refresh or portable verify operation."""
+
+    return emit_reference_record(record)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(entrypoint())
+    except SolarReferenceError as error:
+        raise SystemExit(str(error)) from error

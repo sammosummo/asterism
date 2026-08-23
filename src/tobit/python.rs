@@ -82,7 +82,18 @@ pub fn tobit_interval(
     censoring: PyReadonlyArray1<'_, i64>,
     limit: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
-) -> PyResult<(f64, f64, f64, bool, bool, f64, Option<bool>, Option<bool>, usize, f64)> {
+) -> PyResult<(
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    Option<bool>,
+    Option<bool>,
+    usize,
+    f64,
+)> {
     let a = relationship.as_array();
     let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
     let x = design.as_array();
@@ -95,21 +106,23 @@ pub fn tobit_interval(
         .map(|c| censoring_from(*c))
         .collect::<PyResult<_>>()?;
 
-    let got = TobitModel::build(&a, &value, &censoring, &limit, &x)
-        .map_err(PyValueError::new_err)?
+    let model =
+        TobitModel::build(&a, &value, &censoring, &limit, &x).map_err(PyValueError::new_err)?;
+    let got = model
         .heritability_interval()
         .map_err(PyValueError::new_err)?;
     Ok((
-        got.estimate,
+        got.estimate
+            .ok_or_else(|| PyValueError::new_err("TOBIT_PROFILE_NOT_EVALUABLE"))?,
         got.lower,
         got.upper,
-        got.lower_at_bound,
-        got.upper_at_bound,
+        got.lower_limited,
+        got.upper_limited,
         got.level,
         got.contains_lower_bound,
         got.contains_upper_bound,
         got.profile_failures,
-        got.censored_share,
+        model.censored_share(),
     ))
 }
 

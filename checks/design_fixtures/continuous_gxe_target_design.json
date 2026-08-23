@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "fixture_id": "continuous_gxe_target_design",
+  "reviewed": true,
+  "participant_free": true,
+  "provenance": "reviewed predecessor aggregate receipt and tracked Asterism GxE records",
+  "purpose": "pedigree-scale and design-identity stress fixture",
+  "claims": [
+    "reviewed pedigree component-count and size aggregates",
+    "synthetic environment restricted to the qualified calibration range",
+    "tracked six-column age-by-sex design identity"
+  ],
+  "not_claimed": [
+    "reconstruction of GOBS ages or age moments",
+    "trait-specific missingness",
+    "participant row identity",
+    "relationship coefficient or eigenvalue identity"
+  ],
+  "pedigree": {
+    "aggregate_fixture": "checks/design_fixtures/one_trait_gaussian_heritability.json",
+    "aggregate_fixture_sha256": "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e",
+    "analysis_n": 1909,
+    "component_count": 202,
+    "largest_component": 180,
+    "generated_nonzero_relationship_pairs": 27691
+  },
+  "environment": {
+    "name": "synthetic_standardised_age_coordinate",
+    "generator": "uniform",
+    "seed": 20260813,
+    "minimum": -1.5,
+    "maximum": 1.5,
+    "reporting_grid": [
+      -1.0,
+      0.0,
+      1.0
+    ],
+    "require_variation_in_every_component_larger_than_one": true,
+    "matches_participant_age_moments": false
+  },
+  "fixed_effects": {
+    "columns": [
+      "intercept",
+      "synthetic_standardised_age",
+      "synthetic_standardised_age_squared",
+      "synthetic_sex",
+      "synthetic_standardised_age_by_sex",
+      "synthetic_standardised_age_squared_by_sex"
+    ],
+    "sex_generator": "binary_uniform",
+    "sex_seed": 1,
+    "require_full_rank": true,
+    "matches_participant_sex_counts": false
+  },
+  "target_full_fit_acceptance": {
+    "surfaces": [
+      "exponential",
+      "random_regression"
+    ],
+    "estimator": "reml",
+    "quantity_absolute_tolerance": 0.001,
+    "loglik_absolute_tolerance": 0.0001,
+    "require_public_convergence": true,
+    "require_independent_convergence": true
+  },
+  "null_calibration": {
+    "release_replicates": 500,
+    "minimum_smoke_replicates": 100,
+    "levels": [
+      0.05
+    ],
+    "tests": [
+      "correlation",
+      "interaction"
+    ],
+    "generating_genetic_variance": 0.5,
+    "generating_residual_variance": 0.5,
+    "base_seed": 20260821,
+    "fail_when": "one_sided_95_percent_clopper_pearson_lower_above_level",
+    "maximum_refused_or_nonconverged": 0,
+    "require_expected_reference_rule": true
+  },
+  "independent_dense_sentinel": {
+    "command": "checks/gxe_against_independent_full_fit.py",
+    "sample_size": 80,
+    "required": true
+  }
+}

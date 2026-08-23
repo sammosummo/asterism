@@ -1,0 +1,66 @@
+{
+  "acceptance": {
+    "asterism_must_converge": true,
+    "maximum_absolute_reported_difference": 5e-06,
+    "maximum_asterism_scaled_gradient": 1e-07
+  },
+  "adapter": {
+    "path": "checks/bivariate_against_solar.py",
+    "sha256": "b026ee27996478c8ca8b3b95eda56219e78cf4d3f776067d3da1883409ee8189"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "bivariate_against_solar",
+  "external_outputs": {
+    "h2_first": 0.6819444,
+    "h2_second": 0.310415,
+    "observations_by_trait": [
+      350,
+      300
+    ],
+    "people": 350,
+    "rho_e": 0.254921,
+    "rho_g": 0.6104755
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/solar_reference_adapter.py",
+      "sha256": "6ff5c2c57b1730d5406be07f31b6ea249cce994fcae904c940ea63dcb5bbc6cb"
+    },
+    {
+      "name": "design:bivariate_against_solar",
+      "sha256": "29f1cff2b976ad66a37b8bc8394d8ce217fe54fb37d1a89a59c51099315ef0cd"
+    },
+    {
+      "name": "relationship",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "observed",
+      "sha256": "2a8b251efc8dd911a4cbae45b712dd09958d7f60209cfb29d9aa30f7b1755674"
+    },
+    {
+      "name": "design",
+      "sha256": "47d5b77577366beeba94a80f084bccad0ef6987eabfc97add4ea099ac7b5542d"
+    },
+    {
+      "name": "values",
+      "sha256": "e22b2fccaccde7ade2b69a07bd038ec96951aaf2301cce93f485f0d634186ea1"
+    },
+    {
+      "name": "pedigree_csv",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv",
+      "sha256": "ff4848037b4a01b9d1c65d424a2a379821415ed8058abfbf44c8201763ccf7dd"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "/usr/local/bin/solar",
+      "packages": [],
+      "version": "SOLAR Eclipse 9.0.0 (2022-01-01)"
+    }
+  ]
+}

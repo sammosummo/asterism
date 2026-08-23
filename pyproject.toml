@@ -1,14 +1,14 @@
 [build-system]
-requires = ["maturin>=1.10,<2"]
+requires = ["maturin==1.14.1"]
 build-backend = "maturin"
 
 [project]
 name = "asterism"
-version = "0.1.0"
+version = "0.1.0.dev0"
 description = "Variance components models for quantitative genetics (Mathias Lab)"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.15"
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Private :: Do Not Upload",
 ]
 dependencies = [
@@ -19,7 +19,7 @@ dependencies = [
 dev = [
   "pytest>=8",
   "scipy>=1.15",
-  "maturin>=1.10,<2",
+  "maturin==1.14.1",
   "ruff>=0.14",
 ]
 
@@ -31,6 +31,8 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
 ignore = [
+  # Standalone strings document the expression or block immediately above.
+  "B018",
   # Line length is left to the formatter.
   "E501",
   # The prose here is British English and uses en and em dashes deliberately.
@@ -53,3 +55,8 @@ python-source = "python"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The suite imports the repository's own `tools` package. Without this, only
+# `tests/` reaches sys.path and `uv run pytest` -- the command automation uses
+# -- cannot collect, while `uv run python -m pytest` can. One runner, one
+# result.
+pythonpath = ["."]

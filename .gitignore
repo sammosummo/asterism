@@ -1,4 +1,8 @@
 target/
+dist/
+.release-venv/
+.release-requirements.txt
+release-evidence/
 __pycache__/
 *.py[cod]
 .venv/
@@ -6,3 +10,4 @@ __pycache__/
 *.so
 .DS_Store
 .obsidian/
+.claude/

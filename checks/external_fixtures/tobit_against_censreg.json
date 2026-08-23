@@ -1,0 +1,68 @@
+{
+  "acceptance": {
+    "maximum_relative_difference": 0.001
+  },
+  "adapter": {
+    "path": "checks/tobit_against_censreg.py",
+    "sha256": "63115ee2785eab9533da65cf5ae54883c464e4f5631e3146e593818920c8cb11"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "tobit_against_censreg",
+  "external_outputs": {
+    "intercept": 5.041098993982,
+    "loglik": -6928.176400568907,
+    "sigma": 1.998870874523,
+    "slope": 1.497926613739
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/external_reference_adapter.py",
+      "sha256": "ccce0425c083e314bcb539dce671b252f5b9e7b18ff38f492759d6d517aa29a6"
+    },
+    {
+      "name": "censReg simulation constants",
+      "sha256": "a4fa288966c177fb59e5f5bd97bec802e38a1a42d80b0a3bb4b3494c368b2482"
+    },
+    {
+      "name": "censReg covariate",
+      "sha256": "45d0a55d24ce4be2dab63ef65f1e041764d5f8dd814a6d781d945ec182aaa0cb"
+    },
+    {
+      "name": "censReg complete response",
+      "sha256": "c926f265ff234952bdbf6c5faead7b737eeadbc4b843eb0999f7e19598725c13"
+    },
+    {
+      "name": "censReg censoring mask",
+      "sha256": "347fac94054ba75f8a7fa5484d863622a2a190473dfa85978999910fb2e0f004"
+    },
+    {
+      "name": "censReg relationship matrix",
+      "sha256": "1e4449933e69e1ba2cdba77d3ae20ec08256bfa705d29c0de624aadd48d9f540"
+    },
+    {
+      "name": "censReg status",
+      "sha256": "93ccb71e56efcf996bd283a7ef37c883586d499b06cb9250601ae35b73574c1d"
+    },
+    {
+      "name": "censReg limits",
+      "sha256": "86406de405cda355409ae9094e94d7ae4cb9f53ed6aed64f898947c68c275d57"
+    },
+    {
+      "name": "censReg fixed-effect design",
+      "sha256": "b83ab6b4ffc9eae207cd38df3f63aa8ddc23cb42bab6a5866508b11c536d0bc5"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "Rscript",
+      "packages": [
+        {
+          "name": "censReg",
+          "version": "0.5.38"
+        }
+      ],
+      "version": "4.5.2"
+    }
+  ]
+}

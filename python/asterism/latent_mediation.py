@@ -16,11 +16,14 @@ import numpy as np
 from ._core import LatentMediationCore
 from ._core import latent_mediation_simulate as _simulate
 
-__all__ = ["LatentMediationModel"]
+__all__: list[str] = ["LatentMediationModel"]
+"""Exported the public latent-mediation model."""
 
-_MISSING = object()
+_MISSING: object = object()
+"""Distinguished an omitted optional field from an explicit null value."""
 
 
+# asterism-style: allow private-helper -- shared canonical-field validation primitive
 def _field(
     family: Mapping[str, Any],
     name: str,
@@ -35,6 +38,7 @@ def _field(
     raise ValueError(f"LATENT_MEDIATION_{name.upper()}_MISSING")
 
 
+# asterism-style: allow private-helper -- reused sequence and numeric validation boundary
 def _sequence(
     value: Any,
     code: str,
@@ -47,18 +51,22 @@ def _sequence(
         if np.any(np.ma.getmaskarray(value)):
             raise ValueError("LATENT_MEDIATION_ARRAY_MASKED")
         value = np.ma.getdata(value)
+        """Removed an all-false mask while retaining the underlying values."""
     if isinstance(value, np.ndarray):
         if value.dtype.kind == "c":
             raise ValueError("LATENT_MEDIATION_NUMERIC_NOT_REAL")
-        copied = value.tolist()
+        copied: list[Any] = value.tolist()
+        """Copied the NumPy sequence into caller-independent Python values."""
         if not isinstance(copied, list):
             raise ValueError(code)
     elif isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise ValueError(code)
     else:
         copied = list(value)
+        """Copied a general Python sequence before normalisation."""
     if numeric:
         normalised: list[Any] = []
+        """Accumulated real numeric values after rejecting ambiguous booleans."""
         for item in copied:
             if item is None and allow_none:
                 normalised.append(None)
@@ -75,6 +83,7 @@ def _sequence(
     return copied
 
 
+# asterism-style: allow private-helper -- reused person-alignment validation primitive
 def _person_vector(
     family: Mapping[str, Any],
     name: str,
@@ -84,12 +93,11 @@ def _person_vector(
     allow_none: bool = False,
 ) -> list[Any]:
     """Expand an allowed scalar or copy a person-aligned sequence."""
-    value = _field(family, name)
+    value: Any = _field(family, name)
+    """Read the scalar or person-aligned field to expand."""
     if isinstance(value, (bool, np.bool_)):
         raise ValueError("LATENT_MEDIATION_NUMERIC_BOOLEAN")
-    if scalar and isinstance(value, Real) and not isinstance(
-        value, (bool, np.bool_)
-    ):
+    if scalar and isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
         return [value] * size
     return _sequence(
         value,
@@ -99,14 +107,14 @@ def _person_vector(
     )
 
 
-def _status_vector(
-    family: Mapping[str, Any], name: str, size: int
-) -> list[Any]:
+# asterism-style: allow private-helper -- reused binary-status validation primitive
+def _status_vector(family: Mapping[str, Any], name: str, size: int) -> list[Any]:
     """Copy one status vector while refusing Python and NumPy booleans."""
-    values = _sequence(
+    values: list[Any] = _sequence(
         _field(family, name),
         f"LATENT_MEDIATION_{name.upper()}_NOT_A_SEQUENCE",
     )
+    """Copied the person-aligned status sequence before binary validation."""
     for value in values:
         if isinstance(value, (bool, np.bool_)):
             raise ValueError("LATENT_MEDIATION_STATUS_BOOLEAN")
@@ -118,7 +126,8 @@ def _status_vector(
 class LatentMediationModel:
     """A collection of independent families for evaluation and fitting."""
 
-    __slots__ = ("_core",)
+    __slots__: tuple[str, ...] = ("_core",)
+    """Restricted each wrapper to its sealed Rust model."""
 
     def __init__(
         self,
@@ -135,42 +144,58 @@ class LatentMediationModel:
             qmc_points: Deterministic Genz-Halton points for rectangles above
                 two dimensions.
         """
-        if isinstance(families, (str, bytes)) or not isinstance(
-            families, Sequence
-        ):
+        if isinstance(families, (str, bytes)) or not isinstance(families, Sequence):
             raise ValueError("LATENT_MEDIATION_FAMILIES_NOT_A_SEQUENCE")
         if not families:
             raise ValueError("LATENT_MEDIATION_NO_FAMILIES")
 
         relationships: list[list[list[Any]]] = []
+        """Accumulated one copied relationship matrix per family."""
         latent_means: list[list[Any]] = []
+        """Accumulated process-major latent means per family."""
         mediator_measurements: list[list[Any]] = []
+        """Accumulated person-aligned mediator measurements."""
         mediator_measurement_error_variances: list[list[Any]] = []
+        """Accumulated known mediator measurement-error variances."""
         mediator_proxy_statuses: list[list[Any]] = []
+        """Accumulated observed binary mediator-proxy statuses."""
         outcome_statuses: list[list[Any]] = []
+        """Accumulated observed binary or staged outcome statuses."""
         mediator_thresholds: list[list[Any]] = []
+        """Accumulated mediator-proxy thresholds."""
         outcome_thresholds: list[list[Any]] = []
+        """Accumulated outcome thresholds."""
         mediator_proxy_sensitivities: list[list[Any]] = []
+        """Accumulated known mediator-proxy sensitivities."""
         mediator_proxy_specificities: list[list[Any]] = []
+        """Accumulated known mediator-proxy specificities."""
         ascertainments: list[str] = []
+        """Accumulated each family's ascertainment rule."""
         proband_indices: list[Any] = []
+        """Accumulated optional within-family proband indices."""
         mediator_designs: list[list[list[Any]]] = []
+        """Accumulated mediator fixed-effect designs."""
         outcome_designs: list[list[list[Any]]] = []
+        """Accumulated outcome fixed-effect designs."""
         outcome_prevalences: list[list[Any]] = []
+        """Accumulated binary outcome prevalence assumptions."""
         # Per family, per person, the share in each ordered outcome category.
         # An empty list for a person means their outcome is binary, which is
         # what every family written before staging existed carries.
         outcome_category_prevalences: list[list[Any]] = []
+        """Accumulated ordered-category prevalence assumptions."""
         ascertainment_categories: list[Any] = []
+        """Accumulated optional staged-outcome ascertainment categories."""
 
         for family in families:
             if not isinstance(family, Mapping):
                 raise ValueError("LATENT_MEDIATION_FAMILY_NOT_A_MAPPING")
-            relationship_rows = _sequence(
+            relationship_rows: list[Any] = _sequence(
                 _field(family, "relationship"),
                 "LATENT_MEDIATION_RELATIONSHIP_NOT_A_SEQUENCE",
             )
-            relationship = [
+            """Copied the submitted relationship rows before validating each row."""
+            relationship: list[list[Any]] = [
                 _sequence(
                     row,
                     "LATENT_MEDIATION_RELATIONSHIP_ROW_NOT_A_SEQUENCE",
@@ -178,13 +203,16 @@ class LatentMediationModel:
                 )
                 for row in relationship_rows
             ]
+            """Normalised the family's relationship matrix to real Python values."""
             relationships.append(relationship)
-            size = len(relationship)
+            size: int = len(relationship)
+            """Inferred the family size from its square relationship matrix."""
             for name, into in (
                 ("mediator_design", mediator_designs),
                 ("outcome_design", outcome_designs),
             ):
-                rows = _field(family, name, default=[])
+                rows: Any = _field(family, name, default=[])
+                """Read one optional fixed-effect design before row validation."""
                 into.append(
                     [
                         _sequence(
@@ -205,9 +233,7 @@ class LatentMediationModel:
                 )
             )
             mediator_measurements.append(
-                _person_vector(
-                    family, "mediator_measurement", size, allow_none=True
-                )
+                _person_vector(family, "mediator_measurement", size, allow_none=True)
             )
             mediator_measurement_error_variances.append(
                 _person_vector(
@@ -222,9 +248,7 @@ class LatentMediationModel:
             )
             outcome_statuses.append(_status_vector(family, "outcome_status", size))
             mediator_thresholds.append(
-                _person_vector(
-                    family, "mediator_threshold", size, scalar=True
-                )
+                _person_vector(family, "mediator_threshold", size, scalar=True)
             )
             outcome_prevalences.append(
                 _sequence(
@@ -234,7 +258,8 @@ class LatentMediationModel:
                     allow_none=True,
                 )
             )
-            staged = _field(family, "outcome_category_prevalence", default=[])
+            staged: Any = _field(family, "outcome_category_prevalence", default=[])
+            """Read optional ordered-category prevalence rows."""
             outcome_category_prevalences.append(
                 [
                     _sequence(
@@ -260,20 +285,18 @@ class LatentMediationModel:
                 )
             )
             mediator_proxy_sensitivities.append(
-                _person_vector(
-                    family, "mediator_proxy_sensitivity", size, scalar=True
-                )
+                _person_vector(family, "mediator_proxy_sensitivity", size, scalar=True)
             )
             mediator_proxy_specificities.append(
-                _person_vector(
-                    family, "mediator_proxy_specificity", size, scalar=True
-                )
+                _person_vector(family, "mediator_proxy_specificity", size, scalar=True)
             )
-            ascertainment = _field(family, "ascertainment")
+            ascertainment: Any = _field(family, "ascertainment")
+            """Read the family's named ascertainment rule."""
             if not isinstance(ascertainment, str):
                 raise ValueError("LATENT_MEDIATION_ASCERTAINMENT_NOT_A_STRING")
             ascertainments.append(ascertainment)
-            proband_index = family.get("proband_index")
+            proband_index: Any = family.get("proband_index")
+            """Read the optional named-proband position."""
             if isinstance(proband_index, (bool, np.bool_)):
                 raise ValueError("LATENT_MEDIATION_PROBAND_BOOLEAN")
             proband_indices.append(
@@ -302,6 +325,7 @@ class LatentMediationModel:
             outcome_category_prevalences,
             ascertainment_categories,
         )
+        """Built the sealed Rust model from the fully normalised family arrays."""
 
     def evaluate(
         self,
@@ -457,7 +481,9 @@ def simulate(
     outcome_design: Sequence[Sequence[float]] | None = None,
     outcome_coefficients: Sequence[float] | None = None,
     outcome_prevalence: float | Sequence[float | None] | None = None,
-    outcome_category_prevalence: Sequence[float] | Sequence[Sequence[float]] | None = None,
+    outcome_category_prevalence: Sequence[float]
+    | Sequence[Sequence[float]]
+    | None = None,
     ascertainment_category: int | None = None,
 ) -> list[dict[str, Any]]:
     """Draw families from the model, for calibration, coverage and power work.
@@ -480,31 +506,43 @@ def simulate(
     and what a clinic roster actually is. Drawing unconditionally and keeping
     the cases would be a different design.
 
-    Parameters
-    ----------
-    relationship
-        One family's relationship matrix — twice the kinship.
-    a, b, c_prime, d, sigma_m2
-        The truth to draw from. ``a`` is the mediator's loading on the
-        inherited factor, ``b`` the path from mediator to outcome,
-        ``c_prime`` the direct inherited effect on the outcome.
-    families
-        How many to draw.
-    seed
-        Fixed, so a campaign reruns exactly.
-    measurement_error_variance
-        The known error variance where the mediator is measured; ``None`` where
-        it is not measured at all. At least one family must measure it
-        somewhere or the mediator scale is not identified.
+    Args:
+        relationship: One family's relationship matrix, as twice the kinship.
+        a: Mediator loading on the inherited factor.
+        b: Path from mediator to outcome.
+        c_prime: Direct inherited effect on the outcome.
+        d: Residual inherited-outcome loading used by the structural model.
+        sigma_m2: Residual mediator variance.
+        families: Number of independent families to draw.
+        seed: Fixed random seed making a campaign exactly reproducible.
+        outcome_threshold: Scalar or person-specific binary-outcome threshold.
+        mediator_threshold: Scalar or person-specific mediator-proxy threshold.
+        measurement_error_variance: Known scalar or person-specific mediator
+            measurement-error variance; ``None`` marks no measurement.
+        observe_mediator_proxy: Scalar or person-specific proxy-observation flag.
+        sensitivity: Known scalar or person-specific proxy sensitivity.
+        specificity: Known scalar or person-specific proxy specificity.
+        observe_outcome: Scalar or person-specific outcome-observation flag.
+        ascertainment: Population or named-proband ascertainment rule.
+        proband_index: Within-family proband position for conditioned sampling.
+        mediator_design: Optional person-by-covariate mediator design.
+        mediator_coefficients: Coefficients matching ``mediator_design``.
+        outcome_design: Optional person-by-covariate outcome design.
+        outcome_coefficients: Coefficients matching ``outcome_design``.
+        outcome_prevalence: Scalar or person-specific binary prevalence.
+        outcome_category_prevalence: Optional ordered-category prevalence rows.
+        ascertainment_category: Ordered outcome category defining ascertainment.
 
-    Raises
-    ------
-    ValueError
-        With a stable code where the design does not describe a family, where a
-        proband is asked for and not named, or where the conditioning cannot be
-        satisfied — a threshold so far out that a case essentially never occurs.
+    Returns:
+        Family dictionaries accepted directly by :class:`LatentMediationModel`.
+
+    Raises:
+        ValueError: With a stable code when the design does not describe a
+            family, a conditioned proband is absent, or conditioning cannot be
+            satisfied.
     """
-    size = len(relationship)
+    size: int = len(relationship)
+    """Read the number of people whose scalar settings may need expansion."""
 
     def spread(value: Any) -> list[Any]:
         if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
@@ -523,7 +561,10 @@ def simulate(
             [None if v is None else float(v) for v in spread(outcome_prevalence)],
             [float(v) for v in spread(mediator_threshold)],
             [float(v) for v in spread(outcome_threshold)],
-            [None if v is None else float(v) for v in spread(measurement_error_variance)],
+            [
+                None if v is None else float(v)
+                for v in spread(measurement_error_variance)
+            ],
             [bool(v) for v in spread(observe_mediator_proxy)],
             [float(v) for v in spread(sensitivity)],
             [float(v) for v in spread(specificity)],
@@ -537,7 +578,9 @@ def simulate(
             int(seed),
             ascertainment,
             proband_index,
-            None if outcome_category_prevalence is None else [
+            None
+            if outcome_category_prevalence is None
+            else [
                 [float(share) for share in person]
                 for person in (
                     [outcome_category_prevalence] * size

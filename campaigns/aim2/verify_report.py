@@ -12,22 +12,32 @@ from __future__ import annotations
 
 import glob
 import json
-import re
 from pathlib import Path
 
-RESULTS = "/Users/samuelmathias/.claude/jobs/f010e916/tmp/results/*.json"
-REPORT = Path("/Users/samuelmathias/.claude/jobs/f010e916/tmp/aim2_power.html")
+type ResultCell = dict[str, float | int]
 
-cells = {}
+RESULTS: str = "/Users/samuelmathias/.claude/jobs/f010e916/tmp/results/*.json"
+"""Selected every result shard used to draft the report."""
+REPORT: Path = Path("/Users/samuelmathias/.claude/jobs/f010e916/tmp/aim2_power.html")
+"""Located the rendered report whose quoted figures are being verified."""
+
+cells: dict[str, ResultCell] = {}
+"""Initialised the combined mapping of completed simulation cells."""
 for path in sorted(glob.glob(RESULTS)):
-    for name, r in json.load(open(path))["cells"].items():
-        if r["replicates"]:
+    with open(path, encoding="utf-8") as stream:
+        loaded: dict[str, ResultCell] = json.load(stream)["cells"]
+        """Loaded the cells recorded in one campaign result shard."""
+    for name, r in loaded.items():
+        if r.get("replicates"):
             cells[name] = r
+            """Retained this cell because it contained completed replicates."""
+"""Combined every completed result shard before checking the report."""
 
-page = REPORT.read_text()
+page: str = REPORT.read_text(encoding="utf-8")
+"""Read the rendered report text containing the published figures."""
 
 # (what the page claims, which cell, which test)
-claims = [
+claims: list[tuple[str, str, str]] = [
     # vertical power
     ("0.055", "ABR only | vertical 0.06", "vertical"),
     ("0.070", "ABR only | vertical 0.12", "vertical"),
@@ -56,19 +66,25 @@ claims = [
     ("0.330", "audiogram | direct 0.5", "horizontal"),
     ("0.545", "audiogram | direct 0.7", "horizontal"),
 ]
+"""Enumerated every report rate and the result cell that should reproduce it."""
 
-problems = []
+problems: list[str] = []
+"""Initialised descriptions of discrepancies found in the report."""
 for claimed, cell, test in claims:
     if cell not in cells:
         problems.append(f"{cell}: no such cell, but the page quotes {claimed}")
         continue
-    r = cells[cell]
-    actual = r[f"{test}_reject_025"] / r["replicates"]
+    result: ResultCell = cells[cell]
+    """Selected the completed result underlying this reported claim."""
+    actual: float = float(result[f"{test}_reject_025"]) / int(result["replicates"])
+    """Recomputed the quoted rejection rate from its counts."""
     if abs(actual - float(claimed)) > 5e-4:
         problems.append(
-            f"{cell} ({test}): page says {claimed}, cells give {actual:.3f}")
+            f"{cell} ({test}): page says {claimed}, cells give {actual:.3f}"
+        )
     if claimed not in page:
         problems.append(f"{cell} ({test}): {claimed} does not appear on the page")
+"""Checked every quoted rate against both its source cell and the rendered page."""
 
 # The two figures in the summary panel.
 for figure, why in (("1,600", "people"), ("257", "cases"), ("54.5%", "best power")):

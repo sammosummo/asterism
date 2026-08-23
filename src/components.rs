@@ -113,6 +113,44 @@ pub(crate) fn resting_on_zero(value: f64) -> bool {
 
 const RESTING_TOLERANCE: f64 = 1e-9;
 
+/// Are the submitted covariance bases distinct from one another and from the
+/// implicit residual identity?
+///
+/// Coefficients are identified only through their weighted matrix sum. The
+/// scale-free Frobenius Gram matrix is singular when any basis is a linear
+/// combination of the others, including a submitted identity that duplicates
+/// the residual. Its dimension is the number of coefficients rather than
+/// `n²`, so this check does not materialise another roster-sized matrix.
+fn covariance_bases_are_identified(matrices: &[DMatrix<f64>], rows: usize) -> bool {
+    let structured = matrices.len();
+    let count = structured + 1;
+    let mut norms: Vec<f64> = matrices.iter().map(DMatrix::norm).collect();
+    norms.push((rows as f64).sqrt());
+    if norms.iter().any(|norm| !norm.is_finite() || *norm <= 0.0) {
+        return false;
+    }
+
+    let mut gram = DMatrix::<f64>::zeros(count, count);
+    for first in 0..count {
+        for second in 0..=first {
+            let inner = match (first < structured, second < structured) {
+                (true, true) => matrices[first].dot(&matrices[second]),
+                (true, false) => matrices[first].trace(),
+                (false, true) => matrices[second].trace(),
+                (false, false) => rows as f64,
+            };
+            let scaled = inner / (norms[first] * norms[second]);
+            gram[(first, second)] = scaled;
+            gram[(second, first)] = scaled;
+        }
+    }
+
+    let eigenvalues = gram.symmetric_eigen().eigenvalues;
+    let smallest = eigenvalues.iter().copied().fold(f64::INFINITY, f64::min);
+    let largest = eigenvalues.iter().copied().fold(0.0_f64, f64::max);
+    smallest > 1e-12 * largest
+}
+
 struct BlockSolve {
     rows: Vec<usize>,
     inverse: DMatrix<f64>,
@@ -146,9 +184,15 @@ impl ComponentModel {
         if n == 0 {
             return Err("COMPONENTS_NO_ROWS");
         }
+        if design.iter().any(|value| !value.is_finite()) {
+            return Err("COMPONENTS_DESIGN_NOT_FINITE");
+        }
         for matrix in matrices {
             if matrix.nrows() != n || matrix.ncols() != n {
                 return Err("COMPONENTS_MATRIX_WRONG_SIZE");
+            }
+            if matrix.iter().any(|value| !value.is_finite()) {
+                return Err("COMPONENTS_MATRIX_NOT_FINITE");
             }
             for i in 0..n {
                 for j in 0..i {
@@ -157,6 +201,9 @@ impl ComponentModel {
                     }
                 }
             }
+        }
+        if !covariance_bases_are_identified(matrices, n) {
+            return Err("COMPONENTS_COVARIANCE_BASES_RANK_DEFICIENT");
         }
 
         // **Blocks come from every matrix at once, not from the first.** Two
@@ -227,6 +274,33 @@ impl ComponentModel {
         }
         let matrix = &self.matrices[component];
         DMatrix::from_fn(size, size, |i, j| matrix[(block[i], block[j])])
+    }
+
+    /// Maximised Gaussian log likelihood when only the residual identity
+    /// remains. This null is analytic; representing it as an ordinary
+    /// `ComponentModel` would add a submitted identity beside the implicit one
+    /// and make the two coefficients nonidentifiable.
+    fn residual_only_loglik(&self, y: &DVector<f64>, reml: bool) -> Result<f64, &'static str> {
+        let xtx = self.design.transpose() * &self.design;
+        let factor = xtx.cholesky().ok_or("COMPONENTS_DESIGN_RANK_DEFICIENT")?;
+        let beta = factor.solve(&(self.design.transpose() * y));
+        let residual = y - &self.design * beta;
+        let residual_sum_squares = residual.dot(&residual);
+        let degrees_of_freedom = if reml {
+            self.rows.saturating_sub(self.design.ncols())
+        } else {
+            self.rows
+        };
+        if degrees_of_freedom == 0 {
+            return Err("COMPONENTS_REML_NO_RESIDUAL_DF");
+        }
+        let variance = residual_sum_squares / degrees_of_freedom as f64;
+        if !variance.is_finite() || variance <= 0.0 {
+            return Err("COMPONENTS_RESPONSE_CONSTANT");
+        }
+        Ok(-0.5
+            * degrees_of_freedom as f64
+            * ((2.0 * std::f64::consts::PI).ln() + variance.ln() + 1.0))
     }
 
     fn evaluate(
@@ -449,6 +523,9 @@ impl ComponentModel {
         if y.len() != self.rows {
             return Err("COMPONENTS_RESPONSE_WRONG_LENGTH");
         }
+        if y.iter().any(|value| !value.is_finite()) {
+            return Err("COMPONENTS_RESPONSE_NOT_FINITE");
+        }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
@@ -541,7 +618,11 @@ impl ComponentModel {
                 .iter()
                 .enumerate()
                 .map(|(k, g)| {
-                    if signed.contains(&k) {
+                    if lower[k] == upper[k] {
+                        // A pinned coordinate is not a direction the search
+                        // may act on, whichever way its gradient points.
+                        0.0
+                    } else if signed.contains(&k) {
                         // No bound to rest on, so no projection.
                         *g
                     } else if resting_on_zero(par[k]) {
@@ -669,7 +750,11 @@ impl ComponentModel {
             .iter()
             .enumerate()
             .map(|(k, g)| {
-                if resting_on_zero(par[k]) {
+                if lower[k] == upper[k] {
+                    0.0
+                } else if signed.contains(&k) {
+                    *g
+                } else if resting_on_zero(par[k]) {
                     g.min(0.0)
                 } else {
                     *g
@@ -834,6 +919,7 @@ impl ComponentModel {
             let model = Self::build(&matrices, &self.design)?;
             let signed: Vec<usize> = (1..=free.len()).collect();
             let fit = model.fit_with_signs(y, reml, &signed)?;
+            crate::convergence::require(fit.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
 
             for (slot, &k) in free.iter().enumerate() {
                 let position = named.iter().position(|n| *n == k).expect("named");
@@ -844,9 +930,9 @@ impl ComponentModel {
                 let difference = fit.variances[coordinate];
                 let (lower, lower_limited, upper, upper_limited) =
                     model.signed_interval(y, reml, coordinate, &signed, difference)?;
-                let held = model
-                    .fit_general(y, reml, &signed, &[(coordinate, 0.0)])?
-                    .loglik;
+                let held = model.fit_general(y, reml, &signed, &[(coordinate, 0.0)])?;
+                crate::convergence::require(held.converged, "COMPONENTS_NULL_FIT_NOT_CONVERGED")?;
+                let held = held.loglik;
                 let statistic = (2.0 * (fit.loglik - held)).max(0.0);
                 out[position] = Some(Contrast {
                     difference,
@@ -880,11 +966,17 @@ impl ComponentModel {
         signed: &[usize],
         estimate: f64,
     ) -> Result<(f64, bool, f64, bool), &'static str> {
-        let free = self.fit_with_signs(y, reml, signed)?.loglik;
+        let free = self.fit_with_signs(y, reml, signed)?;
+        crate::convergence::require(free.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
+        let free = free.loglik;
         let threshold = free - 0.5 * 3.841_458_820_694_124;
-        let outside = |value: f64| {
-            self.fit_general(y, reml, signed, &[(coordinate, value)])
-                .map_or(true, |fit| fit.loglik < threshold)
+        let failed = std::cell::Cell::new(false);
+        let outside = |value: f64| match self.fit_general(y, reml, signed, &[(coordinate, value)]) {
+            Ok(fit) if fit.converged => fit.loglik < threshold,
+            _ => {
+                failed.set(true);
+                false
+            }
         };
         let spread = estimate.abs().max(1e-3);
         let walk = |direction: f64| -> (f64, bool) {
@@ -918,6 +1010,9 @@ impl ComponentModel {
         };
         let (lower, lower_limited) = walk(-1.0);
         let (upper, upper_limited) = walk(1.0);
+        if failed.get() {
+            return Err("COMPONENTS_PROFILE_FIT_NOT_CONVERGED");
+        }
         Ok((lower, lower_limited, upper, upper_limited))
     }
 }
@@ -939,42 +1034,114 @@ impl ComponentModel {
     /// them the chain rule is a constant rather than a derivative — every free
     /// variance moves the pinned one by the same `v / (1 - v)`.
     ///
-    /// A proportion of exactly one would need every other coefficient at nought and the
-    /// substitution divides by zero there, so it is refused and the endpoint
-    /// reports itself as limited by the parameter space.
+    /// A proportion of exactly one needs every other coefficient at nought.
+    /// Where that exact covariance is nonsingular it can be fitted directly;
+    /// otherwise the profile is evaluated at its limit from the interior.
     fn profile_objective(
         &self,
         y: &DVector<f64>,
         reml: bool,
         component: usize,
         proportion: f64,
+        weights: &[f64],
     ) -> Option<f64> {
-        if !(0.0..=1.0).contains(&proportion) || proportion > 1.0 - 1e-9 {
+        if !(0.0..=1.0).contains(&proportion) {
             return None;
         }
         let count = self.parameters();
+        if weights.len() != count
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        {
+            return None;
+        }
+        if proportion == 1.0 {
+            // The endpoint is an ordinary constrained fit whenever the held
+            // component alone gives a positive-definite covariance. Trying it
+            // first preserves the actual endpoint likelihood and lets a
+            // crossing just below one be bracketed rather than conservatively
+            // reporting the whole parameter space. A semidefinite component
+            // cannot be factorised at the exact endpoint; that is not a failed
+            // profile, because its likelihood still has a well-defined limit
+            // from inside.
+            let pinned: Vec<(usize, f64)> = (0..count)
+                .filter(|coordinate| *coordinate != component)
+                .map(|coordinate| (coordinate, 0.0))
+                .collect();
+            if let Ok(fit) = self.fit_general(y, reml, &[], &pinned)
+                && fit.converged
+                && fit.loglik.is_finite()
+            {
+                return Some(fit.loglik);
+            }
+        }
+        // At one, every other contribution tends to nought. A structured
+        // matrix may be positive semidefinite rather than definite, so the
+        // covariance at the exact endpoint can be singular even though the
+        // profile has a perfectly well-defined limit from inside. Evaluate
+        // one convergence-resolution margin inside the endpoint. A smaller
+        // margin leaves a condition number above the accuracy promised by the
+        // shared 1e-6 convergence rule; treating that factorisation as decisive
+        // made the same matrix pass at one scale and fail after multiplication
+        // by ten. Interior crossings are still bracketed to 1e-9.
+        let proportion = if proportion == 1.0 {
+            1.0 - TOLERANCE
+        } else {
+            proportion
+        };
         let free: Vec<usize> = (0..count).filter(|k| *k != component).collect();
-        let factor = proportion / (1.0 - proportion);
+        let remaining = 1.0 - proportion;
 
         let expand = |packed: &[f64]| -> Vec<f64> {
             let mut theta = vec![0.0; count];
-            let mut others = 0.0;
+            let mut total_scale = 0.0;
             for (slot, &k) in free.iter().enumerate() {
-                theta[k] = packed[slot];
-                others += packed[slot];
+                // Search in total-scale units, not in the contributions that
+                // collapse toward nought near a proportion of one. Component
+                // `k` receives `(1-v) u_k`; the held component receives
+                // `v sum(u)`. The search coordinates therefore stay of order
+                // one across the whole profile and under matrix rescaling.
+                theta[k] = remaining * packed[slot] / weights[k];
+                total_scale += packed[slot];
             }
-            theta[component] = factor * others;
+            theta[component] = proportion * total_scale / weights[component];
             theta
         };
 
-        let mut best: Option<f64> = None;
-        for start in [vec![1.0 / count as f64; free.len()], {
-            let mut s = vec![0.1; free.len()];
-            if let Some(last) = s.last_mut() {
+        let reduced_gradient = |at: &Evaluation, candidate: &[f64]| -> Vec<f64> {
+            free.iter()
+                .enumerate()
+                .map(|(slot, &k)| {
+                    let through = at.gradient[component] * proportion / weights[component];
+                    let gradient = at.gradient[k] * remaining / weights[k] + through;
+                    if resting_on_zero(candidate[slot]) {
+                        gradient.min(0.0)
+                    } else {
+                        gradient
+                    }
+                })
+                .collect()
+        };
+        let reading = |at: &Evaluation, candidate: &[f64]| -> f64 {
+            reduced_gradient(at, candidate)
+                .into_iter()
+                .fold(0.0f64, |worst, gradient| worst.max(gradient.abs()))
+                / at.negative_loglik.abs().max(1.0)
+        };
+
+        let equal = vec![1.0 / free.len() as f64; free.len()];
+        let residual_heavy = if free.len() == 1 {
+            vec![1.0]
+        } else {
+            let mut start = vec![0.1 / (free.len() - 1) as f64; free.len()];
+            if let Some(last) = start.last_mut() {
                 *last = 0.9;
             }
-            s
-        }] {
+            start
+        };
+        let mut best: Option<(f64, Vec<f64>, f64)> = None;
+        for start in [equal, residual_heavy] {
             let value_of = |candidate: &[f64]| -> f64 {
                 self.evaluate(&expand(candidate), y, reml, false)
                     .map_or(1e30, |e| e.negative_loglik)
@@ -983,13 +1150,7 @@ impl ComponentModel {
                 self.evaluate(&expand(candidate), y, reml, true)
                     .map_or_else(
                         || vec![0.0; free.len()],
-                        |e| {
-                            // The pinned component is carried by all the others at
-                            // once, so each of them picks up the same proportion of its
-                            // slope.
-                            let through = e.gradient[component] * factor;
-                            free.iter().map(|&k| e.gradient[k] + through).collect()
-                        },
+                        |e| reduced_gradient(&e, candidate),
                     )
             };
             let Ok(bounds) = Bounds::new(vec![0.0; free.len()], vec![f64::INFINITY; free.len()])
@@ -1005,14 +1166,48 @@ impl ComponentModel {
             control.lmm = free.len().min(10);
             if let Ok(solution) =
                 optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
-                && let Some(at) = self.evaluate(&expand(&solution.par), y, reml, false)
+                && let Some(at) = self.evaluate(&expand(&solution.par), y, reml, true)
                 && at.negative_loglik.is_finite()
-                && best.is_none_or(|b: f64| at.negative_loglik < b)
+                && best
+                    .as_ref()
+                    .is_none_or(|(negative, _, _)| at.negative_loglik < *negative)
             {
-                best = Some(at.negative_loglik);
+                let scaled_gradient = reading(&at, &solution.par);
+                best = Some((at.negative_loglik, solution.par, scaled_gradient));
             }
         }
-        best.map(|negative| -negative)
+
+        let (mut negative, par, mut scaled_gradient) = best?;
+        if scaled_gradient >= TOLERANCE
+            && let Some(better) = convergence::polish(
+                &par,
+                negative,
+                scaled_gradient,
+                &vec![0.0; free.len()],
+                &vec![f64::INFINITY; free.len()],
+                |candidate| {
+                    self.evaluate(&expand(candidate), y, reml, false)
+                        .map_or(1e30, |evaluation| evaluation.negative_loglik)
+                },
+                |candidate| {
+                    self.evaluate(&expand(candidate), y, reml, true)
+                        .map_or_else(
+                            || vec![0.0; free.len()],
+                            |evaluation| reduced_gradient(&evaluation, candidate),
+                        )
+                },
+                |candidate| {
+                    self.evaluate(&expand(candidate), y, reml, true)
+                        .map(|evaluation| {
+                            (evaluation.negative_loglik, reading(&evaluation, candidate))
+                        })
+                },
+            )
+        {
+            negative = better.negative_loglik;
+            scaled_gradient = better.scaled_gradient;
+        }
+        (scaled_gradient < TOLERANCE).then_some(-negative)
     }
 
     /// A 95 per cent profile-likelihood interval for one raw coefficient proportion.
@@ -1030,6 +1225,7 @@ impl ComponentModel {
             return Err("COMPONENTS_NO_SUCH_COMPONENT");
         }
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
         let fitted = fit.proportions[component];
 
         let mean = y.mean();
@@ -1039,8 +1235,9 @@ impl ComponentModel {
         // Everything this family knows -- which component, which response,
         // whether the fit is restricted -- is resolved here. What crosses into
         // `interval` is one number in and a log-likelihood out.
-        let got = interval::profile_interval(fitted, (0.0, 1.0 - 1e-9), |proportion| {
-            self.profile_objective(&scaled, reml, component, proportion)
+        let weights = vec![1.0; self.parameters()];
+        let got = interval::profile_interval(fitted, (0.0, 1.0), |proportion| {
+            self.profile_objective(&scaled, reml, component, proportion, &weights)
         });
         if got.estimate.is_none() {
             return Err("COMPONENTS_PROFILE_MAXIMUM_FAILED");
@@ -1048,6 +1245,58 @@ impl ComponentModel {
         // The mixture verdict stays absent: no coverage simulation has scored
         // a component proportion at its bounds. `0011` part 5 -- absent means
         // nobody has measured it here, not that the question does not apply.
+        Ok(got)
+    }
+
+    /// A 95 per cent profile interval for one mean-diagonal contribution
+    /// proportion.
+    ///
+    /// This is the scale-invariant quantity reported by the fit whenever every
+    /// structured relationship matrix has a positive finite mean diagonal.
+    /// The residual identity has mean diagonal one.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code when the quantity is undefined, the free fit did
+    /// not converge, or the profile at its estimate cannot be evaluated.
+    pub fn mean_diagonal_profile_interval(
+        &self,
+        y: &DVector<f64>,
+        reml: bool,
+        component: usize,
+    ) -> Result<Interval, &'static str> {
+        if component >= self.parameters() {
+            return Err("COMPONENTS_NO_SUCH_COMPONENT");
+        }
+        let mut weights = Vec::with_capacity(self.parameters());
+        for matrix in &self.matrices {
+            let mean_diagonal = matrix.diagonal().iter().sum::<f64>() / self.rows as f64;
+            if !mean_diagonal.is_finite() || mean_diagonal <= 0.0 {
+                return Err("COMPONENTS_MEAN_DIAGONAL_PROPORTION_UNDEFINED");
+            }
+            weights.push(mean_diagonal);
+        }
+        weights.push(1.0);
+
+        let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
+        let contributions: Vec<f64> = fit
+            .variances
+            .iter()
+            .zip(&weights)
+            .map(|(variance, weight)| variance * weight)
+            .collect();
+        let fitted = contributions[component] / contributions.iter().sum::<f64>();
+
+        let mean = y.mean();
+        let variance = y.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / y.len() as f64;
+        let scaled = y / variance.sqrt();
+        let got = interval::profile_interval(fitted, (0.0, 1.0), |proportion| {
+            self.profile_objective(&scaled, reml, component, proportion, &weights)
+        });
+        if got.estimate.is_none() {
+            return Err("COMPONENTS_PROFILE_MAXIMUM_FAILED");
+        }
         Ok(got)
     }
 
@@ -1085,6 +1334,7 @@ impl ComponentModel {
             return Err("COMPONENTS_RESIDUAL_NOT_TESTABLE");
         }
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
 
         // The mixture assumes one parameter on the boundary and the rest inside
         // it. If another component has also gone to nought the null is a
@@ -1106,14 +1356,13 @@ impl ComponentModel {
             .map(|(_, matrix)| matrix.clone())
             .collect();
         let null_loglik = if kept.is_empty() {
-            // Nothing structured left: residual only, which is still a model.
-            let residual =
-                ComponentModel::build(&[DMatrix::identity(self.rows, self.rows)], &self.design)?;
-            residual.fit(y, reml)?.loglik
+            // Nothing structured left: residual only, whose single variance
+            // has an analytic maximum and no convergence question.
+            self.residual_only_loglik(y, reml)?
         } else {
-            ComponentModel::build(&kept, &self.design)?
-                .fit(y, reml)?
-                .loglik
+            let null = ComponentModel::build(&kept, &self.design)?.fit(y, reml)?;
+            crate::convergence::require(null.converged, "COMPONENTS_NULL_FIT_NOT_CONVERGED")?;
+            null.loglik
         };
 
         let statistic = crate::deviance::deviance(fit.loglik, null_loglik);
@@ -1191,6 +1440,7 @@ impl ComponentModel {
             return Err("COMPONENTS_NO_SUCH_COMPONENT_TO_PREDICT");
         }
         let fit = self.fit(y, reml)?;
+        crate::convergence::require(fit.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
         let theta: Vec<f64> = fit.variances.clone();
         let p = self.design.ncols();
         let n = self.rows;
@@ -1437,6 +1687,35 @@ mod python {
         ))
     }
 
+    /// A 95 per cent profile interval for one scale-invariant mean-diagonal
+    /// contribution proportion.
+    #[pyfunction]
+    #[pyo3(signature = (matrices, design, y, component, reml=true))]
+    #[allow(clippy::type_complexity)]
+    pub fn component_mean_diagonal_interval(
+        matrices: Vec<PyReadonlyArray2<'_, f64>>,
+        design: PyReadonlyArray2<'_, f64>,
+        y: PyReadonlyArray1<'_, f64>,
+        component: usize,
+        reml: bool,
+    ) -> PyResult<(f64, f64, f64, bool, bool, f64, usize)> {
+        let model = build(&matrices, &design)?;
+        let interval = model
+            .mean_diagonal_profile_interval(&response(&y), reml, component)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            interval
+                .estimate
+                .ok_or_else(|| PyValueError::new_err("COMPONENTS_PROFILE_MAXIMUM_FAILED"))?,
+            interval.lower,
+            interval.upper,
+            interval.lower_limited,
+            interval.upper_limited,
+            interval.level,
+            interval.profile_failures,
+        ))
+    }
+
     /// Test one component against having no variance at all.
     #[pyfunction]
     #[pyo3(signature = (matrices, design, y, component, reml=true))]
@@ -1463,7 +1742,7 @@ mod python {
 #[cfg(feature = "python")]
 pub use python::{
     component_blup, component_contrasts, component_equality_test, component_fit,
-    component_interval, component_test,
+    component_interval, component_mean_diagonal_interval, component_test,
 };
 
 impl ComponentModel {
@@ -1529,6 +1808,8 @@ impl ComponentModel {
 
         let free = self.fit(y, reml)?;
         let null = Self::build(&reduced, &self.design)?.fit(y, reml)?;
+        crate::convergence::require(free.converged, "COMPONENTS_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "COMPONENTS_NULL_FIT_NOT_CONVERGED")?;
         let statistic = (2.0 * (free.loglik - null.loglik)).max(0.0);
         let df = (named.len() - 1) as f64;
         Ok(ComponentTest {
@@ -1760,6 +2041,46 @@ mod tests {
     }
     use super::ComponentModel;
     use nalgebra::{DMatrix, DVector};
+
+    /// Duplicate structured bases, and a structured identity confounded with
+    /// the implicit residual, do not identify separate covariance coefficients.
+    #[test]
+    fn linearly_dependent_covariance_bases_are_refused() {
+        let design = DMatrix::from_element(6, 1, 1.0);
+        let mut relationship = DMatrix::<f64>::identity(6, 6);
+        relationship[(0, 1)] = 0.5;
+        relationship[(1, 0)] = 0.5;
+
+        assert_eq!(
+            ComponentModel::build(&[relationship.clone(), relationship], &design).err(),
+            Some("COMPONENTS_COVARIANCE_BASES_RANK_DEFICIENT")
+        );
+        assert_eq!(
+            ComponentModel::build(&[DMatrix::identity(6, 6)], &design).err(),
+            Some("COMPONENTS_COVARIANCE_BASES_RANK_DEFICIENT")
+        );
+    }
+
+    /// Dropping the only structured component leaves one residual coefficient,
+    /// not a second identity basis confounded with that coefficient.
+    #[test]
+    fn one_component_test_uses_an_identified_residual_only_null() {
+        let (relationship, _, design, response) = small();
+        let model = ComponentModel::build(&[relationship], &design).expect("valid");
+        let result = model
+            .component_test(&response, true, 0)
+            .expect("identified residual-only null");
+
+        let centred = &response - DVector::from_element(response.len(), response.mean());
+        let degrees_of_freedom = (response.len() - design.ncols()) as f64;
+        let variance = centred.dot(&centred) / degrees_of_freedom;
+        let expected =
+            -0.5 * degrees_of_freedom * ((2.0 * std::f64::consts::PI).ln() + variance.ln() + 1.0);
+
+        assert!((result.null_loglik - expected).abs() < 1e-10);
+        assert!(result.statistic.is_finite());
+        assert!((0.0..=1.0).contains(&result.p_value));
+    }
 
     /// Sibling pairs, in households of four so that each household holds two
     /// pairs from different families.

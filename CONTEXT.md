@@ -11,10 +11,83 @@ record describes; it gains a capability when that record gains it, which happens
 when a planned analysis needs it and not before.
 _Avoid_: engine, SOLAR replacement, platform, framework
 
+**Supported analyses**:
+The named analyses and reportable quantities a release promises are ready.
+Capabilities outside the set remain deferred or explicitly not ready and do
+not block the release.
+_Avoid_: analysis envelope, feature-complete scope, universal readiness
+
+**Analysis-ready release**:
+A fixed, installable build whose supported analyses pass their scientific
+release checks and whose codebase-quality gate passes. It makes no claim about
+other analyses.
+_Avoid_: feature-complete release, finished package
+
+**Scientific release checks**:
+The evidence and real-design checks required for the supported analyses in a
+release. They need not cover every capability Asterism contains.
+_Avoid_: analysis-envelope gate, full validation suite, qualification gate
+
+**Codebase-quality gate**:
+The repeatable package-wide checks a build must pass before it can be an
+analysis-ready release. It establishes engineering integrity, not scientific
+evidence for a reported quantity.
+_Avoid_: beauty, polish
+
+**Supported design range**:
+The measured sample sizes, family sizes, relationship-matrix properties,
+censoring levels and trait types within which a supported analysis may produce
+a reportable result. The range is machine-readable and belongs to a particular
+release and its evidence.
+_Avoid_: generally supported, should work, analysis envelope
+
+**Reportable result**:
+A result from a supported analysis, fitted with a fixed release build to a
+design inside its supported design range, whose required fits and profile
+evaluations converged and whose pre-written acceptance rules passed. A
+converged boundary estimate may be reportable; a failed fit may not.
+_Avoid_: successful-looking fit, usable result
+
+**Diagnostic-only result**:
+An inspectable fit record that preserves a finite candidate and the reason it
+did not become reportable. It is evidence for diagnosis, never permission to
+quote its estimates, intervals, tests or predictions as findings.
+_Avoid_: partial result, report with caution
+
+**Refused result**:
+A standard-analysis outcome carrying a stable refusal code when the inputs,
+estimand or fit cannot produce even a usable diagnostic candidate. The public
+estimator may raise the documented stable exception; the caller-side wrapper
+records it as the refusal. A refusal is an outcome rather than a missing result.
+_Avoid_: crash, failed silently
+
+**Analysis receipt**:
+A machine-readable record stored with an analysis that identifies the saved
+wheel and dependencies, commits to the inputs without copying them, records the
+model and non-identifying design summary, retains the fit record when a
+candidate exists or the refusal code when none does, and states whether the
+outcome was reportable, diagnostic-only or refused.
+_Avoid_: release evidence, log file, results dump
+
+**Statistical methods specification**:
+The versioned scientific account of each supported analysis: estimand,
+notation, model and likelihood, parameterisation, estimator, interval and test,
+boundary behaviour, assumptions, measured limitations and primary references.
+Its equations and citations must be sufficient to audit the implementation and
+write a manuscript method without reconstructing the method from source code.
+_Avoid_: methods overview, API guide, prose notes
+
 **Component**:
-An estimated variance contribution, named and bound to a known relationship
-matrix. Components multiply freely; traits are what cost.
+A named relationship matrix with its estimated coefficient. Their product is
+the component's covariance contribution. Components multiply freely; traits
+are what cost.
 _Avoid_: variance term, effect
+
+**Mean-diagonal contribution**:
+A component's coefficient multiplied by its relationship matrix's mean
+diagonal. It is invariant to positive rescaling of that matrix and is the basis
+of a reportable component proportion when every mean diagonal is positive.
+_Avoid_: raw coefficient share, generic variance share
 
 **Relationship matrix**:
 The known matrix a component scales. Additive kinship, household, genomic
@@ -66,8 +139,9 @@ the question does not apply.
 _Avoid_: error bar, bounds, CI
 
 **Fit record**:
-What a fit returns, held in memory and carrying its seed. The Python interface
-may write it down; Asterism writes nothing by itself.
+What an estimator returns in memory. It carries the model's scientific fields,
+diagnostics and immutable build and subject-order identity; it carries a seed
+only when the calculation is stochastic. Fitting classes perform no file I/O.
 _Avoid_: receipt, artefact, run record
 
 **Deferred capability**:
@@ -109,12 +183,13 @@ Tobit left the list on 18 August 2026, named by the extended high-frequency
 audiogram. An audiometer stops at its maximum output, so a threshold nobody
 reached is a bound rather than a value, and the share of thresholds that hits
 one climbs with frequency: 0.2% at 500 Hz, 16% at 12.5 kHz, 52% at 16 kHz and
-75% at 18 kHz. `TobitModel` fits one such trait and returns the heritability of
-the complete variable — the number there would have been had the instrument
-reached far enough — which is not the number a Gaussian fit to values replaced
-by their limit returns. `MixedBivariateModel` fits a pair in any combination of
-continuous, binary and censored, named by the genetic correlation between a
-psychiatric diagnosis and hearing.
+75% at 18 kHz. The documented `tobit_*` Python functions fit one such trait and
+return the heritability of the complete variable — the number there would have
+been had the instrument reached far enough — which is not the number a Gaussian
+fit to values replaced by their limit returns. The documented
+`mixed_bivariate_*` functions fit a pair in any combination of continuous,
+binary and censored, named by the genetic correlation between a psychiatric
+diagnosis and hearing.
 
 The variant-set kernels stay for the same effort, and Asterism will grow the
 test that belongs with them. Using SKAT through R would mean treating the

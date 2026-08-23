@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "fixture_id": "spatial_component_presence_target_layout",
+  "reviewed": true,
+  "participant_free": true,
+  "purpose": "target-scale synthetic spatial-layout stress envelope",
+  "scope_boundary": "Aggregate counts and distance quantiles were reduced in memory. No participant identifier, address, location, observed coordinate, individual distance, phenotype, or matrix is retained.",
+  "aggregate_source": {
+    "analysis": "GOBS ab40 spatial profile with shared-location component",
+    "tracked_result": "gobs-heritability/results/spatial-profile-household-reml-2026-08-17.json",
+    "tracked_result_git_commit": "9fec8002c0f96316713c343118463235ca74ac63",
+    "tracked_result_sha256": "dbc99fb73924a45a13c170b9165a689ef3f26a72d13d92c47c603cedd22dde3a",
+    "controlled_database_sha256": "effdfe5ea7993b9b3849c3b41787327b6c075e3dd44e0f67f38a1a2d5eea51a3",
+    "aggregation_date": "2026-08-21"
+  },
+  "missingness": {
+    "eligible_geocoded_people": 1883,
+    "analysed_people": 1792,
+    "missing_trait_or_covariate_rows": 91,
+    "selection": "complete trait, age, sex, pedigree, and usable geocode",
+    "synthetic_excluded_rows": "count only; excluded rows never enter a fitted matrix"
+  },
+  "relationship": {
+    "component_count": 190,
+    "largest_component": 165,
+    "component_size_histogram": {
+      "1": 106,
+      "2": 9,
+      "3": 4,
+      "4": 6,
+      "5": 1,
+      "6": 3,
+      "7": 4,
+      "8": 2,
+      "9": 10,
+      "10": 4,
+      "11": 4,
+      "12": 1,
+      "13": 3,
+      "14": 2,
+      "15": 2,
+      "18": 2,
+      "20": 1,
+      "21": 1,
+      "23": 3,
+      "25": 1,
+      "27": 1,
+      "28": 2,
+      "29": 2,
+      "34": 1,
+      "37": 2,
+      "38": 2,
+      "41": 1,
+      "46": 1,
+      "48": 1,
+      "51": 1,
+      "57": 1,
+      "58": 1,
+      "67": 1,
+      "73": 1,
+      "76": 1,
+      "104": 1,
+      "165": 1
+    },
+    "observed_nonzero_relationship_pairs": 24513,
+    "synthetic_generator": {
+      "name": "founder_order_structure_matched",
+      "seed": 7,
+      "sibling_mean": 3.0,
+      "marry_in_probability": 0.35,
+      "maximum_generations": 5,
+      "generated_nonzero_relationship_pairs": 23498,
+      "relative_nonzero_pair_discrepancy": 0.04140660057928446,
+      "maximum_relative_nonzero_pair_discrepancy": 0.05
+    }
+  },
+  "shared_locations": {
+    "unique_locations": 1140,
+    "location_size_histogram": {
+      "1": 733,
+      "2": 245,
+      "3": 106,
+      "4": 35,
+      "5": 16,
+      "6": 4,
+      "7": 1
+    },
+    "zero_distance_pairs": 1014
+  },
+  "distance_summary": {
+    "units": "kilometres",
+    "pair_count": 1604736,
+    "quantiles": {
+      "0.01": 0.6709519902785358,
+      "0.05": 2.1078259541654214,
+      "0.25": 6.901556503511565,
+      "0.50": 12.42175705425451,
+      "0.75": 23.03325217561155,
+      "0.95": 212.9777818152656,
+      "0.99": 536.9476920874065,
+      "1.00": 3014.583725652929
+    }
+  },
+  "synthetic_layout": {
+    "coordinate_system": "synthetic planar kilometres",
+    "matches_observed_locations": false,
+    "seed": 20260812,
+    "row_permutation_seed": 20260813,
+    "core": {
+      "locations": 1090,
+      "neighbourhoods": 40,
+      "centre_distribution": "independent Student t",
+      "degrees_of_freedom": 2.0,
+      "scale_km": 4.3,
+      "within_neighbourhood_standard_deviation_km": 0.55
+    },
+    "regional": {
+      "locations": 40,
+      "centre_km": [250.0, 0.0],
+      "standard_deviation_km": 30.0
+    },
+    "far": {
+      "locations": 5,
+      "centre_km": [570.0, 0.0],
+      "standard_deviation_km": 30.0
+    },
+    "extreme": {
+      "locations": 5,
+      "centre_km": [2980.0, 0.0],
+      "standard_deviation_km": 20.0
+    },
+    "outlying_locations_are_singletons": true,
+    "maximum_relative_quantile_error": 0.10
+  },
+  "fixed_effects": {
+    "columns": [
+      "intercept",
+      "synthetic_standardised_age",
+      "synthetic_standardised_age_squared",
+      "synthetic_sex",
+      "synthetic_standardised_age_by_sex",
+      "synthetic_standardised_age_squared_by_sex"
+    ],
+    "age_and_sex_seed": 1,
+    "require_full_rank": true,
+    "matches_observed_covariate_moments": false
+  },
+  "simulation_truth": {
+    "additive": 0.35,
+    "shared_location": 0.10,
+    "spatial": 0.25,
+    "residual": 0.30,
+    "half_distance_km": 35.0,
+    "response_seed": 20260812
+  },
+  "bootstrap_acceptance": {
+    "replicates": 199,
+    "seed": 20260812,
+    "alpha": 0.05,
+    "rule": "parametric_bootstrap_add_one",
+    "require_all_requested_replicates": true,
+    "any_refit_failure": "refuse the complete inferential result",
+    "require_target_presence_detection": true
+  }
+}

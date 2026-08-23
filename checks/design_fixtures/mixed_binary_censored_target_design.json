@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "fixture_id": "mixed_binary_censored_genetic_correlation_target_design",
+  "reviewed": true,
+  "participant_free": true,
+  "provenance": "reviewed predecessor aggregate receipt",
+  "target_structure": {
+    "source_fixture": "one_trait_gaussian_heritability.json",
+    "source_fixture_sha256": "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e",
+    "matching_basis": "reviewed_non_identifying_aggregate_structure",
+    "reconstruction_claim": false,
+    "analysis_n": 1909,
+    "component_count": 202,
+    "largest_component": 180,
+    "observed_nonzero_relationship_pairs": 27821,
+    "generated_nonzero_relationship_pairs": 27691,
+    "maximum_relative_nonzero_pair_discrepancy": 0.005,
+    "matched_facts": [
+      "analysis_n",
+      "component_count",
+      "component_size_histogram",
+      "largest_component",
+      "nonzero_relationship_pair_count"
+    ],
+    "not_retained": [
+      "participant_identifiers",
+      "participant_rows",
+      "phenotypes",
+      "participant_covariates",
+      "participant_relationship_matrix"
+    ],
+    "not_claimed": [
+      "pedigree_reconstruction",
+      "relationship_coefficient_identity",
+      "relationship_eigenvalue_identity",
+      "participant_covariate_moment_matching"
+    ]
+  },
+  "simulation": {
+    "trait_types": [
+      "binary",
+      "right_censored_continuous"
+    ],
+    "prevalence": 0.254,
+    "heritabilities": [
+      0.5,
+      0.5
+    ],
+    "genetic_correlations": [
+      0.0,
+      0.4
+    ],
+    "residual_correlation": 0.15,
+    "hearing_variance": 3.0,
+    "censoring_shares": [
+      0.52,
+      0.75
+    ],
+    "base_seed": 1210000,
+    "cell_seed_offset": 104729,
+    "replicate_seed_offset": 7919,
+    "minimum_cases": 10,
+    "minimum_measured_hearing": 10,
+    "outcome_source": "deterministic_simulated_latent_traits_only",
+    "fixed_effect_source": "participant_free_synthetic_design_from_source_fixture"
+  },
+  "monte_carlo_acceptance": {
+    "release_replicates_per_cell": 300,
+    "minimum_smoke_replicates_per_cell": 1,
+    "nominal_coverage": 0.95,
+    "nominal_level": 0.05,
+    "confidence": 0.95,
+    "point_recovery_standard_errors": 3.0,
+    "level_fail_when": "one_sided_clopper_pearson_lower_above_nominal_level",
+    "coverage_fail_when": "one_sided_clopper_pearson_upper_below_nominal_coverage",
+    "denominator": "every_attempted_replicate",
+    "failure_outcomes": [
+      "invalid_binary_count",
+      "invalid_censoring_count",
+      "refused",
+      "nonconverged",
+      "test_failed",
+      "interval_failed",
+      "profile_failed"
+    ],
+    "maximum_failed_replicates": 0,
+    "required_test_rule": "chi2_1",
+    "required_interval_level": 0.95
+  }
+}

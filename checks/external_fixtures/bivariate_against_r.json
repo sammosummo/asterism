@@ -1,0 +1,65 @@
+{
+  "acceptance": {
+    "asterism_must_converge": true,
+    "maximum_absolute_reported_quantity_difference": 1e-06,
+    "maximum_asterism_scaled_gradient": 1e-07
+  },
+  "adapter": {
+    "path": "checks/bivariate_against_r.py",
+    "sha256": "4de121006ab075449a88cfe0df2da9e9e13320c7979d6452e8c4ff9df00c07bc"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "bivariate_against_r",
+  "external_outputs": {
+    "a11": 0.7880858668041393,
+    "a12": 0.38008347541199544,
+    "a22": 0.5611473055327298,
+    "llik": -272.974558030709,
+    "r11": 0.20505537689415199,
+    "r12": 0.04269223637770461,
+    "r22": 0.5572968242800612
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/external_reference_adapter.py",
+      "sha256": "ccce0425c083e314bcb539dce671b252f5b9e7b18ff38f492759d6d517aa29a6"
+    },
+    {
+      "name": "bivariate relationship matrix",
+      "sha256": "df16a482aece1c1fb23a3aec01dc092d82a328f961ecf5084b82ba28a28fdcdc"
+    },
+    {
+      "name": "bivariate observed mask",
+      "sha256": "7a70a057bb60809b5a5f3d7bd59e16b0eb71fc475add44415dd27b7246f21cf5"
+    },
+    {
+      "name": "bivariate observed fixed-effect design",
+      "sha256": "f614a0fce4c1f5282a4de0f1e0080338e52d8b2d17307cede2e878700df88931"
+    },
+    {
+      "name": "bivariate observed response",
+      "sha256": "28de3d1e4bcd9b97ba078242166592c2b8dbb75b343cf96809974f7aeb3df15c"
+    },
+    {
+      "name": "bivariate observed row map",
+      "sha256": "b017d60f2d740d1f01fbc782da46380aa10d93b2cf3e5725f835dacdab7c49cf"
+    },
+    {
+      "name": "bivariate simulation truth",
+      "sha256": "e1479d1d6664c32218e7d69834412ed6fbb3213f585e012c331779c3c18349b2"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "Rscript",
+      "packages": [
+        {
+          "name": "regress",
+          "version": "1.3.22"
+        }
+      ],
+      "version": "4.5.2"
+    }
+  ]
+}

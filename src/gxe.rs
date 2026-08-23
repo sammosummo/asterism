@@ -77,6 +77,7 @@ use crate::convergence::{self, TOLERANCE};
 use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::{chi2_one_df_upper_tail, chi2_two_df_upper_tail};
+use crate::interval::{self, Interval};
 
 /// The best start so far: its negative log likelihood, the parameters that
 /// reached it, the fixed effects there, and their covariance where one could
@@ -441,6 +442,12 @@ impl GxeModel {
         if z.len() != n {
             return Err("GXE_ENVIRONMENT_WRONG_LENGTH");
         }
+        if relationship.iter().any(|value| !value.is_finite()) {
+            return Err("GXE_RELATIONSHIP_NOT_FINITE");
+        }
+        if design.iter().any(|value| !value.is_finite()) {
+            return Err("GXE_DESIGN_NOT_FINITE");
+        }
         if z.iter().any(|v| !v.is_finite()) {
             return Err("GXE_ENVIRONMENT_NOT_FINITE");
         }
@@ -697,6 +704,9 @@ impl GxeModel {
         if y.len() != self.rows {
             return Err("GXE_RESPONSE_WRONG_LENGTH");
         }
+        if y.iter().any(|value| !value.is_finite()) {
+            return Err("GXE_RESPONSE_NOT_FINITE");
+        }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
@@ -933,6 +943,8 @@ impl GxeModel {
     pub fn interaction_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let held = self.fit_holding(y, reml, &self.surface.genetic_shape())?;
+        crate::convergence::require(free.converged, "GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(held.converged, "GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(
             free.loglik,
             held.loglik,
@@ -972,6 +984,8 @@ impl GxeModel {
             Surface::Exponential | Surface::PoweredExponential(_) => {
                 let free = self.fit(y, reml)?;
                 let held = self.fit_holding(y, reml, &[self.surface.genetic_shape()[0]])?;
+                crate::convergence::require(free.converged, "GXE_FIT_NOT_CONVERGED")?;
+                crate::convergence::require(held.converged, "GXE_NULL_FIT_NOT_CONVERGED")?;
                 Ok(mixture(
                     free.loglik,
                     held.loglik,
@@ -1002,6 +1016,8 @@ impl GxeModel {
     pub fn correlation_test(&self, y: &DVector<f64>, reml: bool) -> Result<GxeTest, &'static str> {
         let free = self.fit(y, reml)?;
         let held = self.fit_holding(y, reml, &[self.surface.rank_one()])?;
+        crate::convergence::require(free.converged, "GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(held.converged, "GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(
             free.loglik,
             held.loglik,
@@ -1038,32 +1054,95 @@ pub enum Reported {
     GeneticCorrelation { first: f64, second: f64 },
 }
 
-/// One profile-likelihood interval.
-#[derive(Clone, Copy, Debug)]
-pub struct GxeInterval {
-    pub estimate: f64,
-    pub lower: f64,
-    pub upper: f64,
-    /// The endpoint ran to the edge of what the quantity can be rather than to
-    /// a likelihood crossing, so it is a limit of the parameter space and not a
-    /// measurement. Read it beside `profile_failures`: a bound reached because
-    /// the likelihood never crossed and a bound reached because the profile
-    /// could not be evaluated there are both reported here, and only a non-zero
-    /// failure count separates them.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
-    pub level: f64,
-    /// How many profile evaluations could not be made. A failure is unknown
-    /// ground, not ground the data ruled out, so the interval is widened over
-    /// it rather than narrowed; a non-zero count says the endpoints rest partly
-    /// on evaluations that did not come back.
-    pub profile_failures: usize,
-}
-
-/// Chi-square on one degree of freedom at 0.95, the profile's threshold.
-const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+/// Compatibility name for the one shared interval record.
+pub type GxeInterval = Interval;
 
 impl GxeModel {
+    /// Build a random-regression coefficient covariance from the standard
+    /// deviations at two environments and a held correlation.
+    ///
+    /// These are the five actual free coordinates on the constrained surface:
+    /// two log standard deviations followed by the three residual loadings.
+    /// Keeping the redundant third genetic loading in the search leaves a flat
+    /// direction and makes the rank-one endpoints numerically singular.
+    fn repair_random_regression_correlation(
+        free: &[f64],
+        first: f64,
+        second: f64,
+        value: f64,
+    ) -> Option<[f64; PARAMETERS]> {
+        if free.len() != PARAMETERS - 1
+            || (first - second).abs() < 1e-12
+            || !(-1.0..=1.0).contains(&value)
+        {
+            return None;
+        }
+        let standard_deviation_first = free[0].exp();
+        let standard_deviation_second = free[1].exp();
+        if !(standard_deviation_first > 0.0
+            && standard_deviation_second > 0.0
+            && standard_deviation_first.is_finite()
+            && standard_deviation_second.is_finite())
+        {
+            return None;
+        }
+
+        let separation = second - first;
+        let mut out = [0.0; PARAMETERS];
+        out[3..].copy_from_slice(&free[2..]);
+        if value.abs() >= 1.0 {
+            // At rank one there is one loading. Construct it directly by
+            // interpolating its endpoint values; forming Q and then taking a
+            // Cholesky factor would recover the same result by subtracting two
+            // almost equal numbers.
+            let loading_first = standard_deviation_first;
+            let loading_second = value * standard_deviation_second;
+            let mut intercept = (second * loading_first - first * loading_second) / separation;
+            let mut linear = (loading_second - loading_first) / separation;
+            // A factor and its negative represent the same covariance. The
+            // model carries its intercept on a logarithmic, positive branch.
+            if intercept < 0.0 {
+                intercept = -intercept;
+                linear = -linear;
+            }
+            if !(intercept > 0.0 && intercept.is_finite() && linear.is_finite()) {
+                return None;
+            }
+            out[0] = intercept.ln();
+            out[1] = linear;
+            return Some(out);
+        }
+
+        // The covariance at the two environments is positive definite for an
+        // interior correlation. Transform it through the inverse `[1, z]`
+        // basis and take the coefficient covariance's Cholesky factor.
+        let variance_first = standard_deviation_first * standard_deviation_first;
+        let variance_second = standard_deviation_second * standard_deviation_second;
+        let covariance = value * standard_deviation_first * standard_deviation_second;
+        let square = separation * separation;
+        let q00 = (second * second * variance_first + first * first * variance_second
+            - 2.0 * first * second * covariance)
+            / square;
+        let q01 =
+            ((first + second) * covariance - second * variance_first - first * variance_second)
+                / square;
+        let q11 = (variance_first + variance_second - 2.0 * covariance) / square;
+        if !(q00 > 0.0 && q11 >= 0.0 && q00.is_finite() && q01.is_finite() && q11.is_finite()) {
+            return None;
+        }
+        let intercept = q00.sqrt();
+        let linear = q01 / intercept;
+        let orthogonal_square = q11 - linear * linear;
+        let rounding = 1e-10 * (1.0 + q11.abs() + linear * linear);
+        if orthogonal_square < -rounding {
+            return None;
+        }
+        out[0] = intercept.ln();
+        out[1] = linear;
+        out[2] = orthogonal_square.max(0.0).sqrt();
+        Some(out)
+    }
+
     /// Move a parameter vector onto the surface where a reported quantity
     /// takes a given value.
     ///
@@ -1139,27 +1218,19 @@ impl GxeModel {
                         Some(out)
                     }
                     Surface::RandomRegression => {
-                        // With A = l00 + l10 z1 and B = l00 + l10 z2, holding
-                        // r^2 q11 q22 = q12^2 is a plain quadratic in u.
-                        let (intercept, linear) = (theta[0].exp(), theta[1]);
-                        let (a, b) = (intercept + linear * first, intercept + linear * second);
-                        let (r2, z1, z2) = (value * value, first, second);
-                        let qa = z1 * z1 * z2 * z2 * (r2 - 1.0);
-                        let qb = r2 * (a * a * z2 * z2 + b * b * z1 * z1) - 2.0 * a * b * z1 * z2;
-                        let qc = a * a * b * b * (r2 - 1.0);
-                        let u = solve_quadratic(qa, qb, qc)?
-                            .into_iter()
-                            .filter(|u| *u >= 0.0 && u.is_finite())
-                            // Squaring the constraint threw the sign away, so
-                            // the root has to reproduce it as well as the size.
-                            .find(|u| {
-                                let q12 = a * b + u * z1 * z2;
-                                (q12 >= 0.0) == (value >= 0.0)
-                            })?;
-                        // The coordinate is the orthogonal loading, and the
-                        // quadratic was solved for its square.
-                        out[2] = u.sqrt();
-                        Some(out)
+                        let variance_first = self.genetic_surface(theta, first, first);
+                        let variance_second = self.genetic_surface(theta, second, second);
+                        if !(variance_first > 0.0 && variance_second > 0.0) {
+                            return None;
+                        }
+                        let free = [
+                            0.5 * variance_first.ln(),
+                            0.5 * variance_second.ln(),
+                            theta[3],
+                            theta[4],
+                            theta[5],
+                        ];
+                        Self::repair_random_regression_correlation(&free, first, second, value)
                     }
                 }
             }
@@ -1181,8 +1252,56 @@ impl GxeModel {
         value: f64,
         start_from: &[f64],
     ) -> Option<f64> {
-        let count = self.surface.parameters();
-        let repair = |free: &[f64]| self.repair(&to_theta(free), quantity, value);
+        let constrained_correlation = match (self.surface, quantity) {
+            (Surface::RandomRegression, Reported::GeneticCorrelation { first, second }) => {
+                Some((first, second))
+            }
+            _ => None,
+        };
+        let theta_count = self.surface.parameters();
+        let (base, lower, upper) = if let Some((first, second)) = constrained_correlation {
+            let theta = to_theta(start_from);
+            let variance_first = self.genetic_surface(&theta, first, first);
+            let variance_second = self.genetic_surface(&theta, second, second);
+            if !(variance_first > 0.0 && variance_second > 0.0) {
+                return None;
+            }
+            (
+                vec![
+                    0.5 * variance_first.ln(),
+                    0.5 * variance_second.ln(),
+                    theta[3],
+                    theta[4],
+                    theta[5],
+                ],
+                vec![
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                    -15.0,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                vec![
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    15.0,
+                    f64::INFINITY,
+                    f64::INFINITY,
+                ],
+            )
+        } else {
+            let (lower, upper) = self.surface.bounds();
+            (start_from[..theta_count].to_vec(), lower, upper)
+        };
+        let count = base.len();
+        let repair = |free: &[f64]| {
+            constrained_correlation.map_or_else(
+                || self.repair(&to_theta(free), quantity, value),
+                |(first, second)| {
+                    Self::repair_random_regression_correlation(free, first, second, value)
+                },
+            )
+        };
 
         let value_of = |free: &[f64]| -> f64 {
             repair(free)
@@ -1206,33 +1325,108 @@ impl GxeModel {
                     up[j] += step;
                     down[j] -= step;
                     match (repair(&up), repair(&down)) {
-                        (Some(u), Some(d)) => (0..count)
+                        (Some(u), Some(d)) => (0..theta_count)
                             .map(|k| at.gradient[k] * (u[k] - d[k]) / (2.0 * step))
                             .sum(),
-                        _ => at.gradient[j],
+                        (Some(u), None) => (0..theta_count)
+                            .map(|k| at.gradient[k] * (u[k] - theta[k]) / step)
+                            .sum(),
+                        (None, Some(d)) => (0..theta_count)
+                            .map(|k| at.gradient[k] * (theta[k] - d[k]) / step)
+                            .sum(),
+                        (None, None) => f64::NAN,
                     }
                 })
                 .collect()
         };
+        let reading = |candidate: &[f64], negative: f64| {
+            let projected = gradient_of(candidate)
+                .into_iter()
+                .enumerate()
+                .map(|(k, gradient)| {
+                    let at_lower = candidate[k] <= lower[k] + 1e-12 && gradient > 0.0;
+                    let at_upper = candidate[k] >= upper[k] - 1e-12 && gradient < 0.0;
+                    if at_lower || at_upper { 0.0 } else { gradient }
+                })
+                .fold(0.0_f64, |worst, gradient| worst.max(gradient.abs()));
+            projected / negative.abs().max(1.0)
+        };
 
-        let start = start_from[..count].to_vec();
-        repair(&start)?;
-        let (lower, upper) = self.surface.bounds();
-        let bounds = Bounds::new(lower, upper).ok()?;
-        let mut control = OptimControl::default_for_dimension(count);
-        control.maxit = 300;
-        control.fnscale = value_of(&start).abs().max(1.0);
-        control.parscale = vec![1.0; count];
-        control.factr = 1.0e3;
-        control.pgtol = 1e-8;
-        control.lmm = count;
-        let best =
-            optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
-                .map_or_else(
-                    |_| value_of(&start),
-                    |s| value_of(&s.par).min(value_of(&start)),
-                );
-        best.is_finite().then_some(-best)
+        let mut starts = repair(&base).map_or_else(Vec::new, |_| vec![base.clone()]);
+        if constrained_correlation.is_some() && value.abs() >= 1.0 {
+            // At rank one the coefficient intercept can be zero for one
+            // endpoint-variance ratio. Starts on both sides of that coordinate
+            // singularity cover the two smooth branches without treating it as
+            // a failed bound fit.
+            for offset in [-1.0, 1.0] {
+                let mut alternative = base.clone();
+                alternative[0] += offset;
+                if repair(&alternative).is_some() {
+                    starts.push(alternative);
+                }
+            }
+        }
+        starts.dedup_by(|left, right| {
+            left.iter()
+                .zip(right.iter())
+                .all(|(a, b)| (a - b).abs() < 1e-12)
+        });
+
+        let mut accepted: Option<f64> = None;
+        for start in starts {
+            let bounds = Bounds::new(lower.clone(), upper.clone()).ok()?;
+            let mut control = OptimControl::default_for_dimension(count);
+            control.maxit = 300;
+            control.fnscale = value_of(&start).abs().max(1.0);
+            control.parscale = vec![1.0; count];
+            control.factr = 1.0e3;
+            control.pgtol = 1e-8;
+            control.lmm = count;
+            let start_value = value_of(&start);
+            let (mut best, mut par) =
+                optim_lbfgsb_with_gradient(start.clone(), bounds, &value_of, &gradient_of, control)
+                    .map_or_else(
+                        |_| (start_value, start.clone()),
+                        |solution| {
+                            let value = value_of(&solution.par);
+                            if value < start_value {
+                                (value, solution.par)
+                            } else {
+                                (start_value, start.clone())
+                            }
+                        },
+                    );
+            let mut scaled_gradient = reading(&par, best);
+            if scaled_gradient >= TOLERANCE
+                && let Some(polished) = convergence::polish(
+                    &par,
+                    best,
+                    scaled_gradient,
+                    &lower,
+                    &upper,
+                    &value_of,
+                    &gradient_of,
+                    |candidate| {
+                        let negative = value_of(candidate);
+                        negative
+                            .is_finite()
+                            .then(|| (negative, reading(candidate, negative)))
+                    },
+                )
+            {
+                best = polished.negative_loglik;
+                par = polished.par;
+                scaled_gradient = polished.scaled_gradient;
+            }
+            let _ = par;
+            if best.is_finite()
+                && scaled_gradient < TOLERANCE
+                && accepted.is_none_or(|negative| best < negative)
+            {
+                accepted = Some(best);
+            }
+        }
+        accepted.map(|negative| -negative)
     }
 
     /// A 95 per cent profile-likelihood interval for one reported quantity.
@@ -1248,6 +1442,9 @@ impl GxeModel {
         quantity: Reported,
     ) -> Result<GxeInterval, &'static str> {
         let fit = self.fit(y, reml)?;
+        if !fit.converged {
+            return Err("GXE_FIT_NOT_CONVERGED");
+        }
         let estimate = match quantity {
             Reported::Heritability { at } => fit.heritability_at(at),
             Reported::GeneticCorrelation { first, second } => {
@@ -1263,15 +1460,6 @@ impl GxeModel {
         let scaled = y / variance.sqrt();
         let start = fit.parameters.clone();
 
-        // **The maximum comes from the profile objective and not from the
-        // fit's own log likelihood.** They differ by a constant that depends on
-        // the scaling, and taking one from the other is what made this
-        // package's bivariate intervals zero-width once already.
-        let at_estimate = self
-            .profile_objective(&scaled, reml, quantity, estimate, &start)
-            .ok_or("GXE_QUANTITY_NOT_HELD_AT_ITS_OWN_ESTIMATE")?;
-        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
-
         let (floor, ceiling) = match quantity {
             Reported::Heritability { .. } => (1e-6, 1.0 - 1e-6),
             Reported::GeneticCorrelation { .. } => match self.surface {
@@ -1280,67 +1468,14 @@ impl GxeModel {
                 Surface::RandomRegression => (-1.0, 1.0),
             },
         };
-        // **A profile that could not be evaluated is not a likelihood that
-        // fell away.** Counted as outside, a failure looked like ground the
-        // data had ruled out and the bisection stepped inward, so the interval
-        // came back narrower than the data support and said nothing about it.
-        // A failure is covered instead, and counted.
-        let failures = std::cell::Cell::new(0usize);
-        let outside = |v: f64| match self.profile_objective(&scaled, reml, quantity, v, &start) {
-            None => {
-                failures.set(failures.get() + 1);
-                false
-            }
-            Some(value) => value < threshold,
-        };
-        let (lower, lower_at_bound) = if outside(floor) {
-            (bisect(floor, estimate, &outside), false)
-        } else {
-            (floor, true)
-        };
-        let (upper, upper_at_bound) = if outside(ceiling) {
-            (bisect(ceiling, estimate, &outside), false)
-        } else {
-            (ceiling, true)
-        };
-        Ok(GxeInterval {
-            estimate,
-            lower,
-            upper,
-            lower_at_bound,
-            upper_at_bound,
-            level: 0.95,
-            profile_failures: failures.get(),
-        })
-    }
-}
-
-/// Real non-negative roots of `a x^2 + b x + c`, linear case included.
-fn solve_quadratic(a: f64, b: f64, c: f64) -> Option<Vec<f64>> {
-    if a.abs() < 1e-14 {
-        return (b.abs() > 1e-14).then(|| vec![-c / b]);
-    }
-    let discriminant = b * b - 4.0 * a * c;
-    (discriminant >= 0.0).then(|| {
-        let root = discriminant.sqrt();
-        vec![(-b + root) / (2.0 * a), (-b - root) / (2.0 * a)]
-    })
-}
-
-/// Bisect between a point known to be outside the interval and one inside it.
-fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
-    for _ in 0..60 {
-        let middle = 0.5 * (out + inside);
-        if outside(middle) {
-            out = middle;
-        } else {
-            inside = middle;
+        let got = interval::profile_interval(estimate, (floor, ceiling), |value| {
+            self.profile_objective(&scaled, reml, quantity, value, &start)
+        });
+        if got.estimate.is_none() {
+            return Err("GXE_QUANTITY_NOT_HELD_AT_ITS_OWN_ESTIMATE");
         }
-        if (out - inside).abs() < 1e-7 {
-            break;
-        }
+        Ok(got)
     }
-    0.5 * (out + inside)
 }
 
 fn to_theta(values: &[f64]) -> [f64; PARAMETERS] {
@@ -1684,12 +1819,19 @@ mod tests {
                 let got = model
                     .profile_interval(&y, true, quantity)
                     .unwrap_or_else(|e| panic!("{surface:?} {quantity:?}: {e}"));
+                if matches!(quantity, Reported::GeneticCorrelation { .. }) {
+                    assert_eq!(
+                        got.profile_failures, 0,
+                        "{surface:?} {quantity:?}: a correlation-bound fit failed"
+                    );
+                }
+                let estimate = got.estimate.expect("an interval has an estimate");
                 assert!(
-                    got.lower <= got.estimate + 1e-6 && got.estimate <= got.upper + 1e-6,
+                    got.lower <= estimate + 1e-6 && estimate <= got.upper + 1e-6,
                     "{surface:?} {quantity:?}: [{}, {}] does not contain {}",
                     got.lower,
                     got.upper,
-                    got.estimate
+                    estimate
                 );
                 assert!(
                     got.upper - got.lower > 1e-4,

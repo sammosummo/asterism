@@ -25,26 +25,42 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-CHECKS = ROOT / "checks"
+ROOT: Path = Path(__file__).resolve().parent.parent
+"""Located the repository root from this test module."""
 
-SCIPY_CHOLESKY = re.compile(r"(?<!\w)(scipy\.linalg\.)?cholesky\s*\(", re.MULTILINE)
+CHECKS: Path = ROOT / "checks"
+"""Located the independent-check scripts governed by this policy."""
+
+SCIPY_CHOLESKY: re.Pattern[str] = re.compile(
+    r"(?<!\w)(scipy\.linalg\.)?cholesky\s*\(", re.MULTILINE
+)
+"""Matched unqualified and SciPy-qualified Cholesky calls."""
 
 
 def test_no_check_uses_scipy_cholesky() -> None:
+    """Keep every independent check on NumPy's lower-factor convention."""
     offenders: list[str] = []
+    """Collected scripts that imported or called SciPy's Cholesky routine."""
+
     for script in sorted(CHECKS.glob("*.py")):
-        text = script.read_text()
-        if "from scipy.linalg import" in text and "cholesky" in text.split(
-            "from scipy.linalg import"
-        )[1].split("\n")[0]:
+        text: str = script.read_text()
+        """Read one independent-check script for source-policy inspection."""
+
+        if (
+            "from scipy.linalg import" in text
+            and "cholesky" in text.split("from scipy.linalg import")[1].split("\n")[0]
+        ):
             offenders.append(f"{script.name} imports cholesky from scipy.linalg")
         for line in text.splitlines():
-            stripped = line.strip()
+            stripped: str = line.strip()
+            """Removed indentation before classifying the source line."""
+
             if stripped.startswith("#") or "np.linalg.cholesky" in line:
                 continue
             if "scipy.linalg.cholesky" in line and "`" not in line:
                 offenders.append(f"{script.name}: {stripped}")
+    """Inspected every check for the factorisation routine known to be unsafe here."""
+
     assert not offenders, (
         "these use scipy's Cholesky, which on this platform returns a factor "
         "with the strictly upper triangle left uncleared; use "
@@ -60,10 +76,19 @@ def test_numpys_cholesky_is_actually_lower_triangular() -> None:
     """
     import numpy as np
 
-    rng = np.random.default_rng(0)
+    rng: np.random.Generator = np.random.default_rng(0)
+    """Created a deterministic generator for positive-definite test matrices."""
+
     for size in (5, 50, 500):
-        root = rng.standard_normal((size, size))
-        matrix = root @ root.T + size * np.eye(size)
-        factor = np.linalg.cholesky(matrix)
+        root: np.ndarray = rng.standard_normal((size, size))
+        """Drew a dense square root candidate at the current matrix size."""
+
+        matrix: np.ndarray = root @ root.T + size * np.eye(size)
+        """Constructed a strictly positive-definite covariance matrix."""
+
+        factor: np.ndarray = np.linalg.cholesky(matrix)
+        """Computed NumPy's documented lower-triangular Cholesky factor."""
+
         assert np.abs(np.triu(factor, 1)).max() == 0.0
         assert np.abs(factor @ factor.T - matrix).max() < 1e-8 * size
+    """Verified both triangularity and reconstruction across representative sizes."""

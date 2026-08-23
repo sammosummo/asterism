@@ -49,6 +49,7 @@ use crate::convergence::{self, TOLERANCE};
 use crate::blocks::family_blocks;
 use crate::dense::DenseFactor;
 use crate::deviance::chi2_upper_tail;
+use crate::interval::{self, Interval};
 
 /// The best start so far: its negative log likelihood, the parameters that
 /// reached it, the fixed effects there, and their covariance where one could
@@ -68,9 +69,6 @@ const GENETIC_SECOND: usize = 1;
 const RESIDUAL_FIRST: usize = 2;
 const RESIDUAL_SECOND: usize = 3;
 const CORRELATION: usize = 4;
-/// The bisection stops once the bracket is this narrow, rather than always
-/// running its full count on a bracket that closed long before.
-const ENDPOINT_TOLERANCE: f64 = 1e-7;
 
 /// A fitted discrete gene-by-environment model.
 #[derive(Clone, Debug)]
@@ -489,6 +487,9 @@ impl DiscreteGxeModel {
         if y.len() != self.rows {
             return Err("DISCRETE_GXE_RESPONSE_WRONG_LENGTH");
         }
+        if y.iter().any(|value| !value.is_finite()) {
+            return Err("DISCRETE_GXE_RESPONSE_NOT_FINITE");
+        }
         let mean = y.mean();
         let variance = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (y.len() as f64);
         if !(variance > 0.0) {
@@ -697,6 +698,8 @@ impl DiscreteGxeModel {
                 ..Constraint::default()
             },
         )?;
+        crate::convergence::require(free.converged, "DISCRETE_GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "DISCRETE_GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| {
             chi2_upper_tail(t, 1.0)
         }))
@@ -728,6 +731,8 @@ impl DiscreteGxeModel {
                 ..Constraint::default()
             },
         )?;
+        crate::convergence::require(free.converged, "DISCRETE_GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "DISCRETE_GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(free.loglik, null.loglik, "chi2_1", |t| {
             chi2_upper_tail(t, 1.0)
         }))
@@ -763,6 +768,8 @@ impl DiscreteGxeModel {
                 ..Constraint::default()
             },
         )?;
+        crate::convergence::require(free.converged, "DISCRETE_GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "DISCRETE_GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(free.loglik, null.loglik, "mixture_50_50", |t| {
             0.5 * chi2_upper_tail(t, 1.0)
         }))
@@ -803,6 +810,8 @@ impl DiscreteGxeModel {
                 ..Constraint::default()
             },
         )?;
+        crate::convergence::require(free.converged, "DISCRETE_GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "DISCRETE_GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(
             free.loglik,
             null.loglik,
@@ -848,6 +857,8 @@ impl DiscreteGxeModel {
                 correlation: Some(1.0),
             },
         )?;
+        crate::convergence::require(free.converged, "DISCRETE_GXE_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "DISCRETE_GXE_NULL_FIT_NOT_CONVERGED")?;
         Ok(mixture(
             free.loglik,
             null.loglik,
@@ -992,27 +1003,8 @@ fn mixture(
     }
 }
 
-/// A 95 per cent profile-likelihood interval for the genetic correlation.
-#[derive(Clone, Copy, Debug)]
-pub struct DiscreteGxeInterval {
-    pub estimate: f64,
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the endpoint sat at the edge of what a correlation may be
-    /// rather than where the likelihood fell away. An interval that reaches a
-    /// bound is coverage without precision, and saying so is the difference
-    /// between a wide answer and no answer. Read it beside `profile_failures`:
-    /// a bound reached because the likelihood never crossed and a bound reached
-    /// because the profile could not be evaluated there are both reported here,
-    /// and only a non-zero failure count separates them.
-    pub lower_limited: bool,
-    pub upper_limited: bool,
-    /// How many profile fits could not be evaluated while the endpoints were
-    /// found. Any at all means part of the range was covered rather than
-    /// searched, so the interval is wider than the likelihood alone would make
-    /// it, and something about the problem is worth looking at.
-    pub profile_failures: usize,
-}
+/// Compatibility name for the one shared interval record.
+pub type DiscreteGxeInterval = Interval;
 
 impl DiscreteGxeModel {
     /// A 95 per cent profile-likelihood interval for the genetic correlation.
@@ -1042,14 +1034,13 @@ impl DiscreteGxeModel {
         reml: bool,
     ) -> Result<DiscreteGxeInterval, &'static str> {
         let free = self.fit(y, reml)?;
+        if !free.converged {
+            return Err("DISCRETE_GXE_FIT_NOT_CONVERGED");
+        }
         let estimate = free.correlation;
         if !estimate.is_finite() {
             return Err("DISCRETE_GXE_CORRELATION_NOT_FINITE");
         }
-        // 3.841458820694124 / 2, the drop in log likelihood that a 95 per cent
-        // interval on one degree of freedom allows.
-        let target = free.loglik - 1.920_729_410_347_062;
-
         let profile = |correlation: f64| -> Option<f64> {
             self.fit_under(
                 y,
@@ -1069,60 +1060,11 @@ impl DiscreteGxeModel {
             .filter(|fit| fit.converged)
             .map(|fit| fit.loglik)
         };
-        // The profile at the estimate must be reachable, or nothing below it is.
-        profile(estimate).ok_or("DISCRETE_GXE_PROFILE_NOT_EVALUABLE")?;
-
-        // Walk outward from the estimate to each bound, bisecting where the
-        // likelihood crosses. A bound reached without crossing is reported as
-        // reached rather than as an endpoint.
-        // **A fit that fails is not a likelihood that fell away.** Both arrive
-        // here as the absence of a number, and reading them alike sends the
-        // bracket the wrong way: a failure inside the bracket would move the
-        // outer edge inwards exactly as a genuine drop does, returning a
-        // confidently narrow interval that under-covers, while the same failure
-        // at the bound widens to it. A failure is now treated the way the bound
-        // already treats it -- as ground the interval must still cover -- and
-        // counted, so a caller can see that something could not be evaluated
-        // rather than being told a narrower answer than the data support.
-        let mut failures = 0usize;
-        let endpoint = |bound: f64, failures: &mut usize| -> (f64, bool) {
-            match profile(bound) {
-                None => {
-                    *failures += 1;
-                    return (bound, true);
-                }
-                Some(value) if value >= target => return (bound, true),
-                Some(_) => {}
-            }
-            let (mut inside, mut outside) = (estimate, bound);
-            for _ in 0..80 {
-                if (outside - inside).abs() < ENDPOINT_TOLERANCE {
-                    break;
-                }
-                let middle = 0.5 * (inside + outside);
-                match profile(middle) {
-                    Some(value) if value >= target => inside = middle,
-                    Some(_) => outside = middle,
-                    None => {
-                        // Unknown, so widen rather than narrow, and say so.
-                        *failures += 1;
-                        inside = middle;
-                    }
-                }
-            }
-            (0.5 * (inside + outside), false)
-        };
-        let (lower, lower_limited) = endpoint(-1.0, &mut failures);
-        let (upper, upper_limited) = endpoint(1.0, &mut failures);
-
-        Ok(DiscreteGxeInterval {
-            estimate,
-            lower,
-            upper,
-            lower_limited,
-            upper_limited,
-            profile_failures: failures,
-        })
+        let got = interval::profile_interval(estimate, (-1.0, 1.0), profile);
+        if got.estimate.is_none() {
+            return Err("DISCRETE_GXE_PROFILE_NOT_EVALUABLE");
+        }
+        Ok(got)
     }
 }
 
@@ -1433,12 +1375,12 @@ mod tests {
         let (a, group, design, y) = sibships(250, [1.0, 1.0], [0.7, 0.7], 0.25, 31);
         let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let interval = model.correlation_interval(&y, true).expect("intervals");
-        assert!(interval.lower <= interval.estimate && interval.estimate <= interval.upper);
+        let estimate = interval.estimate.expect("an interval has an estimate");
+        assert!(interval.lower <= estimate && estimate <= interval.upper);
         assert!(interval.lower >= -1.0 && interval.upper <= 1.0);
         assert!(
             interval.upper < 1.0 && !interval.upper_limited,
-            "a correlation of {} ran its interval to the bound",
-            interval.estimate
+            "a correlation of {estimate} ran its interval to the bound"
         );
     }
 
@@ -1450,9 +1392,10 @@ mod tests {
         let (a, group, design, y) = sibships(120, [0.9, 0.9], [0.7, 0.7], 1.0, 77);
         let model = DiscreteGxeModel::build(&a, &group, &design).expect("the model builds");
         let interval = model.correlation_interval(&y, true).expect("intervals");
+        let estimate = interval.estimate.expect("an interval has an estimate");
         assert!(interval.upper_limited, "the upper endpoint left the bound");
         assert!((interval.upper - 1.0).abs() < 1e-12);
-        assert!(interval.lower < interval.estimate);
+        assert!(interval.lower < estimate);
     }
 
     #[test]
