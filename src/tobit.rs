@@ -561,8 +561,6 @@ impl TobitModel {
             }
         }
 
-        let (objective, theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
-        let gradient = gradient_of(&theta);
         // The search is bound constrained, so what says whether it has arrived
         // is the projected gradient, not the raw one. At an optimum resting on
         // a bound the raw gradient points out of the feasible region and does
@@ -577,31 +575,71 @@ impl TobitModel {
         // parameterisation: only the heritability has bounds to rest on, while
         // the log total variance and the fixed effects are free. Scaling by the
         // objective is part of that reading and was missing too, so the value
-        // called `scaled_gradient` here was never scaled.
-        let projected = gradient
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                if lower[k] == upper[k] {
-                    // A held coordinate is not a direction the search may act
-                    // on, whichever way its gradient points.
-                    0.0
-                } else if crate::components::resting_on_zero(theta[k] - lower[k]) {
-                    g.min(0.0)
-                } else if crate::components::resting_on_zero(upper[k] - theta[k]) {
-                    g.max(0.0)
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0_f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / objective.abs().max(1.0);
+        // once called `scaled_gradient` here was neither projected nor scaled.
+        let scaled_projected = |candidate: &[f64], objective: f64| -> f64 {
+            gradient_of(candidate)
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    if lower[k] == upper[k] {
+                        // A held coordinate is not a direction the search may
+                        // act on, whichever way its gradient points.
+                        0.0
+                    } else if crate::components::resting_on_zero(candidate[k] - lower[k]) {
+                        g.min(0.0)
+                    } else if crate::components::resting_on_zero(upper[k] - candidate[k]) {
+                        g.max(0.0)
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0_f64, |worst, g| worst.max(g.abs()))
+                / objective.abs().max(1.0)
+        };
+
+        let (mut objective, mut theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
+        let mut scaled_gradient = scaled_projected(&theta, objective);
+
+        // Where the gradient test fails, search once more from the point
+        // already found with the objective tolerance switched off. This is the
+        // shared second search, and it fires only where the flag already says
+        // failure, so every passing fit is left untouched to the last bit. The
+        // reasons it is bounded, and why its result is checked rather than
+        // trusted, are in `convergence`.
+        if scaled_gradient >= crate::convergence::TOLERANCE
+            && let Some(better) = crate::convergence::polish(
+                &theta,
+                objective,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    let negative = value_of(candidate);
+                    if !negative.is_finite() || negative >= INFEASIBLE {
+                        return None;
+                    }
+                    Some((negative, scaled_projected(candidate, negative)))
+                },
+            )
+        {
+            theta = better.par;
+            objective = better.negative_loglik;
+            scaled_gradient = better.scaled_gradient;
+        }
+
         Ok(TobitFit {
             heritability: theta[0],
             total_variance: theta[1].exp(),
             fixed_effects: theta[2..].to_vec(),
             loglik: -objective,
-            converged: scaled_gradient < 1e-3,
+            // The shared rule, at last. This family had been testing a raw
+            // unscaled gradient against a hard-coded thousandth, which is a
+            // thousand times looser than every other family and was loosened
+            // to accommodate the very boundary readings the projection above
+            // removes. `convergence` records what the number means.
+            converged: scaled_gradient < crate::convergence::TOLERANCE,
             scaled_gradient,
             censored_share: self.censored_share(),
             estimator: "ml",
