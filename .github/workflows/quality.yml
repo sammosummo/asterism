@@ -66,18 +66,24 @@ jobs:
         continue-on-error: true
         run: |
           uv run python - <<'PY'
-          import json, sys, platform
-          from pathlib import Path
+          import hashlib, platform, sys
           sys.path.insert(0, "checks")
           import numpy
           import liability_against_solar as L
-          ids = L.reference_input_identities(L.generated_cases())
-          fx = json.loads(Path("checks/external_fixtures/liability_against_solar.json").read_text())
-          frozen = {e["name"]: e["sha256"] for e in fx["input_identities"]}
-          print(platform.system(), platform.machine(), "numpy", numpy.__version__)
-          for e in ids:
-              was = frozen.get(e["name"])
-              print(("same    " if was == e["sha256"] else "DIFFERS "), e["name"])
+          def h(text):
+              return hashlib.sha256(text.encode()).hexdigest()[:16]
+          print("PLATFORM", platform.system(), platform.machine(), "numpy", numpy.__version__)
+          for case in L.generated_cases():
+              if case.seed != 8312:
+                  continue
+              rows = case.phenotype_csv.strip().split("\n")
+              cols = list(zip(*[r.split(",") for r in rows]))
+              print("ROWS", len(rows))
+              for name, col in zip(rows[0].split(","), cols):
+                  print("COL", name, h("|".join(col)))
+              ages = [r.split(",")[2] for r in rows[1:]]
+              print("AGE_FIRST", ages[:3])
+              print("AGE_LAST", ages[-3:])
           PY
       - name: Run the Python suite
         run: uv run pytest -q tests
