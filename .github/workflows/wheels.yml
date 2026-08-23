@@ -1,9 +1,27 @@
 name: Installed wheels
 
+# Runs once per commit, not twice. An unfiltered `push:` fires on every branch,
+# and `pull_request:` fires again for the same commit as soon as a pull request
+# is open, so every commit on a branch under review ran this whole matrix twice.
+# Restricting `push` to `main` leaves branches covered by `pull_request` alone
+# and `main` covered by `push` alone.
+#
+# This is not tidiness. Hosted minutes are finite on a private repository and
+# the Mac runners bill at ten times the Linux ones, so the duplicate half of
+# every run was the larger share of the bill.
 on:
   pull_request:
   push:
+    branches: [main]
   workflow_call:
+
+# Supersede rather than accumulate. Pushing three commits in a minute otherwise
+# leaves three full matrices running, and only the last one is about the code
+# anybody will read. `main` is never cancelled: what ran there is the record of
+# what was merged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read

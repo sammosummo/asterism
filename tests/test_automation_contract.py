@@ -180,3 +180,36 @@ def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:
     """Read the release workflow to confirm the detect step is still that script."""
 
     assert "check_release.py --requested" in workflow
+
+
+def test_ordinary_automation_runs_once_for_a_commit_and_not_twice() -> None:
+    """An unfiltered `push:` doubles the bill for no extra coverage.
+
+    `push:` with no branch filter fires on every branch, and `pull_request:`
+    fires again on the same commit the moment a pull request is open, so every
+    commit under review ran both matrices twice over. Hosted minutes are finite
+    on a private repository and the Mac runners bill at ten times the Linux
+    ones, so the duplicate half was the larger share of what a branch cost --
+    and it is what exhausted the month.
+
+    Restricting `push` to `main` leaves branches covered by `pull_request`
+    alone and `main` covered by `push` alone. `release.yml` is deliberately not
+    checked here: it triggers on `main` only already, and nothing about it may
+    be cancelled part-way.
+
+    This reads the file as text, as the checks above it do, because the one
+    thing worth avoiding here is making the test suite depend on a YAML parser
+    the package does not otherwise need.
+    """
+    for name in ("quality.yml", "wheels.yml"):
+        workflow: str = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        """Read one ordinary workflow as its public configuration."""
+
+        assert "  push:\n    branches: [main]\n" in workflow, (
+            f"{name} runs on every push to every branch, which duplicates every "
+            "pull request's matrix"
+        )
+        assert "  pull_request:\n" in workflow
+        assert (
+            "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}" in workflow
+        ), f"{name} must supersede superseded branch runs, and never cancel main"
