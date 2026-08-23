@@ -325,3 +325,23 @@ def test_style_checker_has_no_command_that_accepts_debt(tmp_path: Path) -> None:
     assert completed.returncode == 2
     assert "unrecognized arguments: --write-baseline" in completed.stderr
     assert not list(tmp_path.glob("*.json"))
+
+
+def test_style_checker_refuses_a_run_that_found_nothing(tmp_path: Path) -> None:
+    """A gate that checked nothing must not report that everything passed.
+
+    `EXCLUDED_PARTS` holds `.claude`, and this project's own tooling makes git
+    worktrees under `.claude/worktrees/`, so every path inside one is excluded
+    and discovery returns an empty list. The checker used to print nothing and
+    exit nought there, which reads exactly like success: a whole branch's style
+    debt was verified locally against no files at all and looked clean. It is
+    the fault this package keeps finding in its own models -- a calculation
+    that could not be made, read as one that was -- and the gates are not
+    exempt from it.
+    """
+    completed: subprocess.CompletedProcess[str] = run_discovered_style_checker(tmp_path)
+    """Ran discovery against a root holding no maintained Python at all."""
+
+    assert completed.returncode == 1
+    assert "checked nothing" in completed.stderr
+    assert "not the same as passing" in completed.stderr
