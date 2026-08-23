@@ -1,0 +1,144 @@
+name: Installed wheels
+
+on:
+  pull_request:
+  push:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            architecture: arm64
+            manylinux: "off"
+            artifact: asterism-wheel-macos-arm64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            architecture: x86_64
+            manylinux: "2_17"
+            artifact: asterism-wheel-manylinux-x86-64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the promised build architecture
+        run: test "$(uname -m)" = "${{ matrix.architecture }}"
+      # The portable wheel is built inside a manylinux container, and git there
+      # refuses to read a checkout owned by another user, so `build.rs` cannot
+      # derive the build identity for itself and stops with
+      # ASTERISM_BUILD_GIT_FAILED. Read the identity here on the host, where
+      # git can see the checkout, and pass it in through the two variables
+      # `build.rs` already prefers over asking git. Both platforms then take
+      # their identity from the same place rather than only the one that
+      # happens to build outside a container.
+      - name: Read the build identity from the checkout
+        id: identity
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+            echo "dirty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dirty=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build one ABI3 wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        env:
+          ASTERISM_SOURCE_COMMIT: ${{ steps.identity.outputs.commit }}
+          ASTERISM_SOURCE_DIRTY: ${{ steps.identity.outputs.dirty }}
+        with:
+          command: build
+          maturin-version: v1.14.1
+          rust-toolchain: 1.97.1
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --out dist
+          docker-options: -e ASTERISM_SOURCE_COMMIT -e ASTERISM_SOURCE_DIRTY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: macos-15
+            id: macos-arm64
+            artifact: asterism-wheel-macos-arm64
+            architecture: arm64
+          - runner: ubuntu-24.04
+            id: linux-x86-64
+            artifact: asterism-wheel-manylinux-x86-64
+            architecture: x86_64
+        python: ["3.13", "3.14"]
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.platform.artifact }}
+          path: dist
+      - name: Verify the promised test architecture
+        run: test "$(uname -m)" = "${{ matrix.platform.architecture }}"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+      - name: Create an isolated interpreter
+        run: uv venv --python ${{ matrix.python }} .wheel-venv
+      - name: Install test dependencies
+        run: uv pip install --python .wheel-venv/bin/python "numpy>=2" "pytest>=8" "scipy>=1.15"
+      - name: Install only the saved wheel
+        run: uv pip install --python .wheel-venv/bin/python --no-deps dist/*.whl
+      - name: Verify embedded release metadata
+        run: .wheel-venv/bin/python tools/check_release.py --metadata
+      - name: Run tests against the installed wheel
+        run: .wheel-venv/bin/python -m pytest -q tests
+      - name: Run all supported public-API probes
+        run: >-
+          .wheel-venv/bin/python tools/cross_platform_probe.py
+          --wheel dist/*.whl
+          --output cross-platform-probe/probe.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asterism-cross-platform-probe-${{ matrix.platform.id }}-py${{ matrix.python }}
+          path: cross-platform-probe/probe.json
+          if-no-files-found: error
+          retention-days: 14
+
+  agreement:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: asterism-cross-platform-probe-*
+          path: cross-platform-probes
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Compare Mac and Linux results on both Python versions
+        run: >-
+          python tools/compare_cross_platform.py
+          --manifest release.toml
+          --input cross-platform-probes
+          --output cross-platform-agreement/agreement.json
+          --allow-unmeasured
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asterism-cross-platform-agreement
+          path: cross-platform-agreement/agreement.json
+          if-no-files-found: error
+          retention-days: 14

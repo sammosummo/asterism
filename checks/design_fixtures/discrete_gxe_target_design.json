@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "fixture_id": "discrete_gene_by_environment_target_design",
+  "reviewed": true,
+  "participant_free": true,
+  "provenance": "accepted historical receipts and aggregate-only read-only target review",
+  "purpose": "synthetic structural envelope for discrete-GxE calibration",
+  "claims": [
+    "reviewed target sample, component-size, group-count, cross-group relationship-count, and fixed-design aggregates",
+    "deterministic participant-free pedigree and group assignment matching the retained structural envelope"
+  ],
+  "not_claimed": [
+    "reconstruction of participant identities, rows, ages, phenotypes, or relationship coefficients",
+    "identity with the observed relationship matrix or covariate values",
+    "preservation of family-specific group composition"
+  ],
+  "source_receipts": {
+    "historical_calibration": "evidence/discrete-gxe-calibration-2026-08-16.json",
+    "historical_calibration_sha256": "bc461b562c38b2168d52d7248368e1e3d5eafe2719c9fc9bd68e6825f101b03d",
+    "reviewed_pedigree_aggregate": "checks/design_fixtures/one_trait_gaussian_heritability.json",
+    "reviewed_pedigree_aggregate_sha256": "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e"
+  },
+  "observed_structure": {
+    "analysis_n": 1910,
+    "component_count": 203,
+    "largest_component": 180,
+    "component_size_histogram": {
+      "1": 118,
+      "2": 7,
+      "3": 5,
+      "4": 6,
+      "5": 2,
+      "6": 4,
+      "7": 3,
+      "8": 1,
+      "9": 8,
+      "10": 5,
+      "11": 3,
+      "12": 4,
+      "13": 2,
+      "14": 3,
+      "15": 2,
+      "16": 1,
+      "18": 1,
+      "19": 1,
+      "21": 2,
+      "23": 1,
+      "26": 2,
+      "27": 1,
+      "28": 2,
+      "29": 1,
+      "30": 1,
+      "33": 1,
+      "35": 1,
+      "39": 2,
+      "41": 1,
+      "42": 1,
+      "45": 1,
+      "48": 1,
+      "49": 1,
+      "57": 1,
+      "58": 1,
+      "61": 1,
+      "68": 1,
+      "76": 1,
+      "78": 1,
+      "114": 1,
+      "180": 1
+    },
+    "group_counts": [
+      758,
+      1152
+    ],
+    "nonzero_relationship_pairs": 27821,
+    "cross_group_nonzero_relationship_pairs": 13322,
+    "mixed_group_components": 77,
+    "fixed_effect_columns": [
+      "intercept",
+      "standardised_age",
+      "standardised_age_squared",
+      "first_group"
+    ],
+    "fixed_effect_rank": 4
+  },
+  "synthetic_pedigree": {
+    "generator": "founder_order_structure_matched",
+    "seed": 7,
+    "sibling_mean": 3.0,
+    "marry_in_probability": 0.35,
+    "maximum_generations": 5,
+    "generated_nonzero_relationship_pairs": 27691,
+    "relative_nonzero_pair_discrepancy": 0.004672729233312965,
+    "maximum_relative_nonzero_pair_discrepancy": 0.005
+  },
+  "synthetic_group_assignment": {
+    "generator": "exact_count_permutation",
+    "seed": 974,
+    "generated_group_counts": [
+      758,
+      1152
+    ],
+    "generated_cross_group_nonzero_relationship_pairs": 13322,
+    "generated_mixed_group_components": 77,
+    "maximum_relative_cross_pair_discrepancy": 0.005
+  },
+  "fixed_effects": {
+    "age_generator": "normal_then_standardise",
+    "age_seed": 20260821,
+    "generating_mean": 45.0,
+    "generating_standard_deviation": 15.0,
+    "matches_participant_age_moments": false,
+    "require_full_rank": true
+  },
+  "calibration_acceptance": {
+    "release_replicates": 500,
+    "levels": [
+      0.01,
+      0.05,
+      0.1
+    ],
+    "fail_when": "one_sided_95_percent_clopper_pearson_lower_above_level",
+    "maximum_refused_or_nonconverged": 0,
+    "scenarios": [
+      "null",
+      "different_genes",
+      "different_scale",
+      "noisier"
+    ],
+    "tests": [
+      "gene_by_environment",
+      "any_difference",
+      "correlation",
+      "genetic",
+      "residual"
+    ]
+  }
+}

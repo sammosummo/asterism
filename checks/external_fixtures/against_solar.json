@@ -1,0 +1,121 @@
+{
+  "acceptance": {
+    "maximum_relative_heritability_difference": 5e-07,
+    "maximum_unexplained_loglik_offset": 1e-06
+  },
+  "adapter": {
+    "path": "checks/against_solar.py",
+    "sha256": "f63f6d2fa31ac65630d53bdbcd2184fc35a1b885c5e1d1d6cd0e7a1a14bb8573"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "against_solar",
+  "external_outputs": {
+    "cases": [
+      {
+        "h2": 0.4341378,
+        "loglik": -174.990503,
+        "people": 350,
+        "seed": 202,
+        "sporadic_loglik": -188.772753,
+        "standard_error": 0.0989298,
+        "true_h2": 0.5
+      },
+      {
+        "h2": 0.1587742,
+        "loglik": -177.175404,
+        "people": 350,
+        "seed": 203,
+        "sporadic_loglik": -178.853805,
+        "standard_error": 0.0950541,
+        "true_h2": 0.2
+      },
+      {
+        "h2": 0.7192731,
+        "loglik": -137.662178,
+        "people": 350,
+        "seed": 204,
+        "sporadic_loglik": -174.559647,
+        "standard_error": 0.0741876,
+        "true_h2": 0.7
+      }
+    ]
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/solar_reference_adapter.py",
+      "sha256": "6ff5c2c57b1730d5406be07f31b6ea249cce994fcae904c940ea63dcb5bbc6cb"
+    },
+    {
+      "name": "design:against_solar",
+      "sha256": "5edf4363d21e562f26f126cbd810de19d6caf3055b51be43ee918752339b498d"
+    },
+    {
+      "name": "relationship:h2=0.5,seed=202",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "design:h2=0.5,seed=202",
+      "sha256": "7300ea1f8300114aea5ec70d102857028a5f0c6b18f113cce58ca490b7e097af"
+    },
+    {
+      "name": "outcome:h2=0.5,seed=202",
+      "sha256": "7cc31ff986c1be509bcb1b7ad32c4cd96339b03c99bf2fdc0643160486ba5a8f"
+    },
+    {
+      "name": "pedigree_csv:h2=0.5,seed=202",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv:h2=0.5,seed=202",
+      "sha256": "9a82206e1d64fa65ac6d058146a0e13c8e32ab9325ba8ad934da355ccefc1825"
+    },
+    {
+      "name": "relationship:h2=0.2,seed=203",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "design:h2=0.2,seed=203",
+      "sha256": "7300ea1f8300114aea5ec70d102857028a5f0c6b18f113cce58ca490b7e097af"
+    },
+    {
+      "name": "outcome:h2=0.2,seed=203",
+      "sha256": "5899e31f07c8938df33cf0a86d3bb7b6506dd1b327ccd2fa6e50777322c8ffd2"
+    },
+    {
+      "name": "pedigree_csv:h2=0.2,seed=203",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv:h2=0.2,seed=203",
+      "sha256": "ccf4888a29538e3ea789c566cb18902b23afd09823fb194f0fb53e2b4f93aecd"
+    },
+    {
+      "name": "relationship:h2=0.7,seed=204",
+      "sha256": "a1ecd3d6ee79d76ca47d283c1729ee8353b9623de8ec4cac8194e469b2ca60e9"
+    },
+    {
+      "name": "design:h2=0.7,seed=204",
+      "sha256": "7300ea1f8300114aea5ec70d102857028a5f0c6b18f113cce58ca490b7e097af"
+    },
+    {
+      "name": "outcome:h2=0.7,seed=204",
+      "sha256": "2c543acb1e118177e4f9281a681bd6fd39ddb6035ba56711085b752a7189ec61"
+    },
+    {
+      "name": "pedigree_csv:h2=0.7,seed=204",
+      "sha256": "827302481d99c8a16552a9ceadff5d5f7f581de5f1b6bd485c068d1cc47eccd4"
+    },
+    {
+      "name": "phenotype_csv:h2=0.7,seed=204",
+      "sha256": "e7d018d0121f4e24a909ac993dce0a44181940be411fddfcf1f42902922be491"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "/usr/local/bin/solar",
+      "packages": [],
+      "version": "SOLAR Eclipse 9.0.0 (2022-01-01)"
+    }
+  ]
+}

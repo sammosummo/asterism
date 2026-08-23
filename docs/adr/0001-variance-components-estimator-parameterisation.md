@@ -635,9 +635,11 @@ with a private remote, which none of the three predecessors has.
 
 ### 24. Tables in, a record out
 
-Asterism takes tables or arrays already in memory and returns a fit record
-carrying its seed. It writes nothing itself; the Python interface may. It knows
-nothing of file formats, databases or the tables that go into papers. Builders
+As amended by ADR 0017, Asterism takes tables or arrays already in memory and
+returns a fit record; a seed is present only for a stochastic calculation. Its
+numerical fitting classes write nothing. The caller-side analysis wrapper may
+write the standard receipt beside controlled outputs. Asterism knows nothing of
+the input file formats, databases or the tables that go into papers. Builders
 that make a standard relationship matrix are a convenience, not the boundary,
 and curating SAFS pedigrees stays with the `pedigrees` project.
 

@@ -57,21 +57,36 @@ pub fn liability_fit(
 
 /// A 95 per cent profile interval for the liability heritability.
 #[pyfunction]
+#[allow(clippy::type_complexity)]
 pub fn liability_interval(
     relationship: PyReadonlyArray2<'_, f64>,
     status: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
-) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
+) -> PyResult<(
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    usize,
+    Option<bool>,
+    Option<bool>,
+)> {
     let got = build(&relationship, &status, &design)?
         .heritability_interval()
         .map_err(PyValueError::new_err)?;
     Ok((
-        got.estimate,
+        got.estimate
+            .ok_or_else(|| PyValueError::new_err("LIABILITY_PROFILE_NOT_EVALUABLE"))?,
         got.lower,
         got.upper,
-        got.lower_at_bound,
-        got.upper_at_bound,
+        got.lower_limited,
+        got.upper_limited,
+        got.level,
         got.profile_failures,
+        got.contains_lower_bound,
+        got.contains_upper_bound,
     ))
 }
 

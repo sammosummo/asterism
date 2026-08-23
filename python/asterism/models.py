@@ -14,36 +14,52 @@ comes from the same compiled code, and this only names it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from . import _core
+from .analysis import build_identity
 
-__all__ = [
+__all__: list[str] = [
+    "AssociationModel",
     "AutoregressiveModel",
     "BivariateModel",
     "ComponentModel",
+    "DiscreteGxeModel",
+    "GxeModel",
+    "LiabilityModel",
+    "RepeatedModel",
     "SpatialModel",
+    "VariantSetModel",
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
     "mixed_bivariate_test",
+    "region_log_probability",
     "tobit_fit",
     "tobit_interval",
     "tobit_test",
 ]
+"""Exported the documented model interfaces from this module."""
 
 
-def _matrix(value: Any, name: str) -> np.ndarray:
-    array = np.ascontiguousarray(value, dtype=np.float64)
+# asterism-style: allow private-helper -- reused exact matrix-conversion boundary
+def _matrix(value: Any, name: str) -> npt.NDArray[np.float64]:
+    """Convert one array-like value to a contiguous binary64 matrix."""
+    array: npt.NDArray[np.float64] = np.ascontiguousarray(value, dtype=np.float64)
+    """Converted the caller's value without taking an ownership copy."""
+
     if array.ndim != 2:
         raise ValueError(f"{name.upper()}_NOT_TWO_DIMENSIONAL")
     return array
 
 
-def _owned_matrix(value: Any, name: str) -> np.ndarray:
+# asterism-style: allow private-helper -- reused immutable model-input boundary
+def _owned_matrix(value: Any, name: str) -> npt.NDArray[np.float64]:
     """Take a private, read-only copy of a caller's matrix.
 
     `np.ascontiguousarray` returns the caller's own object when it is already
@@ -52,9 +68,28 @@ def _owned_matrix(value: Any, name: str) -> np.ndarray:
     differently after a later, unrelated write would break the record's claim to
     be reproducible from what it reports, and would do it silently.
     """
-    array = _matrix(value, name).copy(order="C")
+    array: npt.NDArray[np.float64] = _matrix(value, name).copy(order="C")
+    """Copied the matrix so later caller mutation cannot change the model."""
+
     array.setflags(write=False)
+    """Made the model-owned matrix read-only."""
     return array
+
+
+SUBJECT_ORDER_SHA256_PATTERN: re.Pattern[str] = re.compile(r"[0-9a-f]{64}")
+"""Recognised the exact lowercase hexadecimal commitment carried by fit records."""
+
+
+# asterism-style: allow private-helper -- reused fit-identity validation boundary
+def _validated_subject_order_sha256(value: str | None) -> str | None:
+    """Validate one optional subject-order commitment for a fit route."""
+    if value is not None and (
+        not isinstance(value, str)
+        or SUBJECT_ORDER_SHA256_PATTERN.fullmatch(value) is None
+    ):
+        raise ValueError("FIT_SUBJECT_ORDER_SHA256_INVALID")
+    """Refused malformed or non-lowercase commitments before numerical fitting."""
+    return value
 
 
 class ComponentModel:
@@ -79,28 +114,50 @@ class ComponentModel:
         The fixed-effect design, one row per person, including its own
         intercept column if one is wanted. Its values are copied at
         construction.
+    subject_order_sha256
+        Optional lowercase SHA-256 from ``subject_order_commitment`` for the
+        exact fitted row order. It is echoed on every fit record.
     """
 
     def __init__(
         self,
         matrices: list[Any],
         x: Any,
+        *,
+        subject_order_sha256: str | None = None,
     ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         if not matrices:
             raise ValueError("COMPONENTS_NONE_GIVEN")
-        converted = [
-            _owned_matrix(matrix, f"matrix_{i}")
-            for i, matrix in enumerate(matrices)
+        converted: list[npt.NDArray[np.float64]] = [
+            _owned_matrix(matrix, f"matrix_{i}") for i, matrix in enumerate(matrices)
         ]
+        """Copied every structured relationship matrix into model-owned storage."""
+
         self._matrices = converted
-        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in converted]
+        """Stored the structured matrices in their caller-defined order."""
+
+        mean_diagonals: list[float] = [
+            float(np.mean(np.diag(matrix))) for matrix in converted
+        ]
+        """Measured each structured matrix's marginal diagonal scale."""
+
         self._structured_mean_diagonals = (
             mean_diagonals
             if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
             else None
         )
+        """Retained usable scales only when every structured diagonal mean was valid."""
+
         self._x = _owned_matrix(x, "design")
+        """Stored an immutable copy of the fixed-effect design."""
+
         self.components = len(self._matrices) + 1
+        """Counted the structured components together with the residual."""
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, and return variance coefficients and their proportions.
@@ -115,6 +172,8 @@ class ComponentModel:
         caller's responsibility.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to the contiguous binary64 input expected by Rust."""
+
         (
             variances,
             proportions,
@@ -128,7 +187,9 @@ class ComponentModel:
             stop_message,
             polished,
         ) = _core.component_fit(self._matrices, self._x, y, reml)
-        record = {
+        """Fitted the component model and unpacked its named scientific fields."""
+
+        record: dict[str, object] = {
             "variances": list(variances),
             "raw_coefficient_proportions": list(proportions),
             "raw_coefficient_total": raw_coefficient_total,
@@ -157,24 +218,39 @@ class ComponentModel:
             # package gave before the polish existed, to the last bit.
             "polished": polished,
             "estimator": "reml" if reml else "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
+        """Named the positional compiled result for stable Python consumption."""
+
         if self._structured_mean_diagonals is not None:
-            mean_diagonal_contributions = [
+            mean_diagonal_contributions: list[float] = [
                 variance * mean_diagonal
                 for variance, mean_diagonal in zip(
                     variances[:-1], self._structured_mean_diagonals, strict=True
                 )
             ]
+            """Scaled each structured coefficient by its matrix's mean diagonal."""
+
             mean_diagonal_contributions.append(variances[-1])
-            mean_diagonal_total = sum(mean_diagonal_contributions)
+            """Added the unit-diagonal residual contribution."""
+
+            mean_diagonal_total: float = sum(mean_diagonal_contributions)
+            """Summed the scale-invariant marginal covariance contributions."""
+
             record["mean_diagonal_component_contributions"] = (
                 mean_diagonal_contributions
             )
+            """Exposed the component contributions in fitted component order."""
+
             record["mean_diagonal_total"] = mean_diagonal_total
+            """Exposed their total marginal variance."""
+
             record["mean_diagonal_proportions"] = [
                 contribution / mean_diagonal_total
                 for contribution in mean_diagonal_contributions
             ]
+            """Normalised the contributions into scale-invariant proportions."""
         return record
 
     def predict(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
@@ -193,41 +269,79 @@ class ComponentModel:
         usual approximation and the same one the fixed effects make.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to the compiled predictor's binary64 layout."""
+
         values, errors = _core.component_blup(
             self._matrices, self._x, y, component, reml
         )
+        """Predicted the selected component and its per-person prediction errors."""
         return {
             "component": component,
             "values": list(values),
             "errors": list(errors),
         }
 
-    def interval(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
-        """A 95 per cent profile interval for one raw coefficient proportion.
+    def interval(
+        self,
+        y: Any,
+        component: int,
+        reml: bool = True,
+        quantity: str = "mean_diagonal_proportion",
+    ) -> dict[str, Any]:
+        """A 95 per cent profile interval for one component proportion.
 
-        **This profiles the raw proportion, which is not the headline the fit
-        reports.** ``fit`` leads with ``mean_diagonal_proportions`` where those
-        are defined, because they are invariant to how a matrix is scaled;
-        the raw proportion is not, and the two can differ by orders of
-        magnitude for the same component of the same fit. The estimate this
-        interval is actually around is therefore returned beside it as
-        ``estimate``, so the pair can be read together and cannot be mismatched
-        by picking the headline from one dictionary and the endpoints from the
-        other.
+        The default profiles the scale-invariant ``mean_diagonal_proportion``
+        reported by :meth:`fit`. The diagnostic
+        ``raw_coefficient_proportion`` remains available explicitly; it changes
+        when a relationship matrix is rescaled and must not be reported as a
+        generic variance share.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level, failures = _core.component_interval(
-            self._matrices, self._x, y, component, reml
-        )
+        """Converted the response for repeated constrained component fits."""
+
+        if quantity == "mean_diagonal_proportion":
+            (
+                estimate,
+                lower,
+                upper,
+                lower_limited,
+                upper_limited,
+                level,
+                failures,
+            ) = _core.component_mean_diagonal_interval(
+                self._matrices, self._x, y, component, reml
+            )
+            """Profiled the scale-invariant marginal component proportion."""
+        elif quantity == "raw_coefficient_proportion":
+            (
+                lower,
+                upper,
+                lower_limited,
+                upper_limited,
+                level,
+                failures,
+            ) = _core.component_interval(self._matrices, self._x, y, component, reml)
+            """Profiled the diagnostic proportion of raw fitted coefficients."""
+
+            estimate: float = float(
+                self.fit(y, reml)["raw_coefficient_proportions"][component]
+            )
+            """Recovered the raw-proportion point estimate matching the profile."""
+        else:
+            raise ValueError("COMPONENTS_INTERVAL_QUANTITY_UNKNOWN")
         return {
-            "quantity": "raw_coefficient_proportion",
-            "estimate": self.fit(y, reml)["raw_coefficient_proportions"][component],
+            "quantity": quantity,
+            "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": at_lower,
-            "upper_at_bound": at_upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
             "level": level,
             "profile_failures": failures,
+            # No component-proportion coverage simulation has yet scored a
+            # boundary. Absent means unmeasured, not inapplicable.
+            "contains_lower_bound": None,
+            "contains_upper_bound": None,
         }
 
     def equality_test(
@@ -249,11 +363,16 @@ class ComponentModel:
         Defaults to every structured component.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the pooled-component comparison."""
+
         if components is None:
             components = list(range(len(self._matrices)))
+            """Selected every structured component when no subset was supplied."""
+
         statistic, p_value, rule, null_loglik = _core.component_equality_test(
             self._matrices, self._x, y, [int(c) for c in components], reml
         )
+        """Compared the free variances with their exact pooled-component null."""
         return {
             "components": list(components),
             "statistic": statistic,
@@ -292,11 +411,18 @@ class ComponentModel:
         is below" are one statement.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the class-contrast profiles."""
+
         if classes is None:
             classes = list(range(len(self._matrices)))
-        rows = _core.component_contrasts(
-            self._matrices, self._x, y, [int(c) for c in classes], reml
+            """Selected every structured class when no subset was supplied."""
+
+        rows: list[tuple[float, float, float, bool, bool, float, float]] = (
+            _core.component_contrasts(
+                self._matrices, self._x, y, [int(c) for c in classes], reml
+            )
         )
+        """Profiled each class's deviation from the constrained average class."""
         return [
             {
                 "class": int(c),
@@ -309,8 +435,15 @@ class ComponentModel:
                 "statistic": statistic,
                 "level": 0.95,
             }
-            for c, (deviation, lower, upper, at_lower, at_upper, p_value, statistic)
-            in zip(classes, rows, strict=True)
+            for c, (
+                deviation,
+                lower,
+                upper,
+                at_lower,
+                at_upper,
+                p_value,
+                statistic,
+            ) in zip(classes, rows, strict=True)
         ]
 
     def test(self, y: Any, component: int, reml: bool = True) -> dict[str, Any]:
@@ -324,9 +457,12 @@ class ComponentModel:
         a p-value for a question nobody asked.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the boundary component test."""
+
         statistic, p_value, rule, null_loglik = _core.component_test(
             self._matrices, self._x, y, component, reml
         )
+        """Compared the fitted component with the nested model that omits it."""
         return {
             "statistic": statistic,
             "p_value": p_value,
@@ -348,14 +484,41 @@ class BivariateModel:
     design
         The fixed-effect design over the observed person–trait rows, in person
         order with trait within person.
+    subject_order_sha256
+        Optional lowercase SHA-256 from ``subject_order_commitment`` for the
+        exact person order. It is echoed on every fit record.
     """
 
-    QUANTITIES = ("h2_first", "h2_second", "rho_g", "rho_e", "rho_p")
+    QUANTITIES: tuple[str, ...] = (
+        "h2_first",
+        "h2_second",
+        "rho_g",
+        "rho_e",
+        "rho_p",
+    )
+    """Named every bivariate quantity with a supported profile interval."""
 
-    def __init__(self, k: Any, observed: Any, design: Any) -> None:
+    def __init__(
+        self,
+        k: Any,
+        observed: Any,
+        design: Any,
+        *,
+        subject_order_sha256: str | None = None,
+    ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         self._k = _owned_matrix(k, "relationship")
+        """Stored an immutable copy of the relationship matrix."""
+
         self._observed = [[bool(a), bool(b)] for a, b in observed]
+        """Normalised the per-person trait availability indicators."""
+
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the observed-row fixed-effect design."""
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, and return both heritabilities and all three correlations.
@@ -364,9 +527,12 @@ class BivariateModel:
         estimated, which is why it has no variance of its own.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the stacked observed responses to contiguous binary64."""
+
         theta, loglik, gradient, converged = _core.bivariate_fit(
             self._k, self._observed, self._design, y, reml
         )
+        """Fitted both traits jointly and unpacked their covariance summaries."""
         return {
             "total_variance": [theta[0], theta[1]],
             "h2_first": theta[2],
@@ -378,6 +544,8 @@ class BivariateModel:
             "scaled_gradient": gradient,
             "converged": converged,
             "estimator": "reml" if reml else "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
 
     def interval(self, y: Any, quantity: str, reml: bool = True) -> dict[str, Any]:
@@ -385,16 +553,32 @@ class BivariateModel:
         if quantity not in self.QUANTITIES:
             raise ValueError("BIVARIATE_QUANTITY_UNKNOWN")
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level, failures = _core.bivariate_interval(
+        """Converted the response for constrained bivariate profile fits."""
+
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level,
+            failures,
+            contains_lower_bound,
+            contains_upper_bound,
+        ) = _core.bivariate_interval(
             self._k, self._observed, self._design, y, quantity, reml
         )
+        """Profiled the requested bivariate reportable quantity."""
         return {
+            "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": at_lower,
-            "upper_at_bound": at_upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
             "level": level,
             "profile_failures": failures,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
         }
 
     def test(
@@ -407,6 +591,8 @@ class BivariateModel:
         does. Heritabilities are not testable this way.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the constrained correlation comparison."""
+
         (
             statistic,
             p_value,
@@ -416,6 +602,7 @@ class BivariateModel:
         ) = _core.bivariate_correlation_test(
             self._k, self._observed, self._design, y, quantity, null, reml
         )
+        """Compared the free correlation with its fixed-null bivariate fit."""
         return {
             "statistic": statistic,
             "p_value": p_value,
@@ -443,23 +630,51 @@ class SpatialModel:
     be rid of it. And an interval for the spatial raw coefficient proportion
     reaching nought is not a test of whether there is a spatial effect — under
     that null the range is unidentified, which is why the test is a bootstrap.
+
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. Every fit
+    record echoes it without retaining identifiers.
     """
 
-    def __init__(self, fixed: list[Any], distance: Any, design: Any) -> None:
+    def __init__(
+        self,
+        fixed: list[Any],
+        distance: Any,
+        design: Any,
+        *,
+        subject_order_sha256: str | None = None,
+    ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         self._fixed = [
-            _owned_matrix(matrix, f"matrix_{i}")
-            for i, matrix in enumerate(fixed)
+            _owned_matrix(matrix, f"matrix_{i}") for i, matrix in enumerate(fixed)
         ]
-        mean_diagonals = [float(np.mean(np.diag(matrix))) for matrix in self._fixed]
+        """Copied the fixed covariance-component matrices into model-owned storage."""
+
+        mean_diagonals: list[float] = [
+            float(np.mean(np.diag(matrix))) for matrix in self._fixed
+        ]
+        """Measured the marginal diagonal scale of every fixed component."""
+
         self._fixed_mean_diagonals = (
             mean_diagonals
             if all(np.isfinite(value) and value > 0.0 for value in mean_diagonals)
             else None
         )
-        self._distance = _owned_matrix(distance, "distance")
-        self._design = _owned_matrix(design, "design")
+        """Retained the fixed-component scales only when all were usable."""
 
-    def fit(self, y: Any, reml: bool = True, integrated: bool = False) -> dict[str, Any]:
+        self._distance = _owned_matrix(distance, "distance")
+        """Stored an immutable copy of the pairwise distance matrix."""
+
+        self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the fixed-effect design."""
+
+    def fit(
+        self, y: Any, reml: bool = True, integrated: bool = False
+    ) -> dict[str, Any]:
         """Fit, taking the range as a free parameter or integrating it out.
 
         ``raw_coefficient_proportions`` and ``raw_coefficient_total`` depend
@@ -474,6 +689,8 @@ class SpatialModel:
         to report, which is the point.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to contiguous binary64 for the spatial fit."""
+
         (
             variances,
             raw_coefficient_proportions,
@@ -486,8 +703,12 @@ class SpatialModel:
             polished,
             effects,
             errors,
-        ) = _core.spatial_fit(self._fixed, self._distance, self._design, y, reml, integrated)
-        record = {
+        ) = _core.spatial_fit(
+            self._fixed, self._distance, self._design, y, reml, integrated
+        )
+        """Fitted the spatial model and unpacked its covariance and range summaries."""
+
+        record: dict[str, object] = {
             "variances": list(variances),
             "raw_coefficient_proportions": list(raw_coefficient_proportions),
             "raw_coefficient_total": raw_coefficient_total,
@@ -510,24 +731,41 @@ class SpatialModel:
             "polished": polished,
             "estimator": "reml" if reml else "ml",
             "range_treatment": "integrated" if integrated else "profile",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
+        """Named the positional compiled result for stable Python consumption."""
+
         if self._fixed_mean_diagonals is not None:
-            mean_diagonal_contributions = [
+            mean_diagonal_contributions: list[float] = [
                 variance * mean_diagonal
                 for variance, mean_diagonal in zip(
-                    variances[: len(self._fixed)], self._fixed_mean_diagonals, strict=True
+                    variances[: len(self._fixed)],
+                    self._fixed_mean_diagonals,
+                    strict=True,
                 )
             ]
+            """Scaled fixed coefficients by their matrices' mean diagonals."""
+
             mean_diagonal_contributions.extend(variances[len(self._fixed) :])
-            mean_diagonal_total = sum(mean_diagonal_contributions)
+            """Added the unit-diagonal spatial and residual contributions."""
+
+            mean_diagonal_total: float = sum(mean_diagonal_contributions)
+            """Summed the scale-invariant marginal covariance contributions."""
+
             record["mean_diagonal_component_contributions"] = (
                 mean_diagonal_contributions
             )
+            """Exposed all marginal contributions in fitted component order."""
+
             record["mean_diagonal_total"] = mean_diagonal_total
+            """Exposed their total marginal variance."""
+
             record["mean_diagonal_proportions"] = [
                 contribution / mean_diagonal_total
                 for contribution in mean_diagonal_contributions
             ]
+            """Normalised the contributions into scale-invariant proportions."""
         return record
 
     def predict(
@@ -541,9 +779,12 @@ class SpatialModel:
         different quantity that has not been calibrated.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the compiled spatial predictor."""
+
         values, errors = _core.spatial_blup(
             self._fixed, self._distance, self._design, y, component, reml, integrated
         )
+        """Predicted the selected covariance component and its prediction errors."""
         return {"component": component, "values": list(values), "errors": list(errors)}
 
     def interval(
@@ -566,25 +807,36 @@ class SpatialModel:
         from the other.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
-        lower, upper, at_lower, at_upper, level = _core.spatial_interval(
+        """Converted the response for constrained spatial profile fits."""
+
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level,
+            profile_failures,
+            contains_lower_bound,
+            contains_upper_bound,
+        ) = _core.spatial_interval(
             self._fixed, self._distance, self._design, y, quantity, reml, integrated
         )
-        estimate = None
-        if quantity != "lambda":
-            fitted = self.fit(y, reml=reml, integrated=integrated)
-            estimate = fitted["raw_coefficient_proportions"][int(quantity)]
+        """Profiled the requested spatial coefficient or decay parameter."""
         return {
             "quantity": (
-                "decay_per_km"
-                if quantity == "lambda"
-                else "raw_coefficient_proportion"
+                "decay_per_km" if quantity == "lambda" else "raw_coefficient_proportion"
             ),
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": at_lower,
-            "upper_at_bound": at_upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
             "level": level,
+            "profile_failures": profile_failures,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
+            "estimator": "reml" if reml else "ml",
         }
 
     def statistic(self, y: Any, reml: bool = True, integrated: bool = False) -> float:
@@ -594,6 +846,7 @@ class SpatialModel:
         null there is no closed-form reference, so a p-value takes `bootstrap`.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the spatial null comparison."""
         return _core.spatial_statistic(
             self._fixed, self._distance, self._design, y, reml, integrated
         )
@@ -613,6 +866,8 @@ class SpatialModel:
         ``1 / (replicates + 1)``.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the observed response used by every bootstrap comparison."""
+
         observed, exceedances, used, requested, p_value, rule = _core.spatial_bootstrap(
             self._fixed,
             self._distance,
@@ -623,6 +878,7 @@ class SpatialModel:
             reml,
             integrated,
         )
+        """Ran the requested null replicates and counted statistics at least as large."""
         return {
             "statistic": observed,
             "exceedances": exceedances,
@@ -671,11 +927,18 @@ class AutoregressiveModel:
         self._fixed = [
             _owned_matrix(matrix, f"matrix_{i}") for i, matrix in enumerate(fixed)
         ]
+        """Copied the fixed covariance-component matrices into model-owned storage."""
+
         self._row = [int(v) for v in np.asarray(row).ravel()]
+        """Normalised row coordinates to whole grid cells."""
+
         self._column = [int(v) for v in np.asarray(column).ravel()]
+        """Normalised column coordinates to whole grid cells."""
+
         if len(self._row) != len(self._column):
             raise ValueError("AUTOREGRESSIVE_CELLS_WRONG_LENGTH")
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the fixed-effect design."""
 
     @property
     def cells(self) -> int:
@@ -690,6 +953,8 @@ class AutoregressiveModel:
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, and report the variances and the two rates."""
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to contiguous binary64 for the grid fit."""
+
         (
             variances,
             proportions,
@@ -704,7 +969,10 @@ class AutoregressiveModel:
         ) = _core.autoregressive_fit(
             self._fixed, self._row, self._column, self._design, y, reml
         )
+        """Fitted the separable grid covariance and unpacked its diagnostics."""
+
         rho_row, rho_column, half_row, half_column = rates
+        """Named the two cell correlations and their half-correlation distances."""
         return {
             "variances": list(variances),
             "raw_coefficient_proportions": list(proportions),
@@ -785,27 +1053,60 @@ class GxeModel:
     estimate cannot exceed one, so under the null every departure runs downward:
     on the exponential surface a tenth of null samples came back below 0.25. Use
     ``test``.
+
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. Every fit
+    record echoes it without retaining identifiers.
     """
 
-    def __init__(self, relationship: Any, environment: Any, design: Any,
-                 surface: str = "random_regression", shape: float = 1.0) -> None:
+    def __init__(
+        self,
+        relationship: Any,
+        environment: Any,
+        design: Any,
+        surface: str = "random_regression",
+        shape: float = 1.0,
+        *,
+        subject_order_sha256: str | None = None,
+    ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         if surface not in ("exponential", "random_regression", "powered_exponential"):
             raise ValueError(
                 "surface must be exponential, random_regression or "
                 f"powered_exponential, not {surface!r}"
             )
-        if surface == "powered_exponential" and float(shape) not in (0.5, 1.0, 1.5, 2.0):
+        if surface == "powered_exponential" and float(shape) not in (
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+        ):
             raise ValueError(
                 f"shape must be one of 0.5, 1.0, 1.5, 2.0, not {shape!r}. It is "
                 "chosen rather than fitted."
             )
         self._relationship = _owned_matrix(relationship, "relationship")
-        self._environment = [float(v) for v in np.asarray(environment).ravel()]
-        self._design = _owned_matrix(design, "design")
-        self._surface = surface
-        self._shape = float(shape)
+        """Stored an immutable copy of the relationship matrix."""
 
-    def fit(self, y: Any, grid: Any = (-1.0, 0.0, 1.0), reml: bool = True) -> dict[str, Any]:
+        self._environment = [float(v) for v in np.asarray(environment).ravel()]
+        """Normalised the per-person environment values to binary64 scalars."""
+
+        self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the fixed-effect design."""
+
+        self._surface = surface
+        """Recorded the pre-selected covariance-surface family."""
+
+        self._shape = float(shape)
+        """Recorded the fixed powered-exponential shape when applicable."""
+
+    def fit(
+        self, y: Any, grid: Any = (-1.0, 0.0, 1.0), reml: bool = True
+    ) -> dict[str, Any]:
         """Fit, and report the surface at the environments in ``grid``.
 
         ``grid`` is in the environment's own units, so it should be chosen from
@@ -813,7 +1114,11 @@ class GxeModel:
         correlations come back as a square list of lists in the grid's order.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to contiguous binary64 for the surface fit."""
+
         grid = [float(v) for v in np.asarray(grid).ravel()]
+        """Normalised the requested reporting environments to binary64 scalars."""
+
         (
             parameters,
             loglik,
@@ -827,10 +1132,19 @@ class GxeModel:
             heritability,
             correlations,
         ) = _core.gxe_fit(
-            self._relationship, self._environment, self._design, y,
-            self._surface, grid, self._shape, reml,
+            self._relationship,
+            self._environment,
+            self._design,
+            y,
+            self._surface,
+            grid,
+            self._shape,
+            reml,
         )
-        width = len(grid)
+        """Fitted the selected surface and evaluated it across the reporting grid."""
+
+        width: int = len(grid)
+        """Recorded the side length of the flattened correlation matrix."""
         return {
             "surface": self._surface,
             "shape": self._shape if self._surface == "powered_exponential" else None,
@@ -842,10 +1156,12 @@ class GxeModel:
             "residual_variance": list(residual),
             "heritability": list(heritability),
             "genetic_correlation": [
-                list(correlations[row * width:(row + 1) * width]) for row in range(width)
+                list(correlations[row * width : (row + 1) * width])
+                for row in range(width)
             ],
             "fixed_effects": [
-                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
+                {"estimate": e, "standard_error": s}
+                for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -856,9 +1172,13 @@ class GxeModel:
             # the fit the package gave before the polish existed.
             "polished": polished,
             "estimator": "reml" if reml else "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
 
-    def test(self, y: Any, null: str = "correlation", reml: bool = True) -> dict[str, Any]:
+    def test(
+        self, y: Any, null: str = "correlation", reml: bool = True
+    ) -> dict[str, Any]:
         """Test one of the two genotype-by-environment nulls.
 
         - ``"correlation"``: the genetic effects at any two environments are the
@@ -887,10 +1207,19 @@ class GxeModel:
                 f"null must be interaction, correlation or variance, not {null!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for the constrained surface comparison."""
+
         statistic, p_value, rule, null_loglik, alternative_loglik = _core.gxe_test(
-            self._relationship, self._environment, self._design, y,
-            self._surface, null, self._shape, reml,
+            self._relationship,
+            self._environment,
+            self._design,
+            y,
+            self._surface,
+            null,
+            self._shape,
+            reml,
         )
+        """Compared the fitted surface with the requested biological null."""
         return {
             "surface": self._surface,
             "null": null,
@@ -922,7 +1251,7 @@ class GxeModel:
         The quantity is held by solving one coordinate of the surface for it and
         re-maximising over the rest, so the interval is a likelihood one and not
         a Wald one — it is not symmetric about the estimate and does not have to
-        be. ``lower_at_bound`` or ``upper_at_bound`` says the endpoint ran to
+        be. ``lower_limited`` or ``upper_limited`` says the endpoint ran to
         the edge of what the quantity can be rather than to a likelihood
         crossing, which is a limit of the model rather than a measurement.
         """
@@ -931,10 +1260,31 @@ class GxeModel:
                 f"quantity must be heritability or correlation, not {quantity!r}"
             )
         y = np.ascontiguousarray(y, dtype=np.float64)
-        estimate, lower, upper, at_lower, at_upper, failures = _core.gxe_interval(
-            self._relationship, self._environment, self._design, y,
-            self._surface, quantity, float(first), float(second), self._shape, reml,
+        """Converted the response for constrained surface profile fits."""
+
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level,
+            failures,
+            contains_lower_bound,
+            contains_upper_bound,
+        ) = _core.gxe_interval(
+            self._relationship,
+            self._environment,
+            self._design,
+            y,
+            self._surface,
+            quantity,
+            float(first),
+            float(second),
+            self._shape,
+            reml,
         )
+        """Profiled the requested surface-derived heritability or correlation."""
         return {
             "surface": self._surface,
             "quantity": quantity,
@@ -942,11 +1292,13 @@ class GxeModel:
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": at_lower,
-            "upper_at_bound": at_upper,
-            "level": 0.95,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
+            "level": level,
             "estimator": "reml" if reml else "ml",
             "profile_failures": failures,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
         }
 
 
@@ -1007,6 +1359,10 @@ class DiscreteGxeModel:
     environment rejects it hard with nothing genetic happening. In simulation
     on the GOBS pedigree a sex difference in measurement error alone rejected
     it at p = 1e-34 while every genetic test correctly reported nothing.
+
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. Every fit
+    record echoes it without retaining identifiers.
     """
 
     def __init__(
@@ -1015,13 +1371,27 @@ class DiscreteGxeModel:
         environment: Any,
         design: Any,
         levels: tuple[float, float] | None = None,
+        *,
+        subject_order_sha256: str | None = None,
     ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         self._relationship = _owned_matrix(relationship, "relationship")
+        """Stored an immutable copy of the relationship matrix."""
+
         self._environment = np.ascontiguousarray(
             np.asarray(environment).ravel(), dtype=np.float64
         )
+        """Normalised the two-valued environment labels to contiguous binary64."""
+
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the fixed-effect design."""
+
         self._levels = None if levels is None else (float(levels[0]), float(levels[1]))
+        """Recorded explicit environment levels when the caller supplied them."""
 
     def fit(self, y: Any, reml: bool = True) -> dict[str, Any]:
         """Fit, with everything free.
@@ -1031,6 +1401,8 @@ class DiscreteGxeModel:
         and the fit itself cannot tell you which you have.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response to contiguous binary64 for the discrete fit."""
+
         (
             genetic,
             residual,
@@ -1047,6 +1419,7 @@ class DiscreteGxeModel:
         ) = _core.discrete_gxe_fit(
             self._relationship, self._environment, self._design, y, reml, self._levels
         )
+        """Fitted separate group variances and their cross-group genetic correlation."""
         return {
             "levels": list(levels),
             "genetic_variance": list(genetic),
@@ -1054,7 +1427,8 @@ class DiscreteGxeModel:
             "heritability": list(heritability),
             "genetic_correlation": correlation,
             "fixed_effects": [
-                {"estimate": e, "standard_error": s} for e, s in zip(effects, errors, strict=True)
+                {"estimate": e, "standard_error": s}
+                for e, s in zip(effects, errors, strict=True)
             ],
             "loglik": loglik,
             "scaled_gradient": gradient,
@@ -1066,6 +1440,8 @@ class DiscreteGxeModel:
             "polished": polished,
             "counts": list(counts),
             "estimator": "reml" if reml else "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
 
     def test(
@@ -1096,21 +1472,32 @@ class DiscreteGxeModel:
         ``rule`` names the reference distribution the p-value is a tail of, so a
         reader need not take it on trust.
         """
-        allowed = (
+        allowed: tuple[str, ...] = (
             "gene_by_environment",
             "any_difference",
             "correlation",
             "genetic",
             "residual",
         )
+        """Listed the five scientifically distinct constrained comparisons."""
+
         if null not in allowed:
-            raise ValueError(
-                f"null must be one of {', '.join(allowed)}, not {null!r}"
-            )
+            raise ValueError(f"null must be one of {', '.join(allowed)}, not {null!r}")
         y = np.ascontiguousarray(y, dtype=np.float64)
-        statistic, p_value, rule, null_loglik, alternative_loglik = _core.discrete_gxe_test(
-            self._relationship, self._environment, self._design, y, null, reml, self._levels
+        """Converted the response for the selected discrete-model comparison."""
+
+        statistic, p_value, rule, null_loglik, alternative_loglik = (
+            _core.discrete_gxe_test(
+                self._relationship,
+                self._environment,
+                self._design,
+                y,
+                null,
+                reml,
+                self._levels,
+            )
         )
+        """Compared the free group covariance model with the requested null."""
         return {
             "null": null,
             "statistic": statistic,
@@ -1141,26 +1528,37 @@ class DiscreteGxeModel:
         and that is worth knowing before it is quoted.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
+        """Converted the response for genetic-correlation profile fits."""
+
         (
             estimate,
             lower,
             upper,
             lower_limited,
             upper_limited,
+            level,
             profile_failures,
-        ) = (
-            _core.discrete_gxe_correlation_interval(
-                self._relationship, self._environment, self._design, y, reml,
-                self._levels,
-            )
+            contains_lower_bound,
+            contains_upper_bound,
+        ) = _core.discrete_gxe_correlation_interval(
+            self._relationship,
+            self._environment,
+            self._design,
+            y,
+            reml,
+            self._levels,
         )
+        """Profiled the discrete model's directly parameterised genetic correlation."""
         return {
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
             "lower_limited": lower_limited,
             "upper_limited": upper_limited,
+            "level": level,
             "profile_failures": profile_failures,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
             "rule": "chi2_1",
             "estimator": "reml" if reml else "ml",
         }
@@ -1209,9 +1607,16 @@ class VariantSetModel:
         reml: bool = True,
     ) -> None:
         self._backgrounds = [_owned_matrix(b, "background") for b in backgrounds]
+        """Copied every background covariance matrix into model-owned storage."""
+
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the null fixed-effect design."""
+
         self._y = np.ascontiguousarray(y, dtype=np.float64)
+        """Stored the fixed response shared by every set in the scan."""
+
         self._reml = bool(reml)
+        """Recorded the estimator used for the shared null fit."""
 
     def scan(self, roots: Sequence[Any]) -> list[dict[str, Any]]:
         """Score every set, fitting the null once.
@@ -1222,16 +1627,21 @@ class VariantSetModel:
         nobody carries returns ``code`` of ``VARIANT_SET_NO_CARRIERS`` rather
         than a statistic of nought dressed up as a result.
         """
-        prepared = [
+        prepared: list[npt.NDArray[np.float64]] = [
             np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
             for r in roots
         ]
+        """Converted every weighted genotype root to contiguous binary64."""
+
         for root in prepared:
             if root.ndim != 2:
                 raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
-        records = _core.variant_set_scan(
+        """Refused roots that did not provide one person-by-variant matrix."""
+
+        records: list[dict[str, object]] = _core.variant_set_scan(
             self._backgrounds, self._design, self._y, prepared, self._reml
         )
+        """Fitted the null once and scored every supplied variant set."""
         return [dict(r) for r in records]
 
     def test(self, root: Any) -> dict[str, Any]:
@@ -1269,17 +1679,26 @@ class VariantSetModel:
         answer to a weight being an arbitrary choice: run several and combine,
         rather than fitting one, which the null does not identify.
         """
-        prepared = [
+        prepared: list[npt.NDArray[np.float64]] = [
             np.ascontiguousarray(np.asarray(r, dtype=np.float64), dtype=np.float64)
             for r in roots
         ]
+        """Converted every weighted genotype root to contiguous binary64."""
+
         for root in prepared:
             if root.ndim != 2:
                 raise ValueError("VARIANT_SET_ROOT_WRONG_SHAPE")
-        records = _core.variant_set_family_scan(
-            self._backgrounds, self._design, self._y, prepared,
-            [float(c) for c in correlations], self._reml,
+        """Refused roots that did not provide one person-by-variant matrix."""
+
+        records: list[dict[str, object]] = _core.variant_set_family_scan(
+            self._backgrounds,
+            self._design,
+            self._y,
+            prepared,
+            [float(c) for c in correlations],
+            self._reml,
         )
+        """Scored each set across the correlation family and combined its tests."""
         return [dict(r) for r in records]
 
     def test_family(
@@ -1289,7 +1708,6 @@ class VariantSetModel:
     ) -> dict[str, Any]:
         """Score one set across the family."""
         return self.scan_family([root], correlations)[0]
-
 
 
 class LiabilityModel:
@@ -1314,14 +1732,35 @@ class LiabilityModel:
     ``build`` refuses a relationship above 0.9 off the diagonal. Twins and
     duplicated people push the liability correlation to ``h2`` rather than
     ``h2 / 2``, which is where the two-person quadrature starts losing digits.
+
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. Every fit
+    record echoes it without retaining identifiers.
     """
 
-    def __init__(self, relationship: Any, status: Any, design: Any) -> None:
+    def __init__(
+        self,
+        relationship: Any,
+        status: Any,
+        design: Any,
+        *,
+        subject_order_sha256: str | None = None,
+    ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
         self._relationship = _owned_matrix(relationship, "relationship")
+        """Stored an immutable copy of the relationship matrix."""
+
         self._status = np.ascontiguousarray(
             np.asarray(status, dtype=np.float64).ravel()
         )
+        """Normalised the binary case statuses to contiguous binary64."""
+
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the liability-scale fixed-effect design."""
 
     def fit(self) -> dict[str, Any]:
         """Fit, by maximum likelihood because nothing else is available."""
@@ -1335,6 +1774,7 @@ class LiabilityModel:
             prevalence,
             largest_family,
         ) = _core.liability_fit(self._relationship, self._status, self._design)
+        """Fitted the binary trait on its fixed unit-variance liability scale."""
         return {
             "heritability": heritability,
             "scale": "liability, not observed status",
@@ -1352,21 +1792,35 @@ class LiabilityModel:
             "prevalence": prevalence,
             "largest_family": largest_family,
             "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
         }
 
     def interval(self) -> dict[str, Any]:
         """A 95 per cent profile interval for the liability heritability."""
-        estimate, lower, upper, at_lower, at_upper, failures = _core.liability_interval(
-            self._relationship, self._status, self._design
-        )
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level,
+            failures,
+            contains_lower_bound,
+            contains_upper_bound,
+        ) = _core.liability_interval(self._relationship, self._status, self._design)
+        """Profiled the liability heritability with explicit boundary verdicts."""
         return {
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": at_lower,
-            "upper_at_bound": at_upper,
-            "level": 0.95,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
+            "level": level,
             "profile_failures": failures,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
+            "estimator": "ml",
         }
 
     def test(self) -> dict[str, Any]:
@@ -1381,6 +1835,7 @@ class LiabilityModel:
         statistic, p_value, rule, null_loglik = _core.liability_test(
             self._relationship, self._status, self._design
         )
+        """Compared the fitted liability model with zero additive variance."""
         return {
             "statistic": statistic,
             "p_value": p_value,
@@ -1418,8 +1873,13 @@ class AssociationModel:
 
     def __init__(self, relationship: Any, design: Any, y: Any) -> None:
         self._relationship = _owned_matrix(relationship, "relationship")
+        """Stored an immutable copy of the polygenic relationship matrix."""
+
         self._design = _owned_matrix(design, "design")
+        """Stored an immutable copy of the marker-free fixed-effect design."""
+
         self._y = np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel())
+        """Stored the fixed response shared by every marker test."""
 
     def sweep(
         self,
@@ -1452,11 +1912,16 @@ class AssociationModel:
         if variance not in ("held", "refitted"):
             raise ValueError(f"variance must be held or refitted, not {variance!r}")
         markers = np.ascontiguousarray(np.asarray(markers, dtype=np.float64))
+        """Converted the marker matrix to the compiled scan's binary64 layout."""
+
         if markers.ndim == 1:
             markers = markers.reshape(-1, 1)
+            """Promoted a single marker vector to a one-column marker matrix."""
+
         heritability, null_loglik, rows, covariates = _core.association_sweep(
             self._relationship, self._design, self._y, markers, variance, refit_below
         )
+        """Fitted the null and tested every marker under the selected variance rule."""
         return {
             "null_heritability": heritability,
             "null_loglik": null_loglik,
@@ -1512,6 +1977,7 @@ def kinship_classes(
     matrices, order, names, pairs = _core.kinship_classes(
         ids, father, mother, sex, list(keep or [])
     )
+    """Built the residual relationship matrix and four parent-offspring classes."""
     return {
         "matrices": [np.ascontiguousarray(m) for m in matrices],
         "order": order,
@@ -1526,6 +1992,8 @@ def tobit_fit(
     censoring: Any,
     limit: Any,
     design: Any,
+    *,
+    subject_order_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Fit one trait whose measurement stops at a limit.
 
@@ -1544,7 +2012,14 @@ def tobit_fit(
     trait, and not with one fitted to values where the censored ones were
     replaced by the limit. It is maximum likelihood, never REML, so it must not
     be placed beside a REML heritability as though the two were the same.
+
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. The fit record
+    echoes it without retaining identifiers.
     """
+    subject_order_sha256 = _validated_subject_order_sha256(subject_order_sha256)
+    """Validated the row-order commitment before starting numerical fitting."""
+
     (
         heritability,
         total_variance,
@@ -1561,6 +2036,7 @@ def tobit_fit(
         np.ascontiguousarray(limit, dtype=float),
         np.ascontiguousarray(design, dtype=float),
     )
+    """Fitted the latent complete trait while retaining every censoring limit."""
     return {
         "heritability": heritability,
         "total_variance": total_variance,
@@ -1571,6 +2047,8 @@ def tobit_fit(
         "censored_share": censored_share,
         "largest_family": largest_family,
         "estimator": "ml",
+        "build": build_identity(),
+        "subject_order_sha256": subject_order_sha256,
     }
 
 
@@ -1579,6 +2057,8 @@ def mixed_bivariate_fit(
     first: dict[str, Any],
     second: dict[str, Any],
     design: Any,
+    *,
+    subject_order_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Fit two traits whose measurements need not be of the same kind.
 
@@ -1592,10 +2072,26 @@ def mixed_bivariate_fit(
     liability heritability, while a continuous or censored trait's is not; the
     two must not be read as the same quantity. The genetic correlation is
     unaffected, which is what makes a mixed pair worth fitting.
-    """
-    kinds = {"continuous": 0, "binary": 1, "censored": 2}
 
-    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+    ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
+    ``subject_order_commitment`` for the exact fitted row order. The fit record
+    echoes it without retaining identifiers.
+    """
+    subject_order_sha256 = _validated_subject_order_sha256(subject_order_sha256)
+    """Validated the row-order commitment before starting numerical fitting."""
+
+    kinds: dict[str, int] = {"continuous": 0, "binary": 1, "censored": 2}
+    """Mapped public trait-kind names to their compiled representation."""
+
+    def unpack(
+        each: dict[str, Any],
+    ) -> tuple[
+        int,
+        npt.NDArray[np.float64],
+        npt.NDArray[np.int64],
+        npt.NDArray[np.float64],
+    ]:
+        """Convert one public trait specification to compiled array inputs."""
         if each["kind"] not in kinds:
             raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
         return (
@@ -1606,7 +2102,11 @@ def mixed_bivariate_fit(
         )
 
     first_kind, first_value, first_censoring, first_limit = unpack(first)
+    """Converted the first trait specification to compiled inputs."""
+
     second_kind, second_value, second_censoring, second_limit = unpack(second)
+    """Converted the second trait specification to compiled inputs."""
+
     (
         heritability,
         total_variance,
@@ -1630,6 +2130,7 @@ def mixed_bivariate_fit(
         second_limit,
         np.ascontiguousarray(design, dtype=float),
     )
+    """Fitted both possibly unlike traits through one joint family likelihood."""
     return {
         "heritability": heritability,
         "total_variance": total_variance,
@@ -1642,6 +2143,8 @@ def mixed_bivariate_fit(
         "largest_family": largest_family,
         "kinds": [first["kind"], second["kind"]],
         "estimator": "ml",
+        "build": build_identity(),
+        "subject_order_sha256": subject_order_sha256,
     }
 
 
@@ -1654,7 +2157,7 @@ def tobit_interval(
 ) -> dict[str, Any]:
     """A 95 per cent profile-likelihood interval for the censored heritability.
 
-    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    ``lower_limited`` and ``upper_limited`` say whether an end sits on the
     parameter's own bound rather than where the profile fell away. An end on a
     bound means **the data did not rule that end out**, which is a different
     statement from the interval stopping there.
@@ -1673,8 +2176,8 @@ def tobit_interval(
         estimate,
         lower,
         upper,
-        lower_at_bound,
-        upper_at_bound,
+        lower_limited,
+        upper_limited,
         level,
         contains_lower_bound,
         contains_upper_bound,
@@ -1687,12 +2190,13 @@ def tobit_interval(
         np.ascontiguousarray(limit, dtype=float),
         np.ascontiguousarray(design, dtype=float),
     )
+    """Profiled the complete-trait heritability under the observed censoring."""
     return {
         "estimate": estimate,
         "lower": lower,
         "upper": upper,
-        "lower_at_bound": lower_at_bound,
-        "upper_at_bound": upper_at_bound,
+        "lower_limited": lower_limited,
+        "upper_limited": upper_limited,
         "level": level,
         # Whether the bound itself belongs to the interval, decided by the
         # Self-Liang mixture rather than by the end having landed on it. Absent
@@ -1728,6 +2232,7 @@ def tobit_test(
         np.ascontiguousarray(limit, dtype=float),
         np.ascontiguousarray(design, dtype=float),
     )
+    """Compared the censored trait model with zero additive variance."""
     return {
         "statistic": statistic,
         "p_value": p_value,
@@ -1755,12 +2260,26 @@ def mixed_bivariate_test(
     This is the question the model exists to answer: an estimate with an
     interval does not say whether the two traits share genes at all.
     """
-    coordinates = {"genetic_correlation": 4, "residual_correlation": 5}
+    coordinates: dict[str, int] = {
+        "genetic_correlation": 4,
+        "residual_correlation": 5,
+    }
+    """Mapped the two testable public correlations to compiled coordinates."""
+
     if coordinate not in coordinates:
         raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST")
-    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+    kinds: dict[str, int] = {"continuous": 0, "binary": 1, "censored": 2}
+    """Mapped public trait-kind names to their compiled representation."""
 
-    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+    def unpack(
+        each: dict[str, Any],
+    ) -> tuple[
+        int,
+        npt.NDArray[np.float64],
+        npt.NDArray[np.int64],
+        npt.NDArray[np.float64],
+    ]:
+        """Convert one public trait specification to compiled array inputs."""
         if each["kind"] not in kinds:
             raise ValueError("MIXED_BIVARIATE_TRAIT_KIND_UNKNOWN")
         return (
@@ -1771,7 +2290,10 @@ def mixed_bivariate_test(
         )
 
     first_kind, first_value, first_censoring, first_limit = unpack(first)
+    """Converted the first trait specification to compiled inputs."""
+
     second_kind, second_value, second_censoring, second_limit = unpack(second)
+    """Converted the second trait specification to compiled inputs."""
 
     what, statistic, p_value, rule, null_loglik, alternative_loglik = (
         _core.mixed_bivariate_test(
@@ -1788,6 +2310,7 @@ def mixed_bivariate_test(
             coordinates[coordinate],
         )
     )
+    """Compared the free correlation with its zero-correlation joint model."""
     return {
         "what": what,
         "statistic": statistic,
@@ -1815,23 +2338,34 @@ def mixed_bivariate_interval(
     one because a liability has no scale of its own, so an interval on it would
     describe that assumption rather than the data.
 
-    ``lower_at_bound`` and ``upper_at_bound`` say whether an end sits on the
+    ``lower_limited`` and ``upper_limited`` say whether an end sits on the
     coordinate's own bound — nought or one for a heritability, minus one or one
     for a correlation — rather than where the profile fell away. An end on a
     bound means the data did not rule that end out, which is a different
     statement from the interval stopping there.
     """
-    coordinates = {
+    coordinates: dict[str, int] = {
         "heritability_one": 0,
         "heritability_two": 1,
         "genetic_correlation": 4,
         "residual_correlation": 5,
     }
+    """Mapped every interval-bearing public quantity to its compiled coordinate."""
+
     if coordinate not in coordinates:
         raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL")
-    kinds = {"continuous": 0, "binary": 1, "censored": 2}
+    kinds: dict[str, int] = {"continuous": 0, "binary": 1, "censored": 2}
+    """Mapped public trait-kind names to their compiled representation."""
 
-    def unpack(each: dict[str, Any]) -> tuple[int, Any, Any, Any]:
+    def unpack(
+        each: dict[str, Any],
+    ) -> tuple[
+        int,
+        npt.NDArray[np.float64],
+        npt.NDArray[np.int64],
+        npt.NDArray[np.float64],
+    ]:
+        """Convert one public trait specification to compiled array inputs."""
         return (
             kinds[each["kind"]],
             np.ascontiguousarray(each["value"], dtype=float),
@@ -1840,26 +2374,47 @@ def mixed_bivariate_interval(
         )
 
     first_kind, first_value, first_censoring, first_limit = unpack(first)
+    """Converted the first trait specification to compiled inputs."""
+
     second_kind, second_value, second_censoring, second_limit = unpack(second)
+    """Converted the second trait specification to compiled inputs."""
+
     (
-        what, estimate, lower, upper,
-        lower_at_bound, upper_at_bound, level, profile_failures,
+        what,
+        estimate,
+        lower,
+        upper,
+        lower_limited,
+        upper_limited,
+        level,
+        profile_failures,
+        contains_lower_bound,
+        contains_upper_bound,
     ) = _core.mixed_bivariate_interval(
         np.ascontiguousarray(relationship, dtype=float),
-        first_kind, first_value, first_censoring, first_limit,
-        second_kind, second_value, second_censoring, second_limit,
+        first_kind,
+        first_value,
+        first_censoring,
+        first_limit,
+        second_kind,
+        second_value,
+        second_censoring,
+        second_limit,
         np.ascontiguousarray(design, dtype=float),
         coordinates[coordinate],
     )
+    """Profiled the requested joint-model heritability or correlation."""
     return {
         "what": what,
         "estimate": estimate,
         "lower": lower,
         "upper": upper,
-        "lower_at_bound": lower_at_bound,
-        "upper_at_bound": upper_at_bound,
+        "lower_limited": lower_limited,
+        "upper_limited": upper_limited,
         "level": level,
         "profile_failures": profile_failures,
+        "contains_lower_bound": contains_lower_bound,
+        "contains_upper_bound": contains_upper_bound,
         "estimator": "ml",
     }
 
@@ -1867,12 +2422,13 @@ def mixed_bivariate_interval(
 def region_log_probability(mean: Any, sign: Any, covariance: Any) -> float:
     """The conditional region log-probability the censored models rest on.
 
-    **Exposed so that it can be checked, not so that it can be used.** This is
-    the sequential truncation — exact to two coordinates, Mendell-Elston above
-    — and every censored heritability in the package rests on it. All the
-    evidence for those models was generated on pairs, where the approximate
-    branch never runs at all, so the only way to learn how it behaves in a
-    large family is to call it beside an independent reference.
+    **Exposed so that it can be checked, not so that it can be used.** This uses
+    the univariate normal calculation at one coordinate, fixed sixteen-point
+    quadrature at two, and Mendell-Elston sequential truncation above two. Every
+    censored heritability in the package rests on it. All the evidence for those
+    models was generated on pairs, where the sequential branch never runs at
+    all, so the only way to learn how it behaves in a large family is to call it
+    beside an independent reference.
     ``checks/sequential_against_ghk.py`` is that reference.
 
     ``mean`` is each coordinate's mean already centred on its own limit, and
@@ -2018,9 +2574,9 @@ class RepeatedModel:
                 np.asarray(each, dtype=float).reshape(size, size)
                 for each in component_covariances
             ],
-            "residual_covariance": np.asarray(
-                residual_covariance, dtype=float
-            ).reshape(size, size),
+            "residual_covariance": np.asarray(residual_covariance, dtype=float).reshape(
+                size, size
+            ),
             "fixed_effects": np.asarray(fixed_effects, dtype=float).reshape(-1, size),
             "variance_shares": np.asarray(variance_shares, dtype=float),
             "floors": np.asarray(floors, dtype=float),
@@ -2068,8 +2624,8 @@ class RepeatedModel:
         The ends of the range are what the kernel family can express, not nought
         and one: a correlation of exactly one leaves a component no variance of
         its own, and a correlation of exactly nought needs an infinite rate. An
-        end that sits there is reported with ``lower_at_bound`` or
-        ``upper_at_bound`` set, and whether it belongs to the interval is
+        end that sits there is reported with ``lower_limited`` or
+        ``upper_limited`` set, and whether it belongs to the interval is
         decided by the Self-Liang mixture, as it is everywhere else here.
 
         ``profile_failures`` counts the points along the way that could not be
@@ -2085,8 +2641,8 @@ class RepeatedModel:
             estimate,
             lower,
             upper,
-            lower_at_bound,
-            upper_at_bound,
+            lower_limited,
+            upper_limited,
             level,
             contains_lower_bound,
             contains_upper_bound,
@@ -2104,8 +2660,8 @@ class RepeatedModel:
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": lower_at_bound,
-            "upper_at_bound": upper_at_bound,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
             "level": level,
             "contains_lower_bound": contains_lower_bound,
             "contains_upper_bound": contains_upper_bound,
@@ -2157,8 +2713,8 @@ class RepeatedModel:
             estimate,
             lower,
             upper,
-            lower_at_bound,
-            upper_at_bound,
+            lower_limited,
+            upper_limited,
             level,
             contains_lower_bound,
             contains_upper_bound,
@@ -2176,8 +2732,8 @@ class RepeatedModel:
             "estimate": estimate,
             "lower": lower,
             "upper": upper,
-            "lower_at_bound": lower_at_bound,
-            "upper_at_bound": upper_at_bound,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
             "level": level,
             "contains_lower_bound": contains_lower_bound,
             "contains_upper_bound": contains_upper_bound,

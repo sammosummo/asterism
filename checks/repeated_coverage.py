@@ -159,9 +159,10 @@ def draw(floor: float, rate: float, censored: float, replicate: int):
     root = np.linalg.cholesky(matrix + 1e-9 * np.eye(people))
     shared = root @ rng.normal(size=(people, positions)) @ np.linalg.cholesky(genetic).T
     rows = people * REPLICATES
-    value = np.repeat(shared, REPLICATES, axis=0) + rng.normal(
-        size=(rows, positions)
-    ) @ np.linalg.cholesky(residual).T
+    value = (
+        np.repeat(shared, REPLICATES, axis=0)
+        + rng.normal(size=(rows, positions)) @ np.linalg.cholesky(residual).T
+    )
 
     censoring = np.zeros((rows, positions), dtype=np.int64)
     limit = np.zeros((rows, positions))
@@ -196,8 +197,8 @@ def one(job):
         "covered": covers(got, truth),
         "estimate": got["estimate"],
         "width": got["upper"] - got["lower"],
-        "lower_at_bound": got["lower_at_bound"],
-        "upper_at_bound": got["upper_at_bound"],
+        "lower_limited": got["lower_limited"],
+        "upper_limited": got["upper_limited"],
         # Which side a miss fell on. A truncated end cannot miss, so the two
         # counts together say whether over-covering has a mechanism.
         "missed_low": truth < got["lower"],
@@ -218,9 +219,9 @@ def covers(got: dict, truth: float) -> bool:
     """
     if truth < got["lower"] or truth > got["upper"]:
         return False
-    if got["lower_at_bound"] and truth <= got["lower"]:
+    if got["lower_limited"] and truth <= got["lower"]:
         return bool(got["contains_lower_bound"])
-    if got["upper_at_bound"] and truth >= got["upper"]:
+    if got["upper_limited"] and truth >= got["upper"]:
         return bool(got["contains_upper_bound"])
     return True
 
@@ -270,18 +271,18 @@ def main() -> int:
     for name, floor, rate in SHAPES:
         truth = float(kernel_at(floor, rate, SEPARATION))
         for censored in RATES:
-            cell = [
-                r for r in rows if r["shape"] == name and r["censored"] == censored
-            ]
+            cell = [r for r in rows if r["shape"] == name and r["censored"] == censored]
             refused = [r for r in cell if "refusal" in r]
             hits = sum(1 for r in cell if r.get("covered"))
             low, high = clopper_pearson(hits, len(cell))
-            width = np.mean([r["width"] for r in cell if "refusal" not in r]) if (
-                len(cell) > len(refused)
-            ) else float("nan")
+            width = (
+                np.mean([r["width"] for r in cell if "refusal" not in r])
+                if (len(cell) > len(refused))
+                else float("nan")
+            )
             fails = sum(r.get("profile_failures", 0) for r in cell)
             on_bound = sum(
-                bool(r.get("lower_at_bound")) or bool(r.get("upper_at_bound"))
+                bool(r.get("lower_limited")) or bool(r.get("upper_limited"))
                 for r in cell
             )
             missed_low = sum(bool(r.get("missed_low")) for r in cell)

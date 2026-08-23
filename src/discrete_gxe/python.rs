@@ -157,6 +157,7 @@ pub fn discrete_gxe_test(
 /// away.
 #[pyfunction]
 #[pyo3(signature = (relationship, environment, design, response, reml=true, levels=None))]
+#[allow(clippy::type_complexity)]
 pub fn discrete_gxe_correlation_interval(
     relationship: PyReadonlyArray2<'_, f64>,
     environment: PyReadonlyArray1<'_, f64>,
@@ -164,18 +165,33 @@ pub fn discrete_gxe_correlation_interval(
     response: PyReadonlyArray1<'_, f64>,
     reml: bool,
     levels: Option<[f64; 2]>,
-) -> PyResult<(f64, f64, f64, bool, bool, usize)> {
+) -> PyResult<(
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    usize,
+    Option<bool>,
+    Option<bool>,
+)> {
     let model = build_expecting(&relationship, &environment, &design, levels)?;
     let y = super::python::response(&response);
     let interval = model
         .correlation_interval(&y, reml)
         .map_err(PyValueError::new_err)?;
     Ok((
-        interval.estimate,
+        interval
+            .estimate
+            .ok_or_else(|| PyValueError::new_err("DISCRETE_GXE_PROFILE_NOT_EVALUABLE"))?,
         interval.lower,
         interval.upper,
         interval.lower_limited,
         interval.upper_limited,
+        interval.level,
         interval.profile_failures,
+        interval.contains_lower_bound,
+        interval.contains_upper_bound,
     ))
 }

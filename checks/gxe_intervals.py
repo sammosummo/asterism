@@ -36,24 +36,47 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from typing import Any
 
+import asterism
 import numpy as np
-from asterism import _core
 
-PAIRS = 250
-N = 2 * PAIRS
-REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "300"))
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
-LOW, HIGH = -1.0, 1.0
+PAIRS: int = 250
+"""Fixed the number of sibling pairs in every simulated data set."""
+
+N: int = 2 * PAIRS
+"""Computed the fixed simulated roster size."""
+
+REPLICATES: int = int(os.environ.get("ASTERISM_REPLICATES", "300"))
+"""Selected the requested replicates per surface from the environment."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "6"))
+"""Selected the worker-process count from the environment."""
+
+LOW: float = -1.0
+"""Fixed the lower environment at which reportable quantities are profiled."""
+
+HIGH: float = 1.0
+"""Fixed the upper environment at which reportable quantities are profiled."""
 
 # Each surface gets an alternative from its own family, with a real interaction
 # in it: the genetic variance changes and the correlation across the range is
 # well below one.
-TRUTH = {
+TRUTH: dict[
+    str,
+    dict[
+        str,
+        Callable[[np.ndarray, np.ndarray], np.ndarray]
+        | Callable[[np.ndarray], np.ndarray],
+    ],
+] = {
     "exponential": {
         # sqrt(g(zi) g(zj)) exp(-lambda |zi - zj|), g(z) = exp(-0.7 + 0.6 z).
-        "genetic": lambda a, b: np.exp(-0.7 + 0.3 * (a + b)) * np.exp(-0.4 * np.abs(a - b)),
+        "genetic": lambda a, b: (
+            np.exp(-0.7 + 0.3 * (a + b)) * np.exp(-0.4 * np.abs(a - b))
+        ),
         "residual": lambda z: np.exp(-0.7 + 0.2 * z),
     },
     "random_regression": {
@@ -62,38 +85,80 @@ TRUTH = {
         "residual": lambda z: 0.5 + 0.1 * z + 0.05 * z * z,
     },
 }
+"""Defined one participant-free generating surface in each model family."""
 
 
-def structure():
+def structure() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Sibling pairs, each person carrying an environment.
 
     The environment varies within a pair as well as between it, or a surface
     could not be told from a plain heritability.
+
+    Returns:
+        Relationship matrix, continuous environments and intercept design.
     """
-    relationship = np.eye(N)
+    relationship: np.ndarray = np.eye(N)
+    """Initialised the relationship matrix with individual diagonal entries."""
+
     for pair in range(PAIRS):
         relationship[2 * pair, 2 * pair + 1] = 0.5
+        """Set the forward within-pair relationship coefficient."""
+
         relationship[2 * pair + 1, 2 * pair] = 0.5
-    z = np.random.default_rng(20_260_813).uniform(-1.5, 1.5, N)
+        """Set the symmetric within-pair relationship coefficient."""
+
+    z: np.ndarray = np.random.default_rng(20_260_813).uniform(-1.5, 1.5, N)
+    """Drew fixed within- and between-family continuous environments."""
     return relationship, z, np.ones((N, 1))
 
 
 RELATIONSHIP, Z, DESIGN = structure()
+"""Built the deterministic design shared by every surface and replicate."""
 
 
-def truth_for(surface: str) -> dict:
-    """The three quantities this check covers, computed from the surface itself."""
-    setting = TRUTH[surface]
-    genetic = setting["genetic"]
-    residual = setting["residual"]
+def truth_for(surface: str) -> dict[tuple[str, float, float], float]:
+    """Compute the three covered quantities directly from one surface.
 
-    def heritability(z):
-        g = float(genetic(np.array(z), np.array(z)))
+    Args:
+        surface: Named generating surface family.
+
+    Returns:
+        Heritabilities at both environments and their genetic correlation.
+    """
+    setting: dict[
+        str,
+        Callable[[np.ndarray, np.ndarray], np.ndarray]
+        | Callable[[np.ndarray], np.ndarray],
+    ] = TRUTH[surface]
+    """Selected the generating genetic and residual surface functions."""
+
+    genetic: Any = setting["genetic"]
+    """Selected the two-environment genetic covariance function."""
+
+    residual: Any = setting["residual"]
+    """Selected the one-environment residual variance function."""
+
+    def heritability(z: float) -> float:
+        """Return the variance ratio at one environment.
+
+        Args:
+            z: Environment at which to evaluate the variance ratio.
+
+        Returns:
+            Genetic variance divided by total variance at that environment.
+        """
+        g: float = float(genetic(np.array(z), np.array(z)))
+        """Evaluated genetic variance on the surface diagonal."""
         return g / (g + float(residual(np.array(z))))
 
-    g_low = float(genetic(np.array(LOW), np.array(LOW)))
-    g_high = float(genetic(np.array(HIGH), np.array(HIGH)))
-    g_cross = float(genetic(np.array(LOW), np.array(HIGH)))
+    g_low: float = float(genetic(np.array(LOW), np.array(LOW)))
+    """Evaluated genetic variance at the lower environment."""
+
+    g_high: float = float(genetic(np.array(HIGH), np.array(HIGH)))
+    """Evaluated genetic variance at the upper environment."""
+
+    g_cross: float = float(genetic(np.array(LOW), np.array(HIGH)))
+    """Evaluated genetic covariance across the two environments."""
     return {
         ("heritability", LOW, 0.0): heritability(LOW),
         ("heritability", HIGH, 0.0): heritability(HIGH),
@@ -101,73 +166,152 @@ def truth_for(surface: str) -> dict:
     }
 
 
-FACTORS = {}
+FACTORS: dict[str, np.ndarray] = {}
+"""Initialised covariance factors for every generating surface family."""
+
 for name, setting in TRUTH.items():
-    covariance = RELATIONSHIP * setting["genetic"](Z[:, None], Z[None, :])
+    covariance: np.ndarray = RELATIONSHIP * setting["genetic"](Z[:, None], Z[None, :])
+    """Constructed the relationship-scaled genetic covariance for this surface."""
+
     covariance[np.diag_indices(N)] += setting["residual"](Z)
+    """Added environment-specific residual variance on the covariance diagonal."""
+
     FACTORS[name] = np.linalg.cholesky(covariance + 1e-9 * np.eye(N))
+    """Factorised this generating covariance for deterministic response draws."""
 
-TRUE_VALUES = {name: truth_for(name) for name in TRUTH}
+TRUE_VALUES: dict[str, dict[tuple[str, float, float], float]] = {
+    name: truth_for(name) for name in TRUTH
+}
+"""Computed exact reportable truths for every generating surface family."""
 
 
-def one(job):
+def one(job: tuple[str, int]) -> dict[str, Any]:
+    """Profile every reportable quantity for one simulated response.
+
+    Args:
+        job: Surface name and zero-based replicate number.
+
+    Returns:
+        Named interval records or documented refusals for each quantity.
+    """
     surface, index = job
-    y = FACTORS[surface] @ np.random.default_rng(660_000 + index).standard_normal(N)
-    out = {"surface": surface, "intervals": {}}
+    """Separated the generating surface from its replicate identity."""
+
+    y: np.ndarray = FACTORS[surface] @ np.random.default_rng(
+        660_000 + index
+    ).standard_normal(N)
+    """Drew one deterministic response from the selected surface covariance."""
+
+    out: dict[str, Any] = {"surface": surface, "intervals": {}}
+    """Initialised the public interval records for one simulated response."""
+    model: asterism.GxeModel = asterism.GxeModel(
+        RELATIONSHIP,
+        Z,
+        DESIGN,
+        surface=surface,
+    )
+    """Built the documented continuous GxE model for this surface."""
+
     for quantity, first, second in TRUE_VALUES[surface]:
         try:
-            interval = _core.gxe_interval(
-                RELATIONSHIP, Z, DESIGN, y, surface, quantity, first, second, True
+            interval: dict[str, Any] | None = model.interval(
+                y,
+                quantity,
+                first,
+                second,
+                reml=True,
             )
+            """Profiled the requested public GxE quantity into a named record."""
         except ValueError:
             interval = None
+            """Recorded that profiling this quantity produced no interval."""
+
         if interval is None:
             out["intervals"][f"{quantity}@{first}"] = None
+            """Recorded a documented interval refusal for this quantity."""
         else:
-            estimate, lower, upper, at_lower, at_upper, _ = interval
             out["intervals"][f"{quantity}@{first}"] = {
-                "estimate": estimate,
-                "lower": lower,
-                "upper": upper,
-                "at_bound": bool(at_lower or at_upper),
+                "estimate": interval["estimate"],
+                "lower": interval["lower"],
+                "upper": interval["upper"],
+                "at_bound": bool(
+                    interval["lower_limited"] or interval["upper_limited"]
+                ),
             }
+            """Recorded named profile fields without positional unpacking."""
     return out
 
 
 def main() -> int:
+    """Run every interval-coverage cell and print its evidence receipt."""
     print(
         f"Genotype-by-environment intervals, REML. {PAIRS} sibling pairs, n = {N}, "
         f"{REPLICATES} replicates.\nEach surface simulated from its own family, "
         f"environments {LOW} and {HIGH}.\n"
     )
-    jobs = [(surface, index) for surface in TRUTH for index in range(REPLICATES)]
-    started = time.perf_counter()
+    jobs: list[tuple[str, int]] = [
+        (surface, index) for surface in TRUTH for index in range(REPLICATES)
+    ]
+    """Enumerated every surface and replicate exactly once."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement immediately before worker launch."""
+
     with ProcessPoolExecutor(WORKERS) as pool:
-        results = list(pool.map(one, jobs, chunksize=2))
-    print(f"{len(jobs)} data sets in {(time.perf_counter() - started) / 60:.1f} minutes.\n")
+        results: list[dict[str, Any]] = list(pool.map(one, jobs, chunksize=2))
+        """Ran every deterministic interval replicate through the worker pool."""
+    print(
+        f"{len(jobs)} data sets in {(time.perf_counter() - started) / 60:.1f} minutes.\n"
+    )
 
     failures: list[str] = []
-    recorded: dict = {}
+    """Initialised the scientific pass-rule failure messages."""
+
+    recorded: dict[str, dict[str, dict[str, float | int]]] = {}
+    """Initialised the machine-readable summaries for every surface."""
+
     for surface in TRUTH:
-        got = [r for r in results if r["surface"] == surface]
+        got: list[dict[str, Any]] = [r for r in results if r["surface"] == surface]
+        """Selected every attempted replicate for the current surface."""
+
         print(f"{surface}")
         print(
             f"  {'quantity':<20}{'truth':>8}{'median':>9}{'coverage':>10}"
             f"{'binomial 95%':>20}{'of':>6}{'at a bound':>12}"
         )
         recorded[surface] = {}
+        """Initialised quantity-specific summaries for this surface."""
+
         for (quantity, first, _second), truth in TRUE_VALUES[surface].items():
-            key = f"{quantity}@{first}"
-            have = [r["intervals"][key] for r in got if r["intervals"][key] is not None]
+            key: str = f"{quantity}@{first}"
+            """Constructed the stable interval identity used in result records."""
+
+            have: list[dict[str, Any]] = [
+                r["intervals"][key] for r in got if r["intervals"][key] is not None
+            ]
+            """Selected interval records that completed for this quantity."""
+
             if not have:
                 failures.append(f"{surface}: no interval was computed for {key}")
                 continue
-            covered = sum(1 for i in have if i["lower"] <= truth <= i["upper"])
-            bounded = sum(1 for i in have if i["at_bound"])
-            hit = covered / len(have)
-            error = np.sqrt(0.95 * 0.05 / len(have))
+            covered: int = sum(1 for i in have if i["lower"] <= truth <= i["upper"])
+            """Counted intervals containing the exact generating quantity."""
+
+            bounded: int = sum(1 for i in have if i["at_bound"])
+            """Counted intervals limited by at least one parameter bound."""
+
+            hit: float = covered / len(have)
+            """Computed empirical coverage across completed intervals."""
+
+            error: float = float(np.sqrt(0.95 * 0.05 / len(have)))
+            """Computed the Monte Carlo standard error at nominal coverage."""
+
             low, high = 0.95 - 1.96 * error, 0.95 + 1.96 * error
-            median = float(np.median([i["estimate"] for i in have]))
+            """Constructed the two-sided binomial approximation band."""
+
+            median: float = float(np.median([i["estimate"] for i in have]))
+            """Computed the median point estimate as a recovery diagnostic."""
+
             recorded[surface][key] = {
                 "truth": truth,
                 "median_estimate": median,
@@ -175,7 +319,15 @@ def main() -> int:
                 "computed": len(have),
                 "at_a_bound": bounded / len(have),
             }
-            mark = "ok" if low <= hit <= high else ("conservative" if hit > high else "UNDER")
+            """Recorded truth, recovery, coverage and boundary frequency."""
+
+            mark: str = (
+                "ok"
+                if low <= hit <= high
+                else ("conservative" if hit > high else "UNDER")
+            )
+            """Classified coverage against its Monte Carlo sampling band."""
+
             print(
                 f"  {key:<20}{truth:>8.3f}{median:>9.3f}{hit:>10.3f}"
                 f"   [{low:.3f}, {high:.3f}] {mark:<13}{len(have):>4}{bounded / len(have):>11.1%}"
@@ -193,7 +345,9 @@ def main() -> int:
 
     print("Both surfaces' intervals cover on their own family. A heritability at one")
     print("environment is weakly identified when people are spread along a continuous")
-    print("environment, so an endpoint running to nought or one is the model saying so.")
+    print(
+        "environment, so an endpoint running to nought or one is the model saying so."
+    )
 
     print(
         json.dumps(

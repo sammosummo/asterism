@@ -347,8 +347,8 @@ pub struct ShareInterval {
     pub upper: f64,
     /// True where the end sits at the edge of what a covariance can express
     /// rather than where the profile fell away.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
+    pub lower_limited: bool,
+    pub upper_limited: bool,
     pub level: f64,
     /// Whether an end belongs to the interval, by the Self-Liang mixture.
     pub contains_lower_bound: Option<bool>,
@@ -370,8 +370,8 @@ pub struct CorrelationInterval {
     pub upper: f64,
     /// True where the end sits at the edge of what the kernel family can
     /// express rather than where the profile fell away.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
+    pub lower_limited: bool,
+    pub upper_limited: bool,
     pub level: f64,
     /// Whether an end belongs to the interval, by the Self-Liang mixture.
     /// `None` where the end is not at a bound and the question does not arise.
@@ -1286,7 +1286,7 @@ impl RepeatedModel {
 
         let at_low = deviance_at(CORRELATION_LOW);
         let at_high = deviance_at(CORRELATION_HIGH);
-        let (lower, lower_at_bound) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
+        let (lower, lower_limited) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
             (
                 crate::liability::bisect(CORRELATION_LOW, estimate, &outside),
                 false,
@@ -1294,7 +1294,7 @@ impl RepeatedModel {
         } else {
             (CORRELATION_LOW, true)
         };
-        let (upper, upper_at_bound) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
+        let (upper, upper_limited) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
             (
                 crate::liability::bisect(CORRELATION_HIGH, estimate, &outside),
                 false,
@@ -1308,13 +1308,13 @@ impl RepeatedModel {
             estimate,
             lower,
             upper,
-            lower_at_bound,
-            upper_at_bound,
+            lower_limited,
+            upper_limited,
             level: 0.95,
-            contains_lower_bound: lower_at_bound
+            contains_lower_bound: lower_limited
                 .then(|| at_low.map(|d| d <= MIXTURE_CRIT))
                 .flatten(),
-            contains_upper_bound: upper_at_bound
+            contains_upper_bound: upper_limited
                 .then(|| at_high.map(|d| d <= MIXTURE_CRIT))
                 .flatten(),
             profile_failures: failures.get(),
@@ -1394,7 +1394,7 @@ impl RepeatedModel {
 
         let at_low = deviance_at(SHARE_LOW);
         let at_high = deviance_at(SHARE_HIGH);
-        let (lower, lower_at_bound) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
+        let (lower, lower_limited) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
             (
                 crate::liability::bisect(SHARE_LOW, estimate, &outside),
                 false,
@@ -1402,7 +1402,7 @@ impl RepeatedModel {
         } else {
             (SHARE_LOW, true)
         };
-        let (upper, upper_at_bound) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
+        let (upper, upper_limited) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
             (
                 crate::liability::bisect(SHARE_HIGH, estimate, &outside),
                 false,
@@ -1416,13 +1416,13 @@ impl RepeatedModel {
             estimate,
             lower,
             upper,
-            lower_at_bound,
-            upper_at_bound,
+            lower_limited,
+            upper_limited,
             level: 0.95,
-            contains_lower_bound: lower_at_bound
+            contains_lower_bound: lower_limited
                 .then(|| at_low.map(|d| d <= MIXTURE_CRIT))
                 .flatten(),
-            contains_upper_bound: upper_at_bound
+            contains_upper_bound: upper_limited
                 .then(|| at_high.map(|d| d <= MIXTURE_CRIT))
                 .flatten(),
             profile_failures: failures.get(),
@@ -2458,8 +2458,7 @@ impl RepeatedModel {
             attempts.push((rested, state.residual.clone()));
         }
         for (sigmas, residual) in attempts {
-            let Some(imputed) =
-                self.expectation(prepared, &sigmas, &residual, &state.fixed, true)
+            let Some(imputed) = self.expectation(prepared, &sigmas, &residual, &state.fixed, true)
             else {
                 continue;
             };

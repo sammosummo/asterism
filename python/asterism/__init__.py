@@ -28,6 +28,7 @@ record goes afterwards is the caller's business.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -35,6 +36,13 @@ import numpy as np
 from ._core import PreparedModel, __version__
 from ._core import relationship as _relationship
 from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
+from .analysis import (
+    build_identity,
+    preflight_analysis,
+    release_manifest,
+    run_analysis,
+    subject_order_commitment,
+)
 from .latent_mediation import LatentMediationModel
 from .models import (
     AssociationModel,
@@ -44,6 +52,7 @@ from .models import (
     DiscreteGxeModel,
     GxeModel,
     LiabilityModel,
+    RepeatedModel,
     SpatialModel,
     VariantSetModel,
     kinship_classes,
@@ -51,13 +60,12 @@ from .models import (
     mixed_bivariate_interval,
     mixed_bivariate_test,
     region_log_probability,
-    RepeatedModel,
     tobit_fit,
     tobit_interval,
     tobit_test,
 )
 
-__all__ = [
+__all__: list[str] = [
     "AssociationModel",
     "AutoregressiveModel",
     "BivariateModel",
@@ -67,26 +75,37 @@ __all__ = [
     "LatentMediationModel",
     "LiabilityModel",
     "PreparedModel",
+    "RepeatedModel",
     "SpatialModel",
     "VariantSetModel",
     "__version__",
     "align",
+    "build_identity",
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
     "mixed_bivariate_test",
+    "preflight_analysis",
     "prepare",
     "region_log_probability",
-    "RepeatedModel",
     "relationship_matrix",
+    "release_manifest",
+    "run_analysis",
+    "subject_order_commitment",
     "tobit_fit",
     "tobit_interval",
     "tobit_test",
     "weighted_chi2_upper_tail",
 ]
+"""Declared every supported, unsupported and infrastructure-level public object."""
 
 
-def prepare(x: Any, k: Any) -> PreparedModel:
+def prepare(
+    x: Any,
+    k: Any,
+    *,
+    subject_order_sha256: str | None = None,
+) -> PreparedModel:
     """Validate and decompose a fixed-effect design and a relationship matrix.
 
     Parameters
@@ -100,6 +119,10 @@ def prepare(x: Any, k: Any) -> PreparedModel:
         is checked numerically, so a genomic relationship matrix is equally
         acceptable. Row alignment among ``x``, ``k``, and the response is
         positional and is the caller's responsibility.
+    subject_order_sha256
+        Lowercase SHA-256 from :func:`subject_order_commitment` for the exact
+        row order. The prepared model echoes it on every fit record without
+        retaining participant identifiers.
 
     Raises
     ------
@@ -108,13 +131,15 @@ def prepare(x: Any, k: Any) -> PreparedModel:
         symmetric, not positive semi-definite, shapes disagreeing, values not
         finite, the design rank-deficient, or no residual degrees of freedom.
     """
-    x = np.ascontiguousarray(x, dtype=np.float64)
-    k = np.ascontiguousarray(k, dtype=np.float64)
+    x: np.ndarray = np.ascontiguousarray(x, dtype=np.float64)
+    """Copied the design into the exact numeric layout consumed by Rust."""
+    k: np.ndarray = np.ascontiguousarray(k, dtype=np.float64)
+    """Copied the relationship matrix into the exact numeric layout consumed by Rust."""
     if x.ndim != 2:
         raise ValueError("PREPARE_X_NOT_TWO_DIMENSIONAL")
     if k.ndim != 2:
         raise ValueError("PREPARE_K_NOT_TWO_DIMENSIONAL")
-    return PreparedModel(x, k)
+    return PreparedModel(x, k, subject_order_sha256)
 
 
 def weighted_chi2_upper_tail(q: float, weights: Any) -> dict[str, Any]:
@@ -134,7 +159,10 @@ def weighted_chi2_upper_tail(q: float, weights: Any) -> dict[str, Any]:
     ``1/2 + integral`` and a small answer is a difference of two nearly equal
     numbers.
     """
-    values = [float(v) for v in np.asarray(weights, dtype=np.float64).ravel()]
+    values: list[float] = [
+        float(v) for v in np.asarray(weights, dtype=np.float64).ravel()
+    ]
+    """Flattened the caller's nonnegative mixture weights for the Rust routine."""
     return dict(_weighted_chi2_upper_tail(float(q), values))
 
 
@@ -176,7 +204,10 @@ def relationship_matrix(
         parent, a loop in the pedigree, or an identifier in ``keep`` that the
         pedigree does not contain.
     """
-    blank_to_none = lambda value: None if value in (None, "", "0") else str(value)
+    blank_to_none: Callable[[str | None], str | None] = lambda value: (
+        None if value in (None, "", "0") else str(value)
+    )
+    """Normalised the pedigree's conventional missing-parent spellings."""
     return _relationship(
         [str(value) for value in ids],
         [blank_to_none(value) for value in father],
@@ -251,10 +282,12 @@ def align(
         duplicate identifier on either side, somebody in ``keep`` that one side
         does not have, or a missing value where ``allow_missing`` is not set.
     """
-    matrix = np.asarray(relationship, dtype=np.float64)
+    matrix: np.ndarray = np.asarray(relationship, dtype=np.float64)
+    """Read the relationship matrix without changing its row order."""
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise ValueError("ALIGN_RELATIONSHIP_NOT_SQUARE")
-    row_names = [str(value) for value in relationship_ids]
+    row_names: list[str] = [str(value) for value in relationship_ids]
+    """Normalised the identifiers attached to relationship-matrix rows."""
     if len(row_names) != matrix.shape[0]:
         raise ValueError("ALIGN_RELATIONSHIP_IDS_WRONG_LENGTH")
     if len(set(row_names)) != len(row_names):
@@ -264,21 +297,32 @@ def align(
     if not np.array_equal(matrix, matrix.T):
         raise ValueError("ALIGN_RELATIONSHIP_NOT_SYMMETRIC")
 
-    value_names = [str(value) for value in ids]
+    value_names: list[str] = [str(value) for value in ids]
+    """Normalised identifiers attached to the caller's value rows."""
     if len(set(value_names)) != len(value_names):
         raise ValueError("ALIGN_VALUE_ID_DUPLICATED")
     for name, values in columns.items():
         if len(values) != len(value_names):
             raise ValueError(f"ALIGN_COLUMN_WRONG_LENGTH:{name}")
 
-    row_of = {name: i for i, name in enumerate(row_names)}
-    value_of = {name: i for i, name in enumerate(value_names)}
+    row_of: dict[str, int] = {name: i for i, name in enumerate(row_names)}
+    """Indexed each identifier's relationship-matrix row."""
+    value_of: dict[str, int] = {name: i for i, name in enumerate(value_names)}
+    """Indexed each identifier's caller-value row."""
+    wanted: list[str]
+    """Declared the roster that will be aligned in one of two order policies."""
+    dropped: list[str]
+    """Declared the matrix rows excluded by the selected order policy."""
     if keep is None:
         wanted = [name for name in row_names if name in value_of]
+        """Retained common identifiers in relationship-matrix order."""
         dropped = [name for name in row_names if name not in value_of]
+        """Recorded matrix rows absent from the value table."""
     else:
         wanted = [str(value) for value in keep]
+        """Retained the caller's explicit analysis order."""
         dropped = [name for name in row_names if name not in set(wanted)]
+        """Recorded matrix rows outside the explicit analysis roster."""
         if len(set(wanted)) != len(wanted):
             raise ValueError("ALIGN_KEEP_ID_DUPLICATED")
         for name in wanted:
@@ -289,24 +333,36 @@ def align(
     if not wanted:
         raise ValueError("ALIGN_NOBODY_IN_COMMON")
 
-    rows = [row_of[name] for name in wanted]
-    taken = [value_of[name] for name in wanted]
+    rows: list[int] = [row_of[name] for name in wanted]
+    """Selected relationship-matrix rows in the requested order."""
+    taken: list[int] = [value_of[name] for name in wanted]
+    """Selected value-table rows in the requested order."""
     aligned: dict[str, Any] = {
         "relationship": np.ascontiguousarray(matrix[np.ix_(rows, rows)]),
         "order": wanted,
         "dropped": dropped,
     }
-    observed = np.ones(len(wanted), dtype=bool)
+    """Created the values-free aligned relationship and roster record."""
+    observed: np.ndarray = np.ones(len(wanted), dtype=bool)
+    """Initialised the complete-case indicator before reading value columns."""
     for name, values in columns.items():
-        column = np.asarray(values, dtype=np.float64)[taken]
-        here = np.isfinite(column)
+        column: np.ndarray = np.asarray(values, dtype=np.float64)[taken]
+        """Aligned one numeric column to the requested roster."""
+        here: np.ndarray = np.isfinite(column)
+        """Identified rows where this aligned column is observed."""
         if not allow_missing and not here.all():
-            first = wanted[int(np.flatnonzero(~here)[0])]
+            first: str = wanted[int(np.flatnonzero(~here)[0])]
+            """Named the first missing value for the stable refusal detail."""
             raise ValueError(f"ALIGN_VALUE_MISSING:{name}:{first}")
         observed &= here
+        """Updated the complete-case indicator with this column's status."""
         aligned[name] = np.ascontiguousarray(column)
+        """Stored the aligned contiguous column under its caller-supplied name."""
     aligned["observed"] = observed
+    """Stored the final complete-case indicator beside the aligned arrays."""
     return aligned
+
+
 # There is no one-shot `fit(x, k, y)`: preparing once and fitting many
 # responses reuses the expensive decomposition and makes bootstrap fitting
 # affordable.

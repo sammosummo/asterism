@@ -1,0 +1,96 @@
+{
+  "acceptance": {
+    "asterism_points_inside_95_percent_hpd": [
+      "heritability",
+      "total_variance",
+      "intercept"
+    ],
+    "maximum_h2_posterior_interval_width": 0.4,
+    "minimum_effective_h2": 200.0
+  },
+  "adapter": {
+    "path": "checks/tobit_against_mcmcglmm.py",
+    "sha256": "e11aaaab19854d925eda2cdb0b93bd53398da2e69a9d34e70a2e150979c259a9"
+  },
+  "adapter_contract_version": 1,
+  "check_id": "tobit_against_mcmcglmm",
+  "external_outputs": {
+    "posterior": {
+      "effective_h2": 1603.5,
+      "h2_high": 0.624117706,
+      "h2_low": 0.346080337,
+      "h2_mean": 0.481558506,
+      "intercept_high": 10.147533698,
+      "intercept_low": 9.93259092,
+      "intercept_mean": 10.042783194,
+      "total_high": 4.163353012,
+      "total_low": 3.521510805,
+      "total_mean": 3.826639031
+    },
+    "sampling": {
+      "burnin": 20000,
+      "iterations": 120000,
+      "seed": 20260818,
+      "thin": 50
+    }
+  },
+  "input_identities": [
+    {
+      "name": "source:checks/external_reference_adapter.py",
+      "sha256": "ccce0425c083e314bcb539dce671b252f5b9e7b18ff38f492759d6d517aa29a6"
+    },
+    {
+      "name": "MCMCglmm simulation constants",
+      "sha256": "0748ae2b336e63b715dedae80704fe887d376fbbfb73f30c361010fa10c6097f"
+    },
+    {
+      "name": "MCMCglmm sampling configuration",
+      "sha256": "17c4ecbf70b1888765be18dc6de4952db1281361ee1c54d90e9b8dc9850092bb"
+    },
+    {
+      "name": "MCMCglmm complete response",
+      "sha256": "519231c3540fdd881bd952a1d7509e0cc282c8c20e6477b4465edbe2407d92c5"
+    },
+    {
+      "name": "MCMCglmm relationship matrix",
+      "sha256": "ffa14d182c8ea34ac39742be81a35a08d6667f1d1bdc331aff04cc1a58487be8"
+    },
+    {
+      "name": "MCMCglmm censoring mask",
+      "sha256": "d1559059efcc26c4cff857db158ebb5a92004b13ae940f0cacce308aead16028"
+    },
+    {
+      "name": "MCMCglmm status",
+      "sha256": "f2926e5b99347bb5e4477d7e11dcc34a88e75f452fa24bd48beb66b5ae28152a"
+    },
+    {
+      "name": "MCMCglmm limits",
+      "sha256": "89d92d8444819dd5e02f034c02b225425eb3f98c93c80280e15a9df7c844559f"
+    },
+    {
+      "name": "MCMCglmm fixed-effect design",
+      "sha256": "7147d5b0e1ea734b62aab704a415585c6a7d1760e0c5fdecad282a4933c03e26"
+    }
+  ],
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "Rscript",
+      "packages": [
+        {
+          "name": "MCMCglmm",
+          "version": "2.36"
+        },
+        {
+          "name": "Matrix",
+          "version": "1.7.4"
+        },
+        {
+          "name": "coda",
+          "version": "0.19.4.1"
+        }
+      ],
+      "version": "4.5.2"
+    }
+  ]
+}

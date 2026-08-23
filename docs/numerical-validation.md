@@ -23,7 +23,7 @@ can check today, and the difference is worth keeping visible.
 ## Gaussian one-trait model
 
 - Against R `regress` under REML at `n=350` with six fixed effects,
-  heritability agreed to about `5e-9` relative, total variance to `4e-9`, and
+  heritability agreed within `8e-9` relative, total variance to `4e-9`, and
   fixed effects to `1e-9`. The log-likelihood difference was exactly the
   `(n-p)/2 log(2 pi)` constant omitted by `regress`.
 - Against native SOLAR under ML on three synthetic pedigrees, heritability
@@ -34,6 +34,78 @@ can check today, and the difference is worth keeping visible.
   at `n=1400`. At `n=350`, ten were compatible; truths 0.05 and 0.07
   over-covered at 0.979 and 0.974. This is conservative near-boundary
   inference, not under-coverage.
+
+`checks/one_trait_coverage.py` is the participant-free, reproducible successor
+to that historical compiled campaign. It exercises only `asterism.prepare` and
+`PreparedModel.fit`, requires the replicate count, family count, worker count,
+truth grid, and `--no-write` policy explicitly on the command line, and emits
+one JSON document to standard output. Every requested replicate remains in the
+coverage denominator: a refused fit, a nonconverged free fit, or any failed
+constrained profile evaluation is a coverage miss. At true $h^2=0$ and $h^2=1$
+the check reads the fit record's `contains_lower_bound` and
+`contains_upper_bound` fields, respectively, rather than inferring containment
+from a numerical endpoint.
+
+For $k$ covered replicates out of $m$, the check reports the two-sided 95%
+Clopper--Pearson interval
+
+$$
+L = B^{-1}_{0.025}(k,m-k+1), \qquad
+U = B^{-1}_{0.975}(k+1,m-k),
+$$
+
+with $L=0$ when $k=0$ and $U=1$ when $k=m$. The acceptance rule was fixed
+before running the target design: a cell fails as anti-conservative only when
+$U<0.940$. A cell with $L>0.960$ passes but is labelled conservative; at the
+historically conservative truths 0.05 and 0.07 the more specific label is
+`historically_conservative`. Thus extra coverage is reported as lost precision,
+not misclassified as under-coverage.
+
+The reviewed target-design fixture is values-free aggregate structural
+metadata from a predecessor receipt. It fixes 1,909 rows in 202 nonzero
+relationship components, the exact component-size histogram, and a largest
+component of 180, and asserts that those facts sum back to 1,909 rows and 202
+components. It contains no identifiers, phenotypes, or participant-derived
+matrix. With the historical generator settings `seed=7`, `sib_mean=3.0`,
+`marry_in_p=0.35`, and `max_gen=5`, a standard founder-order kinship recursion
+produces a structure-matched synthetic pedigree with 27,691 nonzero
+lower-triangle relationship pairs. The predecessor aggregate count was 27,821,
+so the prewritten relative discrepancy is 0.4673%, inside the fixed 0.5% limit;
+this is not a reconstruction or a claim of coefficient- or eigenvalue-level
+identity. A separate `seed=1` stream generates the six columns intercept,
+standardised age, age squared, sex, and both age-by-sex products. The exact
+fixture bytes are selected by SHA-256
+`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
+
+On 21 August 2026, development-wheel smoke runs completed 1,200 replicates per
+truth on both the 1,400-person repeated-family design and the 1,909-person
+target envelope: 14,400 fits per design, 28,800 in total. All cells were
+compatible with the prewritten rule and both runs recorded zero refusals, zero
+nonconverged free fits, and zero profile-failed replicates:
+
+| true $h^2$ | standard coverage | standard 95% CP | target coverage | target 95% CP |
+| ---: | ---: | :--- | ---: | :--- |
+| 0.00 | 0.9442 | [0.9296, 0.9565] | 0.9442 | [0.9296, 0.9565] |
+| 0.05 | 0.9525 | [0.9389, 0.9638] | 0.9567 | [0.9436, 0.9675] |
+| 0.07 | 0.9508 | [0.9370, 0.9624] | 0.9500 | [0.9361, 0.9616] |
+| 0.10 | 0.9525 | [0.9389, 0.9638] | 0.9558 | [0.9426, 0.9667] |
+| 0.20 | 0.9500 | [0.9361, 0.9616] | 0.9542 | [0.9408, 0.9653] |
+| 0.30 | 0.9525 | [0.9389, 0.9638] | 0.9458 | [0.9315, 0.9580] |
+| 0.40 | 0.9542 | [0.9408, 0.9653] | 0.9492 | [0.9352, 0.9609] |
+| 0.50 | 0.9483 | [0.9343, 0.9602] | 0.9450 | [0.9306, 0.9572] |
+| 0.60 | 0.9392 | [0.9241, 0.9520] | 0.9542 | [0.9408, 0.9653] |
+| 0.70 | 0.9417 | [0.9269, 0.9543] | 0.9417 | [0.9269, 0.9543] |
+| 0.80 | 0.9375 | [0.9223, 0.9505] | 0.9425 | [0.9278, 0.9550] |
+| 1.00 | 0.9458 | [0.9315, 0.9580] | 0.9583 | [0.9454, 0.9689] |
+
+A 300-replicate prefix had first placed the standard-design $h^2=0.70$ cell at
+0.9100 with interval [0.8718, 0.93985], just below the lower safety edge. The
+same deterministic stream at 1,200 replicates gave 0.9417 [0.9269, 0.9543].
+That observed sampling fluctuation is why these development runs qualify the
+portable command but are not release evidence. `release.toml` reserves 8,000
+replicates per truth, or 96,000 fits per design; neither exact 8,000-replicate
+public-Python command has yet run against a fixed release artifact. The earlier
+8,000-replicate result above came from the predecessor compiled campaign.
 
 ## Two traits
 
@@ -241,6 +313,34 @@ about whether a given dataset can pin a range down, and the calibration above â€
 The parametric bootstrap has no counterpart in `spaMM` and remains simulation
 against this package's own generator.
 
+The target-layout gate in `checks/spatial_target_layout.py` retains no observed
+location. Its reviewed fixture contains only aggregate counts and distance
+quantiles for the largest tracked spatial analysis: 1,792 analysed rows after
+91 trait-or-covariate exclusions from 1,883 people with usable geocodes, 190
+relationship components with largest component 165, and 1,140 shared-location
+groups producing 1,014 zero-distance pairs. A new planar layout generated from
+those aggregates matches all eight frozen nonzero distance quantiles from the
+first percentile through the maximum to a worst relative difference of 7.63%.
+The points are synthetic coordinates in kilometres, not displaced geocodes;
+neither they nor their distance matrix are stored in the fixture or evidence.
+
+A target-sized one-replicate smoke on the development build completed in 315 s.
+The free REML fit converged with a scaled projected gradient of `2.30e-8`, and
+the bootstrap used its one requested null refit with no refusal. Its add-one
+p-value was necessarily 0.5, so this is operability evidence, not detection
+evidence. The release command fixes 199 replicates, a 0.005 resolution, and a
+five-per-cent target-presence decision; that exact multi-hour command has not
+run against a fixed release wheel and is not claimed here.
+
+That smoke also exposed why bootstrap completion must be literal. A bounded
+spatial fit can leave a variance at `3.6e-17`: numerically nought, but formerly
+treated as interior when projecting its gradient. Using the shared
+unit-variance boundary tolerance makes that legitimate null-boundary optimum
+converge. The deterministic Rust seed now completes all 12 requested refits.
+Separately, the bootstrap rejects any `used != requested`; a failed refit is an
+unknown comparison, not a non-exceedance and not a row to drop from the
+denominator.
+
 ## Gene by environment, continuous and discrete
 
 Across 2,000 simulations per scenario, the exponential gene-by-environment
@@ -256,13 +356,109 @@ studied settings, but 80% to 92% of genetic-correlation intervals and up to 64%
 of some heritability intervals reached a bound. Point estimates were also
 pulled toward correlation one near the boundary.
 
-The discrete model was simulated 500 times per scenario on the real, unbalanced
-GOBS pedigree, with sex as the environment and only the response simulated. At
-500 replicates the binomial standard error on a nominal 0.05 rate is about
-0.010, so a rate is compatible with its level within roughly plus or minus
-0.019.
+The participant-free target-design gate is a pedigree-scale and design-identity
+stress test, not a reconstruction of GOBS ages, relationship coefficients,
+trait-specific missingness or outcomes. Its reviewed aggregate envelope has
+1,909 rows in 202 pedigree components, with largest component 180. The
+structure-matched synthetic pedigree has 27,691 nonzero lower-triangle
+relationships, 0.47% fewer than the predecessor aggregate receipt's 27,821;
+that discrepancy was recorded before fitting and was not tuned away. A
+deterministic synthetic standardised-age coordinate stays in the already
+qualified interval [-1.5, 1.5], varies within every non-singleton component,
+and combines with synthetic sex in the full-rank six-column design
+`1, z, z^2, s, zs, z^2s`. Quantities are judged only at z = -1, 0 and 1.
 
-Under the complete null, rejection at nominal 0.05 was 0.042 for the principal
+For either supported surface, the independent reference assembles each pedigree
+block from
+
+\[
+V_{ij}=A_{ij}G(z_i,z_j)+\mathbf{1}_{i=j}R(z_i),
+\]
+
+then sums blockwise Gaussian sufficient statistics and profiles the six fixed
+effects globally. For the exponential surface,
+\(G(z_i,z_j)=\exp\{[\alpha_g+\gamma_g z_i]/2\}
+\exp\{[\alpha_g+\gamma_g z_j]/2\}
+\exp\{-\lambda_g|z_i-z_j|\}\) and
+\(R(z)=\exp(\alpha_e+\gamma_e z)\). The random-regression reference instead
+uses \(G(z_i,z_j)=[1,z_i]\Sigma_g[1,z_j]^\mathsf{T}\) and
+\(R(z)=[1,z]\Sigma_e[1,z]^\mathsf{T}\), with both coefficient-covariance
+matrices formed from independent Cholesky coordinates. Thus the target-sized
+reference does not call Asterism's covariance assembly or optimiser.
+
+On the reduced qualification run of 100 null replicates per surface on 21
+August 2026, both target-sized REML comparisons converged. The worst common
+quantity and log-likelihood differences were respectively **5.49e-07** and
+**2.68e-11** for the exponential surface, and **3.50e-07** and **3.64e-12**
+for random regression, against prewritten tolerances of 0.001 and 0.0001. The
+separate n = 80 dense-likelihood sentinel also passed both surfaces.
+
+The same run scored every one of its 200 surface-replicates under the flat
+\(V=0.5A+0.5I\) null, with no refused, nonconverged, incomplete or wrong-rule
+fits. At nominal 0.05, correlation and interaction rejection counts were 1 and
+5 of 100 for the exponential surface, and 1 and 4 of 100 for random regression.
+For \(r\) rejections among \(m\) attempted replicates, the refusal rule is
+
+\[
+L=\operatorname{Beta}^{-1}(0.05;r,m-r+1)>0.05,
+\]
+
+with \(L=0\) when \(r=0\): a cell fails only when its one-sided 95% exact
+binomial lower bound establishes anti-conservative rejection. Conservative
+cells remain visible rather than being misclassified as undercoverage, and any
+failed or unscored replicate fails the gate separately. The exact release rule
+is pinned at 500 replicates per surface but has not yet been executed; the
+evidence above is the completed 100-per-surface reduced qualification.
+
+The historical discrete-model campaign simulated 500 responses per scenario on
+the participant-backed, unbalanced GOBS pedigree, with sex as the environment.
+Those results remain informative but are not portable release evidence. The
+replacement gate uses a reviewed, values-free structural fixture with 1,910
+synthetic rows in 203 components, largest component 180, group counts 758 and
+1,152, and a full-rank four-column synthetic age/group design. The deterministic
+pedigree has 27,691 nonzero lower-triangle relationships, 0.4673% fewer than the
+retained aggregate of 27,821; its group assignment exactly matches the retained
+13,322 cross-group related pairs and 77 mixed-group components. It reconstructs
+neither participants nor participant rows, ages, phenotypes, relationship
+coefficients, matrices, or family-specific group composition. The exact fixture
+SHA-256 is
+`2cceae6f2c5ea3f0c3de5946daeaa55cf2f35edd6d365fd1f45499f463d4c1c6`.
+
+`checks/discrete_gxe_against_independent_full_fit.py` supplies a separate
+participant-free full-ML sentinel at 120 people in 30 four-sibling families.
+It parameterises the genetic covariance by its own Cholesky factor, residual
+variances on log scales, optimises with derivative-free SciPy Powell, and
+profiles fixed effects from a self-contained dense likelihood,
+
+\[
+-2\ell=n\log(2\pi)+\log|V|+
+(y-X\widehat\beta)^\mathsf{T}V^{-1}(y-X\widehat\beta),\qquad
+\widehat\beta=(X^\mathsf{T}V^{-1}X)^{-1}X^\mathsf{T}V^{-1}y.
+\]
+
+It therefore shares neither likelihood code, parameterisation nor optimiser
+with Asterism. Both fits converged on 21 August 2026. The worst public-quantity
+difference was **7.69e-04** for genetic correlation and the log-likelihood
+difference was **4.92e-05**, inside prewritten tolerances 0.002 and 0.0002.
+
+The portable calibration scores every fit as complete, refused, nonconverged,
+or test-refused, and retains all attempts in the denominator. For \(r\)
+rejections in \(m\) attempts at level \(\alpha\), a level cell fails only when
+
+\[
+\operatorname{Beta}^{-1}(0.05;r,m-r+1)>\alpha,
+\]
+
+with zero allowed unsuccessful attempts; alternative-scenario power is
+descriptive rather than post-hoc gated. A one-replicate-per-scenario public-API
+smoke on the full values-free target envelope completed all four attempts in
+14.04 seconds, with zero refusals, nonconvergence, or test refusals. This is a
+route check, not Monte Carlo calibration. The pinned 500-by-four campaign has
+not run in this development environment: its 12-worker launch was refused by
+the sandbox before worker creation, so **0 of 2,000 scientific attempts** ran.
+
+In the historical participant-backed campaign, under the complete null,
+rejection at nominal 0.05 was 0.042 for the principal
 `gene_by_environment` test, 0.044 for equal genetic effects, 0.048 for equal
 genetic variances, 0.036 for equal residual variances, and 0.040 for
 `any_difference`. The fitted correlation sat on its upper bound in 52.8% of
@@ -283,8 +479,8 @@ rejected 0.998 and the correlation test stayed at level (0.042).
 
 ## Gene by discrete environment: the correlation interval
 
-400 replicates at 600 people in sibships of four, 95 per cent profile
-intervals for the genetic correlation:
+The prior campaign used 400 replicates at 600 people in sibships of four. Its
+95 per cent profile intervals for the genetic correlation were:
 
 | true correlation | coverage | reached a bound | median width |
 | --- | --- | --- | --- |
@@ -297,13 +493,114 @@ correlation of 0.9, 94 per cent of intervals reach one: they cover, but they do
 not pin the value down, and an interval that reaches its bound is reported as
 having done so for that reason.
 
+`checks/discrete_gxe_correlation_interval.py` now makes that documented design
+participant-free and executable solely through
+`DiscreteGxeModel.fit` and `.correlation_interval`. Every replicate is scored
+as complete, refused, nonconverged, interval-refused, or profile-failed. With
+\(c\) covering intervals among \(m\) complete attempts, the prewritten
+undercoverage rule fails when the one-sided exact upper limit
+
+\[
+\operatorname{Beta}^{-1}(0.95;c+1,m-c)<0.94;
+\]
+
+any incomplete denominator fails separately, while a one-sided lower limit
+above 0.96 labels conservatism without calling it undercoverage. The n = 600
+one-replicate-per-truth smoke completed all three attempts in 3.99 seconds,
+with zero refusals, nonconvergence, interval refusals, or profile failures; all
+three generating correlations were covered. This does not estimate coverage.
+The pinned 400-by-three development campaign likewise reached the sandbox
+process boundary before worker creation, so **0 of 1,200 scientific attempts**
+ran. Both full campaign commands remain fixed in `release.toml`; the global and
+analysis-level measured/configured flags remain false until genuine full and
+fixed-wheel evidence exists.
+
 ## Binary liability
 
 Against native SOLAR, liability heritability differed by at most 0.0134, or
-0.086 SOLAR standard errors, across three synthetic cases. On 700 simulations
-using the real GOBS pedigree structure, the zero-heritability test rejected
-0.0529 at nominal 0.05 and 95% interval coverage was 0.9443 at true
-heritability 0.25.
+0.086 SOLAR standard errors, across three synthetic cases. The historical
+700-replicate campaign used the real GOBS pedigree structure: the
+zero-heritability test rejected 0.0529 at nominal 0.05 and 95% interval
+coverage was 0.9443 at true heritability 0.25. Those figures remain a recorded
+result, not reproducible release evidence, because the portable gate no longer
+reads participant material.
+
+`checks/liability_calibration.py` replaces that dependency with a reviewed,
+values-free target fixture. The fixture pins 1,909 rows in 202 relationship
+components, the exact component-size histogram, largest component 180, and the
+predecessor aggregate of 27,821 nonzero lower-triangle relationship pairs. The
+same deterministic synthetic generator used by the Gaussian target gate
+produces 27,691 such pairs, a prewritten discrepancy of 0.4673% inside the 0.5%
+limit. This is aggregate structure matching, not pedigree reconstruction: the
+fixture retains no identifiers, participant rows, phenotypes, covariates, or
+participant-derived relationship matrix, and claims neither coefficient nor
+eigenvalue identity. The liability-specific fixture SHA-256 is
+`863eedc4f18063bca27754e782b9ebb5faa341359912b034163a7ea2067c20aa`; it in
+turn binds the shared structural fixture SHA-256
+`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
+
+For component $f$, the command generates
+
+$$
+\begin{aligned}
+\mathbf z_f &= \mathbf C_f\boldsymbol\varepsilon_f,
+&\boldsymbol\varepsilon_f&\sim N(\mathbf 0,\mathbf I),\\
+\mathbf C_f\mathbf C_f^{\mathsf T}
+  &=h^2\mathbf A_f+(1-h^2)\mathbf I,
+&Y_i&=\mathbb 1\!\left\{z_i>\Phi^{-1}(1-K)\right\},
+\end{aligned}
+$$
+
+with prevalence $K=0.254$, null truth $h^2=0$, and coverage truth
+$h^2=0.25$. It factors each independent synthetic pedigree block separately,
+then exercises only `asterism.LiabilityModel.fit`, `.test`, and `.interval`.
+The largest family therefore reaches the same above-two-person sequential
+Mendell--Elston path whose approximation needs stress; [Mendell and Elston
+(1974)](references.bib#mendellElston1974) is the method lineage. The test must
+report `mixture_50_50`; this boundary reference is an implemented assumption to
+be calibrated, not a conclusion inherited automatically from [Self and Liang
+(1987)](references.bib#selfLiang1987).
+
+Every attempted replicate remains in its scenario denominator. Too few cases
+or noncases, a public refusal, nonconvergence, a missing or malformed test or
+interval, and any failed constrained profile evaluation are failures; the
+release allowance is zero. Let $m_0$ be all attempted null replicates and
+$r_\alpha$ the complete public p-values no greater than level $\alpha$. At
+one-sided confidence $\gamma=0.95$, the exact [Clopper--Pearson
+(1934)](https://doi.org/10.1093/biomet/26.4.404) lower limit is
+
+$$
+L_\alpha=
+\begin{cases}
+0, & r_\alpha=0,\\
+B^{-1}_{1-\gamma}(r_\alpha,m_0-r_\alpha+1), & r_\alpha>0.
+\end{cases}
+$$
+
+The level cell fails only when $L_\alpha>\alpha$. Let $c$ be complete,
+failure-free intervals covering $h^2=0.25$ among all $m_1$ attempted
+alternative replicates. The corresponding exact upper limit is
+
+$$
+U=
+\begin{cases}
+1, & c=m_1,\\
+B^{-1}_{\gamma}(c+1,m_1-c), & c<m_1,
+\end{cases}
+$$
+
+and coverage fails when $U<0.95$. Numerical and profile failures fail the gate
+separately even when these exact-binomial bounds remain compatible, so neither
+calculation can hide a missing result by changing its denominator.
+
+On 21 August 2026, a bounded development-wheel smoke ran one replicate per
+scenario on the complete 1,909-person target. Both attempts returned complete
+public records with zero failures. The alternative interval covered 0.25 and
+its estimate was 0.1906. This two-attempt run verifies the loader, generator,
+largest-family approximation path, public interface, and executable decision;
+it does not estimate level or coverage. The release command fixes 200
+replicates per scenario, but that full 400-attempt campaign has not yet run and
+the manifest's scientific configured and measured flags remain false.
 
 The two-person quadrature error was at most `1.3e-9` for liability correlation
 below 0.5 and `2.3e-4` below 0.99. This motivates refusing nearly perfectly
@@ -513,6 +810,35 @@ model reproduced it. The mixture is now on the record as
 `contains_lower_bound` and `contains_upper_bound`, the check reads it, and the
 boundary allowance that hid the fault is gone. `evidence/tobit-coverage-2026-08-18.json`
 predates the mixture and describes a recipe the code no longer implements.
+
+`checks/tobit_target_design.py` adds the missing pedigree-scale route without
+retaining participant records. It uses the reviewed values-free structural
+fixture to generate 1,909 synthetic rows in 202 relationship components, with a
+largest component of 180 and the same six-column participant-free fixed design.
+At the nearest attainable fractions to 52% and 75% right censoring (993/1,909 =
+0.52017 and 1,432/1,909 = 0.75013), it runs the public `asterism.tobit_fit`,
+`asterism.tobit_interval`, and `asterism.tobit_test` functions under a boundary
+truth of $h^2=0$ and an interior truth of $h^2=0.5$. The fixed release campaign
+requests 200 replicates in each of those four cells. Every requested replicate
+stays in its cell's denominator; unsuccessful outcomes are assigned exactly one
+of `invalid_censoring_count`, `refused`, `nonconverged`, `test_failed`,
+`interval_failed`, or `profile_failed`, and none is allowed. The null rule fails
+when the one-sided 95% Clopper--Pearson lower limit for the rejection rate is
+above 0.05. The interval rule fails when the corresponding upper limit for
+coverage is below 0.95.
+
+A bounded development smoke on 21 August 2026 ran one replicate per scenario at
+each censoring level: four attempted in 62.87 seconds, three complete, and one
+`nonconverged`. At 52% censoring, the null estimate was 0.0142 with $p=0.3403$
+and interval $[0,0.0949]$; the interior estimate was 0.4973 with interval
+$[0.3943,0.5989]$. At 75%, the interior estimate was 0.4762 with interval
+$[0.3390,0.6163]$, while the null fit returned a finite boundary candidate
+($h^2=0$, total variance 3.9412) with `converged=false`; the check therefore
+recorded `nonconverged` and did not compute an interval or test for that attempt.
+The command exited 1. This is route and failure-accounting evidence only, not a
+coverage or type-I-error calibration. The 800-attempt release campaign has not
+run; the Tobit design range remains unmeasured and `pass_rules_configured`
+remains false.
 
 ## Mixed bivariate model
 
@@ -760,6 +1086,34 @@ Reporting a conservative cell is not tolerating it. The check prints which of th
 two tails is wide and how many ends sat on a bound, so the question ADR 0004 had
 to ask -- over-coverage was how a missing boundary mixture announced itself --
 gets asked again every time it is run.
+`checks/mixed_binary_censored_target_design.py` defines the missing
+pedigree-scale check without retaining participant rows. Its values-free
+fixture has SHA-256
+`aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645`
+and selects the structural generator pinned by source-fixture SHA-256
+`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
+It matches the reviewed aggregate structure of 1,909 rows, 202 independent
+relationship components and a largest component of 180. The reviewed
+predecessor aggregate has 27,821 nonzero relationship pairs and the synthetic
+structure has 27,691. This is a structure match, not a pedigree,
+relationship-matrix or participant-row reconstruction claim.
+
+The generating grid fixes population prevalence at 0.254, latent-trait
+heritabilities at $(0.5,0.5)$, genetic correlation at either 0 or 0.4,
+residual correlation at 0.15, complete-hearing variance at 3, and intended
+right-censoring share at either 0.52 or 0.75. Each attempted replicate calls
+the public `asterism.mixed_bivariate_fit`,
+`asterism.mixed_bivariate_interval`, and `asterism.mixed_bivariate_test`
+routes. The fixed command in `release.toml` requests 300 replicates in each of
+the four correlation-by-censoring cells, 1,200 attempts in total; its exact
+invocation is retained in the check inventory below.
+
+Neither a bounded smoke nor that exact campaign has completed. A local
+one-replicate-per-cell smoke started on 21 August 2026 and was later interrupted
+during public interval fitting (`KeyboardInterrupt`, exit 130) before producing
+a completed record. It is not evidence. The target design therefore has no
+coverage, type-I-error, recovery or qualifying runtime result and establishes
+no measured design range or analysis-readiness claim.
 
 ## Scale and cost
 
@@ -789,7 +1143,21 @@ uv run --no-project python checks/against_latent_mediation.py
 uv run --no-project python checks/against_mixture_tail.py
 uv run --no-project python checks/bivariate_reference.py
 uv run --no-project python checks/bivariate_intervals_against_reference.py
+uv run --no-project python checks/component_interval_identity.py
+uv run --no-project python checks/gxe_against_independent_full_fit.py
+uv run --no-project python checks/discrete_gxe_against_independent_full_fit.py
+uv run python checks/gxe_target_design.py \
+  --replicates 500 \
+  --workers 12 \
+  --design-fixture checks/design_fixtures/continuous_gxe_target_design.json \
+  --fixture-sha256 f5facfdf09b9690de3db4f35961e8f9e805bc1374eccf8b1a52bbec51c99283f \
+  --dense-sentinel checks/gxe_against_independent_full_fit.py \
+  --no-write
 ```
+
+The continuous-GxE full-fit comparison uses the independent dense likelihood
+and SciPy optimizer in `checks/gaussian_full_fit_reference.py`; that helper is
+not itself a scientific pass command.
 
 Comparisons against another package. These need native SOLAR, or R with
 `regress`, `spaMM`, `geoR` or `SKAT` 2.2.5, and fail rather than skip when it
@@ -873,23 +1241,64 @@ outside software, only the Dryad deposit, and takes about an hour:
 Simulation. These take minutes to hours, and several read the GOBS pedigree:
 
 ```sh
-cargo run --release --bin coverage
+uv run --no-project python checks/one_trait_coverage.py \
+  --replicates 8000 --families 100 --workers 12 \
+  --truths 0 0.05 0.07 0.10 0.20 0.30 0.40 0.50 0.60 0.70 0.80 1 --no-write
 uv run --no-project python checks/bivariate_calibration.py
 uv run --no-project python checks/components_calibration.py
 uv run --no-project python checks/kinship_classes_calibration.py
 uv run --no-project python checks/kinship_equality_calibration.py
 uv run --no-project python checks/spatial_bootstrap.py
+uv run --no-project python checks/spatial_target_layout.py \
+  --fixture checks/design_fixtures/spatial_component_presence_target_layout.json \
+  --fixture-sha256 7d0d7bb2afde1a5f7566e2fa04e47292d148d978d832b2c85fb6c4b76fe93d6b \
+  --bootstrap-replicates 199 --bootstrap-seed 20260812 --no-write
 uv run --no-project python checks/spatial_intervals.py
 uv run --no-project python checks/gxe_calibration.py
 uv run --no-project python checks/gxe_intervals.py
-uv run --no-project python checks/discrete_gxe_calibration.py
+uv run --no-project python checks/discrete_gxe_calibration.py \
+  --replicates 500 --workers 12 \
+  --fixture checks/design_fixtures/discrete_gxe_target_design.json \
+  --fixture-sha256 2cceae6f2c5ea3f0c3de5946daeaa55cf2f35edd6d365fd1f45499f463d4c1c6 \
+  --levels 0.01 0.05 0.1 \
+  --scenarios null different_genes different_scale noisier \
+  --tests gene_by_environment any_difference correlation genetic residual \
+  --no-write
+uv run --no-project python checks/discrete_gxe_correlation_interval.py \
+  --replicates 400 --people 600 --families 150 --sibs-per-family 4 \
+  --workers 12 --truths 0.3 0.6 0.9 --no-write
 uv run --no-project python checks/liability_calibration.py
 uv run --no-project python checks/association_tail.py
 uv run --no-project python checks/tobit_calibration.py
 uv run --no-project python checks/tobit_coverage.py
+uv run python checks/tobit_target_design.py \
+  --replicates 200 --workers 6 \
+  --censoring-shares 0.52 0.75 \
+  --true-heritability 0.5 --true-variance 4.0 \
+  --level 0.05 --nominal-coverage 0.95 --monte-carlo-confidence 0.95 \
+  --base-seed 920000 --scenario-seed-offset 1000003 --rate-seed-offset 10007 \
+  --maximum-failed-replicates 0 \
+  --design-fixture checks/design_fixtures/one_trait_gaussian_heritability.json \
+  --fixture-sha256 93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e \
+  --no-write
 uv run --no-project python checks/mixed_bivariate_calibration.py
 uv run --no-project python checks/mixed_bivariate_coverage.py
 uv run --no-project python checks/repeated_coverage.py
+uv run --no-project python checks/mixed_binary_censored_exact_combination.py
+uv run python checks/mixed_binary_censored_target_design.py \
+  --replicates 300 --workers 8 \
+  --prevalence 0.254 --heritabilities 0.5 0.5 \
+  --genetic-correlations 0.0 0.4 \
+  --residual-correlation 0.15 --hearing-variance 3.0 \
+  --censoring-shares 0.52 0.75 \
+  --nominal-coverage 0.95 --nominal-level 0.05 \
+  --monte-carlo-confidence 0.95 --point-recovery-standard-errors 3.0 \
+  --base-seed 1210000 --cell-seed-offset 104729 \
+  --replicate-seed-offset 7919 \
+  --minimum-cases 10 --minimum-measured-hearing 10 \
+  --design-fixture checks/design_fixtures/mixed_binary_censored_target_design.json \
+  --fixture-sha256 aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645 \
+  --no-write
 uv run --no-project python checks/mediation_calibration.py
 uv run --no-project python checks/mediation_ascertainment.py
 uv run --with numpy python checks/mediation_power.py
@@ -923,3 +1332,40 @@ uv run --no-project python checks/speed.py
 Most simulation scripts take `ASTERISM_REPLICATES` and `ASTERISM_WORKERS`, and
 the figures quoted above were not all produced at the script defaults. Where a
 figure came from a different replicate count, this document says so.
+
+Release-only scientific inventory support is deliberately fail closed.
+`checks/external_reference_fixture.py` verifies a versioned independent-output
+fixture on portable CI or refreshes it explicitly on a host with R or SOLAR.
+`checks/external_reference_adapter.py` supplies canonical finite-array hashing,
+exact live R/package identity, and strict optional argument parsing; its own
+SHA-256 is included in every R fixture, alongside the comparison adapter hash
+and the generated-input hashes. A portable verification regenerates those
+inputs, calls the public Asterism API, and compares only with frozen independent
+outputs. It does not look for R. The focused test repeats all five portable
+commands with an empty `PATH`.
+
+`checks/solar_reference_adapter.py` is the corresponding native-SOLAR helper.
+It writes a temporary generated problem for a live refresh, records the exact
+SOLAR executable and version, and makes portable verification consume only the
+frozen independent output; portable verification never invokes SOLAR.
+
+Five R-backed release rules were refreshed live with R 4.5.2 and then verified
+portably. The ordinary no-argument scripts still run the human-readable live
+comparison.
+
+| rule | qualified independent software | portable result |
+| --- | --- | --- |
+| `against_r` | `regress` 1.3.22 | maximum estimate difference `7.68e-9`; likelihood-offset drift `4.44e-12` |
+| `bivariate_against_r` | `regress` 1.3.22 | maximum reported-quantity difference `1.88e-8`; scaled gradient `5.46e-9` |
+| `tobit_against_censreg` | `censReg` 0.5.38 | maximum relative difference `9.56e-9` |
+| `tobit_against_mcmcglmm` | `MCMCglmm` 2.36, `Matrix` 1.7.4, `coda` 0.19.4.1 | all three Asterism points inside the 95% HPDs; heritability width `0.278`; effective size `1603.5` |
+| `spatial_against_spamm` | `spaMM` 4.6.65, `geoR` 1.9.6, `jsonlite` 2.0.0 | five scenarios; maximum component/decay difference `5.24e-6` |
+
+The deterministic envelopes are in `checks/external_fixtures/`; each retains
+the prewritten acceptance rule and only the external numbers needed by
+portable verification. Refresh is always explicit through
+`checks/external_reference_fixture.py refresh`; the commands in `release.toml`
+always use `verify`. Until an adapter and genuine live fixture exist,
+`checks/release_gate_blocker.py` records the named missing evidence and exits
+nonzero; neither command converts a historical result or unavailable external
+program into a passing check.

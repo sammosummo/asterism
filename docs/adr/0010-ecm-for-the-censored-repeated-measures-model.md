@@ -32,7 +32,7 @@ share of thresholds that reach it climbs with frequency — 0.2% at 500 Hz, 1.9%
 at 8 kHz, 16% at 12.5 kHz, 30% at 14 kHz, 52% at 16 kHz, 75% at 18 kHz. The
 frequencies that are most heritable are the ones most often unmeasurable, so an
 analysis that substitutes the limit is biased hardest exactly where the result
-is. `TobitModel` already answers that one frequency at a time. What it cannot do
+is. The `tobit_*` functions already answer that one frequency at a time. What they cannot do
 is say how the frequencies relate to each other, which is the audiogram's shape
 and therefore the finding.
 
@@ -125,7 +125,7 @@ exactly what breaks the rotation, and `src/bivariate.rs` already records that
 lesson: the eigen-rotation "survives extra traits only while everybody has every
 trait". Seventeen dropped observations would cost a factor of a thousand.
 
-Starting values come from 17 independent univariate `TobitModel` fits, which are
+Starting values come from 17 independent univariate Tobit fits, which are
 cheap and are the paper's first table anyway.
 
 **ECM is a route and not a definition.** Under decision 15's rules for fast
@@ -206,7 +206,7 @@ censoring per observation, missing-at-random observations, maximum likelihood.
   `mixed_bivariate_fit` — where every other model is a class. This one should be
   a class, like the rest.
 - The independent check required of any new capability is four things, since no
-  single comparator covers it: `TobitModel` reproducing a one-position slice,
+  single comparator covers it: the `tobit_*` functions reproducing a one-position slice,
   `mixed_bivariate_fit` reproducing a two-position slice, `MCMCglmm` with a
   `cengaussian` family as the external comparator on an unstructured two- or
   three-position model, and a coverage simulation on the real 50-family roster

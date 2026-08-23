@@ -77,37 +77,82 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from typing import Any, TypedDict
 
+import asterism
 import numpy as np
-from asterism import _core
 
-PAIRS = 250
-N = 2 * PAIRS
-REPLICATES = int(os.environ.get("ASTERISM_REPLICATES", "500"))
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
-LEVELS = (0.01, 0.05, 0.10)
-SURFACES = ("exponential", "random_regression")
-TESTS = ("interaction", "correlation")
+PAIRS: int = 250
+"""Fixed the number of sibling pairs in every simulated data set."""
+
+N: int = 2 * PAIRS
+"""Computed the fixed simulated roster size."""
+
+REPLICATES: int = int(os.environ.get("ASTERISM_REPLICATES", "500"))
+"""Selected the requested replicates per scenario from the environment."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "6"))
+"""Selected the worker-process count from the environment."""
+
+LEVELS: tuple[float, ...] = (0.01, 0.05, 0.10)
+"""Fixed the nominal rejection levels checked by the calibration."""
+
+SURFACES: tuple[str, ...] = ("exponential", "random_regression")
+"""Named the two continuous GxE surface families under comparison."""
+
+TESTS: tuple[str, ...] = ("interaction", "correlation")
+"""Named the two boundary nulls calibrated on every surface."""
 
 
-def structure():
+class Scenario(TypedDict):
+    """Describe one generating covariance and its true in-family nulls."""
+
+    what: str
+    """Explain the scientific meaning of the generating scenario."""
+
+    genetic: Callable[[np.ndarray, np.ndarray], np.ndarray]
+    """Evaluate genetic covariance at two environments."""
+
+    residual: Callable[[np.ndarray], np.ndarray]
+    """Evaluate residual variance at one or more environments."""
+
+    true: set[str]
+    """Name null hypotheses satisfied by the generating covariance."""
+
+    family: set[str]
+    """Name fitted surface families containing the generating covariance."""
+
+
+def structure() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Sibling pairs, each person carrying an environment.
 
     **The environment varies within a pair as well as between it.** With one
     environment per family a genetic surface could not be told from a plain
     heritability, and the check would be measuring nothing.
+
+    Returns:
+        Relationship matrix, continuous environments and intercept design.
     """
-    relationship = np.eye(N)
+    relationship: np.ndarray = np.eye(N)
+    """Initialised the relationship matrix with individual diagonal entries."""
+
     for pair in range(PAIRS):
         relationship[2 * pair, 2 * pair + 1] = 0.5
+        """Set the forward within-pair relationship coefficient."""
+
         relationship[2 * pair + 1, 2 * pair] = 0.5
+        """Set the symmetric within-pair relationship coefficient."""
+
     # Drawn once and held: the design is not what is being varied.
-    z = np.random.default_rng(20_260_813).uniform(-1.5, 1.5, N)
+    z: np.ndarray = np.random.default_rng(20_260_813).uniform(-1.5, 1.5, N)
+    """Drew fixed within- and between-family continuous environments."""
     return relationship, z, np.ones((N, 1))
 
 
 RELATIONSHIP, Z, DESIGN = structure()
+"""Built the deterministic design shared by every scenario and replicate."""
 
 # Each scenario gives the genetic covariance as a function of two environments
 # and the residual variance as a function of one, then says which of the two
@@ -115,8 +160,10 @@ RELATIONSHIP, Z, DESIGN = structure()
 # what each row means: a true null inside the surface's family is a level to be
 # held, a true null outside it is the cost of the wrong family, and a false null
 # is power.
-BOTH = set(SURFACES)
-SCENARIOS = {
+BOTH: set[str] = set(SURFACES)
+"""Named scenarios represented by both fitted surface families."""
+
+SCENARIOS: dict[str, Scenario] = {
     "flat": {
         "what": "no interaction of any kind",
         "genetic": lambda a, b: np.full_like(a, 0.5),
@@ -171,70 +218,130 @@ SCENARIOS = {
         # surface's family. **Both surfaces need an alternative of their own**,
         # or a power comparison only says which one was handed its home ground.
         "what": "different genes at different environments, exponential surface",
-        "genetic": lambda a, b: np.exp(-0.7 + 0.3 * (a + b)) * np.exp(-0.4 * np.abs(a - b)),
+        "genetic": lambda a, b: (
+            np.exp(-0.7 + 0.3 * (a + b)) * np.exp(-0.4 * np.abs(a - b))
+        ),
         "residual": lambda z: np.full_like(z, 0.5),
         "true": set(),
         "family": {"exponential"},
     },
 }
+"""Defined generating covariances, true nulls and containing model families."""
 
 
-def covariance(setting):
-    out = RELATIONSHIP * setting["genetic"](Z[:, None], Z[None, :])
+def covariance(setting: Scenario) -> np.ndarray:
+    """Construct the full observation covariance for one scenario.
+
+    Args:
+        setting: Generating genetic and residual surface functions.
+
+    Returns:
+        Relationship-scaled genetic covariance plus residual diagonal.
+    """
+    out: np.ndarray = RELATIONSHIP * setting["genetic"](Z[:, None], Z[None, :])
+    """Constructed the relationship-scaled genetic covariance."""
+
     out[np.diag_indices(N)] += setting["residual"](Z)
+    """Added environment-specific residual variance on the diagonal."""
     return out
 
 
-FACTORS = {
+FACTORS: dict[str, np.ndarray] = {
     name: np.linalg.cholesky(covariance(setting) + 1e-9 * np.eye(N))
     for name, setting in SCENARIOS.items()
 }
+"""Factorised every generating covariance for deterministic response draws."""
 
 
-def one(job):
+def one(job: tuple[str, int]) -> dict[str, Any]:
+    """Run both boundary tests on both surfaces for one response.
+
+    Args:
+        job: Scenario name and zero-based replicate number.
+
+    Returns:
+        Named public test records or documented refusals for each surface/null.
+    """
     name, index = job
-    y = FACTORS[name] @ np.random.default_rng(910_000 + 1000 * index).standard_normal(N)
-    out = {"scenario": name}
+    """Separated the generating scenario from its replicate identity."""
+
+    y: np.ndarray = FACTORS[name] @ np.random.default_rng(
+        910_000 + 1000 * index
+    ).standard_normal(N)
+    """Drew one deterministic response from the scenario covariance."""
+
+    out: dict[str, Any] = {"scenario": name}
+    """Initialised the public-test records for one simulated scenario."""
     for surface in SURFACES:
+        model: asterism.GxeModel = asterism.GxeModel(
+            RELATIONSHIP,
+            Z,
+            DESIGN,
+            surface=surface,
+        )
+        """Built one documented GxE surface for both of its null tests."""
+
         for null in TESTS:
             try:
-                outcome = _core.gxe_test(
-                    RELATIONSHIP, Z, DESIGN, y, surface, null, True
-                )
+                outcome: dict[str, Any] | None = model.test(y, null, reml=True)
+                """Tested the requested null through the public named record."""
             except ValueError:
                 outcome = None
+                """Recorded that the estimator refused this surface and null."""
+
             if outcome is None:
                 out[f"{surface}/{null}"] = None
+                """Recorded a documented estimator refusal for this replicate."""
             else:
-                statistic, p_value, rule, _, _ = outcome
                 out[f"{surface}/{null}"] = {
-                    "p": p_value,
-                    "statistic": statistic,
-                    "rule": rule,
+                    "p": outcome["p_value"],
+                    "statistic": outcome["statistic"],
+                    "rule": outcome["rule"],
                 }
+                """Recorded the named test fields consumed by the calibration."""
     return out
 
 
 def main() -> int:
+    """Run every GxE test-calibration cell and print its evidence receipt."""
     print(
         f"Genotype-by-environment tests, REML. {PAIRS} sibling pairs, n = {N}, "
         f"{REPLICATES} replicates.\n"
         f"Environment drawn once and held; both surfaces see the same data.\n"
     )
 
-    jobs = [(name, index) for name in SCENARIOS for index in range(REPLICATES)]
-    started = time.perf_counter()
+    jobs: list[tuple[str, int]] = [
+        (name, index) for name in SCENARIOS for index in range(REPLICATES)
+    ]
+    """Enumerated every generating scenario and replicate exactly once."""
+
+    started: float = time.perf_counter()
+    """Started the elapsed-time measurement immediately before worker launch."""
+
     with ProcessPoolExecutor(WORKERS) as pool:
-        results = list(pool.map(one, jobs, chunksize=4))
-    print(f"{len(jobs)} data sets in {(time.perf_counter() - started) / 60:.1f} minutes.\n")
+        results: list[dict[str, Any]] = list(pool.map(one, jobs, chunksize=4))
+        """Ran every deterministic test replicate through the worker pool."""
+    print(
+        f"{len(jobs)} data sets in {(time.perf_counter() - started) / 60:.1f} minutes.\n"
+    )
 
     failures: list[str] = []
-    recorded: dict = {}
+    """Initialised the scientific pass-rule failure messages."""
+
+    recorded: dict[str, dict[str, Any]] = {}
+    """Initialised the machine-readable summaries for every scenario."""
+
     for name, setting in SCENARIOS.items():
-        got = [r for r in results if r["scenario"] == name]
+        got: list[dict[str, Any]] = [r for r in results if r["scenario"] == name]
+        """Selected every attempted replicate for the current scenario."""
+
         print(f"{name}  --  {setting['what']}")
-        header = f"  {'surface':<20}{'test':<24}{'of':>5}"
+        header: str = f"  {'surface':<20}{'test':<24}{'of':>5}"
+        """Started the fixed-width result-table header."""
+
         header += "".join(f"{f'p<={level:g}':>10}" for level in LEVELS)
+        """Added one rejection-rate column for every nominal level."""
+
         print(header + f"{'atom at 1':>12}")
         recorded[name] = {
             "what": setting["what"],
@@ -242,10 +349,18 @@ def main() -> int:
             "family": sorted(setting["family"]),
             "tests": {},
         }
+        """Recorded the scenario meaning before its surface-specific tests."""
+
         for surface in SURFACES:
             for null in TESTS:
-                key = f"{surface}/{null}"
-                p_values = np.array([r[key]["p"] for r in got if r[key] is not None])
+                key: str = f"{surface}/{null}"
+                """Constructed the stable surface and null result identity."""
+
+                p_values: np.ndarray = np.array(
+                    [r[key]["p"] for r in got if r[key] is not None]
+                )
+                """Collected p-values from every completed test in this cell."""
+
                 if not len(p_values):
                     failures.append(f"{name}: no result at all for {key}")
                     continue
@@ -253,44 +368,77 @@ def main() -> int:
                 # true null outside it is the cost of the wrong family; a false
                 # null is power, and power on someone else's family is not a
                 # comparison worth making.
-                true_here = null in setting["true"]
-                in_family = surface in setting["family"]
-                is_null = true_here and in_family
-                is_outside = true_here and not in_family
-                rates = [float(np.mean(p_values <= level)) for level in LEVELS]
-                atom = float(np.mean(p_values > 0.999))
+                true_here: bool = null in setting["true"]
+                """Determined whether the generating scenario satisfies this null."""
+
+                in_family: bool = surface in setting["family"]
+                """Determined whether the fitted surface contains this scenario."""
+
+                is_null: bool = true_here and in_family
+                """Identified true null cells eligible for calibration gating."""
+
+                is_outside: bool = true_here and not in_family
+                """Identified true nulls outside the fitted surface family."""
+
+                rates: list[float] = [
+                    float(np.mean(p_values <= level)) for level in LEVELS
+                ]
+                """Computed empirical rejection rates at every nominal level."""
+
+                atom: float = float(np.mean(p_values > 0.999))
+                """Measured the boundary distribution's empirical atom at one."""
+
                 recorded[name]["tests"][key] = {
                     "computed": len(p_values),
                     "role": (
-                        "null" if is_null
-                        else "misspecified" if is_outside
-                        else "power" if in_family
+                        "null"
+                        if is_null
+                        else "misspecified"
+                        if is_outside
+                        else "power"
+                        if in_family
                         else "power_wrong_family"
                     ),
-                    "rejection": {str(level): rate for level, rate in zip(LEVELS, rates, strict=True)},
+                    "rejection": {
+                        str(level): rate
+                        for level, rate in zip(LEVELS, rates, strict=True)
+                    },
                     "atom_at_one": atom,
                 }
-                marks = []
+                """Recorded the cell role, availability and rejection summaries."""
+
+                marks: list[str] = []
+                """Initialised formatted calibration marks for this table row."""
+
                 for level, rate in zip(LEVELS, rates, strict=True):
                     if not is_null:
                         marks.append(f"{rate:>10.3f}")
                         continue
                     # One-sided: over-rejection is the failure, and a rate below
                     # the level is conservative rather than wrong.
-                    error = np.sqrt(level * (1 - level) / len(p_values))
-                    ceiling = level + 1.96 * error
+                    error: float = float(np.sqrt(level * (1 - level) / len(p_values)))
+                    """Computed the binomial Monte Carlo standard error."""
+
+                    ceiling: float = level + 1.96 * error
+                    """Computed the one-sided rejection ceiling used by the rule."""
+
                     marks.append(f"{rate:>9.3f}{'!' if rate > ceiling else ' '}")
                     if rate > ceiling:
                         failures.append(
                             f"{name} {key} rejects {rate:.3f} at {level:g}, "
                             f"above {ceiling:.3f}"
                         )
-                tag = (
-                    "null" if is_null
-                    else "WRONG FAMILY" if is_outside
-                    else "power" if in_family
+                tag: str = (
+                    "null"
+                    if is_null
+                    else "WRONG FAMILY"
+                    if is_outside
+                    else "power"
+                    if in_family
                     else "power, wrong family"
                 )
+                """Labelled the cell as null, misspecified or powered context."""
+
                 print(
                     f"  {surface:<20}{null + ' (' + tag + ')':<24}{len(p_values):>5}"
                     + "".join(marks)

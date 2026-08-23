@@ -38,3 +38,25 @@ ML available.
   reserves the slots; what goes in them belongs to `0004` and `0005`.
 - Under decision 24 of `0001` the record is returned in memory and Asterism
   writes nothing itself. The Python interface may write it down.
+
+## Amendment on 21 August 2026
+
+ADRs 0013, 0015 and 0017 narrow two statements above for 0.1. The sealed
+`prepare(X, K).fit(y)` object remains the one-trait Gaussian interface, but the
+larger object unification is deferred: other supported families may retain one
+documented Python model or function interface each. Their named consumers use
+that public interface and never positional `_core` calls. “One way in” therefore
+means one documented route per supported family in 0.1, not one universal
+constructor before the deferred redesign.
+
+The both-implementations rule governs scientific estimates, diagnostics and
+inference fields. Producer provenance is deliberately asymmetric: an Asterism
+fit identifies its Asterism version, source commit, release-build status, and
+the release-manifest and dependency-lock commitments compiled into it, while
+an independent implementation identifies itself. Those fields establish which
+producer made a result and are not quantities on which the producers must
+agree.
+
+Numerical fitting classes still perform no file I/O. Asterism's standard
+analysis path returns the receipt data required by ADR 0017; the caller-side
+project wrapper writes that data beside its controlled analysis outputs.

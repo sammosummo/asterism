@@ -110,8 +110,8 @@ def one(job: tuple[float, int]) -> dict[str, float]:
     for person in range(people):
         for replicate in range(REPLICATES_PER_PERSON):
             row = person * REPLICATES_PER_PERSON + replicate
-            value[row] = TRUE_MEAN + effects[person] + noise @ rng.standard_normal(
-                POSITIONS
+            value[row] = (
+                TRUE_MEAN + effects[person] + noise @ rng.standard_normal(POSITIONS)
             )
 
     if share <= 0.0:
@@ -137,7 +137,8 @@ def one(job: tuple[float, int]) -> dict[str, float]:
     genetic = fit["component_covariances"][0]
     residual = fit["residual_covariance"]
     heritability = [
-        float(genetic[t, t] / (genetic[t, t] + residual[t, t])) for t in range(POSITIONS)
+        float(genetic[t, t] / (genetic[t, t] + residual[t, t]))
+        for t in range(POSITIONS)
     ]
     pairs = [(0, 1), (0, 2), (1, 2)]
     genetic_correlation = float(
@@ -147,7 +148,10 @@ def one(job: tuple[float, int]) -> dict[str, float]:
     )
     residual_correlation = float(
         np.mean(
-            [residual[i, j] / np.sqrt(residual[i, i] * residual[j, j]) for i, j in pairs]
+            [
+                residual[i, j] / np.sqrt(residual[i, i] * residual[j, j])
+                for i, j in pairs
+            ]
         )
     )
     return {
@@ -157,7 +161,9 @@ def one(job: tuple[float, int]) -> dict[str, float]:
         "heritability": float(np.mean(heritability)),
         "genetic_correlation": genetic_correlation,
         "residual_correlation": residual_correlation,
-        "total_variance": float(np.mean([genetic[t, t] + residual[t, t] for t in range(POSITIONS)])),
+        "total_variance": float(
+            np.mean([genetic[t, t] + residual[t, t] for t in range(POSITIONS)])
+        ),
         "scaled_gradient": float(fit["scaled_gradient"]),
         "sequential_dimension": float(fit["sequential_dimension"]),
         "monotone": float(fit["monotone"]),
@@ -235,7 +241,14 @@ def main() -> int:
                 f"{cell['sequential_dimension']:5.1f} | "
                 f"{cell['scaled_gradient']:9.2e} | "
                 if index == 0
-                else " " * 7 + " | " + " " * 7 + " | " + " " * 5 + " | " + " " * 9 + " | "
+                else " " * 7
+                + " | "
+                + " " * 7
+                + " | "
+                + " " * 5
+                + " | "
+                + " " * 9
+                + " | "
             )
             if share == 0.0:
                 shift = "--"
@@ -274,7 +287,7 @@ def main() -> int:
 
     receipt = {
         "what": "whether the region approximation biases the estimates, or only "
-                "displaces the gradient",
+        "displaces the gradient",
         "date": date.today().isoformat(),
         "people": people,
         "families": FAMILIES,
@@ -285,11 +298,11 @@ def main() -> int:
         "allowed_extra_bias": ALLOWED_EXTRA_BIAS,
         "by_censored_share": {str(k): v for k, v in by_share.items()},
         "note": "every cell is judged against the cell with nothing censored "
-                "and not against the truth, because maximum likelihood is "
-                "already biased downward for a variance component and that is "
-                "not what this is asking about. A replicate index gives the "
-                "same data at every share, so the shift is a paired difference "
-                "and its error is the error of that difference.",
+        "and not against the truth, because maximum likelihood is "
+        "already biased downward for a variance component and that is "
+        "not what this is asking about. A replicate index gives the "
+        "same data at every share, so the shift is a paired difference "
+        "and its error is the error of that difference.",
         "passed": not failures,
         "failures": failures,
     }

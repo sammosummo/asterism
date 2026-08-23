@@ -1315,8 +1315,8 @@ fn the_interval_ends_where_the_likelihood_says_it_should() {
         free.loglik - at_estimate
     );
     for (name, end, at_bound) in [
-        ("lower", interval.lower, interval.lower_at_bound),
-        ("upper", interval.upper, interval.upper_at_bound),
+        ("lower", interval.lower, interval.lower_limited),
+        ("upper", interval.upper, interval.upper_limited),
     ] {
         if at_bound {
             continue;
@@ -1455,8 +1455,8 @@ fn the_heritability_interval_ends_where_the_likelihood_says_it_should() {
     // Each end that is not on a bound costs 3.8415 in deviance, which is what
     // makes it a 95 per cent interval rather than a pair of numbers.
     for (name, end, at_bound) in [
-        ("lower", interval.lower, interval.lower_at_bound),
-        ("upper", interval.upper, interval.upper_at_bound),
+        ("lower", interval.lower, interval.lower_limited),
+        ("upper", interval.upper, interval.upper_limited),
     ] {
         if at_bound {
             continue;

@@ -48,9 +48,7 @@ def simulate(seed: int = 20_260_820) -> tuple[np.ndarray, np.ndarray, np.ndarray
         for replicate in range(REPLICATES):
             row = person * REPLICATES + replicate
             value[row] = (
-                10.0
-                + effects[person]
-                + np.sqrt(0.5) * rng.standard_normal(POSITIONS)
+                10.0 + effects[person] + np.sqrt(0.5) * rng.standard_normal(POSITIONS)
             )
     return a, design, value
 
@@ -104,9 +102,7 @@ def test_a_line_gives_a_correlation_that_is_a_function(data):
     far = asterism.RepeatedModel.correlation(fit, 0, 30.0)
     assert near > far >= float(fit["floors"][0]) - 1e-12
     # The sign of the separation cannot matter.
-    assert asterism.RepeatedModel.correlation(
-        fit, 0, -3.0
-    ) == pytest.approx(near)
+    assert asterism.RepeatedModel.correlation(fit, 0, -3.0) == pytest.approx(near)
     with pytest.raises(ValueError, match="REPEATED_NO_SUCH_COMPONENT"):
         asterism.RepeatedModel.correlation(fit, 5, 1.0)
 
@@ -173,9 +169,7 @@ def test_bad_inputs_are_refused(data):
     with pytest.raises(ValueError, match="REPEATED_LINE_WRONG_LENGTH"):
         asterism.RepeatedModel(a, design, REPLICATES, POSITIONS, line=[0.0, 1.0])
     with pytest.raises(ValueError, match="REPEATED_KERNEL_POSITIONS_COINCIDE"):
-        asterism.RepeatedModel(
-            a, design, REPLICATES, POSITIONS, line=[0.0, 1.0, 1.0]
-        )
+        asterism.RepeatedModel(a, design, REPLICATES, POSITIONS, line=[0.0, 1.0, 1.0])
     with pytest.raises(ValueError, match="REPEATED_NEEDS_TWO_REPLICATES"):
         asterism.RepeatedModel(a, design, 1, POSITIONS)
 
@@ -205,9 +199,7 @@ def test_the_correlation_interval_comes_back_and_brackets_its_estimate(data):
     the kernel family can express rather than nought and one.
     """
     a, design, value = data
-    model = asterism.RepeatedModel(
-        a, design, REPLICATES, POSITIONS, line=LINE
-    )
+    model = asterism.RepeatedModel(a, design, REPLICATES, POSITIONS, line=LINE)
     censoring, limit = measured(value)
     got = model.correlation_interval(value, censoring, limit, 0, 3.0)
 
@@ -215,7 +207,7 @@ def test_the_correlation_interval_comes_back_and_brackets_its_estimate(data):
     assert got["separation"] == 3.0
     assert got["level"] == 0.95
     assert got["lower"] <= got["estimate"] <= got["upper"]
-    assert 0.001 <= got["lower"] and got["upper"] <= 0.999
+    assert got["lower"] >= 0.001 and got["upper"] <= 0.999
     assert isinstance(got["profile_failures"], int)
     # The estimate is the free fit's own correlation, not a separate number.
     free = model.fit(value, censoring, limit)
@@ -223,9 +215,9 @@ def test_the_correlation_interval_comes_back_and_brackets_its_estimate(data):
         asterism.RepeatedModel.correlation(free, 0, 3.0), abs=1e-9
     )
     # A bound that was not reached asks no question about itself.
-    if not got["lower_at_bound"]:
+    if not got["lower_limited"]:
         assert got["contains_lower_bound"] is None
-    if not got["upper_at_bound"]:
+    if not got["upper_limited"]:
         assert got["contains_upper_bound"] is None
 
 
@@ -238,9 +230,7 @@ def test_an_interval_without_a_kernel_is_refused(data):
     with pytest.raises(ValueError, match="REPEATED_NO_KERNEL"):
         plain.correlation_interval(value, censoring, limit, 0, 3.0)
 
-    shaped = asterism.RepeatedModel(
-        a, design, REPLICATES, POSITIONS, line=LINE
-    )
+    shaped = asterism.RepeatedModel(a, design, REPLICATES, POSITIONS, line=LINE)
     with pytest.raises(ValueError, match="REPEATED_NO_SUCH_COMPONENT"):
         shaped.correlation_interval(value, censoring, limit, 7, 3.0)
     with pytest.raises(ValueError, match="REPEATED_SEPARATION_NOT_POSITIVE"):
@@ -264,7 +254,7 @@ def test_the_heritability_interval_comes_back_and_brackets_its_estimate(data):
     assert got["position"] == 1
     assert got["level"] == 0.95
     assert got["lower"] <= got["estimate"] <= got["upper"]
-    assert 0.001 <= got["lower"] and got["upper"] <= 0.999
+    assert got["lower"] >= 0.001 and got["upper"] <= 0.999
     assert isinstance(got["profile_failures"], int)
     # The estimate is the free fit's own share, not a separate number.
     free = model.fit(value, censoring, limit)

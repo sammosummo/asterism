@@ -36,11 +36,12 @@
 //! # The region probability
 //!
 //! A family of `k` people needs the probability of an orthant of a `k`
-//! dimensional normal. One and two people are exact. Above that this uses the
-//! Mendell-Elston sequential truncation, which conditions on each observation in
-//! turn and updates the remaining means and covariances -- an approximation, and
-//! named as one, but a coherent joint one rather than a pairwise shortcut that
-//! would not be a likelihood at all.
+//! dimensional normal. One person uses the univariate normal distribution; two
+//! use fixed sixteen-point quadrature. Above that this uses the Mendell-Elston
+//! sequential truncation, which conditions on each observation in turn and
+//! updates the remaining means and covariances -- an approximation, and named as
+//! one, but a coherent joint one rather than a pairwise shortcut that would not
+//! be a likelihood at all.
 //!
 //! **The order matters to the approximation**, so the rarer class is taken
 //! first, which is what the recovered implementation does.
@@ -67,6 +68,7 @@ use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::blocks::family_blocks;
 use crate::deviance::chi2_one_df_upper_tail;
+use crate::interval::{self, Interval};
 
 /// Sixteen-point Gauss-Legendre nodes and weights on [-1, 1].
 const GAUSS_LEGENDRE_16: [(f64, f64); 16] = [
@@ -176,6 +178,9 @@ impl LiabilityModel {
         }
         let mut case = Vec::with_capacity(rows);
         for value in status {
+            if !value.is_finite() {
+                return Err("LIABILITY_STATUS_NOT_FINITE");
+            }
             if (value - 1.0).abs() < 1e-12 {
                 case.push(true);
             } else if value.abs() < 1e-12 {
@@ -1102,29 +1107,8 @@ pub struct LiabilityTest {
     pub null_loglik: f64,
 }
 
-/// One profile-likelihood interval for a heritability.
-#[derive(Clone, Copy, Debug)]
-pub struct LiabilityInterval {
-    pub estimate: f64,
-    pub lower: f64,
-    pub upper: f64,
-    /// True where the endpoint is the edge of what a heritability may be rather
-    /// than a point the data ruled out. Read it beside `profile_failures`: a
-    /// bound reached because the likelihood never crossed and a bound reached
-    /// because the profile could not be evaluated there are both reported here,
-    /// and only a non-zero failure count separates them.
-    pub lower_at_bound: bool,
-    pub upper_at_bound: bool,
-    pub level: f64,
-    /// How many profile evaluations could not be made. A failure is unknown
-    /// ground, not ground the data ruled out, so the interval is widened over
-    /// it rather than narrowed; a non-zero count says the endpoints rest partly
-    /// on evaluations that did not come back.
-    pub profile_failures: usize,
-}
-
-/// Chi-square on one degree of freedom at 0.95.
-const CHI2_ONE_95: f64 = 3.841_458_820_694_124;
+/// Compatibility name for the one shared interval record.
+pub type LiabilityInterval = Interval;
 
 impl LiabilityModel {
     /// Test the liability heritability against nought.
@@ -1141,6 +1125,8 @@ impl LiabilityModel {
     pub fn heritability_test(&self) -> Result<LiabilityTest, &'static str> {
         let free = self.fit()?;
         let null = self.fit_holding(Some(0.0))?;
+        crate::convergence::require(free.converged, "LIABILITY_FIT_NOT_CONVERGED")?;
+        crate::convergence::require(null.converged, "LIABILITY_NULL_FIT_NOT_CONVERGED")?;
         let statistic = (2.0 * (free.loglik - null.loglik)).max(0.0);
         let p_value = if statistic < 1e-6 {
             1.0
@@ -1163,48 +1149,27 @@ impl LiabilityModel {
     /// Returns a stable code where the free fit fails.
     pub fn heritability_interval(&self) -> Result<LiabilityInterval, &'static str> {
         let free = self.fit()?;
+        if !free.converged {
+            return Err("LIABILITY_FIT_NOT_CONVERGED");
+        }
         let estimate = free.heritability;
-        // **The maximum comes from the held fit at the estimate**, not from the
-        // free fit's own log likelihood, so that both ends of the comparison
-        // are computed the same way.
-        let at_estimate = self.fit_holding(Some(estimate))?.loglik;
-        let threshold = at_estimate - 0.5 * CHI2_ONE_95;
-        // **A fit that failed, or stopped without converging, is not a
-        // likelihood that fell away.** Counted as outside, either looked like
-        // ground the data had ruled out and the bisection stepped inward, so
-        // the interval came back narrower than the data support and said
-        // nothing about it. Both are covered instead, and counted.
-        let failures = std::cell::Cell::new(0usize);
-        let outside = |value: f64| match self.fit_holding(Some(value)) {
-            Ok(fit) if fit.converged => fit.loglik < threshold,
-            _ => {
-                failures.set(failures.get() + 1);
-                false
-            }
-        };
-        let (lower, lower_at_bound) = if outside(0.0) {
-            (bisect(0.0, estimate, &outside), false)
-        } else {
-            (0.0, true)
-        };
-        let (upper, upper_at_bound) = if outside(1.0) {
-            (bisect(1.0, estimate, &outside), false)
-        } else {
-            (1.0, true)
-        };
-        Ok(LiabilityInterval {
-            estimate,
-            lower,
-            upper,
-            lower_at_bound,
-            upper_at_bound,
-            level: 0.95,
-            profile_failures: failures.get(),
-        })
+        let got = interval::profile_interval(estimate, (0.0, 1.0), |value| {
+            self.fit_holding(Some(value))
+                .ok()
+                .filter(|fit| fit.converged)
+                .map(|fit| fit.loglik)
+        });
+        if got.estimate.is_none() {
+            return Err("LIABILITY_PROFILE_NOT_EVALUABLE");
+        }
+        // Liability coverage has not yet scored the mixture endpoint; unlike
+        // the one-trait Gaussian and Tobit families, the verdict stays absent.
+        Ok(got)
     }
 }
 
-/// Bisect between a point outside the interval and one inside it.
+/// Legacy signed-profile bisection used by deferred latent-mediation confidence
+/// sets. Supported bounded profiles use [`crate::interval::profile_interval`].
 pub(crate) fn bisect(mut out: f64, mut inside: f64, outside: &impl Fn(f64) -> bool) -> f64 {
     for _ in 0..40 {
         let middle = 0.5 * (out + inside);

@@ -264,7 +264,7 @@ def main() -> int:
             uncensored = fit
         print(
             f"{share:7.2f} {fit['sequential_dimension']:4d} "
-            f"{fit['scaled_gradient']:10.2e} {str(fit['monotone']):>9} "
+            f"{fit['scaled_gradient']:10.2e} {fit['monotone']!s:>9} "
             f"{fit['iterations']:6d} "
             f"{found['h2_one']:7.4f} {found['h2_two']:7.4f} "
             f"{found['rg']:7.4f} {found['re']:7.4f}"
@@ -404,7 +404,7 @@ def main() -> int:
 
     receipt = {
         "what": "the repeated-measures model against MCMCglmm's multivariate "
-                "censored animal model, on a free covariance",
+        "censored animal model, on a free covariance",
         "date": date.today().isoformat(),
         "people": people,
         "families": FAMILIES,
@@ -429,10 +429,10 @@ def main() -> int:
         },
         "gradient_against_censoring": sweep,
         "note": "the gradient reading measures how far the approximate "
-                "expectation step's fixed point sits from the maximum, and "
-                "grows with the share of the data the region approximation "
-                "touches. It is not a criterion here. The fit with nothing "
-                "censored is required to converge and is.",
+        "expectation step's fixed point sits from the maximum, and "
+        "grows with the share of the data the region approximation "
+        "touches. It is not a criterion here. The fit with nothing "
+        "censored is required to converge and is.",
         "mcmcglmm": {
             "iterations": ITERATIONS,
             "burnin": BURNIN,

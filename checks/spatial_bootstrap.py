@@ -51,77 +51,185 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
+from typing import Protocol
 
+import asterism
 import numpy as np
-from asterism import _core
 from scipy import stats
 
-PAIRS = 100
-SPACING_KM = 3.0
-BOOTSTRAP = 199
+PAIRS: int = 100
+"""Fixed number of sibling pairs in every simulated spatial layout."""
+
+SPACING_KM: float = 3.0
+"""Distance in kilometres between neighbouring pair locations."""
+
+BOOTSTRAP: int = 199
+"""Inner null-bootstrap replicates used for every presence test."""
+
 # Each of these runs a whole inner bootstrap, so this is the expensive number.
 # At 150 the binomial band on a five per cent rate runs from 0.015 to 0.085,
 # which would call almost anything calibrated; 400 narrows it to 0.028-0.072 for
 # about an hour.
-OUTER = 400
-WORKERS = int(os.environ.get("ASTERISM_WORKERS", "6"))
+OUTER: int = 400
+"""Outer null data sets used to measure empirical rejection rates."""
+
+WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "6"))
+"""Worker processes used for the independent outer simulations."""
+
 # Which treatment of the decay rate is being calibrated: the supremum over it,
 # which is what profiling does, or the average across it. They are different
 # statistics with different nulls, so neither calibration transfers to the other
 # and each has to be run.
-INTEGRATED = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
-MODE = "integrated" if INTEGRATED else "profile"
+INTEGRATED: bool = os.environ.get("ASTERISM_INTEGRATED", "") == "1"
+"""Whether the presence test averages rather than profiles over decay."""
+
+MODE: str = "integrated" if INTEGRATED else "profile"
+"""Human-readable decay treatment retained in the calibration record."""
 
 
-def structure(pairs: int = PAIRS):
-    """Sibling pairs along a line, each pair at one place."""
-    n = 2 * pairs
-    relationship = np.eye(n)
+class KolmogorovSmirnovResult(Protocol):
+    """Fields consumed from SciPy's one-sample Kolmogorov-Smirnov result."""
+
+    statistic: float
+    """Maximum distance between the empirical and reference distributions."""
+
+    pvalue: float
+    """Reference-tail probability reported for the maximum distance."""
+
+
+def structure(
+    pairs: int = PAIRS,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Build sibling pairs along a line, with each pair at one place.
+
+    Args:
+        pairs: Number of two-person full-sibling families.
+
+    Returns:
+        Relationship matrix, pairwise distances, intercept design and sample size.
+    """
+    n: int = 2 * pairs
+    """Calculated the number of people represented by the sibling pairs."""
+
+    relationship: np.ndarray = np.eye(n)
+    """Initialised unrelated people with unit diagonal relationships."""
+
     for pair in range(pairs):
         relationship[2 * pair, 2 * pair + 1] = 0.5
+        """Set the forward full-sibling relationship for this family."""
+
         relationship[2 * pair + 1, 2 * pair] = 0.5
-    place = np.array([(i // 2) * SPACING_KM for i in range(n)])
-    distance = np.abs(place[:, None] - place[None, :])
+        """Set the matching reverse full-sibling relationship."""
+
+    place: np.ndarray = np.array([(i // 2) * SPACING_KM for i in range(n)])
+    """Placed both siblings in each family at their shared line location."""
+
+    distance: np.ndarray = np.abs(place[:, None] - place[None, :])
+    """Calculated every pairwise distance along the line."""
+
     return relationship, distance, np.ones((n, 1)), n
 
 
 def simulate(covariance: np.ndarray, seed: int) -> np.ndarray:
-    n = covariance.shape[0]
-    factor = np.linalg.cholesky(covariance + 1e-9 * np.eye(n))
+    """Draw one Gaussian outcome from a fixed covariance.
+
+    Args:
+        covariance: Positive-definite participant covariance matrix.
+        seed: Reproducible NumPy random-number seed.
+
+    Returns:
+        One simulated outcome in covariance row order.
+    """
+    n: int = covariance.shape[0]
+    """Read the simulated sample size from the covariance dimension."""
+
+    factor: np.ndarray = np.linalg.cholesky(covariance + 1e-9 * np.eye(n))
+    """Factored the covariance after its fixed numerical diagonal stabiliser."""
+
     return factor @ np.random.default_rng(seed).standard_normal(n)
 
 
 def bootstrap_p_value(
-    relationship, distance, design, y, seed: int, replicates: int = BOOTSTRAP
-) -> dict:
-    """The add-one bootstrap p-value, computed in the Rust."""
-    observed, exceedances, usable, requested, p_value, rule = _core.spatial_bootstrap(
-        [relationship], distance, design, y, replicates, seed, True, INTEGRATED
+    relationship: np.ndarray,
+    distance: np.ndarray,
+    design: np.ndarray,
+    y: np.ndarray,
+    seed: int,
+    replicates: int = BOOTSTRAP,
+) -> dict[str, object]:
+    """Compute the add-one bootstrap p-value in Rust.
+
+    Args:
+        relationship: Additive relationship matrix.
+        distance: Pairwise spatial-distance matrix.
+        design: Fixed-effect design matrix.
+        y: Observed or simulated outcome vector.
+        seed: Reproducible bootstrap seed.
+        replicates: Requested number of bootstrap null replicates.
+
+    Returns:
+        Named statistic, replicate counts, p-value and counting rule.
+    """
+    model: asterism.SpatialModel = asterism.SpatialModel(
+        [relationship],
+        distance,
+        design,
     )
+    """Built the documented spatial model for this simulated layout."""
+
+    outcome: dict[str, object] = model.bootstrap(
+        y,
+        replicates=replicates,
+        seed=seed,
+        reml=True,
+        integrated=INTEGRATED,
+    )
+    """Computed the bootstrap presence test through its named public record."""
+
     return {
-        "observed": observed,
-        "exceedances": exceedances,
-        "replicates": usable,
-        "requested": requested,
-        "p_value": p_value,
-        "rule": rule,
+        "observed": outcome["statistic"],
+        "exceedances": outcome["exceedances"],
+        "replicates": outcome["replicates"],
+        "requested": outcome["requested"],
+        "p_value": outcome["p_value"],
+        "rule": outcome["rule"],
     }
 
 
 def one_null_data_set(index: int) -> float | None:
     """Simulate with no spatial effect, then bootstrap it. Returns the p-value."""
     relationship, distance, design, n = structure()
-    truth = 0.4 * relationship + 0.6 * np.eye(n)
-    y = simulate(truth, 800_000 + index)
+    """Built the common relationship, geography and design for this replicate."""
+
+    truth: np.ndarray = 0.4 * relationship + 0.6 * np.eye(n)
+    """Constructed the null covariance with no spatial contribution."""
+
+    y: np.ndarray = simulate(truth, 800_000 + index)
+    """Drew this outer null outcome from its reproducible seed."""
+
     try:
-        outcome = bootstrap_p_value(relationship, distance, design, y, seed=index)
+        outcome: dict[str, object] = bootstrap_p_value(
+            relationship,
+            distance,
+            design,
+            y,
+            seed=index,
+        )
+        """Ran the complete inner bootstrap for this outer null outcome."""
     except ValueError:
         return None
     return outcome["p_value"]
 
 
 def main() -> int:
+    """Run the worked example and empirical null calibration campaign.
+
+    Returns:
+        Zero when no nominal level over-rejects, otherwise one.
+    """
     relationship, distance, design, n = structure()
+    """Built the fixed sibling layout shared by the calibration campaign."""
+
     print(
         f"Bootstrap for no spatial variance, {MODE}. {PAIRS} sibling pairs, "
         f"n = {n}, placed {SPACING_KM:.0f} km apart.\n"
@@ -129,13 +237,29 @@ def main() -> int:
 
     # One worked example first, so the numbers below have something concrete
     # behind them.
-    truth = 0.35 * relationship + 0.25 * np.exp(-0.02 * distance) + 0.40 * np.eye(n)
-    y = simulate(truth, 12345)
-    started = time.perf_counter()
-    worked = bootstrap_p_value(relationship, distance, design, y, seed=7)
+    truth: np.ndarray = (
+        0.35 * relationship + 0.25 * np.exp(-0.02 * distance) + 0.40 * np.eye(n)
+    )
+    """Constructed the worked example with the stated spatial contribution."""
+
+    y: np.ndarray = simulate(truth, 12345)
+    """Drew the reproducible worked-example outcome."""
+
+    started: float = time.perf_counter()
+    """Started timing the worked-example bootstrap."""
+
+    worked: dict[str, object] = bootstrap_p_value(
+        relationship,
+        distance,
+        design,
+        y,
+        seed=7,
+    )
+    """Computed the documented worked-example presence test."""
+
     print(
         f"A data set simulated with a spatial share of 0.25 and a half distance of "
-        f"{np.log(2)/0.02:.0f} km:\n"
+        f"{np.log(2) / 0.02:.0f} km:\n"
         f"  statistic {worked['observed']:.2f}, reached by "
         f"{worked['exceedances']} of {worked['replicates']} simulated nulls, "
         f"p = {worked['p_value']:.4f}  ({time.perf_counter() - started:.0f}s)\n"
@@ -147,20 +271,42 @@ def main() -> int:
         f"more.\n"
     )
     started = time.perf_counter()
-    with ProcessPoolExecutor(WORKERS) as pool:
-        results = list(pool.map(one_null_data_set, range(OUTER)))
-    p_values = np.array([p for p in results if p is not None])
-    print(f"  {len(p_values)} of {OUTER} completed in {time.perf_counter() - started:.0f}s\n")
+    """Restarted timing for the full outer calibration."""
 
-    failures = []
+    with ProcessPoolExecutor(WORKERS) as pool:
+        results: list[float | None] = list(pool.map(one_null_data_set, range(OUTER)))
+        """Ran every independent outer null replicate across worker processes."""
+
+    p_values: np.ndarray = np.array([p for p in results if p is not None])
+    """Retained p-values only from null data sets that completed their fit."""
+
+    print(
+        f"  {len(p_values)} of {OUTER} completed in {time.perf_counter() - started:.0f}s\n"
+    )
+
+    failures: list[str] = []
+    """Collected only empirical over-rejection failures."""
+
     print(f"  {'level':>8}{'rejected':>12}{'binomial 95%':>22}")
-    rates = {}
+    rates: dict[str, float] = {}
+    """Accumulated empirical rejection rates by nominal level."""
+
     for level in (0.01, 0.05, 0.10, 0.25, 0.50):
-        rate = float((p_values <= level).mean())
+        rate: float = float((p_values <= level).mean())
+        """Calculated the empirical rejection rate at this nominal level."""
+
         rates[str(level)] = rate
-        error = np.sqrt(level * (1 - level) / len(p_values))
+        """Recorded the rate under its stable string-valued level key."""
+
+        error: float = np.sqrt(level * (1 - level) / len(p_values))
+        """Calculated the binomial standard error under nominal calibration."""
+
         lower, upper = level - 1.96 * error, level + 1.96 * error
-        inside = lower <= rate <= upper
+        """Constructed the fixed normal-approximation acceptance band."""
+
+        inside: bool = lower <= rate <= upper
+        """Determined whether the observed rate lies inside that band."""
+
         print(
             f"  {level:>8.2f}{rate:>12.3f}   [{lower:.3f}, {upper:.3f}]  "
             f"{'ok' if inside else ('OVER' if rate > upper else 'conservative')}"
@@ -187,7 +333,9 @@ def main() -> int:
     # D = 0.2725 and failed, and the fraction of null data sets with a statistic
     # of exactly nought was 27.3 per cent. The check was wrong, not the
     # bootstrap.
-    atom = float((p_values >= 1.0).mean())
+    atom: float = float((p_values >= 1.0).mean())
+    """Measured the null point mass at a p-value of exactly one."""
+
     print(f"\n  The p-value is exactly one in {atom:.1%} of null data sets, where the")
     print("  statistic itself is nought and nothing can fail to reach it.")
 
@@ -207,10 +355,20 @@ def main() -> int:
     # rejection rates above measure, and they are what this check passes or
     # fails on. The distribution is reported because it is informative, not
     # because a departure from uniform is a fault.
-    interior = p_values[p_values < 1.0]
-    reference = 1.0 - atom
-    rescaled = interior / reference if reference > 0 else interior
-    test = stats.kstest(np.clip(rescaled, 0.0, 1.0), "uniform")
+    interior: np.ndarray = p_values[p_values < 1.0]
+    """Selected p-values away from the justified atom at one."""
+
+    reference: float = 1.0 - atom
+    """Calculated the maximum support expected away from the atom."""
+
+    rescaled: np.ndarray = interior / reference if reference > 0 else interior
+    """Rescaled the conditional p-values to the unit interval when possible."""
+
+    test: KolmogorovSmirnovResult = stats.kstest(
+        np.clip(rescaled, 0.0, 1.0),
+        "uniform",
+    )
+    """Compared the rescaled interior distribution with a continuous uniform."""
     print(
         f"\n  Away from the atom the p-values can only reach about "
         f"{reference:.2f}, since no\n  replicate at nought can exceed a statistic "

@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: >-
+  If you use Asterism in work you publish, please cite the archived version you
+  actually ran. A development checkout is not a citable version: only a release
+  wheel carries the build identity a result can be traced to.
+title: "Asterism: variance-component models for quantitative genetics"
+abstract: >-
+  Asterism fits variance-component models for quantitative genetics. It takes
+  numerical arrays already in memory and returns fit records, profile-likelihood
+  intervals and hypothesis tests. A result is reportable only when its design
+  lies inside the measured limits its release records, and when every required
+  fit, interval, test and pre-written acceptance rule has passed; a fit that did
+  not converge is diagnostic and never evidence.
+type: software
+authors:
+  - given-names: Samuel
+    family-names: Mathias
+    affiliation: >-
+      Department of Psychiatry and Behavioral Medicine, Boston Children's
+      Hospital
+    # TODO before publication: add Sam's ORCID here.
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+repository-code: "https://github.com/sammosummo/asterism"
+license: MIT
+version: 0.1.0
+# TODO at publication: Zenodo mints a DOI from the public GitHub release. Put
+# the concept DOI here -- the one that always resolves to the newest version --
+# and cite the version DOI in each paper.
+# doi: "10.5281/zenodo.XXXXXXX"
+keywords:
+  - quantitative genetics
+  - variance components
+  - heritability
+  - genetic correlation
+  - pedigree

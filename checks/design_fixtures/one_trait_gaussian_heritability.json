@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "fixture_id": "one_trait_gaussian_heritability_target_design",
+  "reviewed": true,
+  "participant_free": true,
+  "provenance": "reviewed predecessor aggregate receipt",
+  "analysis_n": 1909,
+  "component_count": 202,
+  "largest_component": 180,
+  "component_size_histogram": {
+    "1": 117,
+    "2": 7,
+    "3": 5,
+    "4": 6,
+    "5": 2,
+    "6": 4,
+    "7": 3,
+    "8": 1,
+    "9": 8,
+    "10": 5,
+    "11": 3,
+    "12": 4,
+    "13": 2,
+    "14": 3,
+    "15": 2,
+    "16": 1,
+    "18": 1,
+    "19": 1,
+    "21": 2,
+    "23": 1,
+    "26": 2,
+    "27": 1,
+    "28": 2,
+    "29": 1,
+    "30": 1,
+    "33": 1,
+    "35": 1,
+    "39": 2,
+    "41": 1,
+    "42": 1,
+    "45": 1,
+    "48": 1,
+    "49": 1,
+    "57": 1,
+    "58": 1,
+    "61": 1,
+    "68": 1,
+    "76": 1,
+    "78": 1,
+    "114": 1,
+    "180": 1
+  },
+  "observed_nonzero_relationship_pairs": 27821,
+  "synthetic_pedigree": {
+    "generator": "founder_order_structure_matched",
+    "seed": 7,
+    "sibling_mean": 3.0,
+    "marry_in_probability": 0.35,
+    "maximum_generations": 5,
+    "generated_nonzero_relationship_pairs": 27691,
+    "relative_nonzero_pair_discrepancy": 0.004672729233312965,
+    "maximum_relative_nonzero_pair_discrepancy": 0.005
+  },
+  "fixed_effects": {
+    "columns": [
+      "intercept",
+      "standardised_age",
+      "standardised_age_squared",
+      "sex",
+      "standardised_age_by_sex",
+      "standardised_age_squared_by_sex"
+    ],
+    "covariate_seed": 1,
+    "age_distribution": {
+      "kind": "normal",
+      "mean": 45.0,
+      "standard_deviation": 15.0,
+      "standardise": true
+    },
+    "sex_distribution": "binary_uniform"
+  },
+  "coverage_acceptance": {
+    "nominal": 0.95,
+    "compatible_band": [
+      0.94,
+      0.96
+    ],
+    "fail_when": "clopper_pearson_upper_below_0.94",
+    "conservative_when": "clopper_pearson_lower_above_0.96",
+    "historically_conservative_truths": [
+      0.05,
+      0.07
+    ]
+  }
+}

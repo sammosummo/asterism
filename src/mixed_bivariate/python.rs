@@ -157,7 +157,18 @@ pub fn mixed_bivariate_interval(
     second_limit: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
     coordinate: usize,
-) -> PyResult<(String, f64, f64, f64, bool, bool, f64, usize)> {
+) -> PyResult<(
+    String,
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    usize,
+    Option<bool>,
+    Option<bool>,
+)> {
     let a = relationship.as_array();
     let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
     let x = design.as_array();
@@ -169,14 +180,28 @@ pub fn mixed_bivariate_interval(
         .map_err(PyValueError::new_err)?
         .profile_interval(coordinate)
         .map_err(PyValueError::new_err)?;
+    let what = match coordinate {
+        super::HERITABILITY_ONE => "heritability_one",
+        super::HERITABILITY_TWO => "heritability_two",
+        super::GENETIC_CORRELATION => "genetic_correlation",
+        super::RESIDUAL_CORRELATION => "residual_correlation",
+        _ => {
+            return Err(PyValueError::new_err(
+                "MIXED_BIVARIATE_COORDINATE_HAS_NO_INTERVAL",
+            ));
+        }
+    };
     Ok((
-        got.what.to_string(),
-        got.estimate,
+        what.to_owned(),
+        got.estimate
+            .ok_or_else(|| PyValueError::new_err("MIXED_BIVARIATE_PROFILE_NOT_EVALUABLE"))?,
         got.lower,
         got.upper,
-        got.lower_at_bound,
-        got.upper_at_bound,
+        got.lower_limited,
+        got.upper_limited,
         got.level,
         got.profile_failures,
+        got.contains_lower_bound,
+        got.contains_upper_bound,
     ))
 }
