@@ -31,8 +31,28 @@ jobs:
           fetch-depth: 0
       - name: Verify the promised build architecture
         run: test "$(uname -m)" = "${{ matrix.architecture }}"
+      # The portable wheel is built inside a manylinux container, and git there
+      # refuses to read a checkout owned by another user, so `build.rs` cannot
+      # derive the build identity for itself and stops with
+      # ASTERISM_BUILD_GIT_FAILED. Read the identity here on the host, where
+      # git can see the checkout, and pass it in through the two variables
+      # `build.rs` already prefers over asking git. Both platforms then take
+      # their identity from the same place rather than only the one that
+      # happens to build outside a container.
+      - name: Read the build identity from the checkout
+        id: identity
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+            echo "dirty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dirty=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build one ABI3 wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+        env:
+          ASTERISM_SOURCE_COMMIT: ${{ steps.identity.outputs.commit }}
+          ASTERISM_SOURCE_DIRTY: ${{ steps.identity.outputs.dirty }}
         with:
           command: build
           maturin-version: v1.14.1
@@ -40,6 +60,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release --locked --out dist
+          docker-options: -e ASTERISM_SOURCE_COMMIT -e ASTERISM_SOURCE_DIRTY
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
