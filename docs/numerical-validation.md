@@ -704,10 +704,26 @@ points along the constraint by construction: 2.3e-7 at the free answer's own
 correlation and 2.8e-3 a twentieth away, at maxima that were both reached. What
 `converged` reports for a held fit is whether the likelihood settled.
 
-There is **no interval on a heritability from this model**. The univariate
-censored model has one, it is coverage checked, and it answers a different
-question -- one frequency at a time, with what the two ears share folded into the
-genetic share. The two must not be tabled side by side.
+There is **also an interval on a heritability**, and it needed the fit split a
+different way. A share is a ratio between components at one position, so holding
+it ties together maximisations the method keeps separate; the fit becomes one
+conditional maximisation that moves everything except the scales at that position
+and a second that moves those along the constraint. ADR 0010 records the
+construction and the checks: holding the free answer's own share reproduces the
+free fit to six decimal places, every held fit realises the share it was given to
+within 1e-6, and the profile is single-peaked at the free answer.
+
+**Its range is 0.001 to 0.999 and not nought to one**, which matters more here
+than for a correlation. Nought is the interesting null for a heritability and it
+is not a value this model can take: a component with no variance at a position
+has a singular covariance there. An interval reaching the lower end says the data
+did not rule out a share of essentially nothing, not that nothing was tested
+against.
+
+**It is not the quantity the univariate censored model reports**, which measures
+the genetic share against a total with no person-level component in it and so
+folds in whatever the two ears share. The univariate number is larger by
+construction. The two must not be tabled side by side.
 
 There is also **no hypothesis test**, which every other family here has. The
 interval tests a correlation by inversion; a test that a whole component is

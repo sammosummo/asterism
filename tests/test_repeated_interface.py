@@ -245,3 +245,35 @@ def test_an_interval_without_a_kernel_is_refused(data):
         shaped.correlation_interval(value, censoring, limit, 7, 3.0)
     with pytest.raises(ValueError, match="REPEATED_SEPARATION_NOT_POSITIVE"):
         shaped.correlation_interval(value, censoring, limit, 0, 0.0)
+
+
+def test_the_heritability_interval_comes_back_and_brackets_its_estimate(data):
+    """The record's shape, and that its ends are the ones a covariance allows.
+
+    Whether it covers is `checks/repeated_share_coverage.py`'s question. What is
+    checked here is the translation, and one thing worth stating in a test
+    rather than only in prose: the lower end is 0.001 and not nought, because a
+    component with no variance at a position has a singular covariance there.
+    """
+    a, design, value = data
+    model = asterism.RepeatedModel(a, design, REPLICATES, POSITIONS, line=LINE)
+    censoring, limit = measured(value)
+    got = model.heritability_interval(value, censoring, limit, 0, 1)
+
+    assert got["component"] == 0
+    assert got["position"] == 1
+    assert got["level"] == 0.95
+    assert got["lower"] <= got["estimate"] <= got["upper"]
+    assert 0.001 <= got["lower"] and got["upper"] <= 0.999
+    assert isinstance(got["profile_failures"], int)
+    # The estimate is the free fit's own share, not a separate number.
+    free = model.fit(value, censoring, limit)
+    assert got["estimate"] == pytest.approx(
+        float(np.asarray(free["variance_shares"])[1][0]), abs=1e-9
+    )
+
+    with pytest.raises(ValueError, match="REPEATED_NO_SUCH_POSITION"):
+        model.heritability_interval(value, censoring, limit, 0, 99)
+    plain = asterism.RepeatedModel(a, design, REPLICATES, POSITIONS)
+    with pytest.raises(ValueError, match="REPEATED_NO_KERNEL"):
+        plain.heritability_interval(value, censoring, limit, 0, 1)

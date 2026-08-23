@@ -279,10 +279,29 @@ takes 34 seconds. The ends of the range are 0.001 and 0.999, because a correlati
 exactly one leaves a component no variance of its own and one of exactly nought
 needs an infinite rate.
 
-**There is no interval on a heritability here.** `TobitModel` has one, it is
-coverage checked, and it answers a different question — one position at a time,
-with what the replicates share folded into the genetic part. The two must not be
-tabled side by side.
+```python
+model.heritability_interval(value, censoring, limit, 0, position)
+```
+
+**There is an interval on a heritability too, and it needed the fit split a
+different way.** A correlation belongs to one component; a share is a ratio
+between components at one position, so holding it ties together maximisations
+the method keeps separate. The fit becomes two conditional maximisations: one
+that moves everything except the scales at that position, and one that moves
+those along the constraint.
+
+**Its range is 0.001 to 0.999, not nought to one**, which matters more for a
+share than for a correlation: nought is the interesting null for a heritability
+and it is not a value this model can take, because a component with no variance
+at a position has a singular covariance there. An interval reaching the lower end
+says the data did not rule out a share of essentially nothing — it is not a test
+against nothing.
+
+**It is not the same quantity `TobitModel` reports.** Here the share is measured
+against a total with a person-level component in it; there, with one position and
+one replicate, whatever the replicates share is folded into the genetic part. The
+univariate number is larger by construction and the two must not be tabled side
+by side.
 
 **Its coverage is counted**, at three true correlations and censoring up to a
 half. No cell covers less than it claims. Two cover more, and both were taken

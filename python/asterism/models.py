@@ -2112,6 +2112,78 @@ class RepeatedModel:
             "profile_failures": profile_failures,
         }
 
+    def heritability_interval(
+        self,
+        value: Any,
+        censoring: Any,
+        limit: Any,
+        component: int,
+        position: int,
+    ) -> dict[str, Any]:
+        """A 95 per cent profile-likelihood interval for one component's share
+        of the variance at one position.
+
+        **This is the heritability interval, and it needs reading with more care
+        than the correlation's.**
+
+        What it is an interval *of* is the share of the variance at that
+        position carried by that component, *in this model, with the other
+        components in it*. It is not what a one-frequency model reports: there,
+        with no person-level component to take it out, whatever the two
+        replicates share is folded into the genetic part. The two numbers answer
+        different questions and must not be tabled side by side.
+
+        **Neither end of the range is nought or one**, which matters more here
+        than for a correlation because nought is the interesting null for a
+        heritability and it is not a value this model can take — a component
+        with no variance at a position has a singular covariance there. The ends
+        are 0.001 and 0.999. An interval reaching the lower end says the data
+        did not rule out a share of essentially nothing; it is not a test
+        against nothing.
+
+        Holding a share is harder than holding a correlation and the difference
+        is structural. A correlation belongs to one component, so holding it
+        leaves the others alone. A share is a ratio *between* components at one
+        position, so holding it ties together maximisations the method otherwise
+        keeps separate; the fit is split into a step that moves everything
+        except the scales at that position and a step that moves those along the
+        constraint.
+
+        The arrays are the same three :meth:`fit` takes.
+        """
+        (
+            component_at,
+            position_at,
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level,
+            contains_lower_bound,
+            contains_upper_bound,
+            profile_failures,
+        ) = self._core.heritability_interval(
+            np.ascontiguousarray(value, dtype=float),
+            np.ascontiguousarray(censoring, dtype=np.int64),
+            np.ascontiguousarray(limit, dtype=float),
+            int(component),
+            int(position),
+        )
+        return {
+            "component": component_at,
+            "position": position_at,
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_at_bound": lower_at_bound,
+            "upper_at_bound": upper_at_bound,
+            "level": level,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
+            "profile_failures": profile_failures,
+        }
+
     @staticmethod
     def correlation(fit: dict[str, Any], component: int, separation: float) -> float:
         """The correlation this fit puts between two positions a given

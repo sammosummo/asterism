@@ -696,6 +696,57 @@ answer's own correlation and 2.8e-3 a twentieth away, at maxima that were both
 reached. So `converged` reports whether the likelihood settled when a
 correlation is held, and the gradient reading is left as it is with that said.
 
+### The heritability, which needed the fit split a different way
+
+*The record above said this was a restructuring rather than a missing function
+and left it out. It is a restructuring, and it is done.*
+
+**A share is not a correlation, and the difference decides the machinery.** A
+correlation belongs to one component, so holding it leaves every other
+component's conditional maximisation exactly as it was. A share is a ratio
+between components at one position,
+
+```text
+share_j(t) = sigma_j(t, t) / sum_k sigma_k(t, t)
+```
+
+so holding it ties together maximisations the method otherwise keeps separate.
+The complete-data likelihood still separates -- that has not changed -- but the
+constrained feasible set does not factor across components.
+
+What makes it tractable is that **the coupling is only three numbers**: the
+scales at that one position. So the fit is split into two conditional
+maximisations instead of one:
+
+1. every component moves everything it has *except* its scale at the held
+   position, which cannot disturb the constraint;
+2. those scales move together along the constraint, with the held component's
+   following from the others by
+   `scale_j(t) = sqrt( v / (1 - v) * sum_{k != j} scale_k(t)^2 )`.
+
+The two subspaces span the constrained parameter space, so this is an ECM in the
+ordinary sense and still climbs the likelihood. Measured: holding the free
+answer's own share reproduces the free fit's log-likelihood to six decimal
+places, every held fit realises the share it was given to within 1e-6, and the
+profile is single-peaked at the free answer.
+
+**Neither end of the range is nought or one, and for a heritability that has to
+be said out loud.** Nought is the interesting null, and it is not a value this
+model can take: a component with no variance at a position has a singular
+covariance there and the fit refuses it. The ends are 0.001 and 0.999. An
+interval reaching the lower end says the data did not rule out a share of
+essentially nothing, which is **not** the same as a test against nothing, and
+anything reported from it should say so. This is a real limitation of putting a
+kernel on the covariance and it is the price of nineteen parameters instead of
+153.
+
+**What it is an interval of is not what the univariate model reports.** Here the
+genetic share is measured against a total that has a person-level component in
+it; there, with one position and one ear, whatever the two ears share is folded
+into the genetic part. The univariate number is larger by construction. The two
+must not be tabled side by side, and the code says so in three places because it
+is the easiest mistake to make with this pair.
+
 ### The coverage simulation, and why it is gated differently
 
 `checks/repeated_coverage.py` runs it: sixty families of four with two ears

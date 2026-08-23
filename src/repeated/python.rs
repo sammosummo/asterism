@@ -68,6 +68,24 @@ type IntervalRecord = (
     usize,
 );
 
+/// A profile-likelihood interval for one component's share of the variance at
+/// one position: the component, the position, the estimate, the two ends,
+/// whether each end sits on a bound, the level, the two mixture verdicts, and
+/// how many points of the profile could not be fitted.
+type ShareRecord = (
+    usize,
+    usize,
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    Option<bool>,
+    Option<bool>,
+    usize,
+);
+
 /// A prepared repeated-measures model.
 #[pyclass(name = "RepeatedCore")]
 pub struct PyRepeatedCore {
@@ -154,6 +172,38 @@ impl PyRepeatedCore {
         Ok((
             got.component,
             got.separation,
+            got.estimate,
+            got.lower,
+            got.upper,
+            got.lower_at_bound,
+            got.upper_at_bound,
+            got.level,
+            got.contains_lower_bound,
+            got.contains_upper_bound,
+            got.profile_failures,
+        ))
+    }
+
+    /// A 95 per cent profile-likelihood interval for one component's share of
+    /// the variance at one position.
+    ///
+    /// **Every point of the profile is a whole fit.**
+    fn heritability_interval(
+        &self,
+        value: PyReadonlyArray2<'_, f64>,
+        censoring: PyReadonlyArray2<'_, i64>,
+        limit: PyReadonlyArray2<'_, f64>,
+        component: usize,
+        position: usize,
+    ) -> PyResult<ShareRecord> {
+        let known = Self::read(&value, &censoring, &limit)?;
+        let got = self
+            .model
+            .heritability_interval(&known, component, position)
+            .map_err(PyValueError::new_err)?;
+        Ok((
+            got.component,
+            got.position,
             got.estimate,
             got.lower,
             got.upper,

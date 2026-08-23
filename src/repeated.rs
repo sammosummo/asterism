@@ -296,6 +296,67 @@ const CORRELATION_LOW: f64 = 1e-3;
 /// matrix and not a fit.
 const CORRELATION_HIGH: f64 = 0.999;
 
+/// What a constrained fit is holding, where one is being taken.
+///
+/// **The two kinds are not variations on each other.** A correlation belongs to
+/// one component, so holding it leaves every other component's maximisation
+/// exactly as it was. A share is a ratio between components at one position, so
+/// holding it ties together maximisations the method otherwise keeps separate,
+/// and the fit has to be split differently to keep climbing. The enum is here so
+/// that the difference is stated once rather than carried as two options that
+/// must never both be set.
+#[derive(Clone, Copy, Debug)]
+enum Constraint {
+    /// One component's correlation, at one separation.
+    Correlation { component: usize, held: Held },
+    /// One component's share of the variance, at one position.
+    Share {
+        component: usize,
+        position: usize,
+        share: f64,
+    },
+}
+
+/// The smallest and largest variance share a fit can be held at.
+///
+/// Neither end is reachable and both are for the same reason: a component whose
+/// variance at a position is nought has a singular covariance there, and so does
+/// one that has taken the whole of it. **This matters more for a share than for
+/// a correlation**, because nought is the interesting null for a heritability
+/// and it is not a value this model can take. An interval ending here says the
+/// data did not rule out a share of essentially nothing, which is the honest
+/// reading and not the same as a test against nought.
+const SHARE_LOW: f64 = 1e-3;
+const SHARE_HIGH: f64 = 0.999;
+
+/// A profile-likelihood interval for one component's share of the variance at
+/// one position.
+///
+/// The ends are 0.001 and 0.999 and not nought and one; see
+/// [`RepeatedModel::heritability_interval`] for why that matters more here than
+/// it does for a correlation.
+#[derive(Clone, Debug)]
+pub struct ShareInterval {
+    /// Which component, in the order the matrices were given, replicate level
+    /// last.
+    pub component: usize,
+    /// Which position on the line.
+    pub position: usize,
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// True where the end sits at the edge of what a covariance can express
+    /// rather than where the profile fell away.
+    pub lower_at_bound: bool,
+    pub upper_at_bound: bool,
+    pub level: f64,
+    /// Whether an end belongs to the interval, by the Self-Liang mixture.
+    pub contains_lower_bound: Option<bool>,
+    pub contains_upper_bound: Option<bool>,
+    /// How many points on the profile could not be fitted.
+    pub profile_failures: usize,
+}
+
 /// A profile-likelihood interval for one correlation at one separation.
 #[derive(Clone, Debug)]
 pub struct CorrelationInterval {
@@ -485,9 +546,9 @@ impl RepeatedFit {
 struct Prepared {
     known: Vec<Known>,
     rotated: Option<Rotated>,
-    /// The component whose correlation is held, and at what, where a profile
-    /// is being taken. `None` is the ordinary fit.
-    held: Option<(usize, Held)>,
+    /// What is being held, where a profile is being taken. `None` is the
+    /// ordinary fit.
+    constraint: Option<Constraint>,
 }
 
 /// The result of one expectation step.
@@ -847,7 +908,7 @@ impl RepeatedModel {
         known: &[Known],
         holding: Option<(usize, f64, f64)>,
     ) -> Result<RepeatedFit, &'static str> {
-        let held = match holding {
+        let constraint = match holding {
             None => None,
             Some((component, separation, correlation)) => {
                 if self.kernel.is_none() {
@@ -862,15 +923,79 @@ impl RepeatedModel {
                 if !(CORRELATION_LOW..=CORRELATION_HIGH).contains(&correlation) {
                     return Err("REPEATED_HELD_NOT_REACHABLE");
                 }
-                Some((
+                Some(Constraint::Correlation {
                     component,
-                    Held {
+                    held: Held {
                         separation,
                         correlation,
                     },
-                ))
+                })
             }
         };
+        self.fit_constrained(known, constraint)
+    }
+
+    /// Fit with one component's share of the variance held at a value, at one
+    /// position.
+    ///
+    /// **This is the constrained fit a heritability interval is made of, and it
+    /// is not the same machinery as the correlation's.** A correlation belongs
+    /// to one component, so holding it leaves every other component alone. A
+    /// share is a ratio between components at a position:
+    ///
+    /// ```text
+    /// share_j(t) = sigma_j(t, t) / sum_k sigma_k(t, t)
+    /// ```
+    ///
+    /// so holding it ties together maximisations the method keeps separate. The
+    /// fit is split differently to cope: one conditional maximisation moves
+    /// everything except the scales at that position, which cannot disturb the
+    /// constraint, and a second moves those scales along it. The two subspaces
+    /// span the constrained parameter space, so this is still an ECM and still
+    /// climbs the likelihood.
+    ///
+    /// `component` counts the person-level components in the order they were
+    /// given, with the replicate level last. `position` indexes the line.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`RepeatedModel::fit_known`] returns, `REPEATED_NO_KERNEL`
+    /// where the covariances were left free, and `REPEATED_HELD_NOT_REACHABLE`
+    /// where the share is outside what a covariance can express.
+    pub fn fit_holding_share(
+        &self,
+        known: &[Known],
+        component: usize,
+        position: usize,
+        share: f64,
+    ) -> Result<RepeatedFit, &'static str> {
+        if self.kernel.is_none() {
+            return Err("REPEATED_NO_KERNEL");
+        }
+        if component > self.components() {
+            return Err("REPEATED_NO_SUCH_COMPONENT");
+        }
+        if position >= self.positions {
+            return Err("REPEATED_NO_SUCH_POSITION");
+        }
+        if !(SHARE_LOW..=SHARE_HIGH).contains(&share) {
+            return Err("REPEATED_HELD_NOT_REACHABLE");
+        }
+        self.fit_constrained(
+            known,
+            Some(Constraint::Share {
+                component,
+                position,
+                share,
+            }),
+        )
+    }
+
+    fn fit_constrained(
+        &self,
+        known: &[Known],
+        constraint: Option<Constraint>,
+    ) -> Result<RepeatedFit, &'static str> {
         let rows = self.people * self.replicates;
         let positions = self.positions;
         if known.len() != rows * positions {
@@ -907,10 +1032,10 @@ impl RepeatedModel {
         let prepared = Prepared {
             rotated: complete.then(|| crude.clone()),
             known: scaled,
-            held,
+            constraint,
         };
 
-        let mut state = self.starting_values(&crude, prepared.held)?;
+        let mut state = self.starting_values(&crude, prepared.constraint)?;
         let mut imputed = self
             .expectation(
                 &prepared,
@@ -1072,7 +1197,7 @@ impl RepeatedModel {
             // correlation, 2.8e-3 a twentieth away, at maxima that were both
             // reached. What is left to judge a held fit by is whether the
             // likelihood settled, so that is what is reported.
-            converged: if prepared.held.is_some() {
+            converged: if prepared.constraint.is_some() {
                 settled
             } else {
                 scaled_gradient < TOLERANCE
@@ -1180,6 +1305,114 @@ impl RepeatedModel {
         Ok(CorrelationInterval {
             component,
             separation,
+            estimate,
+            lower,
+            upper,
+            lower_at_bound,
+            upper_at_bound,
+            level: 0.95,
+            contains_lower_bound: lower_at_bound
+                .then(|| at_low.map(|d| d <= MIXTURE_CRIT))
+                .flatten(),
+            contains_upper_bound: upper_at_bound
+                .then(|| at_high.map(|d| d <= MIXTURE_CRIT))
+                .flatten(),
+            profile_failures: failures.get(),
+        })
+    }
+
+    /// A 95 per cent profile-likelihood interval for one component's share of
+    /// the variance at one position.
+    ///
+    /// **This is the heritability interval, and reading it takes more care than
+    /// reading the correlation's.**
+    ///
+    /// What it is an interval *of* is the share of the variance at that
+    /// position carried by that component, in this model, with the other
+    /// components in it. It is not the same quantity a one-position model
+    /// reports: there, with no person-level component to take it out, whatever
+    /// the replicates share is folded into the genetic part. The two must not be
+    /// set beside each other.
+    ///
+    /// **Neither end of the range is nought or one**, and for a heritability
+    /// that is worth saying out loud: nought is the interesting null and it is
+    /// not a value this model can take, because a component with no variance at
+    /// a position has a singular covariance there. The ends are 0.001 and 0.999.
+    /// An interval reaching the lower end says the data did not rule out a share
+    /// of essentially nothing, which is not the same as a test against nothing.
+    ///
+    /// The recipe is otherwise ADR 0004's, as everywhere else: the ends are
+    /// where twice the drop in the profile log-likelihood reaches 3.8415, found
+    /// by bisection inwards from each end, with the Self-Liang mixture deciding
+    /// whether an end that was reached belongs.
+    ///
+    /// **Every point of the profile is a whole fit.**
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the model has no kernel, the component or
+    /// the position does not exist, or the free fit fails.
+    pub fn heritability_interval(
+        &self,
+        known: &[Known],
+        component: usize,
+        position: usize,
+    ) -> Result<ShareInterval, &'static str> {
+        if self.kernel.is_none() {
+            return Err("REPEATED_NO_KERNEL");
+        }
+        if component > self.components() {
+            return Err("REPEATED_NO_SUCH_COMPONENT");
+        }
+        if position >= self.positions {
+            return Err("REPEATED_NO_SUCH_POSITION");
+        }
+        let free = self.fit_known(known)?;
+        let estimate = free
+            .variance_shares
+            .get(position)
+            .and_then(|row| row.get(component))
+            .copied()
+            .ok_or("REPEATED_NO_SUCH_COMPONENT")?
+            .clamp(SHARE_LOW, SHARE_HIGH);
+        let at_estimate = self
+            .fit_holding_share(known, component, position, estimate)?
+            .loglik;
+
+        let failures = std::cell::Cell::new(0usize);
+        let deviance_at = |value: f64| -> Option<f64> {
+            let Ok(fit) = self.fit_holding_share(known, component, position, value) else {
+                failures.set(failures.get() + 1);
+                return None;
+            };
+            Some(2.0 * (at_estimate - fit.loglik))
+        };
+        // A fit that could not be made is unknown ground and not ground the data
+        // ruled out, so it counts as inside and the count travels with the
+        // answer.
+        let outside = |value: f64| deviance_at(value).is_some_and(|d| d > CHI2_ONE_95);
+
+        let at_low = deviance_at(SHARE_LOW);
+        let at_high = deviance_at(SHARE_HIGH);
+        let (lower, lower_at_bound) = if at_low.is_some_and(|d| d > CHI2_ONE_95) {
+            (
+                crate::liability::bisect(SHARE_LOW, estimate, &outside),
+                false,
+            )
+        } else {
+            (SHARE_LOW, true)
+        };
+        let (upper, upper_at_bound) = if at_high.is_some_and(|d| d > CHI2_ONE_95) {
+            (
+                crate::liability::bisect(SHARE_HIGH, estimate, &outside),
+                false,
+            )
+        } else {
+            (SHARE_HIGH, true)
+        };
+        Ok(ShareInterval {
+            component,
+            position,
             estimate,
             lower,
             upper,
@@ -1668,7 +1901,7 @@ impl RepeatedModel {
     fn starting_values(
         &self,
         rotated: &Rotated,
-        held: Option<(usize, Held)>,
+        constraint: Option<Constraint>,
     ) -> Result<State, &'static str> {
         let cross = self.design_mean.transpose() * &rotated.mean
             + self.design_contrast.transpose() * &rotated.contrast;
@@ -1698,14 +1931,26 @@ impl RepeatedModel {
                     .ok_or("REPEATED_START_NOT_SHAPEABLE")?,
             ),
         };
-        // A held component has to start somewhere the constraint allows.
-        let shapes = match (shapes, held, &self.kernel) {
-            (Some(mut shapes), Some((which, held)), Some(kernel)) => {
-                let start = shapes.get(which).ok_or("REPEATED_NO_SUCH_COMPONENT")?;
-                shapes[which] = kernel::started_holding(kernel, start, held)
+        // A held fit has to start somewhere the constraint allows.
+        let shapes = match (shapes, constraint, &self.kernel) {
+            (Some(mut shapes), Some(Constraint::Correlation { component, held }), Some(kernel)) => {
+                let start = shapes.get(component).ok_or("REPEATED_NO_SUCH_COMPONENT")?;
+                shapes[component] = kernel::started_holding(kernel, start, held)
                     .ok_or("REPEATED_HELD_NOT_REACHABLE")?;
                 Some(shapes)
             }
+            (
+                Some(shapes),
+                Some(Constraint::Share {
+                    component,
+                    position,
+                    share,
+                }),
+                Some(kernel),
+            ) => Some(
+                kernel::started_holding_share(kernel, &shapes, position, component, share)
+                    .ok_or("REPEATED_HELD_NOT_REACHABLE")?,
+            ),
             (shapes, _, _) => shapes,
         };
         let sigmas = match &shapes {
@@ -1741,7 +1986,7 @@ impl RepeatedModel {
         &self,
         imputed: &Imputed,
         state: &State,
-        held: Option<(usize, Held)>,
+        constraint: Option<Constraint>,
     ) -> Option<State> {
         let State {
             sigmas,
@@ -1859,28 +2104,75 @@ impl RepeatedModel {
             });
         };
         let shapes = shapes.as_ref()?;
+        let last = self.components();
+        // Every component's statistic and count in one place, because holding a
+        // share needs all of them at once where holding a correlation needs one.
+        let all: Vec<&DMatrix<f64>> = statistics
+            .iter()
+            .chain(std::iter::once(&residual_statistic))
+            .collect();
+        let counts: Vec<f64> = self
+            .ranks
+            .iter()
+            .map(|rank| *rank as f64)
+            .chain(std::iter::once(rows))
+            .collect();
+
+        // **Holding a share splits the fit differently.** The first conditional
+        // maximisation moves everything except the scales at the held position,
+        // so it cannot disturb the constraint; the second moves those scales
+        // along it. The two subspaces together span the constrained parameter
+        // space, which is what keeps this an ECM.
+        let fixed_at = match constraint {
+            Some(Constraint::Share { position, .. }) => Some(position),
+            _ => None,
+        };
         let mut next_shapes = Vec::with_capacity(shapes.len());
-        let mut next_sigmas = Vec::with_capacity(self.components());
-        for (component, statistic) in statistics.iter().enumerate() {
-            let weight = self.ranks[component] as f64;
-            let shaped = match held {
-                Some((which, held)) if which == component => {
+        for (component, statistic) in all.iter().enumerate() {
+            let weight = counts[component];
+            let shaped = match constraint {
+                Some(Constraint::Correlation {
+                    component: which,
+                    held,
+                }) if which == component => {
                     kernel::maximise_holding(kernel, statistic, weight, &shapes[component], held)?
                 }
-                _ => kernel::maximise(kernel, statistic, weight, &shapes[component])?,
+                _ => match fixed_at {
+                    Some(at) => kernel::maximise_fixing(
+                        kernel,
+                        statistic,
+                        weight,
+                        &shapes[component],
+                        Some(at),
+                    )?,
+                    None => kernel::maximise(kernel, statistic, weight, &shapes[component])?,
+                },
             };
-            next_sigmas.push(shaped.covariance(kernel));
             next_shapes.push(shaped);
         }
-        let last = self.components();
-        let shaped = match held {
-            Some((which, held)) if which == last => {
-                kernel::maximise_holding(kernel, &residual_statistic, rows, shapes.last()?, held)?
-            }
-            _ => kernel::maximise(kernel, &residual_statistic, rows, shapes.last()?)?,
-        };
-        let next_residual = shaped.covariance(kernel);
-        next_shapes.push(shaped);
+        if let Some(Constraint::Share {
+            component,
+            position,
+            share,
+        }) = constraint
+        {
+            next_shapes = kernel::maximise_shares(
+                kernel,
+                &all,
+                &counts,
+                &next_shapes,
+                position,
+                component,
+                share,
+            )?;
+        }
+
+        let next_sigmas: Vec<DMatrix<f64>> = next_shapes
+            .iter()
+            .take(last)
+            .map(|shaped| shaped.covariance(kernel))
+            .collect();
+        let next_residual = next_shapes.last()?.covariance(kernel);
         Some(State {
             sigmas: next_sigmas,
             residual: next_residual,
@@ -1925,11 +2217,11 @@ impl RepeatedModel {
         state: &State,
         iterations: &mut usize,
     ) -> Option<(State, Imputed)> {
-        let one = self.one_iteration(imputed, state, prepared.held)?;
+        let one = self.one_iteration(imputed, state, prepared.constraint)?;
         let imputed_one =
             self.expectation(prepared, &one.sigmas, &one.residual, &one.fixed, true)?;
         *iterations += 1;
-        let two = self.one_iteration(&imputed_one, &one, prepared.held)?;
+        let two = self.one_iteration(&imputed_one, &one, prepared.constraint)?;
         let imputed_two =
             self.expectation(prepared, &two.sigmas, &two.residual, &two.fixed, true)?;
         *iterations += 1;
@@ -1961,7 +2253,7 @@ impl RepeatedModel {
                 candidate
                     .push(base[index] - 2.0 * length * step[index] + length * length * bend[index]);
             }
-            let proposal = self.unflatten(&candidate, prepared.held);
+            let proposal = self.unflatten(&candidate, prepared.constraint);
             let attempt = self.expectation(
                 prepared,
                 &proposal.sigmas,
@@ -2011,7 +2303,7 @@ impl RepeatedModel {
     /// anyway. Both repairs are the right one rather than the convenient one,
     /// because the case that produces them is a component collapsing and the
     /// boundary is where it was going.
-    fn unflatten(&self, values: &[f64], held: Option<(usize, Held)>) -> State {
+    fn unflatten(&self, values: &[f64], constraint: Option<Constraint>) -> State {
         let positions = self.positions;
         let covariates = self.covariates;
         let (head, tail) = values.split_at(values.len() - covariates * positions);
@@ -2027,11 +2319,26 @@ impl RepeatedModel {
             // is the one the fit reports. Measured without this: a fit told to
             // hold the correlation at 0.30 stopped after twenty iterations and
             // reported 0.42.
-            if let Some((which, held)) = held
-                && let Some(shape) = shapes.get(which)
-                && let Some(projected) = kernel::started_holding(kernel, shape, held)
-            {
-                shapes[which] = projected;
+            match constraint {
+                Some(Constraint::Correlation { component, held }) => {
+                    if let Some(shape) = shapes.get(component)
+                        && let Some(projected) = kernel::started_holding(kernel, shape, held)
+                    {
+                        shapes[component] = projected;
+                    }
+                }
+                Some(Constraint::Share {
+                    component,
+                    position,
+                    share,
+                }) => {
+                    if let Some(projected) =
+                        kernel::started_holding_share(kernel, &shapes, position, component, share)
+                    {
+                        shapes = projected;
+                    }
+                }
+                None => {}
             }
             return self.shaped_state(&shapes, fixed);
         }
@@ -2893,7 +3200,7 @@ mod tests {
         let prepared = Prepared {
             known,
             rotated: None,
-            held: None,
+            constraint: None,
         };
         let got = model
             .expectation(&prepared, &sigmas, &residual, &fixed, true)

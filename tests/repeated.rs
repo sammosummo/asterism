@@ -1361,3 +1361,172 @@ fn the_interval_ends_where_the_likelihood_says_it_should() {
         "REPEATED_NO_KERNEL"
     );
 }
+
+/// The profile interval on a component's share of the variance at one position.
+///
+/// **This is the heritability interval, and it is a different machinery from the
+/// correlation's.** A correlation belongs to one component; a share is a ratio
+/// between them, so holding it ties together maximisations that expectation
+/// maximisation keeps separate. The fit is split into a step that moves
+/// everything except the scales at that position and a step that moves those
+/// scales along the constraint.
+///
+/// What is checked is what makes that split legitimate. Holding the free
+/// answer's own share must reproduce the free fit, or the constrained fit is
+/// searching a smaller space than it claims. Every held fit must realise the
+/// share it was asked for. The ends must cost 3.8415 in deviance. And the
+/// interval must contain the share the data were simulated from.
+#[test]
+fn the_heritability_interval_ends_where_the_likelihood_says_it_should() {
+    let replicates = 2;
+    let scale = [1.0, 1.1, 0.9, 1.2, 1.0, 0.8];
+    let genetic = shaped(&scale, 0.35, 0.09);
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(150, replicates, &genetic, &residual, 20_260_828);
+
+    let model = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build");
+    let mut known = Vec::new();
+    for row in 0..data.response.nrows() {
+        for position in 0..data.response.ncols() {
+            known.push(Known::Value(data.response[(row, position)]));
+        }
+    }
+
+    let at = 2usize;
+    let free = model.fit_known(&known).expect("the free fit should run");
+    let estimate = free.variance_shares[at][0];
+
+    // **Holding the free answer's own share must cost nothing.** If it cost
+    // something, every deviance would be measured against the wrong reference
+    // and every interval would be too wide.
+    let at_estimate = model
+        .fit_holding_share(&known, 0, at, estimate)
+        .expect("the fit at the estimate should run");
+    assert!(
+        (at_estimate.loglik - free.loglik).abs() < 1e-4,
+        "holding the free share cost {} in log-likelihood",
+        free.loglik - at_estimate.loglik
+    );
+
+    // Every held fit realises the share it was given, or it is a profile of
+    // something else.
+    for share in [0.1, 0.25, estimate, 0.6, 0.8] {
+        let fit = model
+            .fit_holding_share(&known, 0, at, share)
+            .expect("the share should be reachable");
+        assert!(
+            (fit.variance_shares[at][0] - share).abs() < 1e-6,
+            "asked for {share}, got {}",
+            fit.variance_shares[at][0]
+        );
+    }
+
+    let interval = model
+        .heritability_interval(&known, 0, at)
+        .expect("the interval should be takeable");
+    assert_eq!(interval.component, 0);
+    assert_eq!(interval.position, at);
+    assert_eq!(interval.profile_failures, 0);
+    assert!(
+        interval.lower <= interval.estimate && interval.estimate <= interval.upper,
+        "the interval {} to {} does not contain its own estimate {}",
+        interval.lower,
+        interval.upper,
+        interval.estimate
+    );
+
+    // The share the data came from: the genetic variance at this position
+    // against the whole of it.
+    let genetic_variance = genetic[(at, at)];
+    let wanted = genetic_variance / (genetic_variance + residual[(at, at)]);
+    assert!(
+        interval.lower <= wanted && wanted <= interval.upper,
+        "the interval {} to {} misses the share it was simulated from, {wanted}",
+        interval.lower,
+        interval.upper
+    );
+
+    // Each end that is not on a bound costs 3.8415 in deviance, which is what
+    // makes it a 95 per cent interval rather than a pair of numbers.
+    for (name, end, at_bound) in [
+        ("lower", interval.lower, interval.lower_at_bound),
+        ("upper", interval.upper, interval.upper_at_bound),
+    ] {
+        if at_bound {
+            continue;
+        }
+        let held = model
+            .fit_holding_share(&known, 0, at, end)
+            .expect("the fit at the end should run")
+            .loglik;
+        let deviance = 2.0 * (at_estimate.loglik - held);
+        assert!(
+            (deviance - 3.841_458_820_694_124).abs() < 0.05,
+            "the {name} end at {end} costs {deviance} in deviance"
+        );
+    }
+
+    // What is refused rather than answered.
+    assert_eq!(
+        model.heritability_interval(&known, 9, at).unwrap_err(),
+        "REPEATED_NO_SUCH_COMPONENT"
+    );
+    assert_eq!(
+        model.heritability_interval(&known, 0, 99).unwrap_err(),
+        "REPEATED_NO_SUCH_POSITION"
+    );
+    let plain = RepeatedModel::build(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        LINE.len(),
+    )
+    .expect("the plain model should build");
+    assert_eq!(
+        plain.heritability_interval(&known, 0, at).unwrap_err(),
+        "REPEATED_NO_KERNEL"
+    );
+}
+
+/// **Holding a share must not stop the fit climbing.** The split into two
+/// conditional maximisations is what keeps this an ECM, and if either half went
+/// downhill the fit would stop wherever it happened to be and the profile would
+/// sit below the likelihood.
+#[test]
+fn a_held_share_still_climbs_the_likelihood() {
+    let replicates = 2;
+    let genetic = shaped(&[1.0, 1.1, 0.9, 1.2, 1.0, 0.8], 0.35, 0.09);
+    let residual = shaped(&[0.9, 0.9, 1.0, 1.0, 1.1, 1.1], 0.05, 0.8);
+    let data = simulate_on_a_line(80, replicates, &genetic, &residual, 20_260_901);
+    let model = RepeatedModel::build_on_a_line(
+        std::slice::from_ref(&data.relationship),
+        &data.design,
+        replicates,
+        &LINE,
+    )
+    .expect("the model should build");
+    let mut known = Vec::new();
+    for row in 0..data.response.nrows() {
+        for position in 0..data.response.ncols() {
+            known.push(Known::Value(data.response[(row, position)]));
+        }
+    }
+    for share in [0.05, 0.3, 0.7] {
+        let fit = model
+            .fit_holding_share(&known, 0, 3, share)
+            .expect("the share should be reachable");
+        assert!(fit.monotone, "the likelihood fell while holding {share}");
+        assert!(
+            fit.converged,
+            "holding {share} did not settle after {} iterations",
+            fit.iterations
+        );
+        assert!((fit.variance_shares[3][0] - share).abs() < 1e-6);
+    }
+}

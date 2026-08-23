@@ -486,6 +486,25 @@ pub(crate) fn maximise(
     weight: f64,
     from: &Shaped,
 ) -> Option<Shaped> {
+    maximise_fixing(kernel, statistic, weight, from, None)
+}
+
+/// The same maximisation with the scale at one position left where it is.
+///
+/// **This is one half of holding a variance share.** A share at a position
+/// couples the scales of every component there and nothing else, so the fit
+/// splits into two conditional maximisations: this one, which moves everything
+/// except those scales and so cannot disturb the constraint, and
+/// [`maximise_shares`], which moves those scales along it. Together they span
+/// the constrained parameter space, which is what makes the pair an ECM rather
+/// than a heuristic.
+pub(crate) fn maximise_fixing(
+    kernel: &Kernel,
+    statistic: &DMatrix<f64>,
+    weight: f64,
+    from: &Shaped,
+    fixed: Option<usize>,
+) -> Option<Shaped> {
     let size = from.scale.len();
     let rate_at = size + 1;
 
@@ -536,6 +555,17 @@ pub(crate) fn maximise(
     }
     lower[rate_at] = RATE_MIN.ln();
     upper[rate_at] = RATE_MAX.ln();
+    if let Some(at) = fixed {
+        // A variable whose two bounds meet is a variable the search cannot
+        // move, which is what "fixed" means here. Pinning it to the start
+        // rather than to the caller's number keeps this exact even after the
+        // logarithm and back.
+        if at >= size {
+            return None;
+        }
+        lower[at] = start[at];
+        upper[at] = start[at];
+    }
     let bounds = Bounds::new(lower, upper).ok()?;
 
     let value_of = |par: &[f64]| -> f64 {
@@ -824,6 +854,168 @@ pub(crate) fn maximise_holding(
     };
     DenseFactor::new(&shaped.covariance(kernel))?;
     Some(shaped)
+}
+
+/// One position's scales, moved together along a held variance share.
+///
+/// **This is the other half of holding a share**, and the reason the joint
+/// model's heritability needs a different machinery from its correlation.
+/// A correlation belongs to one component, so holding it leaves every other
+/// component's maximisation untouched. A share is a ratio *between* components:
+///
+/// ```text
+/// share_j(t) = scale_j(t)^2 / sum_k scale_k(t)^2
+/// ```
+///
+/// so holding it ties three maximisations that the method otherwise keeps
+/// separate. What is done here is to search over the scales of the components
+/// that are *not* held, at that one position, and let the held one follow:
+///
+/// ```text
+/// scale_j(t) = sqrt( v / (1 - v) * sum_{k != j} scale_k(t)^2 )
+/// ```
+///
+/// which satisfies the constraint by construction. Everything else about every
+/// component is left where [`maximise_fixing`] put it.
+///
+/// The scales are searched on their logarithms for the reason given in
+/// [`maximise`]: nought is where a covariance stops being one.
+///
+/// Returns `None` where the share cannot be met, or where any component's
+/// covariance stops factorising along the way.
+pub(crate) fn maximise_shares(
+    kernel: &Kernel,
+    statistics: &[&DMatrix<f64>],
+    weights: &[f64],
+    shapes: &[Shaped],
+    position: usize,
+    held: usize,
+    share: f64,
+) -> Option<Vec<Shaped>> {
+    let count = shapes.len();
+    if statistics.len() != count || weights.len() != count || held >= count {
+        return None;
+    }
+    if !(0.0..1.0).contains(&share) {
+        return None;
+    }
+    let ratio = share / (1.0 - share);
+    let free: Vec<usize> = (0..count).filter(|k| *k != held).collect();
+    if free.is_empty() {
+        return None;
+    }
+
+    // The held scale, and how it moves with each free one.
+    let derived = |logged: &[f64]| -> Option<f64> {
+        let sum: f64 = logged.iter().map(|x| (2.0 * x).exp()).sum();
+        let scale = (ratio * sum).sqrt();
+        (scale.is_finite() && (SCALE_MIN..=SCALE_MAX).contains(&scale)).then_some(scale)
+    };
+
+    let value_and_gradient = |logged: &[f64]| -> Option<(f64, Vec<f64>)> {
+        let held_scale = derived(logged)?;
+        let mut total = 0.0;
+        let mut own = vec![0.0; free.len()];
+        for (slot, k) in free.iter().enumerate() {
+            let mut packed = shapes[*k].packed();
+            packed[position] = logged[slot].exp();
+            let (value, gradient) = objective(kernel, statistics[*k], weights[*k], &packed)?;
+            total += value;
+            own[slot] = gradient[position];
+        }
+        let held_slope = {
+            let mut packed = shapes[held].packed();
+            packed[position] = held_scale;
+            let (value, gradient) = objective(kernel, statistics[held], weights[held], &packed)?;
+            total += value;
+            gradient[position]
+        };
+        // The chain rule twice over: the logarithm, and the held scale that
+        // every free one drags with it.
+        let out = free
+            .iter()
+            .enumerate()
+            .map(|(slot, _)| {
+                let scale = logged[slot].exp();
+                (own[slot] + held_slope * ratio * scale / held_scale) * scale
+            })
+            .collect();
+        Some((total, out))
+    };
+
+    let start: Vec<f64> = free
+        .iter()
+        .map(|k| shapes[*k].scale[position].max(SCALE_MIN).ln())
+        .collect();
+    derived(&start)?;
+    let bounds = Bounds::new(
+        vec![SCALE_MIN.ln(); free.len()],
+        vec![SCALE_MAX.ln(); free.len()],
+    )
+    .ok()?;
+
+    let value_of = |par: &[f64]| -> f64 { value_and_gradient(par).map_or(1e30, |(v, _)| v) };
+    let gradient_of = |par: &[f64]| -> Vec<f64> {
+        value_and_gradient(par).map_or_else(|| vec![0.0; par.len()], |(_, g)| g)
+    };
+    let mut control = OptimControl::default_for_dimension(start.len());
+    control.maxit = INNER_ITERATIONS;
+    control.fnscale = value_of(&start).abs().max(1.0);
+    control.parscale = vec![1.0; start.len()];
+    control.factr = 1.0e5;
+    control.pgtol = 1e-9;
+    control.lmm = start.len().min(10);
+    let solution =
+        optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control).ok()?;
+    let before = value_of(&start);
+    let after = value_of(&solution.par);
+    let par = if after.is_finite() && after <= before {
+        solution.par
+    } else {
+        start
+    };
+
+    let held_scale = derived(&par)?;
+    let mut out = shapes.to_vec();
+    for (slot, k) in free.iter().enumerate() {
+        out[*k].scale[position] = par[slot].exp().clamp(SCALE_MIN, SCALE_MAX);
+    }
+    out[held].scale[position] = held_scale;
+    for shaped in &out {
+        DenseFactor::new(&shaped.covariance(kernel))?;
+    }
+    Some(out)
+}
+
+/// Shapes that satisfy a held share, as near the given ones as the constraint
+/// allows: every other component is left alone and the held one follows.
+pub(crate) fn started_holding_share(
+    kernel: &Kernel,
+    shapes: &[Shaped],
+    position: usize,
+    held: usize,
+    share: f64,
+) -> Option<Vec<Shaped>> {
+    if held >= shapes.len() || !(0.0..1.0).contains(&share) {
+        return None;
+    }
+    let sum: f64 = shapes
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| *k != held)
+        .map(|(_, shaped)| {
+            let scale = *shaped.scale.get(position).unwrap_or(&0.0);
+            scale * scale
+        })
+        .sum();
+    let scale = (share / (1.0 - share) * sum).sqrt();
+    if !scale.is_finite() {
+        return None;
+    }
+    let mut out = shapes.to_vec();
+    *out.get_mut(held)?.scale.get_mut(position)? = scale.clamp(SCALE_MIN, SCALE_MAX);
+    DenseFactor::new(&out[held].covariance(kernel))?;
+    Some(out)
 }
 
 /// A starting shape for a component, from a covariance that is not shaped.
