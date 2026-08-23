@@ -563,7 +563,39 @@ impl TobitModel {
 
         let (objective, theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
         let gradient = gradient_of(&theta);
-        let scaled_gradient = gradient.iter().fold(0.0_f64, |worst, g| worst.max(g.abs()));
+        // The search is bound constrained, so what says whether it has arrived
+        // is the projected gradient, not the raw one. At an optimum resting on
+        // a bound the raw gradient points out of the feasible region and does
+        // not go to nought, so testing it reports a correct fit as a failure.
+        // A heritability of nought is the lower bound and a true nought leaves
+        // about half of all samples resting there, which is why about half of
+        // every null fit refused -- at three quarters censored, at half, and
+        // at none at all, where this model is the one-trait model and that one
+        // fits every time.
+        //
+        // This is the reading `components.rs` takes, in this family's
+        // parameterisation: only the heritability has bounds to rest on, while
+        // the log total variance and the fixed effects are free. Scaling by the
+        // objective is part of that reading and was missing too, so the value
+        // called `scaled_gradient` here was never scaled.
+        let projected = gradient
+            .iter()
+            .enumerate()
+            .map(|(k, g)| {
+                if lower[k] == upper[k] {
+                    // A held coordinate is not a direction the search may act
+                    // on, whichever way its gradient points.
+                    0.0
+                } else if crate::components::resting_on_zero(theta[k] - lower[k]) {
+                    g.min(0.0)
+                } else if crate::components::resting_on_zero(upper[k] - theta[k]) {
+                    g.max(0.0)
+                } else {
+                    *g
+                }
+            })
+            .fold(0.0_f64, |worst, g| worst.max(g.abs()));
+        let scaled_gradient = projected / objective.abs().max(1.0);
         Ok(TobitFit {
             heritability: theta[0],
             total_variance: theta[1].exp(),
