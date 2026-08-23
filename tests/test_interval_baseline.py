@@ -363,8 +363,80 @@ def test_discrete_gxe_interval(
         "contains_lower_bound",
         "contains_upper_bound",
     } <= set(got)
+    # Both ends are on their bounds here, so this pin cannot detect a change in
+    # the bracketing at all. It stayed exact through this family's move to
+    # `src/interval.rs`, which tightened the tolerance and changed the reference
+    # maximum from the free fit's log-likelihood to the profile held at the
+    # estimate -- either of which moves an interior end. The test below supplies
+    # the interior case this design cannot.
     same(got["lower"], -1.0, "discrete gxe lower")
     same(got["upper"], 1.0, "discrete gxe upper")
+
+
+def test_discrete_gxe_interval_with_an_interior_end(
+    k: npt.NDArray[np.float64],
+) -> None:
+    """The interior case the pin above cannot supply.
+
+    That design puts both ends on their bounds, so it stays exact through any
+    change to the bracketing and pins nothing about it. This one puts the lower
+    end inside, which is the only place a tolerance or a reference can show
+    itself.
+
+    **Pinned from a measured before and after**, taken when this family moved to
+    `src/interval.rs`. Five interior designs were run against the old code and
+    the new. Every difference fell between 5.7e-09 and 2.1e-08, and the sign was
+    mixed -- three up, two down.
+
+    That mixture answers the question the move raised. Two things changed at
+    once: the bracketing tolerance tightened, and the reference maximum stopped
+    being the free fit's log-likelihood and became the profile held at the
+    estimate. A reference sitting too high would widen every lower end in the
+    same direction, so a mixed sign at the scale of the old tolerance says the
+    reference change moves nothing measurable here. What moved is the bracket.
+    """
+    n: int = k.shape[0]
+    """Counted the people represented by the common pedigree."""
+
+    rng: np.random.Generator = np.random.default_rng(20_260_822)
+    """Created the deterministic generator for this interior design."""
+
+    chol: npt.NDArray[np.float64] = np.linalg.cholesky(k + 1e-10 * np.eye(n))
+    """Factorised the relationship matrix for correlated genetic effects."""
+
+    first: npt.NDArray[np.float64] = chol @ rng.standard_normal(n)
+    """Drew the genetic effect acting in the first environment."""
+
+    second: npt.NDArray[np.float64] = 0.5 * first + np.sqrt(1.0 - 0.25) * (
+        chol @ rng.standard_normal(n)
+    )
+    """Drew the second environment's effect at a genetic correlation of a half."""
+
+    environment: npt.NDArray[np.float64] = np.array(
+        [1.0 if index % 2 else 2.0 for index in range(n)]
+    )
+    """Alternated people between two explicit environment groups."""
+
+    y: npt.NDArray[np.float64] = np.where(environment == 1.0, first, second) * np.sqrt(
+        0.5
+    )
+    """Took each person's effect from the environment they are actually in."""
+
+    y = y + np.sqrt(0.5) * rng.standard_normal(n)
+    """Added the residual half of the variance."""
+
+    model: asterism.DiscreteGxeModel = asterism.DiscreteGxeModel(
+        k, environment, np.ones((n, 1))
+    )
+    """Prepared the two-environment covariance model on this interior design."""
+
+    got: dict[str, object] = model.correlation_interval(y)
+    """Profiled the directly parameterised cross-environment correlation."""
+
+    assert not got["lower_limited"], "the lower end must be interior to be a pin"
+    same(got["lower"], 0.1232572638511534, "discrete gxe interior lower")
+    # 0.12325725815102051 before the move, 5.7e-09 lower.
+    same(got["upper"], 1.0, "discrete gxe interior upper")
 
 
 def test_liability_interval(

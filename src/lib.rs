@@ -31,7 +31,7 @@ pub use association::{AssociationModel, CovariateEffect, MarkerTest, Variance};
 pub use autoregressive::{AutoregressiveFit, AutoregressiveModel};
 pub use bivariate::{BivariateFit, BivariateHeritabilityBoundary, BivariateModel};
 pub use components::{ComponentFit, ComponentModel};
-pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeInterval, DiscreteGxeModel};
+pub use discrete_gxe::{DiscreteGxeFit, DiscreteGxeModel};
 pub use gxe::{GxeFit, GxeModel, Surface};
 pub use interval::Interval;
 pub use kinship_classes::{CLASS_NAMES, KinshipClasses};

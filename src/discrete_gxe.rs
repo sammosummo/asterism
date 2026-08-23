@@ -1003,9 +1003,6 @@ fn mixture(
     }
 }
 
-/// Compatibility name for the one shared interval record.
-pub type DiscreteGxeInterval = Interval;
-
 impl DiscreteGxeModel {
     /// A 95 per cent profile-likelihood interval for the genetic correlation.
     ///
@@ -1032,7 +1029,7 @@ impl DiscreteGxeModel {
         &self,
         y: &DVector<f64>,
         reml: bool,
-    ) -> Result<DiscreteGxeInterval, &'static str> {
+    ) -> Result<Interval, &'static str> {
         let free = self.fit(y, reml)?;
         if !free.converged {
             return Err("DISCRETE_GXE_FIT_NOT_CONVERGED");
