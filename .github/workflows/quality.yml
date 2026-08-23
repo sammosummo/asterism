@@ -59,5 +59,25 @@ jobs:
         run: uv run python tools/check_python_style.py
       - name: Check release metadata
         run: uv run python tools/check_release.py --metadata
+      # TEMPORARY. Names which frozen input identity Linux regenerates
+      # differently, which the adapter's own message does not say. Remove once
+      # the answer is recorded.
+      - name: Which liability fixture identity differs here
+        continue-on-error: true
+        run: |
+          uv run python - <<'PY'
+          import json, sys, platform
+          from pathlib import Path
+          sys.path.insert(0, "checks")
+          import numpy
+          import liability_against_solar as L
+          ids = L.reference_input_identities(L.generated_cases())
+          fx = json.loads(Path("checks/external_fixtures/liability_against_solar.json").read_text())
+          frozen = {e["name"]: e["sha256"] for e in fx["input_identities"]}
+          print(platform.system(), platform.machine(), "numpy", numpy.__version__)
+          for e in ids:
+              was = frozen.get(e["name"])
+              print(("same    " if was == e["sha256"] else "DIFFERS "), e["name"])
+          PY
       - name: Run the Python suite
         run: uv run pytest -q tests

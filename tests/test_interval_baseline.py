@@ -18,6 +18,17 @@ why. Update the pinned value once you can say which, and say it in the commit.
 
 The values were produced on this file's own seeds, through the public Python
 interface, because that is what a caller sees and what the record crosses.
+
+**Why these are compared within a tolerance and not to the last digit.** They
+were pinned exactly at first, and exact pinning cannot survive two platforms.
+ADR 0012 settles that Mac and Linux agree exactly on outcome status, refusal
+codes, boundary states and field presence, and agree on numbers within written
+tolerances rather than bit for bit. Pinning a number to its last digit is a
+promise the second platform never made: measured on the same commit, the
+spatial upper end differs between them in its last two digits and the
+gene-by-environment lower end in its last four, while every other endpoint here
+agrees bit for bit. That is the arithmetic underneath differing, not the recipe.
+See ``TOLERANCE`` below for what the number is and why.
 """
 
 from __future__ import annotations
@@ -115,12 +126,36 @@ def design() -> npt.NDArray[np.float64]:
     return np.ones((2 * PAIRS, 1))
 
 
+TOLERANCE: float = 1e-11
+"""How far an endpoint may move before this file calls it a change.
+
+Two numbers bracket the choice. Below it is the arithmetic: the widest
+disagreement measured between Mac and Linux on one commit is about five parts
+in ten million million, on the gene-by-environment lower end, and the spatial
+upper end differs by about one part in a thousand million million. Above it is
+the recipe: ADR 0011's shared bracketing stops at ``1e-9``, so a real change to
+how an interval is built moves an endpoint by about that much or more, as the
+pinned prepared upper end moved when the tolerances were unified.
+
+A millionth of a millionth sits roughly twenty times above the widest platform
+difference and a hundred times below the smallest change worth reporting, so it
+separates the two without needing to know which platform is running. It is not
+a licence to absorb a moved endpoint: anything this catches still has to be
+explained rather than re-pinned.
+"""
+
+
 def same(got: float, pinned: float, what: str) -> None:
-    """Exact, not close. A tolerance here would hide the thing this catches."""
-    assert got == pinned, (
-        f"{what} moved from {pinned!r} to {got!r}. That may be intended -- "
-        "unifying the bracketing tolerances is expected to move endpoints -- "
-        "but it has to be explained rather than absorbed."
+    """Close, to a stated tolerance, rather than exact. See ``TOLERANCE``."""
+    moved: float = abs(got - pinned) / max(abs(pinned), 1.0)
+    """Measured the move relative to the pinned value, or absolutely near nought."""
+
+    assert moved <= TOLERANCE, (
+        f"{what} moved from {pinned!r} to {got!r}, by {moved:.3e} relative, "
+        f"which is more than the {TOLERANCE:.0e} two platforms are allowed to "
+        "differ by. That may be intended -- unifying the bracketing tolerances "
+        "is expected to move endpoints -- but it has to be explained rather "
+        "than absorbed."
     )
 
 
