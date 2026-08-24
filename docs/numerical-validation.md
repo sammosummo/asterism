@@ -837,7 +837,7 @@ $[0.3390,0.6163]$, while the null fit returned a finite boundary candidate
 recorded `nonconverged` and did not compute an interval or test for that attempt.
 The command exited 1. This is route and failure-accounting evidence only, not a
 coverage or type-I-error calibration. The 800-attempt release campaign has not
-run; the Tobit design range remains unmeasured and `pass_rules_configured`
+run; `pass_rules_configured`
 remains false.
 
 ## Mixed bivariate model
@@ -906,7 +906,7 @@ one-replicate-per-cell smoke started on 21 August 2026 and was later interrupted
 during public interval fitting (`KeyboardInterrupt`, exit 130) before producing
 a completed record. It is not evidence. The target design therefore has no
 coverage, type-I-error, recovery or qualifying runtime result and establishes
-no measured design range or analysis-readiness claim.
+no analysis-readiness claim.
 
 ## Scale and cost
 
@@ -1022,9 +1022,9 @@ outside software, only the Dryad deposit, and takes about an hour:
 
 `components_target_design.py` measures the several-component model at the
 design it will be used on, which nothing else did. Its two other rules simulate
-four hundred people in sibling pairs, and the supported design range those
-justify is a largest family of two -- which refuses every SAFS pedigree, where
-families reach a hundred and sixty five. It reuses the reviewed,
+four hundred people in sibling pairs, so between them they had measured
+nothing larger than a family of two -- while SAFS families reach a hundred and
+sixty five. It reuses the reviewed,
 participant-free aggregate the spatial target layout already uses: 1,792 people,
 190 families with the largest at 165, and 1,140 households sized one to seven.
 

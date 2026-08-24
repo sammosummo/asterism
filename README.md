@@ -11,11 +11,11 @@ coverage simulations, and known numerical limitations are summarised in
 
 This checkout is a development build, not an analysis-ready release. Its
 embedded `release.toml` deliberately refuses reportable status until every 0.1
-design range and scientific pass rule has been rerun on the exact release
+scientific pass rule has been rerun on the exact release
 artifact. [Python API support status](docs/api-support.md) distinguishes what is
 planned for 0.1 from public capabilities outside its scientific support. The
 [analysis-receipt guide](docs/analysis-receipts.md) shows the fixed-wheel
-preflight, three outcomes and caller-owned JSON boundary.
+release-state check, three outcomes and caller-owned JSON boundary.
 
 ## Installation
 
@@ -270,7 +270,7 @@ difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
 Only the prespecified binary psychiatric diagnosis/right-censored hearing pair
 is planned for 0.1 support. Its independent SOLAR fixture is now frozen, but
-the exact fixed-wheel simulation campaigns and supported design range remain
+the exact fixed-wheel simulation campaigns remain
 unfinished. Other trait-kind combinations remain public but scientifically
 unsupported.
 
@@ -390,7 +390,7 @@ The full list of simulation and package-comparison commands is in
 Cite the archived version you actually ran, not the repository. A development
 checkout is not a citable version: only a release wheel carries the build
 identity a result can be traced back to, and only a release has had its pass
-rules and design ranges measured.
+rules configured.
 
 Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
 publication rather than before it, so the DOI is added there when the first

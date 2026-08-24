@@ -25,14 +25,12 @@ particular result to be reportable, all of the following must hold:
 3. every null or constrained fit used for inference converges, and a reported
    profile interval has `profile_failures == 0`;
 4. every required check named for the analysis has a configured pass rule and
-   passes for the released source and artifact;
-5. the submitted design lies inside the release's supported design range, and
-   that range has been measured; and
-6. the analysis record carries the release/build identity and input commitments
+   passes for the released source and artifact; and
+5. the analysis record carries the release/build identity and input commitments
    required by the public runner.
 
 `release.toml` is presently a development manifest: `release = false`, its
-scientific pass rules are not configured, and every design range is unmeasured.
+scientific pass rules are not configured.
 Consequently, **no current Asterism output is reportable yet**, even when the
 optimizer converges. Historical measurements below explain known behavior and
 limitations and are traceable through [Numerical
@@ -244,7 +242,7 @@ release contract therefore requires independent R and SOLAR agreement plus
 general and target-design coverage. Their adapters and public-Python campaign
 commands are executable, but none becomes release evidence until its exact
 prewritten command passes against the fixed release wheel and the supported
-design range is measured in `release.toml`.
+pass rules are configured in `release.toml`.
 
 ## Several covariance components
 
@@ -330,7 +328,7 @@ under equality. These observations do not supply a universal identifiability
 diagnostic or release envelope. Component calibration and the interval-identity
 sentinel now have executable public-API pass rules. The sentinel has passed on
 the development build, but the exact calibration command has not yet been
-retained from the fixed release wheel and the supported design range remains
+retained from the fixed release wheel and the campaign remains
 unmeasured.
 
 ## Two Gaussian traits and genetic correlation
@@ -398,7 +396,7 @@ bound. The R and SOLAR adapters have now been refreshed live and their frozen
 fixtures verify without either external program. Calibration and independently
 computed profile-endpoint commands are also executable. None of those results
 is release evidence until the exact manifest commands rerun against the fixed
-wheel and the bivariate design range is measured.
+wheel.
 
 ## Continuous gene by environment
 
@@ -643,7 +641,7 @@ portable verification. A values-free 1,909-person target check also exercised
 the largest 180-person family: its one null and one alternative smoke attempt
 both completed, and the alternative interval covered $h^2=0.25$. That is an
 execution seam, not a calibration estimate. The exact 200-replicate-per-scenario
-fixed-wheel campaign and a measured liability design range remain release
+fixed-wheel campaign remains a release
 requirements.
 
 ## One-trait censored Gaussian model
@@ -984,8 +982,8 @@ The following gates cannot be closed by improving prose or adding citations:
 - execute every exact prewritten scientific command against the clean release
   wheel and retain its fail-closed receipt; this includes the two discrete-G×E
   campaigns that made zero scientific attempts in the current sandbox;
-- populate supported design ranges only from those measured results, then
-  enforce them through preflight rather than extrapolating beyond the evidence;
+- record what each check measured beside its own evidence, and claim nothing
+  beyond it;
 - measure target-sized time and peak-memory budgets, macOS/Linux numerical
   tolerances, the Medusa installed-wheel smoke, and all nine standard synthetic
   analysis receipts;

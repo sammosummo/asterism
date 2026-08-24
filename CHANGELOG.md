@@ -23,7 +23,7 @@ tag and saved wheels.
   being established.
 - Statistical-method documentation now covers every planned 0.1 analysis with
   equations and primary references. All scientific rules have executable
-  commands; their exact fixed-wheel campaigns and measured design ranges remain
+  commands; their exact fixed-wheel campaigns remain
   in progress.
 - Several-component fitting now refuses linearly dependent covariance bases,
   including an identity matrix confounded with the implicit residual; its
@@ -53,7 +53,7 @@ tag and saved wheels.
 
 ### Known limitations
 
-- The release is not yet built or qualified. Every supported design range and
+- The release is not yet built or qualified. Every
   scientific pass rule remains disabled in `release.toml` until measured on the
   release commit.
 - Prediction, association, variant sets, inferential latent mediation,
