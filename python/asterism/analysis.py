@@ -1,4 +1,4 @@
-"""Supported-design preflight and analysis receipts.
+"""Release-state checks and analysis receipts.
 
 The numerical model classes remain in-memory calculations. This module reads
 the release contract compiled into the extension and returns serialisable
@@ -18,7 +18,6 @@ from . import _core
 
 __all__: list[str] = [
     "build_identity",
-    "preflight_analysis",
     "release_manifest",
     "run_analysis",
     "subject_order_commitment",
@@ -167,22 +166,28 @@ def subject_order_commitment(subject_order: Sequence[str]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def preflight_analysis(
+# asterism-style: allow private-helper -- only run_analysis asks this, and exposing it publicly invited callers to check a design before fitting, which statistical software does not ask of anyone
+def _release_state(
     analysis: str,
     design: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Compare a proposed design with one release's measured support.
+    """Report whether this build may produce a reportable result.
+
+    Private because nobody outside `run_analysis` should ask. A caller who
+    wants a fit calls the model and gets one; a caller who wants a receipt
+    calls `run_analysis`, which asks this itself. Exposing it publicly once
+    invited callers to check their design before fitting, which is not
+    something statistical software asks of anyone.
 
     Args:
         analysis: Stable analysis identifier from the release manifest.
-        design: Non-identifying design facts such as sample size, largest
-            family, trait type, number of components and censoring fraction.
+        design: Non-identifying design facts, recorded in the receipt and
+            used only to select a reporting branch where an analysis has one.
 
     Returns:
-        A serialisable preflight record. ``inside_supported_range`` is true
-        only when every required measured constraint is satisfied;
-        ``missing_checks`` explains each fact that needs a design-specific
-        check before the analysis can be reportable.
+        A serialisable release-state record. ``release_ready`` is true only
+        when the pass rules are configured and the build is a release;
+        ``missing_checks`` names whichever of those is absent.
 
     Raises:
         ValueError: If the analysis is absent from the manifest or its contract
@@ -207,20 +212,8 @@ def preflight_analysis(
     if entry.get("support") != "supported_in_0_1":
         raise ValueError(f"ANALYSIS_OUTSIDE_RELEASE_SUPPORT:{analysis}")
 
-    constraints: Any = entry.get("design_range")
-    """Read the measured design constraints attached to the analysis."""
-    if not isinstance(constraints, dict):
-        raise ValueError(f"ANALYSIS_DESIGN_RANGE_INVALID:{analysis}")
-
     missing_checks: list[dict[str, Any]] = []
-    """Accumulated the additional checks required by unsupported design facts."""
-    if constraints.get("measured") is not True:
-        missing_checks.append(
-            {
-                "code": "DESIGN_RANGE_NOT_MEASURED",
-                "reason": "release evidence has not established this range",
-            }
-        )
+    """Accumulated the reasons this build may not produce a reportable result."""
     if (
         manifest.get("scientific_pass_rules_configured") is not True
         or entry.get("pass_rules_configured") is not True
@@ -238,73 +231,8 @@ def preflight_analysis(
                 "reason": "development builds cannot produce reportable results",
             }
         )
-    """Refused support claims absent measured ranges, pass rules or a release build."""
+    """Refused reportable results from an unconfigured or development build."""
 
-    measured_constraints: dict[str, Any] = (
-        {
-            field: constraint
-            for field, constraint in constraints.items()
-            if field != "measured"
-        }
-        if constraints.get("measured") is True
-        else {}
-    )
-    """Separated design properties from the range's measured-state marker."""
-    for field, constraint in measured_constraints.items():
-        if not isinstance(constraint, dict):
-            raise ValueError(f"ANALYSIS_DESIGN_CONSTRAINT_INVALID:{analysis}:{field}")
-
-        required: bool = constraint.get("required", True) is not False
-        """Determined whether omission itself lies outside measured support."""
-        if field not in design:
-            if required:
-                missing_checks.append(
-                    {
-                        "code": "DESIGN_SPECIFIC_CHECK_REQUIRED",
-                        "field": field,
-                        "reason": "missing",
-                        "supported": dict(constraint),
-                    }
-                )
-            continue
-
-        value: Any = design[field]
-        """Read the proposed value for this measured design property."""
-        reason: str | None = None
-        """Initialised the reason this design fact might require another check."""
-        if "allowed" in constraint:
-            allowed: Any = constraint["allowed"]
-            """Read the finite set of design values measured by this release."""
-            if not isinstance(allowed, list):
-                raise ValueError(f"ANALYSIS_DESIGN_ALLOWED_INVALID:{analysis}:{field}")
-            if value not in allowed:
-                reason = "not_allowed"
-                """Marked a categorical value outside the measured set."""
-        else:
-            if not isinstance(value, int | float) or isinstance(value, bool):
-                reason = "not_numeric"
-                """Marked a non-numeric value supplied for a numeric range."""
-            elif not math.isfinite(float(value)):
-                reason = "not_finite"
-                """Marked a non-finite value outside any measured numeric range."""
-            elif "min" in constraint and value < constraint["min"]:
-                reason = "below_minimum"
-                """Marked a value below the measured lower limit."""
-            elif "max" in constraint and value > constraint["max"]:
-                reason = "above_maximum"
-                """Marked a value above the measured upper limit."""
-
-        if reason is not None:
-            missing_checks.append(
-                {
-                    "code": "DESIGN_SPECIFIC_CHECK_REQUIRED",
-                    "field": field,
-                    "reason": reason,
-                    "observed": value,
-                    "supported": dict(constraint),
-                }
-            )
-    """Compared every required design property with its measured range."""
 
     quantities: Any = entry.get("reportable_quantities")
     """Read the quantities this release permits the analysis to report."""
@@ -359,7 +287,7 @@ def preflight_analysis(
         "schema_version": 1,
         "asterism_version": manifest["version"],
         "analysis": analysis,
-        "inside_supported_range": not missing_checks,
+        "release_ready": not missing_checks,
         "missing_checks": missing_checks,
         "reportable_quantities": applicable_quantities,
         "reportable_quantity_inventory": list(quantities),
@@ -382,7 +310,7 @@ def run_analysis(
         analysis: Stable supported-analysis identifier.
         design: Non-identifying design summary checked before fitting.
         fit: Zero-argument callback that performs the numerical fit only after
-            preflight succeeds.
+            the release-state check succeeds.
         model: Caller-owned model and estimator settings.
         provenance: Caller-owned artifact, dependency, consumer and input
             commitments.
@@ -393,7 +321,7 @@ def run_analysis(
         Version-1 receipt data. This function performs no file I/O; the caller
         writes the returned mapping beside its controlled outputs.
     """
-    preflight: dict[str, Any] = preflight_analysis(analysis, design)
+    release_state: dict[str, Any] = _release_state(analysis, design)
     """Checked release evidence and design support before touching outcomes."""
     receipt_provenance: dict[str, Any] = dict(provenance)
     """Copied caller-owned provenance so the receipt cannot mutate its input."""
@@ -439,32 +367,32 @@ def run_analysis(
     """Bound the receipt provenance to the augmented input commitments."""
     build: dict[str, Any] = build_identity()
     """Identified the immutable source and release state used by this run."""
-    if not preflight["inside_supported_range"]:
+    if not release_state["release_ready"]:
         return {
             "schema_version": 1,
-            "asterism_version": preflight["asterism_version"],
+            "asterism_version": release_state["asterism_version"],
             "analysis": analysis,
             "outcome": "refused",
             "build": build,
-            "preflight": preflight,
+            "release_state": release_state,
             "model": dict(model),
             "provenance": receipt_provenance,
             "fit_record": None,
             "refusal": {
                 "code": "ANALYSIS_PREFLIGHT_FAILED",
                 "message": "release or design checks required before fitting",
-                "missing_checks": preflight["missing_checks"],
+                "missing_checks": release_state["missing_checks"],
             },
         }
 
     if build["source_dirty"] is True or build["release"] is not True:
         return {
             "schema_version": 1,
-            "asterism_version": preflight["asterism_version"],
+            "asterism_version": release_state["asterism_version"],
             "analysis": analysis,
             "outcome": "refused",
             "build": build,
-            "preflight": preflight,
+            "release_state": release_state,
             "model": dict(model),
             "provenance": receipt_provenance,
             "fit_record": None,
@@ -488,11 +416,11 @@ def run_analysis(
             raise
         return {
             "schema_version": 1,
-            "asterism_version": preflight["asterism_version"],
+            "asterism_version": release_state["asterism_version"],
             "analysis": analysis,
             "outcome": "refused",
             "build": build,
-            "preflight": preflight,
+            "release_state": release_state,
             "model": dict(model),
             "provenance": receipt_provenance,
             "fit_record": None,
@@ -521,7 +449,7 @@ def run_analysis(
     if fit_record.get("converged") is not True:
         issues.append({"code": "FIT_NOT_CONVERGED", "field": "converged"})
 
-    for quantity in preflight["reportable_quantities"]:
+    for quantity in release_state["reportable_quantities"]:
         if fit_record.get(quantity) is None:
             issues.append({"code": "REPORTABLE_QUANTITY_MISSING", "field": quantity})
     """Required every quantity promised by this supported analysis."""
@@ -551,11 +479,11 @@ def run_analysis(
     """Applied the release's three-outcome reporting vocabulary."""
     return {
         "schema_version": 1,
-        "asterism_version": preflight["asterism_version"],
+        "asterism_version": release_state["asterism_version"],
         "analysis": analysis,
         "outcome": outcome,
         "build": build,
-        "preflight": preflight,
+        "release_state": release_state,
         "model": dict(model),
         "provenance": receipt_provenance,
         "fit_record": fit_record,

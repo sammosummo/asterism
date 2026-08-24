@@ -98,21 +98,6 @@ pass_rules = [
   {{ id = "{check_name}", command = ["checks/{check_name}.py"], expected_exit_code = 0, timeout_seconds = 30, status = "ready", design_facts = {{ participant_free = true, sample_size = {{ min = 4, max = 100 }}, largest_family = {{ max = 20 }}, trait_type = ["continuous"], components = ["additive_relationship", "residual"] }} }},
 ]
 
-[analyses.design_range]
-measured = true
-
-[analyses.design_range.sample_size]
-min = 4
-max = 100
-
-[analyses.design_range.largest_family]
-max = 20
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
 '''
 
 
@@ -319,8 +304,8 @@ receipt = {
     "analysis": "one_trait_gaussian_heritability",
     "outcome": "reportable",
     "build": build,
-    "preflight": {
-        "inside_supported_range": True,
+    "release_state": {
+        "release_ready": True,
         "reportable_quantities": ["h2"],
     },
     "model": {"estimator": "reml"},
@@ -606,7 +591,7 @@ def test_runner_refuses_a_required_check_without_one_machine_rule(
     rule_start: int = complete_manifest.index("pass_rules = [")
     """Located the start of the sole inline pass-rule list."""
 
-    rule_end: int = complete_manifest.index("]\n\n[analyses.design_range]", rule_start)
+    rule_end: int = complete_manifest.index("]\n", rule_start)
     """Located the list terminator independently of its evolving rule schema."""
 
     manifest_text: str = (
@@ -617,17 +602,17 @@ def test_runner_refuses_a_required_check_without_one_machine_rule(
     """Removed the sole executable rule while retaining its required-check name."""
 
     manifest_path: Path = root / "release.toml"
-    """Selected the incomplete authoritative contract for this preflight."""
+    """Selected the incomplete authoritative contract for this check."""
 
     manifest_path.write_text(manifest_text, encoding="utf-8")
-    """Wrote the incomplete manifest for a fail-closed preflight."""
+    """Wrote the incomplete manifest for a fail-closed check."""
 
     core_path: Path = tmp_path / "site-packages" / "asterism" / "_core.so"
     """Selected an installed extension path outside the mutable checkout."""
 
     core_path.parent.mkdir(parents=True)
     core_path.write_bytes(b"fixed extension bytes")
-    """Created the installed extension needed beyond the configuration preflight."""
+    """Created the installed extension needed beyond the configuration check."""
 
     core: Any = SimpleNamespace(
         __file__=str(core_path),
@@ -651,7 +636,7 @@ def test_runner_refuses_a_required_check_without_one_machine_rule(
     """Required configuration failure before any scientific command could run."""
 
 
-def test_fixed_input_preflight_refuses_stale_embedded_dependency_locks() -> None:
+def test_fixed_input_check_refuses_stale_embedded_dependency_locks() -> None:
     """Never run scientific commands with dependencies different from the checkout."""
     core: Any = SimpleNamespace(
         __release_manifest__="manifest bytes",

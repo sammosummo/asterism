@@ -875,4 +875,3 @@ def test_manifest_binds_one_exact_unmeasured_target_design_rule() -> None:
     }
     assert manifest["scientific_pass_rules_configured"] is True
     assert analysis["pass_rules_configured"] is True
-    assert analysis["design_range"]["measured"] is True

@@ -13,7 +13,6 @@ from asterism import _core
 from tools.check_release import (
     conditional_quantity_errors,
     fixed_build_errors,
-    measured_design_range_errors,
 )
 from tools.run_scientific_release import scientific_inventory_errors
 
@@ -202,7 +201,6 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     assert manifest["scientific_pass_rules_configured"] is True
     assert all(
         analysis["pass_rules_configured"] is True
-        and analysis["design_range"]["measured"] is True
         for analysis in manifest["analyses"]
     )
     statuses: set[str] = {
@@ -269,10 +267,6 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
     """Selected the analysis with mutually exclusive reporting conventions."""
 
     assert conditional_quantity_errors(component) == []
-    assert component["design_range"]["component_reporting"]["allowed"] == [
-        "mean_diagonal",
-        "zero_diagonal",
-    ]
     assert component["reportable_quantity_sets"] == [
         {
             "when": {"component_reporting": "mean_diagonal"},
@@ -303,41 +297,6 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
         conditional_quantity_errors(malformed)
     )
 
-
-def test_measured_ranges_require_finite_ordered_nonplaceholder_constraints() -> None:
-    """Refuse malformed release bounds before preflight can encounter their types."""
-    manifest: dict[str, Any] = tomllib.loads(
-        (ROOT / "release.toml").read_text(encoding="utf-8")
-    )
-    """Read one released analysis whose range this test deliberately corrupts."""
-
-    analysis: dict[str, Any] = deepcopy(manifest["analyses"][6])
-    """Copied the Tobit range with its additional censoring-share constraint."""
-
-    assert measured_design_range_errors(analysis) == []
-    analysis["design_range"]["measured"] = True
-    """Promoted the development placeholder into a purported measured release."""
-
-    analysis["design_range"]["sample_size"] = {"min": 20, "max": 10}
-    """Reversed the required positive sample-size interval."""
-
-    analysis["design_range"]["largest_family"] = {"max": 0}
-    """Retained the forbidden zero family-size placeholder."""
-
-    analysis["design_range"]["trait_type"] = {"allowed": []}
-    """Replaced placeholders with malformed ordering, bounds and allowed vocabulary."""
-
-    analysis["design_range"]["censoring_share"] = {"min": 0.0, "max": 0.0}
-    """Restored the forbidden zero censoring placeholder this checker must refuse."""
-
-    errors: str = "\n".join(measured_design_range_errors(analysis))
-    """Validated the malformed measured release through the public checker seam."""
-
-    assert "sample_size min exceeds max" in errors
-    assert "largest_family retains zero placeholder bounds" in errors
-    assert "largest_family.max must be a positive integer" in errors
-    assert "trait_type.allowed must be a nonempty unique scalar list" in errors
-    assert "censoring_share retains zero placeholder bounds" in errors
 
 
 def test_fixed_build_gate_refuses_stale_or_dirty_extension_identity() -> None:

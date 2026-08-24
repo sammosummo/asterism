@@ -592,14 +592,6 @@ def configured_rules(
             continue
         if analysis.get("pass_rules_configured") is not True:
             errors.append(f"{identifier}: pass_rules_configured must be true")
-        design_range: object = analysis.get("design_range")
-        """Read the measured design-range claim that bounds this evidence."""
-
-        if (
-            not isinstance(design_range, dict)
-            or design_range.get("measured") is not True
-        ):
-            errors.append(f"{identifier}: design range must be measured")
         required_checks: object = analysis.get("required_checks")
         """Read the evidence identifiers promised by this analysis."""
 

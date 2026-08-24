@@ -34,18 +34,13 @@ analysis-ready release. It establishes engineering integrity, not scientific
 evidence for a reported quantity.
 _Avoid_: beauty, polish
 
-**Supported design range**:
-The measured sample sizes, family sizes, relationship-matrix properties,
-censoring levels and trait types within which a supported analysis may produce
-a reportable result. The range is machine-readable and belongs to a particular
-release and its evidence.
-_Avoid_: generally supported, should work, analysis envelope
-
 **Reportable result**:
-A result from a supported analysis, fitted with a fixed release build to a
-design inside its supported design range, whose required fits and profile
-evaluations converged and whose pre-written acceptance rules passed. A
-converged boundary estimate may be reportable; a failed fit may not.
+A result from a supported analysis, fitted with a fixed release build, whose
+required fits and profile evaluations converged and whose pre-written
+acceptance rules passed. A converged boundary estimate may be reportable; a
+failed fit may not. The size of the study does not decide this: what a check
+measured is recorded in its own evidence, and no bound on sample or family
+size gates a result.
 _Avoid_: successful-looking fit, usable result
 
 **Diagnostic-only result**:

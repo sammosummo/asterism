@@ -62,7 +62,7 @@ def fit_record_reportability_errors(
 
     Args:
         fit_record: Parsed candidate fit retained in a standard receipt.
-        reportable_quantities: Fields promised by preflight for this design branch.
+        reportable_quantities: Fields the release state promises for this analysis branch.
 
     Returns:
         Human-readable failures, or an empty list for a reportable candidate.
@@ -180,8 +180,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     selectors: set[str] = set()
     """Collected design fields used to choose one applicable quantity set."""
 
-    design_range: object = analysis.get("design_range")
-    """Read allowed selector values from the analysis design contract."""
 
     for index, quantity_set in enumerate(raw_sets):
         when: object = quantity_set.get("when")
@@ -199,24 +197,7 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
             """Read the single explicit field/value reporting selector."""
 
             selectors.add(str(selector))
-            allowed_values: object = (
-                design_range.get(selector, {}).get("allowed")
-                if isinstance(design_range, dict)
-                and isinstance(design_range.get(selector), dict)
-                else None
-            )
-            """Read the measured-range vocabulary accepted for that selector."""
 
-            if (
-                not isinstance(selector, str)
-                or not selector
-                or not isinstance(allowed_values, list)
-                or selected_value not in allowed_values
-            ):
-                errors.append(
-                    f"release.toml: {identifier} quantity set {index} predicate is not "
-                    "an allowed design value"
-                )
         if (
             not isinstance(quantities, list)
             or not quantities
@@ -244,147 +225,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
 
     return errors
 
-
-def measured_design_range_errors(analysis: dict[str, Any]) -> list[str]:
-    """Return malformed measured constraint errors for one release analysis.
-
-    Args:
-        analysis: Parsed analysis table whose measured design range is being released.
-
-    Returns:
-        Errors for non-finite, unordered, empty or non-positive constraints.
-    """
-    identifier: str = str(analysis.get("id", "<missing>"))
-    """Named the analysis in every actionable constraint error."""
-
-    design_range: object = analysis.get("design_range")
-    """Read the machine-enforced limits that bound the scientific claim."""
-
-    if not isinstance(design_range, dict) or design_range.get("measured") is not True:
-        return []
-    errors: list[str] = []
-    """Collected every malformed measured bound for one repair cycle."""
-
-    for constraint_name, raw_constraint in design_range.items():
-        if constraint_name == "measured":
-            continue
-        if not isinstance(raw_constraint, dict):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} must be a constraint table"
-            )
-            continue
-        constraint: dict[str, Any] = raw_constraint
-        """Narrowed one parsed design constraint to its table representation."""
-
-        if "allowed" in constraint:
-            allowed: object = constraint.get("allowed")
-            """Read the finite categorical vocabulary accepted by preflight."""
-
-            scalar_types: tuple[type, ...] = (str, int, float, bool)
-            """Named TOML scalar types permitted in categorical allowed lists."""
-
-            if (
-                not isinstance(allowed, list)
-                or not allowed
-                or not all(
-                    isinstance(value, scalar_types)
-                    and not (isinstance(value, float) and not math.isfinite(value))
-                    for value in allowed
-                )
-                or len({(type(value).__name__, repr(value)) for value in allowed})
-                != len(allowed)
-            ):
-                errors.append(
-                    f"release.toml: {identifier} {constraint_name}.allowed must be a "
-                    "nonempty unique scalar list"
-                )
-            if set(constraint) != {"allowed"}:
-                errors.append(
-                    f"release.toml: {identifier} {constraint_name} mixes allowed and bounds"
-                )
-            continue
-        bounds: dict[str, object] = {
-            name: constraint.get(name) for name in ("min", "max") if name in constraint
-        }
-        """Collected numeric bounds without inventing absent endpoints."""
-
-        if not bounds or set(constraint) != set(bounds):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} must define allowed or bounds"
-            )
-            continue
-        if constraint_name != "largest_family" and set(bounds) != {"min", "max"}:
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} needs numeric min and max"
-            )
-            continue
-        if constraint_name == "largest_family" and set(bounds) != {"max"}:
-            errors.append(
-                f"release.toml: {identifier} largest_family needs exactly max"
-            )
-            continue
-        if not all(
-            isinstance(value, int | float)
-            and not isinstance(value, bool)
-            and math.isfinite(float(value))
-            for value in bounds.values()
-        ):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} bounds must be finite numbers"
-            )
-            continue
-        if all(float(value) == 0.0 for value in bounds.values()):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} retains zero placeholder bounds"
-            )
-        if (
-            "min" in bounds
-            and "max" in bounds
-            and float(bounds["min"]) > float(bounds["max"])
-        ):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} min exceeds max"
-            )
-    """Validated every categorical and numeric constraint table generically."""
-
-    sample_size: object = design_range.get("sample_size")
-    """Read the mandatory positive sample-size interval."""
-
-    largest_family: object = design_range.get("largest_family")
-    """Read the mandatory positive maximum observed family size."""
-
-    if (
-        not isinstance(sample_size, dict)
-        or not isinstance(sample_size.get("min"), int)
-        or isinstance(sample_size.get("min"), bool)
-        or not isinstance(sample_size.get("max"), int)
-        or isinstance(sample_size.get("max"), bool)
-        or sample_size["min"] <= 0
-        or sample_size["max"] <= 0
-    ):
-        errors.append(
-            f"release.toml: {identifier} measured sample_size bounds must be positive integers"
-        )
-    if (
-        not isinstance(largest_family, dict)
-        or not isinstance(largest_family.get("max"), int)
-        or isinstance(largest_family.get("max"), bool)
-        or largest_family["max"] <= 0
-    ):
-        errors.append(
-            f"release.toml: {identifier} measured largest_family.max must be a positive integer"
-        )
-    elif (
-        isinstance(sample_size, dict)
-        and isinstance(sample_size.get("max"), int)
-        and largest_family["max"] > sample_size["max"]
-    ):
-        errors.append(
-            f"release.toml: {identifier} largest_family.max exceeds sample_size.max"
-        )
-    """Applied the required positive integer and within-sample pedigree bounds."""
-
-    return errors
 
 
 def cross_platform_configuration_errors(
@@ -1015,17 +855,17 @@ def release_evidence_errors(
                 errors.append(
                     f"synthetic receipt {index} build identity does not match"
                 )
-            preflight: object = parsed_receipt.get("preflight")
+            release_state: object = parsed_receipt.get("release_state")
             """Read the measured-range decision produced before numerical fitting."""
 
             fit_record: object = parsed_receipt.get("fit_record")
             """Read the complete candidate retained by the standard receipt."""
 
             if (
-                not isinstance(preflight, dict)
-                or preflight.get("inside_supported_range") is not True
+                not isinstance(release_state, dict)
+                or release_state.get("release_ready") is not True
             ):
-                errors.append(f"synthetic receipt {index} preflight did not pass")
+                errors.append(f"synthetic receipt {index} release state did not pass")
             if not isinstance(fit_record, dict):
                 errors.append(f"synthetic receipt {index} has no fit record")
                 continue
@@ -1035,8 +875,8 @@ def release_evidence_errors(
             ):
                 errors.append(f"synthetic receipt {index} fit identity is invalid")
             quantities: object = (
-                preflight.get("reportable_quantities")
-                if isinstance(preflight, dict)
+                release_state.get("reportable_quantities")
+                if isinstance(release_state, dict)
                 else None
             )
             """Read fields the manifest required for this exact report branch."""
@@ -1528,8 +1368,6 @@ def main() -> int:
             identifier = str(analysis.get("id", "<missing>"))
             """Named the analysis for precise release-readiness errors."""
 
-            design_range: dict[str, Any] = dict(analysis.get("design_range", {}))
-            """Read the measured support limits for this analysis."""
 
             if not analysis.get("pass_rules_configured"):
                 errors.append(
@@ -1539,11 +1377,6 @@ def main() -> int:
                 errors.append(
                     f"release.toml: {identifier} has no machine-readable pass_rules"
                 )
-            if not design_range.get("measured"):
-                errors.append(
-                    f"release.toml: {identifier} design range is not measured"
-                )
-            errors.extend(measured_design_range_errors(analysis))
         """Required every scientific claim to have measured limits and pass rules."""
 
         errors.extend(

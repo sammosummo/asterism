@@ -1,9 +1,10 @@
-# Analysis preflight and receipts
+# Analysis receipts
 
 A numerical fit is not automatically a reportable analysis. The public
 `asterism.run_analysis` path first compares a non-identifying design summary
 with the measured limits embedded in the installed wheel, runs the fitting
-callback only when that preflight passes, and returns one of three outcomes:
+callback only when the build may produce a reportable result, and returns
+one of three outcomes:
 
 - `reportable`: the release and design checks passed, the free fit and every
   required inference fit converged, required values are finite, and no profile

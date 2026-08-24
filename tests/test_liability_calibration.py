@@ -543,4 +543,3 @@ def test_release_rule_is_the_exact_frozen_executable_command() -> None:
         "--no-write",
     ]
     assert analysis["pass_rules_configured"] is True
-    assert analysis["design_range"]["measured"] is True

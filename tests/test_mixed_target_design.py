@@ -842,12 +842,6 @@ def test_release_manifest_defers_the_binary_with_censored_pairing() -> None:
     assert "mixed_binary_censored_exact_combination" not in analysis["required_checks"]
     """Held the deferral for the binary-with-right-censored pairing."""
 
-    assert analysis["design_range"]["trait_type"]["allowed"] == [
-        "binary_and_continuous",
-        "mixed_pairings_with_continuous",
-    ]
-    """Kept exactly the mixed pairings the paper measures."""
-
     assert (ROOT / "checks" / "mixed_binary_censored_target_design.py").is_file()
     assert (ROOT / "checks" / "mixed_binary_censored_exact_combination.py").is_file()
     """Kept the deferred material intact and runnable for a later release."""
