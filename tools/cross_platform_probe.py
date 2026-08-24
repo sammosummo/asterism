@@ -690,39 +690,42 @@ def probe_tobit(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, floa
 
 
 def mixed_traits(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build the exact binary-diagnosis and censored-hearing trait pairing.
+    """Build the censored-hearing and continuous trait pairing 0.1 supports.
+
+    The binary-with-censored pairing is deferred, so this exercises the
+    censored-with-continuous case the extended-high-frequency paper fits.
 
     Args:
         problem: Deterministic participant-free fixture.
 
     Returns:
-        First binary and second right-censored public trait specifications.
+        First right-censored and second continuous public trait specifications.
     """
     people: int = 2 * PAIRS
     """Read the fixed synthetic roster size."""
 
     first: dict[str, Any] = {
-        "kind": "binary",
-        "value": np.full(people, np.nan),
-        "censoring": np.where(problem["binary_status"] == 1.0, 1, 2).astype(np.int64),
-        "limit": np.zeros(people, dtype=np.float64),
-    }
-    """Encoded a synthetic psychiatric diagnosis on the liability scale."""
-
-    second: dict[str, Any] = {
         "kind": "censored",
         "value": problem["censored_values"],
         "censoring": problem["censoring"],
         "limit": problem["limits"],
     }
-    """Encoded the paired synthetic hearing threshold with right censoring."""
+    """Encoded the synthetic high-frequency hearing threshold, right censored."""
+
+    second: dict[str, Any] = {
+        "kind": "continuous",
+        "value": problem["response"],
+        "censoring": np.zeros(people, dtype=np.int64),
+        "limit": np.zeros(people, dtype=np.float64),
+    }
+    """Encoded the paired conventional threshold, which nothing censors."""
     return first, second
 
 
 def probe_mixed_bivariate(
     problem: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, float]]:
-    """Exercise the exact binary-by-censored genetic-correlation analysis.
+    """Exercise the censored-by-continuous genetic-correlation analysis.
 
     Args:
         problem: Deterministic participant-free fixture.

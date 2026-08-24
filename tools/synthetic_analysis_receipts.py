@@ -419,26 +419,16 @@ def receipt_jobs(problem: dict[str, Any], commitment: str) -> list[ReceiptJob]:
             "mixed_binary_censored_genetic_correlation",
             {
                 **common,
-                "trait_type": "binary_and_right_censored_continuous",
+                "trait_type": "mixed_pairings_with_continuous",
                 "components": "additive_relationship",
                 "censoring_share": censoring_share,
             },
             {
                 "estimator": "ml",
-                "kinds": ["binary", "censored"],
+                "kinds": ["censored", "continuous"],
                 "target": "genetic_correlation",
             },
             partial(fit_mixed_bivariate_receipt, problem, commitment),
-        ),
-        ReceiptJob(
-            "spatial_component_presence",
-            {
-                **common,
-                "trait_type": "continuous_with_pairwise_distance",
-                "components": "spatial_exponential",
-            },
-            {"estimator": "reml", "bootstrap_replicates": 7, "seed": SEED},
-            partial(fit_spatial_receipt, problem, commitment),
         ),
     ]
 
