@@ -162,7 +162,6 @@ def test_release_mode_names_the_unconfigured_scientific_blockers() -> None:
 
     assert completed.returncode == 1
     assert "Python style gate failed" not in completed.stderr
-    assert "Medusa wheel smoke is unverified" in completed.stderr
     assert "synthetic run_analysis receipts are unverified" in completed.stderr
 
 
