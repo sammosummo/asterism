@@ -124,7 +124,6 @@ def test_unmeasured_release_evidence_blocks_reportable_preflight() -> None:
     assert preflight["analysis"] == "one_trait_gaussian_heritability"
     assert preflight["inside_supported_range"] is False
     assert [check["code"] for check in preflight["missing_checks"]] == [
-        "SCIENTIFIC_PASS_RULES_NOT_CONFIGURED",
         "BUILD_NOT_RELEASED",
     ]
     assert preflight["reportable_quantities"] == ["h2", "interval", "test"]

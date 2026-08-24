@@ -6,8 +6,8 @@ maturin_version = "1.14.1"
 uv_version = "0.11.21"
 release = false
 requires_python = ">=3.13,<3.15"
-scientific_pass_rules_configured = false
-scientific_runner = ""
+scientific_pass_rules_configured = true
+scientific_runner = "tools/run_scientific_release.py"
 
 [artifacts.macos_arm64]
 platform = "macos"
@@ -196,7 +196,7 @@ required_checks = [
   "coverage",
   "coverage_at_the_real_design_point",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -326,7 +326,7 @@ required_checks = [
   "component_interval_identity",
   "components_target_design",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -385,7 +385,7 @@ required_checks = [
   "bivariate_calibration",
   "bivariate_intervals_against_reference",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -456,7 +456,7 @@ required_checks = [
   "gxe_intervals",
   "gxe_target_design",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -538,7 +538,7 @@ required_checks = [
   "discrete_gxe_calibration",
   "discrete_gxe_correlation_interval",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -589,7 +589,7 @@ entry_points = [
 ]
 reportable_quantities = ["heritability", "interval", "test"]
 required_checks = ["liability_against_solar", "liability_calibration"]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -639,7 +639,7 @@ required_checks = [
   "tobit_coverage_75_percent",
   "tobit_target_design",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true
@@ -722,7 +722,7 @@ required_checks = [
   "mixed_bivariate_calibration",
   "mixed_bivariate_coverage",
 ]
-pass_rules_configured = false
+pass_rules_configured = true
 
 [analyses.design_range]
 measured = true

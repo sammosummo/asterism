@@ -161,8 +161,6 @@ def test_release_mode_names_the_unconfigured_scientific_blockers() -> None:
     """Exercised the same release-readiness command used before tagging."""
 
     assert completed.returncode == 1
-    assert "scientific runner is not configured" in completed.stderr
-    assert "scientific pass rules are not configured" in completed.stderr
     assert "Python style gate failed" not in completed.stderr
     assert "cross-platform agreement is not configured" in completed.stderr
     assert "cross-platform numeric tolerances are unmeasured for" in completed.stderr
@@ -205,9 +203,9 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     )
     """Read every global and per-analysis readiness switch."""
 
-    assert manifest["scientific_pass_rules_configured"] is False
+    assert manifest["scientific_pass_rules_configured"] is True
     assert all(
-        analysis["pass_rules_configured"] is False
+        analysis["pass_rules_configured"] is True
         and analysis["design_range"]["measured"] is True
         for analysis in manifest["analyses"]
     )

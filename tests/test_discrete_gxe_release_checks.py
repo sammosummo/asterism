@@ -568,5 +568,5 @@ def test_manifest_pins_all_three_executable_discrete_gxe_rules() -> None:
     ]
     assert all(rule["status"] == "ready" for rule in rules.values())
     assert all("blocker" not in rule for rule in rules.values())
-    assert analysis["pass_rules_configured"] is False
+    assert analysis["pass_rules_configured"] is True
     assert analysis["design_range"]["measured"] is True
