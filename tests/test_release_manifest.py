@@ -208,7 +208,7 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     assert manifest["scientific_pass_rules_configured"] is False
     assert all(
         analysis["pass_rules_configured"] is False
-        and analysis["design_range"]["measured"] is False
+        and analysis["design_range"]["measured"] is True
         for analysis in manifest["analyses"]
     )
     statuses: set[str] = {
@@ -344,7 +344,7 @@ def test_measured_ranges_require_finite_ordered_nonplaceholder_constraints() -> 
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Read one development analysis carrying allowed zero placeholders."""
+    """Read one released analysis whose range this test deliberately corrupts."""
 
     analysis: dict[str, Any] = deepcopy(manifest["analyses"][6])
     """Copied the Tobit range with its additional censoring-share constraint."""
@@ -361,6 +361,9 @@ def test_measured_ranges_require_finite_ordered_nonplaceholder_constraints() -> 
 
     analysis["design_range"]["trait_type"] = {"allowed": []}
     """Replaced placeholders with malformed ordering, bounds and allowed vocabulary."""
+
+    analysis["design_range"]["censoring_share"] = {"min": 0.0, "max": 0.0}
+    """Restored the forbidden zero censoring placeholder this checker must refuse."""
 
     errors: str = "\n".join(measured_design_range_errors(analysis))
     """Validated the malformed measured release through the public checker seam."""

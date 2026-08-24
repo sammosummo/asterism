@@ -106,14 +106,14 @@ def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_unmeasured_release_evidence_blocks_reportable_preflight() -> None:
-    """Placeholder ranges never made a development build reportable."""
+    """A development build stays unreportable even inside the measured range."""
     design: dict[str, Any] = {
         "sample_size": 350,
         "largest_family": 14,
         "trait_type": "continuous",
-        "components": 1,
+        "components": "additive_relationship",
     }
-    """Described a Gaussian pedigree design used by predecessor evidence."""
+    """Described a Gaussian pedigree design inside the measured release range."""
 
     preflight: dict[str, Any] = asterism.preflight_analysis(
         "one_trait_gaussian_heritability",
@@ -124,7 +124,6 @@ def test_unmeasured_release_evidence_blocks_reportable_preflight() -> None:
     assert preflight["analysis"] == "one_trait_gaussian_heritability"
     assert preflight["inside_supported_range"] is False
     assert [check["code"] for check in preflight["missing_checks"]] == [
-        "DESIGN_RANGE_NOT_MEASURED",
         "SCIENTIFIC_PASS_RULES_NOT_CONFIGURED",
         "BUILD_NOT_RELEASED",
     ]

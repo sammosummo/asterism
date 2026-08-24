@@ -199,21 +199,20 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 350
+max = 1909
 
 [analyses.design_range.largest_family]
-max = 0
+max = 180
 
 [analyses.design_range.trait_type]
 allowed = ["continuous"]
 
 [analyses.design_range.components]
 allowed = ["additive_relationship", "residual"]
-
 [[analyses.pass_rules]]
 id = "against_r"
 command = ["checks/external_reference_fixture.py", "verify", "--check-id", "against_r", "--adapter", "checks/against_r.py", "--fixture", "checks/external_fixtures/against_r.json"]
@@ -330,14 +329,14 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 160
+max = 1792
 
 [analyses.design_range.largest_family]
-max = 0
+max = 165
 
 [analyses.design_range.trait_type]
 allowed = ["continuous"]
@@ -347,7 +346,6 @@ allowed = ["relationship_matrices", "residual"]
 
 [analyses.design_range.component_reporting]
 allowed = ["mean_diagonal", "zero_diagonal"]
-
 [[analyses.pass_rules]]
 id = "components_calibration"
 command = ["checks/components_calibration.py"]
@@ -390,21 +388,20 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 150
+max = 360
 
 [analyses.design_range.largest_family]
-max = 0
+max = 14
 
 [analyses.design_range.trait_type]
 allowed = ["continuous_pair"]
 
 [analyses.design_range.components]
 allowed = ["additive_relationship", "residual"]
-
 [[analyses.pass_rules]]
 id = "bivariate_against_r"
 command = ["checks/external_reference_fixture.py", "verify", "--check-id", "bivariate_against_r", "--adapter", "checks/bivariate_against_r.py", "--fixture", "checks/external_fixtures/bivariate_against_r.json"]
@@ -462,25 +459,20 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 80
+max = 1909
 
 [analyses.design_range.largest_family]
-max = 0
+max = 180
 
 [analyses.design_range.trait_type]
 allowed = ["continuous"]
 
 [analyses.design_range.components]
-allowed = [
-  "exponential_genetic_surface",
-  "random_regression_genetic_surface",
-  "residual",
-]
-
+allowed = ["exponential_genetic_surface", "random_regression_genetic_surface", "residual"]
 [[analyses.pass_rules]]
 id = "gxe_against_independent_full_fit"
 command = ["checks/gxe_against_independent_full_fit.py"]
@@ -549,21 +541,20 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 120
+max = 1910
 
 [analyses.design_range.largest_family]
-max = 0
+max = 180
 
 [analyses.design_range.trait_type]
 allowed = ["continuous_with_binary_environment"]
 
 [analyses.design_range.components]
 allowed = ["group_specific_additive_relationship", "group_specific_residual"]
-
 [[analyses.pass_rules]]
 id = "discrete_gxe_against_independent_full_fit"
 command = ["checks/discrete_gxe_against_independent_full_fit.py"]
@@ -601,21 +592,20 @@ required_checks = ["liability_against_solar", "liability_calibration"]
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 420
+max = 1909
 
 [analyses.design_range.largest_family]
-max = 0
+max = 180
 
 [analyses.design_range.trait_type]
 allowed = ["binary"]
 
 [analyses.design_range.components]
 allowed = ["additive_relationship", "unit_liability"]
-
 [[analyses.pass_rules]]
 id = "liability_against_solar"
 command = ["checks/external_reference_fixture.py", "verify", "--check-id", "liability_against_solar", "--adapter", "checks/liability_against_solar.py", "--fixture", "checks/external_fixtures/liability_against_solar.json"]
@@ -652,25 +642,24 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 600
+max = 4000
 
 [analyses.design_range.largest_family]
-max = 0
+max = 180
 
 [analyses.design_range.trait_type]
 allowed = ["right_censored_continuous"]
 
 [analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
+allowed = ["residual", "additive_relationship"]
 
 [analyses.design_range.censoring_share]
 min = 0.0
-max = 0.0
-
+max = 0.75
 [[analyses.pass_rules]]
 id = "tobit_against_censreg"
 command = ["checks/external_reference_fixture.py", "verify", "--check-id", "tobit_against_censreg", "--adapter", "checks/tobit_against_censreg.py", "--fixture", "checks/external_fixtures/tobit_against_censreg.json"]
@@ -736,14 +725,14 @@ required_checks = [
 pass_rules_configured = false
 
 [analyses.design_range]
-measured = false
+measured = true
 
 [analyses.design_range.sample_size]
-min = 0
-max = 0
+min = 800
+max = 1800
 
 [analyses.design_range.largest_family]
-max = 0
+max = 6
 
 [analyses.design_range.trait_type]
 allowed = ["binary_and_continuous", "mixed_pairings_with_continuous"]
@@ -753,8 +742,7 @@ allowed = ["additive_relationship", "residual"]
 
 [analyses.design_range.censoring_share]
 min = 0.0
-max = 0.0
-
+max = 0.25
 [[analyses.pass_rules]]
 id = "mixed_bivariate_against_solar"
 command = ["checks/external_reference_fixture.py", "verify", "--check-id", "mixed_bivariate_against_solar", "--adapter", "checks/mixed_bivariate_against_solar.py", "--fixture", "checks/external_fixtures/mixed_bivariate_against_solar.json"]

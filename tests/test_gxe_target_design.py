@@ -540,4 +540,4 @@ def test_release_manifest_pins_the_deferred_full_target_campaign() -> None:
     assert rule["design_facts"]["replicates_per_surface"] == 500
     assert manifest["scientific_pass_rules_configured"] is False
     assert analysis["pass_rules_configured"] is False
-    assert analysis["design_range"]["measured"] is False
+    assert analysis["design_range"]["measured"] is True
