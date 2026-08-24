@@ -22,12 +22,11 @@ wheel = "abi3"
 
 [medusa_smoke]
 required = true
-configured = false
-architecture = ""
-glibc_version = ""
-command = []
-evidence = ""
-blocker = { code = "medusa_architecture_glibc_and_wheel_smoke_unverified", evidence_needed = "Probe Medusa architecture and glibc, install the saved portable wheel, and retain a participant-free public import-and-fit smoke record." }
+configured = true
+architecture = "x86_64"
+glibc_version = "2.28"
+command = ["tools/medusa_wheel_smoke.py"]
+evidence = "evidence/medusa-wheel-smoke-2026-08-24.json"
 
 [synthetic_analysis_receipts]
 configured = false

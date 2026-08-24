@@ -1,0 +1,24 @@
+{
+  "asterism_version": "0.1.0.dev0",
+  "build_identity": {
+    "cargo_lock_sha256": "986a6f71459223db0c5c2426b73829c01a6f6583a0c7b33a74df3f9bff7b0bab",
+    "cargo_version": "0.1.0-dev.0",
+    "release": false,
+    "release_manifest_sha256": "faecee4efab9714e9302dffc6c575ab83eb9be7e0a4303ffe3d9a9f3afd6c399",
+    "source_commit": "8e4f7d92b1fb788d9642cff30957491a499a4337",
+    "source_dirty": false,
+    "uv_lock_sha256": "cf6724a2e5df6569e657333ddab8d8d1b1a83f3310a33d41777e400bfc67568a",
+    "version": "0.1.0.dev0"
+  },
+  "converged": true,
+  "glibc_version": "2.28",
+  "largest_family": 6,
+  "loglik": -533.6457727014258,
+  "machine": "x86_64",
+  "mean_diagonal_proportions": [
+    0.0,
+    1.0
+  ],
+  "people": 360,
+  "python_version": "3.13.14"
+}
