@@ -192,7 +192,7 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     ]
     """Expanded the exact executable or fail-closed command inventory."""
 
-    assert len(required) == 34
+    assert len(required) == 35
     assert configured == required
     assert len(configured) == len(set(configured))
     assert scientific_inventory_errors(manifest, ROOT) == []

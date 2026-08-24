@@ -334,7 +334,11 @@ reportable_quantity_sets = [
     "contrasts_for_zero_diagonal_bases",
   ] },
 ]
-required_checks = ["components_calibration", "component_interval_identity"]
+required_checks = [
+  "components_calibration",
+  "component_interval_identity",
+  "components_target_design",
+]
 pass_rules_configured = false
 
 [analyses.design_range]
@@ -371,6 +375,14 @@ expected_exit_code = 0
 timeout_seconds = 600
 status = "ready"
 design_facts = { participant_free = true, sample_size = { min = 160, max = 160 }, largest_family = { max = 2 }, trait_type = ["continuous"], components = ["relationship_matrices", "residual"] }
+
+[[analyses.pass_rules]]
+id = "components_target_design"
+command = ["checks/components_target_design.py"]
+expected_exit_code = 0
+timeout_seconds = 86400
+status = "ready"
+design_facts = { participant_free = true, sample_size = { min = 1792, max = 1792 }, largest_family = { max = 165 }, trait_type = ["continuous"], components = ["relationship_matrices", "residual"] }
 
 [[analyses]]
 id = "bivariate_genetic_correlation"
