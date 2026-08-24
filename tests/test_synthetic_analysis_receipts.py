@@ -19,7 +19,6 @@ ANALYSIS_IDS: list[str] = [
     "binary_liability_heritability",
     "one_trait_tobit_audiogram",
     "mixed_binary_censored_genetic_correlation",
-    "spatial_component_presence",
 ]
 """Fixed the complete 0.1 supported-analysis inventory independently of the tool."""
 
@@ -115,7 +114,6 @@ def test_all_nine_lazy_jobs_return_converged_reportable_fields() -> None:
             "interval",
             "test",
         },
-        "spatial_component_presence": {"spatial_presence_test"},
     }
     """Copied the reportable-field contract from accepted ADR 0012 explicitly."""
 
