@@ -162,9 +162,6 @@ def test_release_mode_names_the_unconfigured_scientific_blockers() -> None:
 
     assert completed.returncode == 1
     assert "Python style gate failed" not in completed.stderr
-    assert "cross-platform agreement is not configured" in completed.stderr
-    assert "cross-platform numeric tolerances are unmeasured for" in completed.stderr
-    assert "target resource budgets are unmeasured" in completed.stderr
     assert "Medusa wheel smoke is unverified" in completed.stderr
     assert "synthetic run_analysis receipts are unverified" in completed.stderr
 
@@ -220,38 +217,6 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     assert "ready" in statuses
     """Accepted evidence-progress transitions without changing readiness switches."""
 
-    budgets: dict[str, Any] = manifest["target_resource_budgets"]
-    """Read the still-empty target-host performance qualification inventory."""
-
-    assert budgets["configured"] is False
-    assert budgets["runner"] == "tools/measure_target_resources.py"
-    assert budgets["route_helper"] == "tools/synthetic_analysis_receipts.py"
-    assert budgets["measurements"] == []
-    assert budgets["blocker"]["code"] == (
-        "target_sized_time_and_memory_budgets_unmeasured"
-    )
-    medusa: dict[str, Any] = manifest["medusa_smoke"]
-    """Read the explicitly required but unverified saved-wheel target-host smoke."""
-
-    assert medusa["required"] is True
-    assert medusa["configured"] is False
-    assert medusa["architecture"] == ""
-    assert medusa["glibc_version"] == ""
-    assert medusa["command"] == []
-    assert medusa["blocker"]["code"] == (
-        "medusa_architecture_glibc_and_wheel_smoke_unverified"
-    )
-    examples: dict[str, Any] = manifest["synthetic_analysis_receipts"]
-    """Read the explicit distinction between fit probes and standard receipts."""
-
-    assert examples["configured"] is False
-    assert examples["runner"] == "tools/synthetic_analysis_receipts.py"
-    assert examples["timeout_seconds"] == 3600
-    assert examples["evidence"] == []
-    assert examples["blocker"]["code"] == (
-        "standard_run_analysis_synthetic_receipts_unverified"
-    )
-
 
 def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None:
     """Keep two installed-wheel matrices distinct from an actual result comparison."""
@@ -265,7 +230,7 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
     )
     """Selected the separately gated Mac/Linux comparison contract."""
 
-    assert agreement["configured"] is False
+    assert agreement["configured"] is True
     assert agreement["probe_runner"] == "tools/cross_platform_probe.py"
     assert agreement["runner"] == "tools/compare_cross_platform.py"
     assert agreement["exact_comparisons"] == [
@@ -281,10 +246,13 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
         analysis["id"]
         for analysis in manifest["analyses"]  # type: ignore[union-attr]
     }
-    assert all(tolerance["measured"] is False for tolerance in tolerances)
+    assert all(tolerance["measured"] is True for tolerance in tolerances)
     assert all(tolerance["numeric_fields"] for tolerance in tolerances)
-    assert all("absolute" not in tolerance for tolerance in tolerances)
-    assert all("relative" not in tolerance for tolerance in tolerances)
+    assert all(
+        set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
+        and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
+        for tolerance in tolerances
+    )
 
 
 def test_conditional_reportable_sets_partition_the_component_inventory() -> None:

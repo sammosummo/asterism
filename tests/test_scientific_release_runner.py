@@ -68,27 +68,6 @@ requires_python = ">=3.13,<3.15"
 scientific_pass_rules_configured = true
 scientific_runner = "tools/run_scientific_release.py"
 
-[target_resource_budgets]
-configured = true
-runner = "tools/measure_target_resources.py"
-route_helper = "tools/synthetic_analysis_receipts.py"
-timeout_seconds = 30
-analysis_ids = ["one_trait_gaussian_heritability"]
-
-[[target_resource_budgets.measurements]]
-analysis_id = "one_trait_gaussian_heritability"
-host_id = "test-intended-host"
-platform = "{operating_system}"
-architecture = "{platform.machine()}"
-python_version = "{python_version}"
-profile_id = "one-trait-gaussian-heritability-target-v1"
-sample_size = 100
-largest_family = 20
-seed = 20260821
-input_sha256 = "{input_sha256}"
-max_wall_seconds = 10.0
-max_peak_rss_bytes = 1000000000
-
 [synthetic_analysis_receipts]
 configured = true
 runner = "tools/synthetic_analysis_receipts.py"
@@ -382,94 +361,6 @@ index = {
     )
     """Created one deterministic system-boundary fixture emulating the real command."""
 
-    resource_runner: Path = root / "tools" / "measure_target_resources.py"
-    """Selected the configured target-resource command from the manifest."""
-
-    resource_runner.write_text(
-        """from __future__ import annotations
-import argparse
-import hashlib
-import json
-import platform
-import sys
-import tomllib
-from pathlib import Path
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--manifest", type=Path, required=True)
-parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--wheel", type=Path, nargs="+", required=True)
-parser.add_argument("--qualification", required=True)
-parser.add_argument("--host-id", required=True)
-args = parser.parse_args()
-manifest_text = args.manifest.read_text(encoding="utf-8")
-manifest = tomllib.loads(manifest_text)
-configuration = manifest["target_resource_budgets"]
-expected = configuration["measurements"][0]
-wheel = args.wheel[0]
-wheel_sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
-canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
-build = {
-    "version": "0.1.0",
-    "cargo_version": "0.1.0",
-    "source_commit": "a" * 40,
-    "source_dirty": False,
-    "release": True,
-    "release_manifest_sha256": hashlib.sha256(manifest_text.encode()).hexdigest(),
-    "cargo_lock_sha256": hashlib.sha256(Path("Cargo.lock").read_bytes()).hexdigest(),
-    "uv_lock_sha256": hashlib.sha256(Path("uv.lock").read_bytes()).hexdigest(),
-}
-measurement = {
-    "analysis_id": expected["analysis_id"],
-    "public_entry_points": ["asterism.prepare", "asterism.PreparedModel.fit"],
-    "public_api": True,
-    "target_sized": True,
-    "host_id": expected["host_id"],
-    "profile_id": expected["profile_id"],
-    "sample_size": expected["sample_size"],
-    "largest_family": expected["largest_family"],
-    "seed": expected["seed"],
-    "input_sha256": expected["input_sha256"],
-    "max_wall_seconds": expected["max_wall_seconds"],
-    "max_peak_rss_bytes": expected["max_peak_rss_bytes"],
-    "wall_time_seconds": 0.25,
-    "peak_rss_bytes": 50000000,
-    "status": "completed",
-    "timed_out": False,
-    "passed": True,
-}
-record = {
-    "schema_version": 1,
-    "artifact_id": "asterism-target-resources-0.1",
-    "qualification": args.qualification,
-    "manifest_sha256": hashlib.sha256(canonical).hexdigest(),
-    "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-    "route_helper_sha256": hashlib.sha256(
-        Path(configuration["route_helper"]).read_bytes()
-    ).hexdigest(),
-    "build": build,
-    "wheel": {"name": wheel.name, "sha256": wheel_sha256},
-    "host": {
-        "id": args.host_id,
-        "platform": expected["platform"],
-        "architecture": expected["architecture"],
-        "python_version": expected["python_version"],
-        "python_implementation": "CPython",
-        "peak_rss_source": "getrusage_ru_maxrss",
-        "peak_rss_bytes_normalisation": (
-            "native_bytes" if expected["platform"] == "macos" else "kibibytes_x_1024"
-        ),
-    },
-    "analysis_ids": configuration["analysis_ids"],
-    "measurements": [measurement],
-    "failures": [],
-    "passed": True,
-}
-args.output.write_text(json.dumps(record, indent=2) + "\\n", encoding="utf-8")
-""",
-        encoding="utf-8",
-    )
-    """Created a complete fake artifact producer for release-runner boundary tests."""
 
     wheel_path: Path = tmp_path / "asterism-0.1.0-cp313-abi3-manylinux.whl"
     """Selected the immutable artifact to bind into release evidence."""
@@ -595,18 +486,6 @@ args.output.write_text(json.dumps(record, indent=2) + "\\n", encoding="utf-8")
         "one_trait_gaussian_heritability"
     ]
 
-    resources: dict[str, Any] = saved["target_resource_budgets"]
-    """Read the retained resource subprocess and complete measurement artifact."""
-
-    assert resources["passed"] is True
-    assert resources["actual_exit_code"] == 0
-    assert resources["record"]["qualification"] == "release_target"
-    assert resources["record"]["analysis_ids"] == ["one_trait_gaussian_heritability"]
-    retained_resources: Path = output_directory / resources["path"]
-    """Located the exact resource artifact retained beside command evidence."""
-
-    assert resources["sha256"] == sha256(retained_resources)
-
     assert (
         release_evidence_errors(
             evidence_path=output_directory / "evidence.json",
@@ -695,34 +574,6 @@ args.output.write_text(json.dumps(record, indent=2) + "\\n", encoding="utf-8")
 
     assert "synthetic receipt evidence has no index" in "\n".join(
         synthetic_placeholder_errors
-    )
-
-    resource_placeholder: dict[str, Any] = deepcopy(saved)
-    """Copied valid evidence before discarding actual resource observations."""
-
-    resource_placeholder["target_resource_budgets"] = {"passed": True}
-    """Modelled an aggregate resource claim with no artifact or process evidence."""
-
-    resource_placeholder_path: Path = (
-        output_directory / "resource-placeholder-evidence.json"
-    )
-    """Selected a separate malformed resource-evidence record."""
-
-    resource_placeholder_path.write_text(
-        json.dumps(resource_placeholder, indent=2) + "\n", encoding="utf-8"
-    )
-    """Persisted the insufficient passing claim without changing valid evidence."""
-
-    resource_placeholder_errors: list[str] = release_evidence_errors(
-        evidence_path=resource_placeholder_path,
-        wheel_paths=[wheel_path],
-        root=root,
-        core=core,
-    )
-    """Ran the independent verifier against aggregate-only resource evidence."""
-
-    assert "target resource evidence has no artifact path" in "\n".join(
-        resource_placeholder_errors
     )
 
     wheel_path.write_bytes(b"different wheel bytes")

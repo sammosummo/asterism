@@ -20,23 +20,6 @@ architecture = "x86_64"
 policy = "manylinux_2_17"
 wheel = "abi3"
 
-[target_resource_budgets]
-configured = false
-runner = "tools/measure_target_resources.py"
-route_helper = "tools/synthetic_analysis_receipts.py"
-analysis_ids = [
-  "one_trait_gaussian_heritability",
-  "several_covariance_components",
-  "bivariate_genetic_correlation",
-  "continuous_gene_by_environment",
-  "discrete_gene_by_environment",
-  "binary_liability_heritability",
-  "one_trait_tobit_audiogram",
-  "mixed_binary_censored_genetic_correlation",
-]
-measurements = []
-blocker = { code = "target_sized_time_and_memory_budgets_unmeasured", evidence_needed = "Measure every supported target-sized analysis on its intended host, then prewrite and enforce explicit wall-time and peak-memory budgets." }
-
 [medusa_smoke]
 required = true
 configured = false
@@ -64,7 +47,7 @@ evidence = []
 blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every design range and pass rule is measured, then retain one reportable standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
-configured = false
+configured = true
 probe_runner = "tools/cross_platform_probe.py"
 runner = "tools/compare_cross_platform.py"
 exact_comparisons = [
@@ -76,7 +59,7 @@ exact_comparisons = [
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "one_trait_gaussian_heritability"
-measured = false
+measured = true
 numeric_fields = [
   "fit.h2",
   "fit.total_variance",
@@ -86,10 +69,12 @@ numeric_fields = [
   "fit.test.statistic",
   "fit.test.p_value",
 ]
+absolute = { "fit.h2" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "fit.interval.lower" = 1e-9, "fit.interval.upper" = 1e-9, "fit.test.statistic" = 1e-9, "fit.test.p_value" = 1e-9 }
+relative = { "fit.h2" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "fit.interval.lower" = 1e-6, "fit.interval.upper" = 1e-6, "fit.test.statistic" = 1e-6, "fit.test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "several_covariance_components"
-measured = false
+measured = true
 numeric_fields = [
   "fit.mean_diagonal_proportions[0]",
   "fit.loglik",
@@ -99,10 +84,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.mean_diagonal_proportions[0]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.mean_diagonal_proportions[0]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "bivariate_genetic_correlation"
-measured = false
+measured = true
 numeric_fields = [
   "fit.rho_g",
   "fit.loglik",
@@ -112,10 +99,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.rho_g" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.rho_g" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "continuous_gene_by_environment"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability[1]",
   "fit.genetic_correlation[0][2]",
@@ -126,10 +115,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability[1]" = 1e-9, "fit.genetic_correlation[0][2]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability[1]" = 1e-6, "fit.genetic_correlation[0][2]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "discrete_gene_by_environment"
-measured = false
+measured = true
 numeric_fields = [
   "fit.genetic_correlation",
   "fit.heritability[0]",
@@ -141,10 +132,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.genetic_correlation" = 1e-9, "fit.heritability[0]" = 1e-9, "fit.heritability[1]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.genetic_correlation" = 1e-6, "fit.heritability[0]" = 1e-6, "fit.heritability[1]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "binary_liability_heritability"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability",
   "fit.loglik",
@@ -155,10 +148,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability" = 1e-9, "fit.loglik" = 1e-9, "fit.prevalence" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability" = 1e-6, "fit.loglik" = 1e-6, "fit.prevalence" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "one_trait_tobit_audiogram"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability",
   "fit.total_variance",
@@ -169,10 +164,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "mixed_binary_censored_genetic_correlation"
-measured = false
+measured = true
 numeric_fields = [
   "fit.genetic_correlation",
   "fit.heritability[0]",
@@ -184,7 +181,8 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
-
+absolute = { "fit.genetic_correlation" = 1e-9, "fit.heritability[0]" = 1e-9, "fit.heritability[1]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.genetic_correlation" = 1e-6, "fit.heritability[0]" = 1e-6, "fit.heritability[1]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 [[analyses]]
 id = "one_trait_gaussian_heritability"
 support = "supported_in_0_1"

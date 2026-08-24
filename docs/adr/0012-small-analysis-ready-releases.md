@@ -90,7 +90,8 @@ Mac and Linux runs must agree exactly on outcome status, refusal codes,
 boundary states and field presence. Numerical values agree within pre-written,
 model-specific tolerances rather than bit for bit. Each supported target-sized
 analysis must also complete within an explicit feasible time-and-memory budget
-on its intended host. Broader performance measurements are retained as
+on its intended host. **Withdrawn by ADR 0019: no resource budget gates a
+release.** Broader performance measurements are retained as
 benchmarks but small changes do not block release until a stable runner and its
 normal variability have been measured.
 
