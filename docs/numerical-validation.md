@@ -1020,6 +1020,23 @@ outside software, only the Dryad deposit, and takes about an hour:
 .venv/bin/python checks/against_red_deer.py --evidence
 ```
 
+`components_target_design.py` measures the several-component model at the
+design it will be used on, which nothing else did. Its two other rules simulate
+four hundred people in sibling pairs, and the supported design range those
+justify is a largest family of two -- which refuses every SAFS pedigree, where
+families reach a hundred and sixty five. It reuses the reviewed,
+participant-free aggregate the spatial target layout already uses: 1,792 people,
+190 families with the largest at 165, and 1,140 households sized one to seven.
+
+The household matrix has to cross families, and that is the point rather than a
+detail. A household that is exactly a sibling pair makes twice the kinship the
+identity plus the within-pair pattern and the household matrix the identity plus
+that same pattern, so the residual identity is their exact combination and the
+three bases have rank two. Nothing separates additive from shared household
+there. Real households hold people from different families, which is what the
+1,140 locations record, so this design identifies what a sibling-pair simulation
+cannot.
+
 Simulation. These take minutes to hours, and several read the GOBS pedigree:
 
 ```sh
@@ -1028,6 +1045,7 @@ uv run --no-project python checks/one_trait_coverage.py \
   --truths 0 0.05 0.07 0.10 0.20 0.30 0.40 0.50 0.60 0.70 0.80 1 --no-write
 uv run --no-project python checks/bivariate_calibration.py
 uv run --no-project python checks/components_calibration.py
+uv run --no-project python checks/components_target_design.py
 uv run --no-project python checks/kinship_classes_calibration.py
 uv run --no-project python checks/kinship_equality_calibration.py
 uv run --no-project python checks/spatial_bootstrap.py

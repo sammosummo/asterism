@@ -611,22 +611,63 @@ impl MixedBivariateModel {
         // end of every correlation interval on its own bound whatever the data
         // said -- and made the interval contradict this model's own test, which
         // rejected a correlation of nought that the interval reported as inside.
-        let gradient = gradient_of(&theta);
-        let projected = gradient
-            .iter()
-            .enumerate()
-            .map(|(k, g)| {
-                let held_here = lower[k] == upper[k];
-                let at_lower = theta[k] <= lower[k] && *g > 0.0;
-                let at_upper = theta[k] >= upper[k] && *g < 0.0;
-                if held_here || at_lower || at_upper {
-                    0.0
-                } else {
-                    *g
-                }
-            })
-            .fold(0.0f64, |worst, g| worst.max(g.abs()));
-        let scaled_gradient = projected / objective.abs().max(1.0);
+        let scaled_projected = |candidate: &[f64], objective: f64| -> f64 {
+            gradient_of(candidate)
+                .iter()
+                .enumerate()
+                .map(|(k, g)| {
+                    let held_here = lower[k] == upper[k];
+                    let at_lower = candidate[k] <= lower[k] && *g > 0.0;
+                    let at_upper = candidate[k] >= upper[k] && *g < 0.0;
+                    if held_here || at_lower || at_upper {
+                        0.0
+                    } else {
+                        *g
+                    }
+                })
+                .fold(0.0f64, |worst, g| worst.max(g.abs()))
+                / objective.abs().max(1.0)
+        };
+
+        let (mut objective, mut theta) = (objective, theta);
+        let mut scaled_gradient = scaled_projected(&theta, objective);
+
+        // Search again where the gradient test fails, as seven other families
+        // already do. This one did not, and it is the family where it matters
+        // most: the constrained refits along a profile are harder than the free
+        // fit, so it is those that fall short, and a discarded profile
+        // evaluation is scored as a miss however well the interval covered.
+        //
+        // Measured on four hundred replicates of the binary-with-censored pair,
+        // four per cent of them had at least one such evaluation, and that four
+        // per cent is the whole of the gap between the coverage this model
+        // achieves -- 0.965 by plain containment -- and the 0.925 its check
+        // reported.
+        if scaled_gradient >= 1e-5
+            && let Some(better) = crate::convergence::polish(
+                &theta,
+                objective,
+                scaled_gradient,
+                &lower,
+                &upper,
+                &value_of,
+                &gradient_of,
+                |candidate| {
+                    let negative = value_of(candidate);
+                    // The sentinel `value_of` returns where the likelihood
+                    // cannot be evaluated at all.
+                    if !negative.is_finite() || negative >= 1e30 {
+                        return None;
+                    }
+                    Some((negative, scaled_projected(candidate, negative)))
+                },
+            )
+        {
+            theta = better.par;
+            objective = better.negative_loglik;
+            scaled_gradient = better.scaled_gradient;
+        }
+
         Ok(MixedBivariateFit {
             heritability: [theta[0], theta[1]],
             total_variance: [theta[2].exp(), theta[3].exp()],

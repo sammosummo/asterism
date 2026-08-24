@@ -68,7 +68,7 @@ CENSORED_SHARE: float = 0.25
 TRUTHS: list[float] = [0.0, 0.4, 0.7]
 """Enumerated the true genetic correlations checked for coverage."""
 
-PAIRINGS: list[str] = ["continuous", "binary", "censored"]
+PAIRINGS: list[str] = ["continuous", "binary", "censored", "censored_pair"]
 """Enumerated the first-trait kinds covered by the campaign."""
 
 NOMINAL: float = 0.95
@@ -186,13 +186,28 @@ def encode(
     Returns:
         Public mixed-bivariate trait mappings for the first and second traits.
     """
-    second: dict[str, str | np.ndarray] = {
-        "kind": "continuous",
-        "value": latent[1],
-        "censoring": np.zeros(n, dtype=np.int64),
-        "limit": np.zeros(n),
-    }
-    """Represented the always-continuous second trait for the public fit."""
+    if pairing == "censored_pair":
+        second_cut: float = float(np.quantile(latent[1], 1.0 - CENSORED_SHARE))
+        """Located the second trait's own upper-censoring limit."""
+
+        second_censored: np.ndarray = latent[1] >= second_cut
+        """Marked the second trait's observations at or above its limit."""
+
+        second: dict[str, str | np.ndarray] = {
+            "kind": "censored",
+            "value": np.where(second_censored, np.nan, latent[1]),
+            "censoring": np.where(second_censored, 1, 0).astype(np.int64),
+            "limit": np.full(n, second_cut),
+        }
+        """Censored the second trait too, which the audiometry pair needs."""
+    else:
+        second = {
+            "kind": "continuous",
+            "value": latent[1],
+            "censoring": np.zeros(n, dtype=np.int64),
+            "limit": np.zeros(n),
+        }
+        """Represented the continuous second trait every other pairing uses."""
 
     if pairing == "continuous":
         first: dict[str, str | np.ndarray] = {
