@@ -107,12 +107,6 @@ NUMERIC_FIELDS_BY_ANALYSIS: dict[str, tuple[str, ...]] = {
         "test.statistic",
         "test.p_value",
     ),
-    "spatial_component_presence": (
-        "fit.mean_diagonal_proportions[1]",
-        "fit.loglik",
-        "test.statistic",
-        "test.p_value",
-    ),
 }
 """Fixed selected numeric paths before observing real cross-platform differences."""
 
@@ -830,7 +824,6 @@ def run_all_probes() -> list[dict[str, Any]]:
         ("binary_liability_heritability", probe_liability),
         ("one_trait_tobit_audiogram", probe_tobit),
         ("mixed_binary_censored_genetic_correlation", probe_mixed_bivariate),
-        ("spatial_component_presence", probe_spatial),
     )
     """Mapped the exact manifest inventory to independently testable public probes."""
 
@@ -930,7 +923,6 @@ def run_probe(wheel_path: Path) -> dict[str, Any]:
         "binary_liability_heritability",
         "one_trait_tobit_audiogram",
         "mixed_binary_censored_genetic_correlation",
-        "spatial_component_presence",
     ]
     """Fixed the probe implementation to the exact accepted 0.1 analysis inventory."""
 

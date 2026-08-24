@@ -763,8 +763,8 @@ def test_campaign_score_is_strict_json_when_recovery_precision_is_unavailable() 
     """Proved the machine evidence is strict interoperable JSON."""
 
 
-def test_command_and_manifest_freeze_the_target_campaign() -> None:
-    """Keep the executable rule ready while all readiness flags stay false."""
+def test_command_freezes_the_target_campaign() -> None:
+    """Keep the deferred target command runnable for a later release."""
     module: ModuleType = target_module()
     """Loaded the explicit target command-line contract."""
 
@@ -823,6 +823,9 @@ def test_command_and_manifest_freeze_the_target_campaign() -> None:
     assert parsed.censoring_shares == [0.52, 0.75]
     assert parsed.no_write is True
 
+
+def test_release_manifest_defers_the_binary_with_censored_pairing() -> None:
+    """Stop 0.1 claiming a pairing the extended-high-frequency paper never fits."""
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
@@ -835,38 +838,16 @@ def test_command_and_manifest_freeze_the_target_campaign() -> None:
     )
     """Selected the supported mixed analysis without relying on position."""
 
-    assert "mixed_binary_censored_target_design" in analysis["required_checks"]
+    assert "mixed_binary_censored_target_design" not in analysis["required_checks"]
+    assert "mixed_binary_censored_exact_combination" not in analysis["required_checks"]
+    """Held the deferral for the binary-with-right-censored pairing."""
 
-    rule: dict[str, object] = next(
-        entry
-        for entry in analysis["pass_rules"]
-        if entry["id"] == "mixed_binary_censored_target_design"
-    )
-    """Selected the target rule by stable identifier."""
-
-    assert rule["status"] == "ready"
-    assert "blocker" not in rule
-    assert rule["timeout_seconds"] == 172_800
-    assert rule["command"] == [
-        "checks/mixed_binary_censored_target_design.py",
-        *command,
+    assert analysis["design_range"]["trait_type"]["allowed"] == [
+        "binary_and_continuous",
+        "mixed_pairings_with_continuous",
     ]
-    assert analysis["pass_rules_configured"] is False
-    assert analysis["design_range"]["measured"] is False
+    """Kept exactly the mixed pairings the paper measures."""
 
-    facts: dict[str, object] = rule["design_facts"]
-    """Selected the machine-readable generating and structural boundary."""
-
-    assert facts["population_prevalence"] == 0.254
-    assert facts["heritabilities"] == [0.5, 0.5]
-    assert facts["genetic_correlations"] == [0.0, 0.4]
-    assert facts["residual_correlation"] == 0.15
-    assert facts["hearing_variance"] == 3.0
-    assert facts["fixture_sha256"] == TARGET_FIXTURE_SHA256
-    assert facts["source_fixture_sha256"] == (
-        "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e"
-    )
-    assert facts["observed_nonzero_relationship_pairs"] == 27_821
-    assert facts["generated_nonzero_relationship_pairs"] == 27_691
-    assert facts["maximum_relative_pair_count_discrepancy"] == 0.005
-    assert facts["participant_structure_reconstructed"] is False
+    assert (ROOT / "checks" / "mixed_binary_censored_target_design.py").is_file()
+    assert (ROOT / "checks" / "mixed_binary_censored_exact_combination.py").is_file()
+    """Kept the deferred material intact and runnable for a later release."""

@@ -1,0 +1,18 @@
+{
+ "check": "components_target_design",
+ "coverage": 0.96,
+ "coverage_interval": [
+  0.9227080317739839,
+  0.9825751910055194
+ ],
+ "largest_family": 165,
+ "mean_household_estimate": 0.15448217879663292,
+ "nominal_coverage": 0.95,
+ "participant_free": true,
+ "passed": true,
+ "people": 1792,
+ "refused": 0,
+ "replicates": 200,
+ "true_additive": 0.45,
+ "true_household": 0.15
+}

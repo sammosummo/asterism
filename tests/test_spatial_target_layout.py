@@ -224,52 +224,24 @@ def test_small_real_public_bootstrap_uses_every_requested_replicate() -> None:
     """Kept the three-replicate smoke distinct from five-per-cent release evidence."""
 
 
-def test_release_manifest_pins_the_exact_target_command() -> None:
-    """Keep the full 199-replicate target gate executable but unreleased."""
+def test_release_manifest_defers_the_spatial_presence_analysis() -> None:
+    """Keep the target gate executable after 0.1 stopped claiming spatial support."""
     manifest: dict[str, Any] = tomllib.loads(
         (Path(__file__).parents[1] / "release.toml").read_text(encoding="utf-8")
     )
     """Parsed the authoritative development release contract."""
 
-    analysis: dict[str, Any] = next(
-        selected
-        for selected in manifest["analyses"]
-        if selected["id"] == "spatial_component_presence"
-    )
-    """Selected the supported spatial-presence analysis by stable identifier."""
+    analysis_ids: list[str] = [str(entry["id"]) for entry in manifest["analyses"]]
+    """Collected every analysis 0.1 makes a scientific claim about."""
 
-    rule: dict[str, Any] = next(
-        selected
-        for selected in analysis["pass_rules"]
-        if selected["id"] == "spatial_target_layout"
-    )
-    """Selected the exact target-layout rule independently of manifest order."""
+    assert "spatial_component_presence" not in analysis_ids
+    """Held the deferral, so no release evidence waits on the spatial target run."""
 
-    assert rule["status"] == "ready"
-    assert rule["command"] == [
-        "checks/spatial_target_layout.py",
-        "--fixture",
-        "checks/design_fixtures/spatial_component_presence_target_layout.json",
-        "--fixture-sha256",
-        TARGET_FIXTURE_SHA256,
-        "--bootstrap-replicates",
-        "199",
-        "--bootstrap-seed",
-        "20260812",
-        "--no-write",
-    ]
-    assert rule["design_facts"] == {
-        "participant_free": True,
-        "sample_size": {"min": 1_792, "max": 1_792},
-        "largest_family": {"max": 165},
-        "trait_type": ["continuous_with_pairwise_distance"],
-        "components": [
-            "additive_relationship",
-            "shared_location",
-            "spatial_exponential",
-            "residual",
-        ],
-    }
+    assert TARGET_FIXTURE.is_file()
+    assert (
+        Path(__file__).parents[1] / "checks" / "spatial_target_layout.py"
+    ).is_file()
+    """Kept the deferred material intact and runnable for a later release."""
 
 
 def test_target_command_requires_every_scientific_argument() -> None:
