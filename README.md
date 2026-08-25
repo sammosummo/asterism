@@ -11,6 +11,9 @@ heritability and a genetic correlation are, and who needs to know two things:
 what this package's interface is, and what it has actually been validated to
 do.
 
+Every public object, with its signature and its own documentation, is in the
+[API reference](docs/api-reference.md), which is generated from the code.
+
 It does not teach variance components, and it does not assume you will accept a
 number because software produced it. Every supported analysis has a check that
 measures it against a known truth or an independent implementation, and those
