@@ -139,13 +139,12 @@ def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:
     dependencies at all. That is deliberate: the question is only what version
     the manifest names.
 
-    `check_release.py` answered it by importing `measure_target_resources` and
-    `run_scientific_release` at module scope, and both of those import
-    `asterism` and NumPy because measuring a release means running it. So the
-    only step that can start a release could not run, and a release could never
-    have started. It failed on `main` exactly that way.
+    `check_release.py` answered it by importing its heavier siblings at module
+    scope, and those import `asterism` and NumPy because measuring a release
+    means running it. So the only step that can start a release could not run,
+    and a release could never have started. It failed on `main` exactly that way.
 
-    The two siblings are imported where they are used instead. This checks the
+    Such siblings are imported where they are used instead. This checks the
     import graph rather than the behaviour, because reproducing the job means
     reproducing an interpreter with nothing installed.
     """
@@ -156,7 +155,7 @@ def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:
     """Parsed it without importing it, which would need what it must not need."""
 
     forbidden: frozenset[str] = frozenset(
-        {"asterism", "numpy", "measure_target_resources", "run_scientific_release"}
+        {"asterism", "numpy", "run_scientific_release"}
     )
     """Named what the detect job does not have and must not be asked for."""
 

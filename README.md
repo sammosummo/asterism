@@ -11,11 +11,11 @@ coverage simulations, and known numerical limitations are summarised in
 
 This checkout is a development build, not an analysis-ready release. Its
 embedded `release.toml` deliberately refuses reportable status until every 0.1
-design range and scientific pass rule has been rerun on the exact release
+scientific pass rule has been rerun on the exact release
 artifact. [Python API support status](docs/api-support.md) distinguishes what is
 planned for 0.1 from public capabilities outside its scientific support. The
 [analysis-receipt guide](docs/analysis-receipts.md) shows the fixed-wheel
-preflight, three outcomes and caller-owned JSON boundary.
+release-state check, three outcomes and caller-owned JSON boundary.
 
 ## Installation
 
@@ -137,7 +137,7 @@ person order with trait within person.
 The 0.1 reportable target is `rho_g` with its interval and test; the other fitted
 quantities describe the joint fit but are not additional 0.1 claims.
 
-## Spatial covariance
+## Spatial covariance — outside 0.1 scientific support
 
 ```python
 model = asterism.SpatialModel([relationship], distance_km, design)
@@ -250,8 +250,8 @@ and 75 per cent censoring levels passes on the fixed release artifact.
 ## Two traits measured differently
 
 ```python
-first = {"kind": "binary", "value": v1, "censoring": c1, "limit": l1}
-second = {"kind": "censored", "value": v2, "censoring": c2, "limit": l2}
+first = {"kind": "censored", "value": v1, "censoring": c1, "limit": l1}
+second = {"kind": "continuous", "value": v2, "censoring": c2, "limit": l2}
 
 fit = asterism.mixed_bivariate_fit(relationship, first, second, design)
 fit["genetic_correlation"], fit["residual_correlation"]
@@ -268,11 +268,10 @@ heritability while a continuous or censored trait's is not, and the two must not
 be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
-Only the prespecified binary psychiatric diagnosis/right-censored hearing pair
-is planned for 0.1 support. Its independent SOLAR fixture is now frozen, but
-the exact fixed-wheel simulation campaigns and supported design range remain
-unfinished. Other trait-kind combinations remain public but scientifically
-unsupported.
+0.1 supports the pairings that include a continuous trait: continuous with
+continuous, binary with continuous, and censored with continuous, along with
+censored with censored. The binary-with-censored pair is deferred — it stays
+public and its checks are kept, but 0.1 makes no scientific claim about it.
 
 ## Marker association — outside 0.1 scientific support
 
@@ -390,7 +389,7 @@ The full list of simulation and package-comparison commands is in
 Cite the archived version you actually ran, not the repository. A development
 checkout is not a citable version: only a release wheel carries the build
 identity a result can be traced back to, and only a release has had its pass
-rules and design ranges measured.
+rules configured.
 
 Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
 publication rather than before it, so the DOI is added there when the first

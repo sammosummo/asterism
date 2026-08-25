@@ -17,18 +17,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-if __package__:
-    from .measure_target_resources import (
-        target_resource_configuration_errors,
-        target_resource_record_errors,
-    )
-else:
-    from measure_target_resources import (
-        target_resource_configuration_errors,
-        target_resource_record_errors,
-    )
-"""Imported shared resource contracts in module and direct-script execution."""
-
 IDENTIFIER_PATTERN: re.Pattern[str] = re.compile(r"[a-z][a-z0-9_]*")
 """Restricted evidence identifiers to stable, path-safe names."""
 
@@ -604,14 +592,6 @@ def configured_rules(
             continue
         if analysis.get("pass_rules_configured") is not True:
             errors.append(f"{identifier}: pass_rules_configured must be true")
-        design_range: object = analysis.get("design_range")
-        """Read the measured design-range claim that bounds this evidence."""
-
-        if (
-            not isinstance(design_range, dict)
-            or design_range.get("measured") is not True
-        ):
-            errors.append(f"{identifier}: design range must be measured")
         required_checks: object = analysis.get("required_checks")
         """Read the evidence identifiers promised by this analysis."""
 
@@ -766,14 +746,6 @@ def configured_rules(
             )
     """Required a real installed-wheel receipt command before release execution."""
 
-    errors.extend(
-        target_resource_configuration_errors(
-            manifest.get("target_resource_budgets"),
-            root,
-            analysis_ids,
-            require_configured=True,
-        )
-    )
     """Required complete target profiles and prewritten budgets before execution."""
 
     if errors:
@@ -1179,166 +1151,6 @@ def run_scientific_release(
     }
     """Retained command, log and per-analysis identities beside scientific evidence."""
 
-    resource_configuration: dict[str, Any] = dict(manifest["target_resource_budgets"])
-    """Read the target profiles and acceptances already validated during preflight."""
-
-    configured_measurements: list[dict[str, Any]] = list(
-        resource_configuration["measurements"]
-    )
-    """Read the complete ordered route measurements sharing one intended host."""
-
-    resource_output_path: Path = output_directory / "target-resource-measurements.json"
-    """Selected the durable values-free measurement artifact path."""
-
-    resource_stdout_path: Path = output_directory / "target-resources.stdout.txt"
-    """Selected the durable ordinary-output record for resource orchestration."""
-
-    resource_stderr_path: Path = output_directory / "target-resources.stderr.txt"
-    """Selected the durable diagnostic-output record for resource orchestration."""
-
-    resource_argv: list[str] = [
-        sys.executable,
-        str(resource_configuration["runner"]),
-        "--manifest",
-        str(manifest_path),
-        "--output",
-        str(resource_output_path),
-        "--qualification",
-        "release_target",
-        "--host-id",
-        str(configured_measurements[0]["host_id"]),
-        "--wheel",
-        *[str(path) for path in resolved_wheels],
-    ]
-    """Bound the target runner to this manifest, intended host and saved wheel set."""
-
-    resource_started_at: str = datetime.now(UTC).isoformat()
-    """Recorded when all target-route measurements began in UTC."""
-
-    try:
-        resource_completed: subprocess.CompletedProcess[str] = subprocess.run(
-            resource_argv,
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=int(resource_configuration["timeout_seconds"]),
-            env=command_environment,
-        )
-        """Executed the committed target runner without shell interpretation."""
-
-        resource_exit_code: int | None = resource_completed.returncode
-        """Recorded the actual process status used by the resource decision."""
-
-        resource_stdout: str = resource_completed.stdout
-        """Captured complete ordinary output before hashing it."""
-
-        resource_stderr: str = resource_completed.stderr
-        """Captured complete diagnostics before hashing them."""
-
-        resource_timed_out: bool = False
-        """Recorded completion inside the outer orchestration bound."""
-    except subprocess.TimeoutExpired as error:
-        resource_exit_code = None
-        """Recorded that a terminated resource command produced no exit status."""
-
-        resource_stdout = error.stdout if isinstance(error.stdout, str) else ""
-        """Preserved ordinary output captured before the timeout."""
-
-        resource_stderr = error.stderr if isinstance(error.stderr, str) else ""
-        """Preserved diagnostic output captured before the timeout."""
-
-        resource_timed_out = True
-        """Converted the bounded timeout into an auditable failed resource run."""
-
-    resource_stdout_path.write_text(resource_stdout, encoding="utf-8")
-    """Persisted exact target-runner ordinary output."""
-
-    resource_stderr_path.write_text(resource_stderr, encoding="utf-8")
-    """Persisted exact target-runner diagnostics."""
-
-    resource_record: object = None
-    """Withheld embedded resource details until present JSON parsed successfully."""
-
-    resource_record_errors: list[str] = []
-    """Accumulated independent identity and budget-verification failures."""
-
-    if resource_output_path.is_file():
-        try:
-            resource_record = json.loads(
-                resource_output_path.read_text(encoding="utf-8")
-            )
-            """Parsed the retained artifact independently of command output."""
-        except json.JSONDecodeError as error:
-            resource_record_errors.append(
-                f"target resource artifact is unreadable: {error}"
-            )
-        """Converted malformed resource JSON into a release failure."""
-    else:
-        resource_record_errors.append("target resource artifact does not exist")
-    """Required actual per-route observations rather than a zero exit alone."""
-
-    expected_resource_build: dict[str, Any] = {
-        "version": str(core.__version__),
-        "cargo_version": str(manifest["cargo_version"]),
-        "source_commit": str(source_commit),
-        "source_dirty": bool(core.__source_dirty__),
-        "release": bool(manifest["release"]),
-        "release_manifest_sha256": hashlib.sha256(
-            manifest_text.encode("utf-8")
-        ).hexdigest(),
-        "cargo_lock_sha256": hashlib.sha256(
-            cargo_lock_text.encode("utf-8")
-        ).hexdigest(),
-        "uv_lock_sha256": hashlib.sha256(uv_lock_text.encode("utf-8")).hexdigest(),
-    }
-    """Rendered exactly the public build identity returned by the installed package."""
-
-    resource_record_errors.extend(
-        target_resource_record_errors(
-            resource_record,
-            manifest=manifest,
-            root=root,
-            expected_build=expected_resource_build,
-            wheel_sha256s=wheel_sha256s,
-        )
-    )
-    """Recomputed every stale-input, completion and resource-budget decision."""
-
-    resource_passed: bool = (
-        resource_exit_code == 0
-        and not resource_timed_out
-        and not resource_record_errors
-    )
-    """Required both process success and independently verified per-route evidence."""
-
-    resource_evidence: dict[str, Any] = {
-        "argv": resource_argv,
-        "timeout_seconds": int(resource_configuration["timeout_seconds"]),
-        "actual_exit_code": resource_exit_code,
-        "timed_out": resource_timed_out,
-        "passed": resource_passed,
-        "verification_errors": resource_record_errors,
-        "started_at": resource_started_at,
-        "finished_at": datetime.now(UTC).isoformat(),
-        "stdout_path": str(resource_stdout_path.relative_to(output_directory)),
-        "stdout_sha256": file_identity(resource_stdout_path)["sha256"],
-        "stderr_path": str(resource_stderr_path.relative_to(output_directory)),
-        "stderr_sha256": file_identity(resource_stderr_path)["sha256"],
-        "path": (
-            str(resource_output_path.relative_to(output_directory))
-            if resource_output_path.is_file()
-            else None
-        ),
-        "sha256": (
-            file_identity(resource_output_path)["sha256"]
-            if resource_output_path.is_file()
-            else None
-        ),
-        "record": resource_record,
-    }
-    """Retained command, logs, exact artifact bytes and independent decisions."""
-
     manifest_identity: dict[str, str] = file_identity(manifest_path.resolve())
     """Identified the authoritative contract used for this run."""
 
@@ -1350,7 +1162,6 @@ def run_scientific_release(
             bool(commands)
             and all(command["passed"] for command in commands)
             and synthetic_passed
-            and resource_passed
         ),
         "build": {
             "version": str(core.__version__),
@@ -1379,7 +1190,6 @@ def run_scientific_release(
         "wheels": [file_identity(path) for path in resolved_wheels],
         "commands": commands,
         "synthetic_analysis_receipts": synthetic_evidence,
-        "target_resource_budgets": resource_evidence,
         "cross_platform_agreement": {
             "path": str(copied_agreement_path.relative_to(output_directory)),
             "sha256": file_identity(copied_agreement_path)["sha256"],

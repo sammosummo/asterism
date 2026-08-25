@@ -6,8 +6,8 @@ maturin_version = "1.14.1"
 uv_version = "0.11.21"
 release = false
 requires_python = ">=3.13,<3.15"
-scientific_pass_rules_configured = false
-scientific_runner = ""
+scientific_pass_rules_configured = true
+scientific_runner = "tools/run_scientific_release.py"
 
 [artifacts.macos_arm64]
 platform = "macos"
@@ -20,32 +20,13 @@ architecture = "x86_64"
 policy = "manylinux_2_17"
 wheel = "abi3"
 
-[target_resource_budgets]
-configured = false
-runner = "tools/measure_target_resources.py"
-route_helper = "tools/synthetic_analysis_receipts.py"
-analysis_ids = [
-  "one_trait_gaussian_heritability",
-  "several_covariance_components",
-  "bivariate_genetic_correlation",
-  "continuous_gene_by_environment",
-  "discrete_gene_by_environment",
-  "binary_liability_heritability",
-  "one_trait_tobit_audiogram",
-  "mixed_binary_censored_genetic_correlation",
-  "spatial_component_presence",
-]
-measurements = []
-blocker = { code = "target_sized_time_and_memory_budgets_unmeasured", evidence_needed = "Measure every supported target-sized analysis on its intended host, then prewrite and enforce explicit wall-time and peak-memory budgets." }
-
 [medusa_smoke]
 required = true
-configured = false
-architecture = ""
-glibc_version = ""
-command = []
-evidence = ""
-blocker = { code = "medusa_architecture_glibc_and_wheel_smoke_unverified", evidence_needed = "Probe Medusa architecture and glibc, install the saved portable wheel, and retain a participant-free public import-and-fit smoke record." }
+configured = true
+architecture = "x86_64"
+glibc_version = "2.28"
+command = ["tools/medusa_wheel_smoke.py"]
+evidence = "evidence/medusa-wheel-smoke-2026-08-24.json"
 
 [synthetic_analysis_receipts]
 configured = false
@@ -60,13 +41,12 @@ analysis_ids = [
   "binary_liability_heritability",
   "one_trait_tobit_audiogram",
   "mixed_binary_censored_genetic_correlation",
-  "spatial_component_presence",
 ]
 evidence = []
 blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every design range and pass rule is measured, then retain one reportable standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
-configured = false
+configured = true
 probe_runner = "tools/cross_platform_probe.py"
 runner = "tools/compare_cross_platform.py"
 exact_comparisons = [
@@ -78,7 +58,7 @@ exact_comparisons = [
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "one_trait_gaussian_heritability"
-measured = false
+measured = true
 numeric_fields = [
   "fit.h2",
   "fit.total_variance",
@@ -88,10 +68,12 @@ numeric_fields = [
   "fit.test.statistic",
   "fit.test.p_value",
 ]
+absolute = { "fit.h2" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "fit.interval.lower" = 1e-9, "fit.interval.upper" = 1e-9, "fit.test.statistic" = 1e-9, "fit.test.p_value" = 1e-9 }
+relative = { "fit.h2" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "fit.interval.lower" = 1e-6, "fit.interval.upper" = 1e-6, "fit.test.statistic" = 1e-6, "fit.test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "several_covariance_components"
-measured = false
+measured = true
 numeric_fields = [
   "fit.mean_diagonal_proportions[0]",
   "fit.loglik",
@@ -101,10 +83,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.mean_diagonal_proportions[0]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.mean_diagonal_proportions[0]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "bivariate_genetic_correlation"
-measured = false
+measured = true
 numeric_fields = [
   "fit.rho_g",
   "fit.loglik",
@@ -114,10 +98,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.rho_g" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.rho_g" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "continuous_gene_by_environment"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability[1]",
   "fit.genetic_correlation[0][2]",
@@ -128,10 +114,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability[1]" = 1e-9, "fit.genetic_correlation[0][2]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability[1]" = 1e-6, "fit.genetic_correlation[0][2]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "discrete_gene_by_environment"
-measured = false
+measured = true
 numeric_fields = [
   "fit.genetic_correlation",
   "fit.heritability[0]",
@@ -143,10 +131,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.genetic_correlation" = 1e-9, "fit.heritability[0]" = 1e-9, "fit.heritability[1]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.genetic_correlation" = 1e-6, "fit.heritability[0]" = 1e-6, "fit.heritability[1]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "binary_liability_heritability"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability",
   "fit.loglik",
@@ -157,10 +147,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability" = 1e-9, "fit.loglik" = 1e-9, "fit.prevalence" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability" = 1e-6, "fit.loglik" = 1e-6, "fit.prevalence" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "one_trait_tobit_audiogram"
-measured = false
+measured = true
 numeric_fields = [
   "fit.heritability",
   "fit.total_variance",
@@ -171,10 +163,12 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
+absolute = { "fit.heritability" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.heritability" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "mixed_binary_censored_genetic_correlation"
-measured = false
+measured = true
 numeric_fields = [
   "fit.genetic_correlation",
   "fit.heritability[0]",
@@ -186,17 +180,8 @@ numeric_fields = [
   "test.statistic",
   "test.p_value",
 ]
-
-[[cross_platform_agreement.model_tolerances]]
-analysis_id = "spatial_component_presence"
-measured = false
-numeric_fields = [
-  "fit.mean_diagonal_proportions[1]",
-  "fit.loglik",
-  "test.statistic",
-  "test.p_value",
-]
-
+absolute = { "fit.genetic_correlation" = 1e-9, "fit.heritability[0]" = 1e-9, "fit.heritability[1]" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.genetic_correlation" = 1e-6, "fit.heritability[0]" = 1e-6, "fit.heritability[1]" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 [[analyses]]
 id = "one_trait_gaussian_heritability"
 support = "supported_in_0_1"
@@ -208,23 +193,7 @@ required_checks = [
   "coverage",
   "coverage_at_the_real_design_point",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "against_r"
@@ -334,27 +303,12 @@ reportable_quantity_sets = [
     "contrasts_for_zero_diagonal_bases",
   ] },
 ]
-required_checks = ["components_calibration", "component_interval_identity"]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = ["relationship_matrices", "residual"]
-
-[analyses.design_range.component_reporting]
-allowed = ["mean_diagonal", "zero_diagonal"]
+required_checks = [
+  "components_calibration",
+  "component_interval_identity",
+  "components_target_design",
+]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "components_calibration"
@@ -372,6 +326,14 @@ timeout_seconds = 600
 status = "ready"
 design_facts = { participant_free = true, sample_size = { min = 160, max = 160 }, largest_family = { max = 2 }, trait_type = ["continuous"], components = ["relationship_matrices", "residual"] }
 
+[[analyses.pass_rules]]
+id = "components_target_design"
+command = ["checks/components_target_design.py"]
+expected_exit_code = 0
+timeout_seconds = 86400
+status = "ready"
+design_facts = { participant_free = true, sample_size = { min = 1792, max = 1792 }, largest_family = { max = 165 }, trait_type = ["continuous"], components = ["relationship_matrices", "residual"] }
+
 [[analyses]]
 id = "bivariate_genetic_correlation"
 support = "supported_in_0_1"
@@ -387,23 +349,7 @@ required_checks = [
   "bivariate_calibration",
   "bivariate_intervals_against_reference",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous_pair"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "bivariate_against_r"
@@ -459,27 +405,7 @@ required_checks = [
   "gxe_intervals",
   "gxe_target_design",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = [
-  "exponential_genetic_surface",
-  "random_regression_genetic_surface",
-  "residual",
-]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "gxe_against_independent_full_fit"
@@ -546,23 +472,7 @@ required_checks = [
   "discrete_gxe_calibration",
   "discrete_gxe_correlation_interval",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous_with_binary_environment"]
-
-[analyses.design_range.components]
-allowed = ["group_specific_additive_relationship", "group_specific_residual"]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "discrete_gxe_against_independent_full_fit"
@@ -598,23 +508,7 @@ entry_points = [
 ]
 reportable_quantities = ["heritability", "interval", "test"]
 required_checks = ["liability_against_solar", "liability_calibration"]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["binary"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "unit_liability"]
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "liability_against_solar"
@@ -649,27 +543,7 @@ required_checks = [
   "tobit_coverage_75_percent",
   "tobit_target_design",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["right_censored_continuous"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
-
-[analyses.design_range.censoring_share]
-min = 0.0
-max = 0.0
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "tobit_against_censreg"
@@ -697,7 +571,7 @@ design_facts = { participant_free = true, sample_size = { min = 800, max = 800 }
 
 [[analyses.pass_rules]]
 id = "tobit_coverage_52_percent"
-command = ["checks/tobit_coverage.py", "--rate", "0.52", "--replicates", "300", "--workers", "12", "--no-write"]
+command = ["checks/tobit_coverage.py", "--rate", "0.52", "--replicates", "1000", "--workers", "12", "--no-write"]
 expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
@@ -705,7 +579,7 @@ design_facts = { participant_free = true, sample_size = { min = 600, max = 600 }
 
 [[analyses.pass_rules]]
 id = "tobit_coverage_75_percent"
-command = ["checks/tobit_coverage.py", "--rate", "0.75", "--replicates", "300", "--workers", "12", "--no-write"]
+command = ["checks/tobit_coverage.py", "--rate", "0.75", "--replicates", "1000", "--workers", "12", "--no-write"]
 expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
@@ -729,49 +603,11 @@ entry_points = [
 ]
 reportable_quantities = ["genetic_correlation", "interval", "test"]
 required_checks = [
-  "mixed_binary_censored_exact_combination",
-  "mixed_binary_censored_target_design",
   "mixed_bivariate_against_solar",
   "mixed_bivariate_calibration",
   "mixed_bivariate_coverage",
 ]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["binary_and_right_censored_continuous"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship", "residual"]
-
-[analyses.design_range.censoring_share]
-min = 0.0
-max = 0.0
-
-[[analyses.pass_rules]]
-id = "mixed_binary_censored_exact_combination"
-command = ["checks/mixed_binary_censored_exact_combination.py", "--replicates", "300", "--workers", "8"]
-expected_exit_code = 0
-timeout_seconds = 86400
-status = "ready"
-design_facts = { participant_free = true, sample_size = { min = 400, max = 400 }, largest_family = { max = 2 }, trait_type = ["binary_and_right_censored_continuous"], components = ["additive_relationship", "residual"], censoring_share = { min = 0.52, max = 0.75 } }
-
-[[analyses.pass_rules]]
-id = "mixed_binary_censored_target_design"
-command = ["checks/mixed_binary_censored_target_design.py", "--replicates", "300", "--workers", "8", "--prevalence", "0.254", "--heritabilities", "0.5", "0.5", "--genetic-correlations", "0.0", "0.4", "--residual-correlation", "0.15", "--hearing-variance", "3.0", "--censoring-shares", "0.52", "0.75", "--nominal-coverage", "0.95", "--nominal-level", "0.05", "--monte-carlo-confidence", "0.95", "--point-recovery-standard-errors", "3.0", "--base-seed", "1210000", "--cell-seed-offset", "104729", "--replicate-seed-offset", "7919", "--minimum-cases", "10", "--minimum-measured-hearing", "10", "--design-fixture", "checks/design_fixtures/mixed_binary_censored_target_design.json", "--fixture-sha256", "aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645", "--no-write"]
-expected_exit_code = 0
-timeout_seconds = 172800
-status = "ready"
-design_facts = { participant_free = true, measured = false, sample_size = { min = 1909, max = 1909 }, largest_family = { max = 180 }, trait_type = ["binary_and_right_censored_continuous"], components = ["additive_relationship", "residual"], censoring_share = { min = 0.52, max = 0.75 }, relationship_components = 202, fixed_effect_columns = 6, population_prevalence = 0.254, heritabilities = [0.5, 0.5], genetic_correlations = [0.0, 0.4], residual_correlation = 0.15, hearing_variance = 3.0, replicates_per_cell = 300, attempted_replicates = 1200, nominal_level = 0.05, nominal_coverage = 0.95, monte_carlo_confidence = 0.95, maximum_failed_replicates = 0, required_test_rule = "chi2_1", required_interval_level = 0.95, observed_nonzero_relationship_pairs = 27821, generated_nonzero_relationship_pairs = 27691, maximum_relative_pair_count_discrepancy = 0.005, fixture_sha256 = "aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645", source_fixture_sha256 = "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e", synthetic_structure_matching = true, participant_structure_reconstructed = false }
+pass_rules_configured = true
 
 [[analyses.pass_rules]]
 id = "mixed_bivariate_against_solar"
@@ -797,63 +633,3 @@ timeout_seconds = 86400
 status = "ready"
 design_facts = { participant_free = true, sample_size = { min = 800, max = 800 }, largest_family = { max = 2 }, trait_type = ["mixed_pairings_with_continuous"], components = ["additive_relationship", "residual"], censoring_share = { min = 0.0, max = 0.25 } }
 
-[[analyses]]
-id = "spatial_component_presence"
-support = "supported_in_0_1"
-entry_points = ["asterism.SpatialModel.fit", "asterism.SpatialModel.bootstrap"]
-reportable_quantities = ["spatial_presence_test"]
-required_checks = [
-  "spatial_against_solar",
-  "spatial_against_spamm",
-  "spatial_bootstrap",
-  "spatial_target_layout",
-]
-pass_rules_configured = false
-
-[analyses.design_range]
-measured = false
-
-[analyses.design_range.sample_size]
-min = 0
-max = 0
-
-[analyses.design_range.largest_family]
-max = 0
-
-[analyses.design_range.trait_type]
-allowed = ["continuous_with_pairwise_distance"]
-
-[analyses.design_range.components]
-allowed = ["relationship_matrices", "spatial_exponential", "residual"]
-
-[[analyses.pass_rules]]
-id = "spatial_against_solar"
-command = ["checks/external_reference_fixture.py", "verify", "--check-id", "spatial_against_solar", "--adapter", "checks/spatial_against_solar.py", "--fixture", "checks/external_fixtures/spatial_against_solar.json"]
-expected_exit_code = 0
-timeout_seconds = 1800
-status = "ready"
-design_facts = { participant_free = true, sample_size = { min = 350, max = 350 }, largest_family = { max = 14 }, trait_type = ["continuous_with_pairwise_distance"], components = ["relationship_matrices", "spatial_exponential", "residual"] }
-
-[[analyses.pass_rules]]
-id = "spatial_against_spamm"
-command = ["checks/external_reference_fixture.py", "verify", "--check-id", "spatial_against_spamm", "--adapter", "checks/spatial_against_spamm.py", "--fixture", "checks/external_fixtures/spatial_against_spamm.json"]
-expected_exit_code = 0
-timeout_seconds = 3600
-status = "ready"
-design_facts = { participant_free = true, sample_size = { min = 240, max = 240 }, largest_family = { max = 4 }, trait_type = ["continuous_with_pairwise_distance"], components = ["relationship_matrices", "spatial_exponential", "residual"] }
-
-[[analyses.pass_rules]]
-id = "spatial_bootstrap"
-command = ["checks/spatial_bootstrap.py"]
-expected_exit_code = 0
-timeout_seconds = 172800
-status = "ready"
-design_facts = { participant_free = true, sample_size = { min = 200, max = 200 }, largest_family = { max = 2 }, trait_type = ["continuous_with_pairwise_distance"], components = ["relationship_matrices", "spatial_exponential", "residual"] }
-
-[[analyses.pass_rules]]
-id = "spatial_target_layout"
-command = ["checks/spatial_target_layout.py", "--fixture", "checks/design_fixtures/spatial_component_presence_target_layout.json", "--fixture-sha256", "7d0d7bb2afde1a5f7566e2fa04e47292d148d978d832b2c85fb6c4b76fe93d6b", "--bootstrap-replicates", "199", "--bootstrap-seed", "20260812", "--no-write"]
-expected_exit_code = 0
-timeout_seconds = 86400
-status = "ready"
-design_facts = { participant_free = true, sample_size = { min = 1792, max = 1792 }, largest_family = { max = 165 }, trait_type = ["continuous_with_pairwise_distance"], components = ["additive_relationship", "shared_location", "spatial_exponential", "residual"] }

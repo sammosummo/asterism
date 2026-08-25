@@ -542,5 +542,4 @@ def test_release_rule_is_the_exact_frozen_executable_command() -> None:
         TARGET_FIXTURE_SHA256,
         "--no-write",
     ]
-    assert analysis["pass_rules_configured"] is False
-    assert analysis["design_range"]["measured"] is False
+    assert analysis["pass_rules_configured"] is True

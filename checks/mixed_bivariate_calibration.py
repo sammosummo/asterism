@@ -17,7 +17,12 @@ Three pairings, because each exercises a different part:
   and is the control;
 - **binary with continuous**, the diagnosis-against-hearing pair;
 - **censored with continuous**, the audiometry pair, which no other engine here
-  can fit.
+  can fit;
+- **censored with censored**, two audiometry traits at once, which is what a
+  genetic correlation between two extended high-frequency thresholds needs. The
+  model always allowed it -- the trait kinds are independent -- but nothing
+  measured it, so the supported design range could not name it and preflight
+  would have refused it.
 
 Run with:
 
@@ -66,7 +71,7 @@ WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "10"))
 STANDARD_ERRORS_ALLOWED: float = 3.0
 """Set the maximum accepted Monte Carlo discrepancy from the truth."""
 
-PAIRINGS: list[str] = ["continuous", "binary", "censored"]
+PAIRINGS: list[str] = ["continuous", "binary", "censored", "censored_pair"]
 """Enumerated the first-trait kinds covered by the calibration."""
 
 
@@ -167,13 +172,28 @@ def one(job: tuple[str, int]) -> dict[str, object]:
     design: np.ndarray = np.ones((n, 1))
     """Constructed the intercept-only fixed-effect design."""
 
-    second: dict[str, str | np.ndarray] = {
-        "kind": "continuous",
-        "value": latent[1],
-        "censoring": np.zeros(n, dtype=np.int64),
-        "limit": np.zeros(n),
-    }
-    """Represented the always-continuous second trait for the public fit."""
+    if pairing == "censored_pair":
+        second_cut: float = float(np.quantile(latent[1], 1.0 - CENSORED_SHARE))
+        """Located the second trait's own upper-censoring limit."""
+
+        second_censored: np.ndarray = latent[1] >= second_cut
+        """Marked the second trait's observations at or above its limit."""
+
+        second: dict[str, str | np.ndarray] = {
+            "kind": "censored",
+            "value": np.where(second_censored, np.nan, latent[1]),
+            "censoring": np.where(second_censored, 1, 0).astype(np.int64),
+            "limit": np.full(n, second_cut),
+        }
+        """Censored the second trait too, which is the audiometry-pair case."""
+    else:
+        second = {
+            "kind": "continuous",
+            "value": latent[1],
+            "censoring": np.zeros(n, dtype=np.int64),
+            "limit": np.zeros(n),
+        }
+        """Represented the continuous second trait every other pairing uses."""
 
     if pairing == "continuous":
         first: dict[str, str | np.ndarray] = {

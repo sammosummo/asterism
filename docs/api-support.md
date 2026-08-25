@@ -3,7 +3,7 @@
 This inventory separates a public import from a scientifically supported
 analysis. It is authoritative for the development version described by
 `release.toml`; the statistical claims remain disabled while that manifest's
-design ranges are unmeasured and its pass rules are unconfigured.
+its pass rules are unconfigured.
 
 The installed-wheel workflow is configured to check each supported interpreter
 and platform independently. A configured workflow is not release evidence, and
@@ -28,16 +28,15 @@ limitations. “Supported in 0.1” below means that the object belongs to a pla
 | `LatentMediationModel` | Public but outside 0.1 scientific support | Inferential latent mediation is deferred. |
 | `LiabilityModel` | Supported in 0.1 | Binary-trait liability heritability and inference. |
 | `PreparedModel` | Supported in 0.1 | Prepared one-trait Gaussian heritability. |
-| `SpatialModel` | Supported in 0.1 | Spatial-component presence testing; range is descriptive. |
+| `SpatialModel` | Public but outside 0.1 scientific support | Spatial-component presence testing is deferred. |
 | `VariantSetModel` | Public but outside 0.1 scientific support | Variant-set discovery is deferred. |
 | `__version__` | Supported infrastructure | Immutable public package version. |
 | `align` | Supported utility | Identifier-based alignment before positional numerical fitting. |
 | `build_identity` | Supported infrastructure | Immutable build identity for fit records and receipts. |
 | `kinship_classes` | Supported utility | Zero-diagonal component bases reported through coefficients and contrasts. |
-| `mixed_bivariate_fit` | Supported in 0.1 | Binary-diagnosis/censored-hearing genetic correlation. |
+| `mixed_bivariate_fit` | Supported in 0.1 | Genetic correlation for a mixed pair with a continuous trait; the binary-with-censored pairing is deferred. |
 | `mixed_bivariate_interval` | Supported in 0.1 | Interval for the mixed-pair genetic correlation. |
 | `mixed_bivariate_test` | Supported in 0.1 | Test for the mixed-pair genetic correlation. |
-| `preflight_analysis` | Supported infrastructure | Comparison of a proposed design with measured manifest limits. |
 | `prepare` | Supported in 0.1 | One-trait Gaussian model preparation. |
 | `region_log_probability` | Public but outside 0.1 scientific support | Diagnostic numerical primitive, not a supported analysis. |
 | `relationship_matrix` | Supported utility | Additive relationship-matrix construction. |

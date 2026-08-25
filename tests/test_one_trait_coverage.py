@@ -365,6 +365,5 @@ def test_release_manifest_pins_both_deferred_one_trait_campaigns() -> None:
         TARGET_FIXTURE_SHA256,
         "--no-write",
     ]
-    assert manifest["scientific_pass_rules_configured"] is False
-    assert analysis["pass_rules_configured"] is False
-    assert analysis["design_range"]["measured"] is False
+    assert manifest["scientific_pass_rules_configured"] is True
+    assert analysis["pass_rules_configured"] is True

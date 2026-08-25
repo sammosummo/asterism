@@ -1,4 +1,4 @@
-"""The public supported-analysis preflight and receipt interface."""
+"""The public supported-analysis receipt interface."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 import asterism
+from asterism.analysis import _release_state as release_state
 import pytest
 from asterism import _core
 
@@ -27,21 +28,6 @@ reportable_quantities = ["h2", "interval", "test"]
 required_checks = ["coverage"]
 pass_rules_configured = true
 
-[analyses.design_range]
-measured = true
-
-[analyses.design_range.sample_size]
-min = 350
-max = 1400
-
-[analyses.design_range.largest_family]
-max = 14
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = ["additive_relationship"]
 
 [[analyses]]
 id = "several_covariance_components"
@@ -68,24 +54,6 @@ reportable_quantity_sets = [
 required_checks = ["coverage"]
 pass_rules_configured = true
 
-[analyses.design_range]
-measured = true
-
-[analyses.design_range.sample_size]
-min = 350
-max = 1400
-
-[analyses.design_range.largest_family]
-max = 14
-
-[analyses.design_range.trait_type]
-allowed = ["continuous"]
-
-[analyses.design_range.components]
-allowed = ["relationship_matrices"]
-
-[analyses.design_range.component_reporting]
-allowed = ["mean_diagonal", "zero_diagonal"]
 """
 """A complete fixed release contract used only as the build-metadata adapter."""
 
@@ -105,33 +73,42 @@ def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replaced every coupled field instead of creating an impossible mixed build."""
 
 
-def test_unmeasured_release_evidence_blocks_reportable_preflight() -> None:
-    """Placeholder ranges never made a development build reportable."""
+def test_a_development_build_is_never_reportable() -> None:
+    """Keep a development build unreportable however ordinary its design."""
     design: dict[str, Any] = {
         "sample_size": 350,
         "largest_family": 14,
         "trait_type": "continuous",
-        "components": 1,
+        "components": "additive_relationship",
     }
-    """Described a Gaussian pedigree design used by predecessor evidence."""
+    """Described an entirely ordinary Gaussian pedigree design."""
 
-    preflight: dict[str, Any] = asterism.preflight_analysis(
+    receipt: dict[str, Any] = asterism.run_analysis(
         "one_trait_gaussian_heritability",
         design,
+        lambda: {"converged": True, "h2": 0.5, "interval": [0.1, 0.9], "test": 0.01},
+        model={"estimator": "reml"},
+        provenance={
+            "wheel_sha256": "a" * 64,
+            "dependency_lock_sha256": "b" * 64,
+            "consumer_commit": "c" * 40,
+            "input_commitments": {},
+        },
+        subject_order=["s1", "s2"],
     )
-    """Compared the proposed design with this build's release evidence."""
+    """Asked the standard runner for a receipt from this development build."""
 
-    assert preflight["analysis"] == "one_trait_gaussian_heritability"
-    assert preflight["inside_supported_range"] is False
-    assert [check["code"] for check in preflight["missing_checks"]] == [
-        "DESIGN_RANGE_NOT_MEASURED",
-        "SCIENTIFIC_PASS_RULES_NOT_CONFIGURED",
-        "BUILD_NOT_RELEASED",
+    assert receipt["outcome"] == "refused"
+    assert receipt["refusal"]["missing_checks"] == [
+        {
+            "code": "BUILD_NOT_RELEASED",
+            "reason": "development builds cannot produce reportable results",
+        }
     ]
-    assert preflight["reportable_quantities"] == ["h2", "interval", "test"]
+    """Refused for the one reason that still applies, and named it."""
 
 
-def test_a_failed_preflight_refuses_before_fitting() -> None:
+def test_an_unreleased_build_refuses_before_fitting() -> None:
     """An unreleased build never evaluated a real-outcome fit callback."""
     fitted: bool = False
     """Recorded whether the numerical callback was invoked."""
@@ -173,7 +150,8 @@ def test_a_failed_preflight_refuses_before_fitting() -> None:
     assert receipt["fit_record"] is None
     assert receipt["refusal"]["code"] == "ANALYSIS_PREFLIGHT_FAILED"
     assert (
-        receipt["refusal"]["missing_checks"] == receipt["preflight"]["missing_checks"]
+        receipt["refusal"]["missing_checks"]
+        == receipt["release_state"]["missing_checks"]
     )
     assert receipt["build"]["version"] == "0.1.0.dev0"
     assert receipt["build"]["cargo_version"] == "0.1.0-dev.0"
@@ -258,7 +236,7 @@ def test_a_converged_finite_release_fit_is_reportable(
         ),
     ],
 )
-def test_component_preflight_selects_only_the_applicable_quantity_set(
+def test_a_receipt_selects_only_the_applicable_quantity_set(
     monkeypatch: pytest.MonkeyPatch,
     component_reporting: str,
     expected_quantities: list[str],
@@ -267,7 +245,7 @@ def test_component_preflight_selects_only_the_applicable_quantity_set(
     install_release_contract(monkeypatch)
     """Substituted a release manifest carrying both component report branches."""
 
-    preflight: dict[str, Any] = asterism.preflight_analysis(
+    state: dict[str, Any] = release_state(
         "several_covariance_components",
         {
             "sample_size": 350,
@@ -279,9 +257,9 @@ def test_component_preflight_selects_only_the_applicable_quantity_set(
     )
     """Selected the report branch from the non-identifying component design."""
 
-    assert preflight["inside_supported_range"] is True
-    assert preflight["reportable_quantities"] == expected_quantities
-    assert set(preflight["reportable_quantity_inventory"]) == {
+    assert state["release_ready"] is True
+    assert state["reportable_quantities"] == expected_quantities
+    assert set(state["reportable_quantity_inventory"]) == {
         "mean_diagonal_component_contributions",
         "mean_diagonal_proportions",
         "mean_diagonal_proportion_interval",

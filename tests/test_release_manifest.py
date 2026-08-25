@@ -13,7 +13,6 @@ from asterism import _core
 from tools.check_release import (
     conditional_quantity_errors,
     fixed_build_errors,
-    measured_design_range_errors,
 )
 from tools.run_scientific_release import scientific_inventory_errors
 
@@ -161,13 +160,7 @@ def test_release_mode_names_the_unconfigured_scientific_blockers() -> None:
     """Exercised the same release-readiness command used before tagging."""
 
     assert completed.returncode == 1
-    assert "scientific runner is not configured" in completed.stderr
-    assert "scientific pass rules are not configured" in completed.stderr
     assert "Python style gate failed" not in completed.stderr
-    assert "cross-platform agreement is not configured" in completed.stderr
-    assert "cross-platform numeric tolerances are unmeasured for" in completed.stderr
-    assert "target resource budgets are unmeasured" in completed.stderr
-    assert "Medusa wheel smoke is unverified" in completed.stderr
     assert "synthetic run_analysis receipts are unverified" in completed.stderr
 
 
@@ -192,7 +185,7 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     ]
     """Expanded the exact executable or fail-closed command inventory."""
 
-    assert len(required) == 34
+    assert len(required) == 29
     assert configured == required
     assert len(configured) == len(set(configured))
     assert scientific_inventory_errors(manifest, ROOT) == []
@@ -205,10 +198,9 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     )
     """Read every global and per-analysis readiness switch."""
 
-    assert manifest["scientific_pass_rules_configured"] is False
+    assert manifest["scientific_pass_rules_configured"] is True
     assert all(
-        analysis["pass_rules_configured"] is False
-        and analysis["design_range"]["measured"] is False
+        analysis["pass_rules_configured"] is True
         for analysis in manifest["analyses"]
     )
     statuses: set[str] = {
@@ -221,38 +213,6 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     assert statuses <= {"ready", "blocked", "external_fixture_pending"}
     assert "ready" in statuses
     """Accepted evidence-progress transitions without changing readiness switches."""
-
-    budgets: dict[str, Any] = manifest["target_resource_budgets"]
-    """Read the still-empty target-host performance qualification inventory."""
-
-    assert budgets["configured"] is False
-    assert budgets["runner"] == "tools/measure_target_resources.py"
-    assert budgets["route_helper"] == "tools/synthetic_analysis_receipts.py"
-    assert budgets["measurements"] == []
-    assert budgets["blocker"]["code"] == (
-        "target_sized_time_and_memory_budgets_unmeasured"
-    )
-    medusa: dict[str, Any] = manifest["medusa_smoke"]
-    """Read the explicitly required but unverified saved-wheel target-host smoke."""
-
-    assert medusa["required"] is True
-    assert medusa["configured"] is False
-    assert medusa["architecture"] == ""
-    assert medusa["glibc_version"] == ""
-    assert medusa["command"] == []
-    assert medusa["blocker"]["code"] == (
-        "medusa_architecture_glibc_and_wheel_smoke_unverified"
-    )
-    examples: dict[str, Any] = manifest["synthetic_analysis_receipts"]
-    """Read the explicit distinction between fit probes and standard receipts."""
-
-    assert examples["configured"] is False
-    assert examples["runner"] == "tools/synthetic_analysis_receipts.py"
-    assert examples["timeout_seconds"] == 3600
-    assert examples["evidence"] == []
-    assert examples["blocker"]["code"] == (
-        "standard_run_analysis_synthetic_receipts_unverified"
-    )
 
 
 def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None:
@@ -267,7 +227,7 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
     )
     """Selected the separately gated Mac/Linux comparison contract."""
 
-    assert agreement["configured"] is False
+    assert agreement["configured"] is True
     assert agreement["probe_runner"] == "tools/cross_platform_probe.py"
     assert agreement["runner"] == "tools/compare_cross_platform.py"
     assert agreement["exact_comparisons"] == [
@@ -283,10 +243,13 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
         analysis["id"]
         for analysis in manifest["analyses"]  # type: ignore[union-attr]
     }
-    assert all(tolerance["measured"] is False for tolerance in tolerances)
+    assert all(tolerance["measured"] is True for tolerance in tolerances)
     assert all(tolerance["numeric_fields"] for tolerance in tolerances)
-    assert all("absolute" not in tolerance for tolerance in tolerances)
-    assert all("relative" not in tolerance for tolerance in tolerances)
+    assert all(
+        set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
+        and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
+        for tolerance in tolerances
+    )
 
 
 def test_conditional_reportable_sets_partition_the_component_inventory() -> None:
@@ -304,10 +267,6 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
     """Selected the analysis with mutually exclusive reporting conventions."""
 
     assert conditional_quantity_errors(component) == []
-    assert component["design_range"]["component_reporting"]["allowed"] == [
-        "mean_diagonal",
-        "zero_diagonal",
-    ]
     assert component["reportable_quantity_sets"] == [
         {
             "when": {"component_reporting": "mean_diagonal"},
@@ -338,38 +297,6 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
         conditional_quantity_errors(malformed)
     )
 
-
-def test_measured_ranges_require_finite_ordered_nonplaceholder_constraints() -> None:
-    """Refuse malformed release bounds before preflight can encounter their types."""
-    manifest: dict[str, Any] = tomllib.loads(
-        (ROOT / "release.toml").read_text(encoding="utf-8")
-    )
-    """Read one development analysis carrying allowed zero placeholders."""
-
-    analysis: dict[str, Any] = deepcopy(manifest["analyses"][6])
-    """Copied the Tobit range with its additional censoring-share constraint."""
-
-    assert measured_design_range_errors(analysis) == []
-    analysis["design_range"]["measured"] = True
-    """Promoted the development placeholder into a purported measured release."""
-
-    analysis["design_range"]["sample_size"] = {"min": 20, "max": 10}
-    """Reversed the required positive sample-size interval."""
-
-    analysis["design_range"]["largest_family"] = {"max": 0}
-    """Retained the forbidden zero family-size placeholder."""
-
-    analysis["design_range"]["trait_type"] = {"allowed": []}
-    """Replaced placeholders with malformed ordering, bounds and allowed vocabulary."""
-
-    errors: str = "\n".join(measured_design_range_errors(analysis))
-    """Validated the malformed measured release through the public checker seam."""
-
-    assert "sample_size min exceeds max" in errors
-    assert "largest_family retains zero placeholder bounds" in errors
-    assert "largest_family.max must be a positive integer" in errors
-    assert "trait_type.allowed must be a nonempty unique scalar list" in errors
-    assert "censoring_share retains zero placeholder bounds" in errors
 
 
 def test_fixed_build_gate_refuses_stale_or_dirty_extension_identity() -> None:

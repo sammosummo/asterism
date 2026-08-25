@@ -1,9 +1,10 @@
-# Analysis preflight and receipts
+# Analysis receipts
 
 A numerical fit is not automatically a reportable analysis. The public
 `asterism.run_analysis` path first compares a non-identifying design summary
 with the measured limits embedded in the installed wheel, runs the fitting
-callback only when that preflight passes, and returns one of three outcomes:
+callback only when the build may produce a reportable result, and returns
+one of three outcomes:
 
 - `reportable`: the release and design checks passed, the free fit and every
   required inference fit converged, required values are finite, and no profile
@@ -30,7 +31,7 @@ python tools/synthetic_analysis_receipts.py \
 The command uses only the public Python interface. It refuses a development or
 dirty build, binds every receipt to the saved wheel, embedded dependency lock,
 source commit, complete synthetic-input commitment and fitted row-order
-commitment, and requires all nine outcomes to be `reportable`. It keeps all
+commitment, and requires all eight outcomes to be `reportable`. It keeps all
 receipts in memory until the entire set passes, then writes one strict JSON file
 per analysis and a checksummed `index.json`. A partial set is never release
 evidence. The independent release verifier reads every indexed file and

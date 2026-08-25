@@ -873,6 +873,5 @@ def test_manifest_binds_one_exact_unmeasured_target_design_rule() -> None:
         "synthetic_structure_matching": True,
         "participant_structure_reconstructed": False,
     }
-    assert manifest["scientific_pass_rules_configured"] is False
-    assert analysis["pass_rules_configured"] is False
-    assert analysis["design_range"]["measured"] is False
+    assert manifest["scientific_pass_rules_configured"] is True
+    assert analysis["pass_rules_configured"] is True

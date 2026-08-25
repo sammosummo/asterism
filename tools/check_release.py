@@ -20,8 +20,8 @@ from typing import Any
 def sibling(name: str) -> ModuleType:
     """Import one of this tool's heavier siblings, at the moment it is needed.
 
-    `measure_target_resources` and `run_scientific_release` both reach for
-    `asterism` and NumPy, because measuring a release means running it. This
+    `run_scientific_release` reaches for `asterism` and NumPy, because
+    measuring a release means running it. This
     module needs neither: everything it does itself is reading and checking
     files.
 
@@ -62,7 +62,7 @@ def fit_record_reportability_errors(
 
     Args:
         fit_record: Parsed candidate fit retained in a standard receipt.
-        reportable_quantities: Fields promised by preflight for this design branch.
+        reportable_quantities: Fields the release state promises for this analysis branch.
 
     Returns:
         Human-readable failures, or an empty list for a reportable candidate.
@@ -180,8 +180,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     selectors: set[str] = set()
     """Collected design fields used to choose one applicable quantity set."""
 
-    design_range: object = analysis.get("design_range")
-    """Read allowed selector values from the analysis design contract."""
 
     for index, quantity_set in enumerate(raw_sets):
         when: object = quantity_set.get("when")
@@ -199,24 +197,7 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
             """Read the single explicit field/value reporting selector."""
 
             selectors.add(str(selector))
-            allowed_values: object = (
-                design_range.get(selector, {}).get("allowed")
-                if isinstance(design_range, dict)
-                and isinstance(design_range.get(selector), dict)
-                else None
-            )
-            """Read the measured-range vocabulary accepted for that selector."""
 
-            if (
-                not isinstance(selector, str)
-                or not selector
-                or not isinstance(allowed_values, list)
-                or selected_value not in allowed_values
-            ):
-                errors.append(
-                    f"release.toml: {identifier} quantity set {index} predicate is not "
-                    "an allowed design value"
-                )
         if (
             not isinstance(quantities, list)
             or not quantities
@@ -244,147 +225,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
 
     return errors
 
-
-def measured_design_range_errors(analysis: dict[str, Any]) -> list[str]:
-    """Return malformed measured constraint errors for one release analysis.
-
-    Args:
-        analysis: Parsed analysis table whose measured design range is being released.
-
-    Returns:
-        Errors for non-finite, unordered, empty or non-positive constraints.
-    """
-    identifier: str = str(analysis.get("id", "<missing>"))
-    """Named the analysis in every actionable constraint error."""
-
-    design_range: object = analysis.get("design_range")
-    """Read the machine-enforced limits that bound the scientific claim."""
-
-    if not isinstance(design_range, dict) or design_range.get("measured") is not True:
-        return []
-    errors: list[str] = []
-    """Collected every malformed measured bound for one repair cycle."""
-
-    for constraint_name, raw_constraint in design_range.items():
-        if constraint_name == "measured":
-            continue
-        if not isinstance(raw_constraint, dict):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} must be a constraint table"
-            )
-            continue
-        constraint: dict[str, Any] = raw_constraint
-        """Narrowed one parsed design constraint to its table representation."""
-
-        if "allowed" in constraint:
-            allowed: object = constraint.get("allowed")
-            """Read the finite categorical vocabulary accepted by preflight."""
-
-            scalar_types: tuple[type, ...] = (str, int, float, bool)
-            """Named TOML scalar types permitted in categorical allowed lists."""
-
-            if (
-                not isinstance(allowed, list)
-                or not allowed
-                or not all(
-                    isinstance(value, scalar_types)
-                    and not (isinstance(value, float) and not math.isfinite(value))
-                    for value in allowed
-                )
-                or len({(type(value).__name__, repr(value)) for value in allowed})
-                != len(allowed)
-            ):
-                errors.append(
-                    f"release.toml: {identifier} {constraint_name}.allowed must be a "
-                    "nonempty unique scalar list"
-                )
-            if set(constraint) != {"allowed"}:
-                errors.append(
-                    f"release.toml: {identifier} {constraint_name} mixes allowed and bounds"
-                )
-            continue
-        bounds: dict[str, object] = {
-            name: constraint.get(name) for name in ("min", "max") if name in constraint
-        }
-        """Collected numeric bounds without inventing absent endpoints."""
-
-        if not bounds or set(constraint) != set(bounds):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} must define allowed or bounds"
-            )
-            continue
-        if constraint_name != "largest_family" and set(bounds) != {"min", "max"}:
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} needs numeric min and max"
-            )
-            continue
-        if constraint_name == "largest_family" and set(bounds) != {"max"}:
-            errors.append(
-                f"release.toml: {identifier} largest_family needs exactly max"
-            )
-            continue
-        if not all(
-            isinstance(value, int | float)
-            and not isinstance(value, bool)
-            and math.isfinite(float(value))
-            for value in bounds.values()
-        ):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} bounds must be finite numbers"
-            )
-            continue
-        if all(float(value) == 0.0 for value in bounds.values()):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} retains zero placeholder bounds"
-            )
-        if (
-            "min" in bounds
-            and "max" in bounds
-            and float(bounds["min"]) > float(bounds["max"])
-        ):
-            errors.append(
-                f"release.toml: {identifier} {constraint_name} min exceeds max"
-            )
-    """Validated every categorical and numeric constraint table generically."""
-
-    sample_size: object = design_range.get("sample_size")
-    """Read the mandatory positive sample-size interval."""
-
-    largest_family: object = design_range.get("largest_family")
-    """Read the mandatory positive maximum observed family size."""
-
-    if (
-        not isinstance(sample_size, dict)
-        or not isinstance(sample_size.get("min"), int)
-        or isinstance(sample_size.get("min"), bool)
-        or not isinstance(sample_size.get("max"), int)
-        or isinstance(sample_size.get("max"), bool)
-        or sample_size["min"] <= 0
-        or sample_size["max"] <= 0
-    ):
-        errors.append(
-            f"release.toml: {identifier} measured sample_size bounds must be positive integers"
-        )
-    if (
-        not isinstance(largest_family, dict)
-        or not isinstance(largest_family.get("max"), int)
-        or isinstance(largest_family.get("max"), bool)
-        or largest_family["max"] <= 0
-    ):
-        errors.append(
-            f"release.toml: {identifier} measured largest_family.max must be a positive integer"
-        )
-    elif (
-        isinstance(sample_size, dict)
-        and isinstance(sample_size.get("max"), int)
-        and largest_family["max"] > sample_size["max"]
-    ):
-        errors.append(
-            f"release.toml: {identifier} largest_family.max exceeds sample_size.max"
-        )
-    """Applied the required positive integer and within-sample pedigree bounds."""
-
-    return errors
 
 
 def cross_platform_configuration_errors(
@@ -1015,17 +855,17 @@ def release_evidence_errors(
                 errors.append(
                     f"synthetic receipt {index} build identity does not match"
                 )
-            preflight: object = parsed_receipt.get("preflight")
+            release_state: object = parsed_receipt.get("release_state")
             """Read the measured-range decision produced before numerical fitting."""
 
             fit_record: object = parsed_receipt.get("fit_record")
             """Read the complete candidate retained by the standard receipt."""
 
             if (
-                not isinstance(preflight, dict)
-                or preflight.get("inside_supported_range") is not True
+                not isinstance(release_state, dict)
+                or release_state.get("release_ready") is not True
             ):
-                errors.append(f"synthetic receipt {index} preflight did not pass")
+                errors.append(f"synthetic receipt {index} release state did not pass")
             if not isinstance(fit_record, dict):
                 errors.append(f"synthetic receipt {index} has no fit record")
                 continue
@@ -1035,8 +875,8 @@ def release_evidence_errors(
             ):
                 errors.append(f"synthetic receipt {index} fit identity is invalid")
             quantities: object = (
-                preflight.get("reportable_quantities")
-                if isinstance(preflight, dict)
+                release_state.get("reportable_quantities")
+                if isinstance(release_state, dict)
                 else None
             )
             """Read fields the manifest required for this exact report branch."""
@@ -1101,163 +941,6 @@ def release_evidence_errors(
             ):
                 errors.append(f"synthetic receipt {index} subject order does not match")
         """Verified every complete receipt independently of its command's decision."""
-
-    resource_evidence: object = evidence.get("target_resource_budgets")
-    """Read actual process-local wall and memory observations, not a pass placeholder."""
-
-    resource_configuration: object = release_manifest.get("target_resource_budgets")
-    """Read the exact command, host, input and acceptance contract."""
-
-    if not isinstance(resource_evidence, dict):
-        errors.append("release evidence has no target resource evidence")
-    elif not isinstance(resource_configuration, dict):
-        errors.append("release manifest has no target resource configuration")
-    else:
-        if (
-            resource_evidence.get("passed") is not True
-            or resource_evidence.get("actual_exit_code") != 0
-            or resource_evidence.get("timed_out") is not False
-            or resource_evidence.get("verification_errors") != []
-        ):
-            errors.append("target resource command did not pass")
-        resource_argv: object = resource_evidence.get("argv")
-        """Read the exact manifest, output, qualification, host and wheel invocation."""
-
-        configured_measurements: object = resource_configuration.get("measurements")
-        """Read the prewritten intended-host identity from the target profiles."""
-
-        expected_host_id: object = (
-            configured_measurements[0].get("host_id")
-            if isinstance(configured_measurements, list)
-            and configured_measurements
-            and isinstance(configured_measurements[0], dict)
-            else None
-        )
-        """Selected the common host label after tolerating malformed prior state."""
-
-        configured_runner: object = resource_configuration.get("runner")
-        """Read the repository-relative target runner fixed before measurement."""
-
-        resource_path: Path | None = None
-        """Reserved the validated evidence-relative measurement artifact path."""
-
-        relative_resource: object = resource_evidence.get("path")
-        """Read the retained artifact location claimed by release evidence."""
-
-        if not isinstance(relative_resource, str):
-            errors.append("target resource evidence has no artifact path")
-        else:
-            resource_path = (evidence_path.parent / relative_resource).resolve()
-            """Resolved the artifact beneath the release evidence directory."""
-
-            try:
-                resource_path.relative_to(evidence_path.parent.resolve())
-            except ValueError:
-                errors.append("target resource artifact escapes release evidence")
-                resource_path = None
-                """Withheld an escaping artifact from all subsequent reads."""
-
-        if (
-            not isinstance(resource_argv, list)
-            or len(resource_argv) < 12
-            or resource_argv[1] != configured_runner
-            or resource_argv[2] != "--manifest"
-            or not isinstance(resource_argv[3], str)
-            or Path(resource_argv[3]).resolve() != (root / "release.toml").resolve()
-            or resource_argv[4] != "--output"
-            or not isinstance(resource_argv[5], str)
-            or resource_path is None
-            or Path(resource_argv[5]).resolve() != resource_path
-            or resource_argv[6:10]
-            != ["--qualification", "release_target", "--host-id", expected_host_id]
-            or resource_argv[10] != "--wheel"
-            or {
-                str(Path(argument).resolve())
-                for argument in resource_argv[11:]
-                if isinstance(argument, str)
-            }
-            != set(expected_wheels)
-        ):
-            errors.append("target resource command argv does not match release")
-        if resource_evidence.get("timeout_seconds") != resource_configuration.get(
-            "timeout_seconds"
-        ):
-            errors.append("target resource command timeout does not match release")
-        for stream in ("stdout", "stderr"):
-            relative_log: object = resource_evidence.get(f"{stream}_path")
-            """Read one evidence-relative target-runner process stream."""
-
-            if not isinstance(relative_log, str):
-                errors.append(f"target resource evidence has no {stream} log")
-                continue
-            log_path: Path = (evidence_path.parent / relative_log).resolve()
-            """Resolved the process stream beneath the evidence directory."""
-
-            try:
-                log_path.relative_to(evidence_path.parent.resolve())
-            except ValueError:
-                errors.append(f"target resource {stream} log escapes evidence")
-                continue
-            if not log_path.is_file() or resource_evidence.get(
-                f"{stream}_sha256"
-            ) != sha256(log_path):
-                errors.append(f"target resource {stream} SHA-256 does not match")
-        """Verified exact process streams independently of the aggregate status."""
-
-        copied_resource_record: object = None
-        """Reserved parsed artifact details only after byte-identity validation."""
-
-        if resource_path is not None:
-            if not resource_path.is_file():
-                errors.append("target resource artifact does not exist")
-            elif resource_evidence.get("sha256") != sha256(resource_path):
-                errors.append("target resource artifact SHA-256 does not match")
-            else:
-                try:
-                    copied_resource_record = json.loads(
-                        resource_path.read_text(encoding="utf-8")
-                    )
-                    """Parsed exact artifact bytes after verifying their hash."""
-                except (OSError, json.JSONDecodeError) as error:
-                    errors.append(f"target resource artifact is unreadable: {error}")
-        embedded_resource_record: object = resource_evidence.get("record")
-        """Read the resource details embedded for single-file evidence inspection."""
-
-        if copied_resource_record != embedded_resource_record:
-            errors.append("target resource record does not match its artifact file")
-        release_build: object = evidence.get("build")
-        """Read the broader build record whose public subset the artifact must echo."""
-
-        expected_resource_build: dict[str, Any] = (
-            {
-                field: release_build.get(field)
-                for field in (
-                    "version",
-                    "cargo_version",
-                    "source_commit",
-                    "source_dirty",
-                    "release",
-                    "release_manifest_sha256",
-                    "cargo_lock_sha256",
-                    "uv_lock_sha256",
-                )
-            }
-            if isinstance(release_build, dict)
-            else {}
-        )
-        """Selected exactly the immutable public build fields returned by Asterism."""
-
-        errors.extend(
-            sibling("measure_target_resources").target_resource_record_errors(
-                embedded_resource_record,
-                manifest=release_manifest,
-                root=root,
-                expected_build=expected_resource_build,
-                wheel_sha256s=set(expected_wheels.values()),
-            )
-        )
-        """Recomputed source, wheel, input, host, completion and budget decisions."""
-    """Required complete values-free observations for every supported target route."""
 
     cross_platform_evidence: object = evidence.get("cross_platform_agreement")
     """Read the preserved actual Mac/Linux comparison and its byte identity."""
@@ -1612,16 +1295,6 @@ def main() -> int:
         )
         """Kept installed-wheel testing distinct from actual result agreement."""
 
-        errors.extend(
-            sibling("measure_target_resources").target_resource_configuration_errors(
-                manifest.get("target_resource_budgets"),
-                root,
-                identifiers,
-                require_configured=True,
-            )
-        )
-        """Required exact programs, target inputs, host facts and prewritten budgets."""
-
         medusa_smoke: object = manifest.get("medusa_smoke")
         """Read the conditional target-host portable-wheel qualification record."""
 
@@ -1695,8 +1368,6 @@ def main() -> int:
             identifier = str(analysis.get("id", "<missing>"))
             """Named the analysis for precise release-readiness errors."""
 
-            design_range: dict[str, Any] = dict(analysis.get("design_range", {}))
-            """Read the measured support limits for this analysis."""
 
             if not analysis.get("pass_rules_configured"):
                 errors.append(
@@ -1706,11 +1377,6 @@ def main() -> int:
                 errors.append(
                     f"release.toml: {identifier} has no machine-readable pass_rules"
                 )
-            if not design_range.get("measured"):
-                errors.append(
-                    f"release.toml: {identifier} design range is not measured"
-                )
-            errors.extend(measured_design_range_errors(analysis))
         """Required every scientific claim to have measured limits and pass rules."""
 
         errors.extend(

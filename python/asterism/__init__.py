@@ -38,7 +38,6 @@ from ._core import relationship as _relationship
 from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from .analysis import (
     build_identity,
-    preflight_analysis,
     release_manifest,
     run_analysis,
     subject_order_commitment,
@@ -83,7 +82,6 @@ __all__: list[str] = [
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
     "mixed_bivariate_test",
-    "preflight_analysis",
     "prepare",
     "region_log_probability",
     "relationship_matrix",
