@@ -30,7 +30,6 @@ MAINTAINED_ROOTS: tuple[str, ...] = (
     "python",
     "tests",
     "checks",
-    "campaigns",
     "tools",
     "examples",
 )

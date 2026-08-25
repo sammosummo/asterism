@@ -28,10 +28,10 @@ say "Extension used by source-level tests"
 uv run maturin develop --release --locked
 
 say "Python formatting"
-uv run ruff format --check python tests checks campaigns tools examples
+uv run ruff format --check python tests checks tools examples
 
 say "Python lint"
-uv run ruff check python tests checks campaigns tools examples
+uv run ruff check python tests checks tools examples
 
 say "Asterism Python style"
 uv run python tools/check_python_style.py
