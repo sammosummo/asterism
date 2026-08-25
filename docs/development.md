@@ -139,13 +139,13 @@ cannot serve as the reference here: it refuses above 25 dimensions.
 uv run --no-project python checks/sequential_against_ghk.py
 ```
 
-**What it found, on 19 August 2026.** Conditioned on the rest of the family --
+What it found, on 19 August 2026. Conditioned on the rest of the family --
 which is what the models actually evaluate -- the error at 221 dimensions is
 0.062 log units, about 0.09 of what a heritability step of 0.1 does to the same
 quantity. The approximation is safe there.
 
-**It is safe because of the conditioning, not because the routine is
-accurate.** Conditioning on a nearly complete audiogram leaves a mean absolute
+It is safe because of the conditioning, not because the routine is
+accurate. Conditioning on a nearly complete audiogram leaves a mean absolute
 correlation of 0.009 between the censored residuals, and sequential truncation
 is exact when coordinates are independent. On the same number of coordinates
 with nothing conditioned away, where the correlations are the audiogram's own,

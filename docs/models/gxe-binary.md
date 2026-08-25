@@ -174,8 +174,8 @@ The correlation is a parameter here rather than a function of one, so
 the interval comes from pinning it and refitting everything else, with
 endpoints where twice the drop in log likelihood reaches 3.8415.
 
-**The reference is the ordinary chi-square on one degree of freedom,
-not the mixture** ``test(y, "correlation")`` **uses.** That test asks
+The reference is the ordinary chi-square on one degree of freedom,
+not the mixture ``test(y, "correlation")`` uses. That test asks
 about a correlation of exactly one, which is the edge of the parameter
 space; an interval is a statement about interior values and takes the
 interior reference. Borrowing the test's mixture would give a narrower
@@ -194,10 +194,10 @@ Test one of the five nulls.
   same variance and the same genes in both environments — with the two
   residual variances left free. Two constraints, one of which sits on a
   bound, so the reference is an even mixture of chi-square on one and
-  on two degrees of freedom. **Read this one first.**
+  on two degrees of freedom. Read this one first.
 - ``"any_difference"``: nothing differs between the environments at
   all, residual included. Three constraints on an even mixture of
-  chi-square on two and on three. It is **not** a genetic test: a
+  chi-square on two and on three. It is not a genetic test: a
   noisier environment rejects it.
 - ``"correlation"``: the same genes act in both environments. This is
   the gene-by-environment question proper. The null puts the

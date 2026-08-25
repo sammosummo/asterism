@@ -273,7 +273,7 @@ null fits, which is why the even mixture is the right reference and a plain
 chi-square would be conservative.
 
 The scenario that matters is one sex measured with more error and identical
-genetics. **Every genetic test held its level there** — 0.046 for the principal
+genetics. Every genetic test held its level there — 0.046 for the principal
 test, 0.040 for equal genetic effects and 0.040 for equal genetic variances —
 while `any_difference` and the residual test each rejected all 500 replicates.
 That is the claim the two free residual variances exist to support.

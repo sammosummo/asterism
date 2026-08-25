@@ -127,8 +127,8 @@ wheel.
   four directly reported quantities agreed within `2e-7`.
 - Across all 78 pairs of thirteen real GOBS traits, the largest discrepancy
   from SOLAR was `5.9e-6` and the median `1.5e-7`. SOLAR's stopping precision
-  makes roughly `1e-6` a realistic real-data comparison tolerance. **Recorded
-  rather than reproducible**: the driver that produced it read real phenotypes
+  makes roughly `1e-6` a realistic real-data comparison tolerance. Recorded
+  rather than reproducible: the driver that produced it read real phenotypes
   and never lived in this repository, so the record is
   `evidence/bivariate-against-solar-real-2026-08-12.json` and nothing here
   regenerates it.
@@ -142,7 +142,7 @@ wheel.
 - At heritability 0.83, overall coverage remained near nominal, but the
   residual-correlation interval failed in 23 of 300 replicates and reached a
   bound in 94% of those computed. The phenotypic correlation computed in all
-  replicates and did not reach a bound. **Recorded rather than reproducible**:
+  replicates and did not reach a bound. Recorded rather than reproducible:
   `checks/bivariate_calibration.py` fixes its heritabilities at easier values,
   so the record is `evidence/coverage-at-the-real-design-point-2026-08-12.json`
   and rerunning the check does not return to this design point.

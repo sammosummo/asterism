@@ -224,8 +224,8 @@ def align(
 ) -> dict[str, Any]:
     """Line a relationship matrix up with per-person values, by identifier.
 
-    **Asterism's numerical interface is positional, and that is the one place a
-    mistake makes no noise.** A relationship matrix whose rows are in a
+    Asterism's numerical interface is positional, and that is the one place a
+    mistake makes no noise. A relationship matrix whose rows are in a
     different order from the response does not fail, or warn, or look wrong: it
     returns a heritability, an interval and a p-value, all of them plausible and
     all of them for a pedigree nobody has. This does the alignment by
@@ -243,7 +243,7 @@ def align(
     values, and ``dropped`` naming anybody the matrix has and the values do not.
     Nothing is returned positionally, so no pair of outputs can be swapped.
 
-    **Read ``dropped``.** A handful of names there is people without
+    Read ``dropped``. A handful of names there is people without
     measurements. A great many is an identifier mismatch — one side writing
     ``001`` where the other writes ``1``, or a table that was filtered
     already — and the analysis would otherwise proceed, quietly, on whoever

@@ -1,6 +1,6 @@
 # Primary-source map for Asterism 0.1 statistical methods
 
-**Research note, 2026-08-21.** This note is a source dossier for the 0.1
+Research note, 2026-08-21. This note is a source dossier for the 0.1
 statistical-methods specification. It is not the specification itself, is not
 qualification evidence, and does not change the support boundary in
 [ADR 0012](../adr/0012-small-analysis-ready-releases.md). It contains no
@@ -11,12 +11,12 @@ participant data.
 Three kinds of statement must remain separate in the eventual methods
 document:
 
-- **Published theory** defines a statistical model, likelihood, asymptotic
+- Published theory defines a statistical model, likelihood, asymptotic
   result, or numerical algorithm.
 - **Asterism choice** identifies a parameterisation, search rule, reporting
   quantity, failure policy, or combination of published ideas implemented in
   this repository.
-- **Asterism evidence** is a simulation, independent implementation comparison,
+- Asterism evidence is a simulation, independent implementation comparison,
   or target-design check. A paper does not validate this implementation, and a
   simulation on one design does not validate another.
 
@@ -173,7 +173,7 @@ $$
 
 The invariance follows directly: replacing $\mathbf K_k$ by
 $a\mathbf K_k$ and $\theta_k$ by $\theta_k/a$ leaves $c_k$ unchanged. This is
-an **Asterism-defined reporting invariant**, not a conventional variance share
+an Asterism-defined reporting invariant, not a conventional variance share
 established by Harville. It is defined only when every structured basis has a
 positive finite mean diagonal. A zero-diagonal kinship-class basis therefore
 has reportable coefficients and contrasts, but no mean-diagonal proportion.
@@ -497,30 +497,30 @@ must be tied to its source commit and target design before it supports a release
 
 ## 12. Gaps to close before canonical methods documentation
 
-1. **Exact discrete-GxE test derivation.** Write and independently check the
+1. Exact discrete-GxE test derivation. Write and independently check the
    tangent-cone argument for all five nulls. Cite Self and Liang as general
    theory, but label the resulting weights as an Asterism derivation unless an
    exact primary match is found.
-2. **Random-regression null reference.** Retain the conservative label and
+2. Random-regression null reference. Retain the conservative label and
    target-design simulation. If a calibrated test is wanted, a parametric
    bootstrap is more defensible than asserting a universal chi-bar-square
    weight.
-3. **Multiple-component identifiability.** Specify a preflight tied to the
+3. Multiple-component identifiability. Specify a preflight tied to the
    observed roster and covariance bases. No source found here justifies a
    universal condition-number threshold.
-4. **Mendell-Elston accuracy envelope.** Document approximation error by family
+4. Mendell-Elston accuracy envelope. Document approximation error by family
    size, correlation, outcome imbalance, censoring pattern, and ordering. The
    foundational paper does not establish the target envelope automatically.
-5. **Mixed binary/censored synthesis.** State plainly that the exact model was
+5. Mixed binary/censored synthesis. State plainly that the exact model was
    not found in one primary paper. The intended diagnosis/hearing pairing needs
    its own independent full-fit and simulation evidence.
-6. **Spatial bootstrap.** Fix the bootstrap generator, number of replicates,
+6. Spatial bootstrap. Fix the bootstrap generator, number of replicates,
    failure handling, add-one calculation, and target-layout pass rule before
    looking at actual outcomes.
-7. **Numerical provenance.** Pin paper references to the released dependency
+7. Numerical provenance. Pin paper references to the released dependency
    versions and source commit. Algorithm names alone do not demonstrate that
    Asterism used them correctly.
-8. **Reference metadata (closed in the canonical-documentation pass).** The
+8. Reference metadata (closed in the canonical-documentation pass). The
    verified references below were transferred into `docs/references.bib` with
    DOI plus PMID/PMCID or a stable archive where available, and automated
    citation-key validation was added.

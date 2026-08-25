@@ -131,15 +131,15 @@ constant SOLAR omits. Until this check the component family had no comparison
 against another package at all; its second matrix is a spatial kernel with the
 decay rate held fixed, which makes it an ordinary known matrix.
 
-**SOLAR cannot be used this way for a matrix whose covariance crosses
-pedigrees.** It evaluates the likelihood one pedigree at a time, so only the
+SOLAR cannot be used this way for a matrix whose covariance crosses
+pedigrees. It evaluates the likelihood one pedigree at a time, so only the
 within-pedigree blocks of a supplied matrix contribute, and the rest are
 discarded without warning — `matrix debug` still reports the whole file. Handed
 the dense kernel, SOLAR returns its within-pedigree answer bit for bit, while
 the two implementations then differ by 0.28 and 0.35 in a variance. The check
 asserts this rather than describing it, so the limit stays measured.
 
-**Against a published analysis of real data.** Stopher et al. (2012, *Evolution*
+Against a published analysis of real data. Stopher et al. (2012, *Evolution*
 66:2411) fitted animal models to four traits of wild red deer and then added a
 matrix of home range overlap, and it deposits that matrix along with its
 pedigree and phenotypes (Dryad `doi:10.5061/dryad.jf04r362`). Refitting all
@@ -149,8 +149,8 @@ once overlap is in the model, and the rut's 31.29% against 31.31 falling to
 0.00% against 0.11. The likelihood ratios for adding overlap come to 1300.4 and
 771.3 against 1313.2 and 785.8.
 
-**Six of the eight fits agree to within 0.006 on every variance component. Birth
-weight is the exception and it is worth naming rather than averaging away**: it
+Six of the eight fits agree to within 0.006 on every variance component. Birth
+weight is the exception and it is worth naming rather than averaging away: it
 differs by up to 0.007 without overlap and by 0.038 with it, the largest being
 the overlap variance itself at 0.126 against a published 0.088. That trait is
 the one the paper itself flags as unstable, and every difference is inside one
@@ -167,8 +167,8 @@ order yields exactly the 948 spring and 766 rut females the paper reports. And
 father is given its own founder identity — a construction that agrees with a
 longhand tabular recursion to `0.000e+00` and recovers 339 inbred animals.
 
-**The reported convergence flag is not trustworthy on an ill-conditioned
-problem, and that comparison is how we know.** Three of its eight fits report
+The reported convergence flag is not trustworthy on an ill-conditioned
+problem, and that comparison is how we know. Three of its eight fits report
 `converged: false` while landing within 0.006 of the published values. The
 cause is that two different criteria are in play: the search stops on `factr`,
 a relative change in the objective, while the flag is decided afterwards on the
@@ -183,8 +183,8 @@ model family, and `converged` can be read again.
 
 The fit now also reports `stop_code` and `stop_message`, which are the search's
 own reason for stopping rather than ours, and they turn that account from an
-inference into a measurement. **All eight fits stop the same way — `factr`
-fires — and not one stops on `pgtol` or runs out of iterations:**
+inference into a measurement. All eight fits stop the same way — `factr`
+fires — and not one stops on `pgtol` or runs out of iterations:
 
     CONVERGENCE: REL_REDUCTION_OF_F <= FACTR*EPSMCH
 
@@ -195,7 +195,7 @@ That is worth stating plainly: on this family the flag reports a property of the
 valley's shape rather than a property of the search. It also identifies the
 remedy exactly, since `factr` is the only thing stopping the three short.
 
-**One threshold, `1e-6`, in every family.** It was seven different numbers
+One threshold, `1e-6`, in every family. It was seven different numbers
 spanning a factor of a hundred, none with a recorded reason. Measured, the
 families do not differ: across 63 real GOBS fits every one reaches about
 `1e-08` when allowed to, the reachable floors spanning `7.68e-09` to
@@ -209,7 +209,7 @@ buys nothing: starving the search on purpose produced 165 fits, 92 of them
 genuinely short of the optimum, and exactly one landed between `1e-7` and
 `1e-6` — its estimate wrong by a millionth of a variance share.
 
-**That starving measurement also says what the number means.** The worst error
+That starving measurement also says what the number means. The worst error
 in a variance share runs about ten times the reported gradient, and it holds
 across six orders of magnitude; every starved fit above `1e-5` was caught. So a
 fit reporting `1e-6` is right to about `1e-5` in any share it quotes, and one
@@ -217,8 +217,8 @@ reporting `1e-3` may be wrong in the second decimal place. The latent mediation
 model keeps its own `1e-5` deliberately, because there the number accepts or
 discards a start rather than reporting a flag.
 
-**So where the gradient test fails, the fit now searches once more from the
-point already found with `factr` switched off, and reports `polished: true`.**
+So where the gradient test fails, the fit now searches once more from the
+point already found with `factr` switched off, and reports `polished: true`.
 It fires nowhere else, so every fit that passed before is untouched to the last
 bit — measured, not asserted: the five unpolished deer fits reproduce the
 unpolished run to `0.000e+00` on every component.
@@ -229,7 +229,7 @@ unpolished run to `0.000e+00` on every component.
 | rhr | with overlap | 4.620e-07 | 1.578e-07 | no → no |
 | shr | with overlap | 1.162e-07 | 8.864e-08 | no → **yes** |
 
-**And the second search says something the first could not.** All three end the
+And the second search says something the first could not. All three end the
 same way:
 
     ERROR: ABNORMAL_TERMINATION_IN_LNSRCH
@@ -301,7 +301,7 @@ a p-value for a question nobody asked.
 
 Test whether several components share one variance.
 
-**This is the question a split matrix asks, and `test` is not it.**
+This is the question a split matrix asks, and `test` is not it.
 Splitting a relationship matrix by class of parent–offspring tie gives
 four classes, and every one carries variance if the trait is heritable
 at all — so testing each against nought returns a p-value near nought
@@ -318,7 +318,7 @@ Defaults to every structured component.
 
 Every class's deviation from the average class, with an interval.
 
-**This is what `equality_test` cannot give.** The omnibus says the
+This is what `equality_test` cannot give. The omnibus says the
 classes are not all alike and stops; a contrast against the others
 *pooled* couples them, because raising one class raises the pool the
 rest are measured against — in calibration a single lifted class made a

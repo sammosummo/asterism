@@ -32,7 +32,7 @@ Either trait may be `continuous`, `binary` or `censored`. The covariance is
 at a point, or the probability of a region, with a continuous value the
 degenerate region.
 
-**A binary trait's variance is fixed at one** and comes back as one, because
+A binary trait's variance is fixed at one and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is a liability
 heritability while a continuous or censored trait's is not, and the two must not
 be read as the same quantity. The genetic correlation is unaffected by that
@@ -179,8 +179,8 @@ was 0.014. Recovery of a genetic correlation of 0.4 is mildly conservative in
 every pairing, an attenuation the all-continuous control shows too, so it
 belongs to maximum likelihood rather than to the censoring.
 
-**Interval coverage for the genetic correlation, on 300 replicates of 400
-sibling pairs per cell**, each cell drawn on its own stream, scored
+Interval coverage for the genetic correlation, on 300 replicates of 400
+sibling pairs per cell, each cell drawn on its own stream, scored
 unconditionally with no refusals:
 
 | pairing | ρ = 0.0 | ρ = 0.4 | ρ = 0.7 |
@@ -194,7 +194,7 @@ against a nominal 0.05, with power at ρ = 0.7 of 0.997, 0.950 and 0.993. Nought
 is an interior point of a correlation's range, so the reference is a plain
 chi-square on one degree of freedom and no boundary mixture applies.
 
-**This is the first measurement of that interval, and it found it broken.**
+This is the first measurement of that interval, and it found it broken.
 Before the fix, one end of every correlation interval sat on its own bound
 whatever the data said, giving widths of about 1.5 on a parameter that runs
 from minus one to one. The cause was the convergence flag: it was read from a
@@ -255,7 +255,7 @@ Each trait is a dictionary with ``kind`` (``"continuous"``, ``"binary"`` or
 a censoring code of 1 is a case, and the limit is nought because the
 threshold is carried by the intercept.
 
-**A binary trait's variance is fixed at one** and comes back as one, because
+A binary trait's variance is fixed at one and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is therefore a
 liability heritability, while a continuous or censored trait's is a
 heritability of the observed scale. They are different quantities. The genetic correlation is
@@ -272,7 +272,7 @@ A 95 per cent profile-likelihood interval for one bivariate coordinate.
 ``coordinate`` is ``"heritability_one"``, ``"heritability_two"``,
 ``"genetic_correlation"`` or ``"residual_correlation"``.
 
-**The variances have no interval on purpose.** A binary trait's is fixed at
+The variances have no interval on purpose. A binary trait's is fixed at
 one because a liability has no scale of its own, so an interval on it would
 describe that assumption rather than the data.
 

@@ -348,7 +348,7 @@ class LatentMediationModel:
     def test_vertical(self, *, bootstrap_replicates: int = 200) -> dict[str, Any]:
         """Test the vertical estimand ``a * b`` against nought.
 
-        **The null is a union, not a point.** ``a * b = 0`` holds whenever the
+        The null is a union, not a point. ``a * b = 0`` holds whenever the
         mediator carries no inherited signal (``a = 0``) *or* the mediator does
         not reach the outcome (``b = 0``), and those are different models. One
         likelihood ratio has no reference distribution across a union, which is
@@ -376,7 +376,7 @@ class LatentMediationModel:
     def test_horizontal(self) -> dict[str, Any]:
         """Test the horizontal estimand ``c_prime`` against nought.
 
-        **The null is a point, not a union**, which is what makes this the
+        The null is a point, not a union, which is what makes this the
         simpler of the two tests. The direct inherited effect is a single
         signed coordinate -- an effect outside measured hearing may run either
         way -- so it is interior, and the ordinary chi-square on one degree of
@@ -384,7 +384,7 @@ class LatentMediationModel:
         choose and no simulated reference, so this costs two fits rather than
         the few hundred the vertical test can cost.
 
-        **It refuses where the mediator loading is at nought.** There the
+        It refuses where the mediator loading is at nought. There the
         inherited covariance carries the direct path and the outcome loading
         only as ``c'^2 + d^2``, the two rotate freely against each other, and a
         p-value would report which of the pair the optimiser happened to pick.
@@ -404,7 +404,7 @@ class LatentMediationModel:
         computes, at chi-square on one at 0.975 because that is what a
         two-sided set at the Bonferroni .025 gives.
 
-        **An end that did not close is ``None``, not a number.** Reporting the
+        An end that did not close is ``None``, not a number. Reporting the
         edge of the search would be a statement about how far the search went
         rather than about the data. ``unbounded`` is true when neither end
         closed, and that is the identification diagnostic in its most useful
@@ -427,7 +427,7 @@ class LatentMediationModel:
     ) -> dict[str, Any]:
         """A 97.5 per cent confidence set for the vertical estimand.
 
-        **Nought is decided differently from everywhere else, and has to be.**
+        Nought is decided differently from everywhere else, and has to be.
         Away from nought, holding the estimand is one constraint on a curve --
         the estimand is a product, so a held value fixes the path at the value
         over the loading -- and the likelihood ratio has an ordinary
@@ -435,8 +435,8 @@ class LatentMediationModel:
         nought or the path is, and no single ratio spans it, so membership
         there comes from the intersection-union test instead.
 
-        **Read ``disjoint`` before treating ``lower`` and ``upper`` as an
-        interval.** The profile can admit values either side of nought while
+        Read ``disjoint`` before treating ``lower`` and ``upper`` as an
+        interval. The profile can admit values either side of nought while
         the union test excludes nought itself, and then the set is genuinely
         two pieces and the values between the ends are not all in it. The
         application requires such a set to be retained rather than reported as
@@ -495,7 +495,7 @@ def simulate(
     Anything person-specific may be given as one value for everybody or as a
     list the length of the family.
 
-    **The draws use the same covariance construction as the likelihood.** A
+    The draws use the same covariance construction as the likelihood. A
     simulator that built it its own way would make a calibration measure the
     agreement between two constructions rather than the behaviour of the test;
     the construction itself is checked against an independently written

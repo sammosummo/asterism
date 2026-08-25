@@ -150,7 +150,7 @@ checks this model's covariance assembly and likelihood. SOLAR cannot reach any
 further: it discards covariance between pedigrees, which is precisely what a
 spatial kernel is made of.
 
-**R's `spaMM` does reach further, and now does.** It fits a Matern spatial
+R's `spaMM` does reach further, and now does. It fits a Matern spatial
 random effect beside a supplied correlation matrix by REML, and it estimates
 the range itself. At `nu = 0.5` the Matern correlation is `exp(-rho d)`, which
 is this kernel exactly, and its `rho` is our decay rate in the same units.
@@ -161,7 +161,7 @@ rather than by us — the two implementations agree on all three variances and
 the decay rate to a worst difference of **5.2e-06**, variances taken as shares
 of the total and the rate relative to itself.
 
-**Read that as evidence about the code and not about identification.** The
+Read that as evidence about the code and not about identification. The
 long-range scenario is one neither implementation recovers: both return a decay
 of 0.364 where the truth is 0.002, and they agree on that wrong answer to
 2.3e-06. Agreement between two independent fitters says the covariance
@@ -231,7 +231,7 @@ and the measured scatter runs two to three times the binomial one. The
 experiment does not reach genome-wide `5e-8`, which would need of order ten
 billion null tests.
 
-**About half that excess is the covariance model rather than the test.** Three
+About half that excess is the covariance model rather than the test. Three
 things were measured to establish it. It is not driven by rare markers: split by
 minor allele frequency the ratio is 0.98 between 0.01 and 0.02 and 1.07 above
 0.10, the opposite of the usual cause, so a frequency filter would not remove
@@ -276,7 +276,7 @@ Rare variants tested one at a time find nothing, because each has a handful of
 carriers. This asks whether a set carries more trait variance together than
 chance allows. The null is fitted once for a whole scan.
 
-**Pass `Z = G * w`, not a kernel.** Nothing of size `n by n` is formed, so the
+Pass `Z = G * w`, not a kernel. Nothing of size `n by n` is formed, so the
 memory is one column per variant rather than one per person squared.
 
 `test_family` turns a dial from a variance-component test, which assumes
@@ -464,8 +464,8 @@ characteristic-function inversion.
 - Across 83 cases where the series provably converged, the worst relative
   difference was `1.8e-3`, at a tail of `4.9e-8`.
 
-**Every published route fails somewhere, and the failures were measured rather
-than assumed.** Davies' inversion refuses to run at tight accuracy settings and
+Every published route fails somewhere, and the failures were measured rather
+than assumed. Davies' inversion refuses to run at tight accuracy settings and
 returns nought at its own default where the answer is `5.7e-7` -- which is the
 case a burden kernel produces. Ruben's series stops early when the weights span
 a wide range: on eighteen weights spanning eighty to one it returned `1.3e-9`

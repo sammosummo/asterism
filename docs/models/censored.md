@@ -32,8 +32,8 @@ interval = asterism.tobit_interval(relationship, value, censoring, limit, design
 limit, and 2 where it lies at or below it. `value` is read only where the status
 says measured, and `limit` only where it does not.
 
-**The status is given rather than inferred, and the limit belongs to the
-observation rather than to the trait.** Extended high-frequency audiometry is
+The status is given rather than inferred, and the limit belongs to the
+observation rather than to the trait. Extended high-frequency audiometry is
 the case this was built for, and there the recorded maximum differs between
 frequencies and between sessions, so a censored value can carry the same number
 as a genuinely measured one. Only the status tells them apart.
@@ -146,7 +146,7 @@ posterior. Substituting the limit -- the usual practice -- returns 0.46 at a
 quarter censored and 0.31 at three quarters where the truth is 0.5; the
 censored model recovers 0.5 at every rate to three quarters.
 
-**Interval coverage, on 300 replicates of 300 sibling pairs per cell**, scored
+Interval coverage, on 300 replicates of 300 sibling pairs per cell, scored
 unconditionally with no cell dropped and no refusals:
 
 | true h² | 0% censored | 25% | 50% |
@@ -208,8 +208,8 @@ Generated from the package's own docstrings. The complete public surface is in t
 Fit one trait whose measurement stops at a limit.
 
 ``censoring`` is 0 where the value was measured, 1 where it lies at or
-above its limit, and 2 where it lies at or below it. **The status is given
-rather than inferred**, because a censored value can carry the same number
+above its limit, and 2 where it lies at or below it. The status is given
+rather than inferred, because a censored value can carry the same number
 as a measured one — extended high-frequency audiometry records several
 limits within one frequency, and measured values coincide with them.
 
@@ -233,7 +233,7 @@ A 95 per cent profile-likelihood interval for the censored heritability.
 
 ``lower_limited`` and ``upper_limited`` say whether an end sits on the
 parameter's own bound rather than where the profile fell away. An end on a
-bound means **the data did not rule that end out**, which is a different
+bound means the data did not rule that end out, which is a different
 statement from the interval stopping there.
 
 ``profile_failures`` counts fits along the profile that failed or did not

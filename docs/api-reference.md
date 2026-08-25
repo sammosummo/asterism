@@ -19,7 +19,7 @@ intercept, the ancestry components and any other covariate. The polygenic
 term is what makes it worth doing: relatedness and population structure
 inflate an association test, and the relationship matrix absorbs both.
 
-**The variance components are fitted once under the null and then held**,
+The variance components are fitted once under the null and then held,
 which is what makes a scan take minutes rather than hours — each marker
 becomes a weighted least squares on rotated data. That is an assumption, not
 a trick: it is good when no single marker explains much of the variance,
@@ -27,12 +27,12 @@ which is the situation a scan is in and exactly not the situation for a
 marker of large effect. Pass ``variance="refitted"`` to refit under every
 marker, which is around a hundred times slower.
 
-**Wald and the likelihood ratio are the same number when held.** The profile
+Wald and the likelihood ratio are the same number when held. The profile
 log likelihood in the fixed effects is exactly quadratic when the covariance
 is known, so the likelihood ratio is the Wald statistic squared. Both come
 back because both are asked for; they differ only under ``refitted``.
 
-**The marker under test is inside the relationship matrix.** Leaving its
+The marker under test is inside the relationship matrix. Leaving its
 chromosome out is the usual answer and is not done, so every test is biased
 towards the null.
 
@@ -45,8 +45,8 @@ markers whose held p-value falls under it — which is how a scan should
 be run. Refitting everything costs about twenty times as much and the
 two modes agree to two decimal places on the markers nobody cares about.
 
-**Set ``refit_below`` some way above the threshold you will report
-against.** Held is conservative — measured across four hundred real
+Set ``refit_below`` some way above the threshold you will report
+against. Held is conservative — measured across four hundred real
 markers it was never smaller than refitted, with the gap growing from a
 ratio of 1.00 above p = 0.01 to 1.10 below 1e-06 — so a marker can have
 a refitted p under your threshold while its held p sits above it.
@@ -69,15 +69,15 @@ Two people in cells ``(r_i, c_i)`` and ``(r_j, c_j)`` share
 Stopher and colleagues fitted to the red deer of Rum, and the standard one
 for field trials laid out in rows and columns.
 
-**It is not** :class:`SpatialModel`. That one estimates the range of an
+It is not :class:`SpatialModel`. That one estimates the range of an
 isotropic kernel in true distance; this one takes the cell size as given
 and estimates only how fast correlation falls off per cell. The scale is
 therefore a choice the caller makes, and the two rates mean nothing without
 the cell size that produced them — so sweep the cell size rather than
 reporting one grid's answer.
 
-**At both rates nought the kernel is the same-cell indicator**, because
-``0**0`` is one and ``0**k`` is nought. So this model contains a plain
+At both rates nought the kernel is the same-cell indicator, because
+``00`` is one and ``0k`` is nought. So this model contains a plain
 shared-cell random effect as a special case, and asking whether the rates
 are nought asks whether smooth decay across neighbouring cells buys
 anything over shared membership.
@@ -164,7 +164,7 @@ subject_order_sha256
 
 Every class's deviation from the average class, with an interval.
 
-**This is what `equality_test` cannot give.** The omnibus says the
+This is what `equality_test` cannot give. The omnibus says the
 classes are not all alike and stops; a contrast against the others
 *pooled* couples them, because raising one class raises the pool the
 rest are measured against — in calibration a single lifted class made a
@@ -189,7 +189,7 @@ is below" are one statement.
 
 Test whether several components share one variance.
 
-**This is the question a split matrix asks, and `test` is not it.**
+This is the question a split matrix asks, and `test` is not it.
 Splitting a relationship matrix by class of parent–offspring tie gives
 four classes, and every one carries variance if the trait is heritable
 at all — so testing each against nought returns a p-value near nought
@@ -232,7 +232,7 @@ Predict the random effects of one component.
 The best linear unbiased prediction, one value per person, with the
 standard error of prediction beside it.
 
-**The error is how far the prediction may be from the effect**, not the
+The error is how far the prediction may be from the effect, not the
 spread of the predictions. A prediction is shrunk toward nought, so its
 own spread is smaller than the effect's; the question worth answering is
 how wrong it might be.
@@ -265,19 +265,19 @@ other binary label — an exposure, a cohort, a diagnosis — works the same
 way.
 
 ``environment`` is one label per person and must take exactly two distinct
-finite values, compared exactly. **Name them through ``levels`` if you can**
+finite values, compared exactly. Name them through ``levels`` if you can
 — the column is then checked against what you expected, so a third value or
 a missing code where a group should be is refused rather than fitted. Left
 unnamed the two are inferred, and a negative one is refused, because ``-9``
 is the missing code in every pedigree format and far likelier a sentinel
 than a group. Nought is left alone, since a 0/1 exposure is ordinary; a
 caller who genuinely means -1 and +1 says so through ``levels``. The people carrying the smaller label form
-the first group everywhere in the results. **A missing or unknown label
-must be resolved or removed before building**, because a model that quietly
+the first group everywhere in the results. A missing or unknown label
+must be resolved or removed before building, because a model that quietly
 puts the unknowns together is estimating a correlation with a third group
 in it.
 
-**Two findings live here and they are not the same.**
+Two findings live here and they are not the same.
 
 *The heritability differs between the environments.* The genetic variance
 is larger in one than the other. That is a difference of scale, and a
@@ -295,17 +295,17 @@ parameter rather than a function of distance, so it is free to be negative:
 a genotype raising a trait in one environment and lowering it in the other
 is reachable.
 
-**The two residual standard deviations are free, and they should be.** A
+The two residual standard deviations are free, and they should be. A
 trait simply noisier in one environment would otherwise push its extra
 variance into the genetic term, and the genetic tests would then reject
 because of measurement rather than because of genes.
 
-**Read the headline test first.** ``test(y, "gene_by_environment")`` puts
+Read the headline test first. ``test(y, "gene_by_environment")`` puts
 the genetic constraints back at once — same variance, same genes — while
 leaving the two residual variances free. It is what stops several tests on
 one trait being read as several findings.
 
-**Do not use** ``test(y, "any_difference")`` **as the headline.** It ties
+Do not use ``test(y, "any_difference")`` as the headline. It ties
 the residual variances too, so a trait merely measured more noisily in one
 environment rejects it hard with nothing genetic happening. In simulation
 on the GOBS pedigree a sex difference in measurement error alone rejected
@@ -323,8 +323,8 @@ The correlation is a parameter here rather than a function of one, so
 the interval comes from pinning it and refitting everything else, with
 endpoints where twice the drop in log likelihood reaches 3.8415.
 
-**The reference is the ordinary chi-square on one degree of freedom,
-not the mixture** ``test(y, "correlation")`` **uses.** That test asks
+The reference is the ordinary chi-square on one degree of freedom,
+not the mixture ``test(y, "correlation")`` uses. That test asks
 about a correlation of exactly one, which is the edge of the parameter
 space; an interval is a statement about interior values and takes the
 interior reference. Borrowing the test's mixture would give a narrower
@@ -351,10 +351,10 @@ Test one of the five nulls.
   same variance and the same genes in both environments — with the two
   residual variances left free. Two constraints, one of which sits on a
   bound, so the reference is an even mixture of chi-square on one and
-  on two degrees of freedom. **Read this one first.**
+  on two degrees of freedom. Read this one first.
 - ``"any_difference"``: nothing differs between the environments at
   all, residual included. Three constraints on an even mixture of
-  chi-square on two and on three. It is **not** a genetic test: a
+  chi-square on two and on three. It is not a genetic test: a
   noisier environment rejects it.
 - ``"correlation"``: the same genes act in both environments. This is
   the gene-by-environment question proper. The null puts the
@@ -386,11 +386,11 @@ the same questions:
   held by loadings so it stays a covariance. Six parameters.
 - ``"powered_exponential"``: the exponential with the decay taken to a
   fixed power, ``exp(-λ|Δ|^κ)``. The same five free parameters, with
-  ``shape`` chosen from 0.5, 1.0, 1.5 or 2.0 — **chosen and not fitted**,
+  ``shape`` chosen from 0.5, 1.0, 1.5 or 2.0 — chosen and not fitted,
   because a shape and a decay rate trade off against each other and a search
   over both wanders. At ``shape=1.0`` it is the exponential surface exactly.
 
-**The shape is barely identified and strongly changes the answer.** On one
+The shape is barely identified and strongly changes the answer. On one
 simulated set the four shapes spanned 0.31 in log likelihood — a deviance of
 0.62, which is nothing — while the genetic correlation they reported ran
 from 0.92 to 0.45. A shape chosen to suit the answer would be invisible in
@@ -402,15 +402,15 @@ the heritability at each environment you ask about and the genetic
 correlation between each pair — quantities that mean the same thing whichever
 surface produced them.
 
-**Only the random-regression surface can represent a crossover** — a genotype that
+Only the random-regression surface can represent a crossover — a genotype that
 helps in one environment and harms in another, so the genetic correlation
 falls below nought rather than merely below one. The exponential surface
 correlates two environments as ``exp(-λ|Δ|)``, which is positive at every
 rate, so it will report a correlation near nought where the truth is near
 minus one. If a crossover is on the table, the choice is already made.
 
-**Choose the surface before looking at the answer, and know what it costs to
-choose wrongly.** Neither family contains the other, and a rank-one genetic
+Choose the surface before looking at the answer, and know what it costs to
+choose wrongly. Neither family contains the other, and a rank-one genetic
 surface from one is misspecified for the other. The misfit goes into the one
 parameter that is free under the alternative and pinned under the null, so a
 surface that cannot bend its variance function the way the data does will
@@ -421,7 +421,7 @@ random-regression surface was conservative rather than anti-conservative in the 
 case, which is why it is the default.
 Fitting both and reporting whichever rejects is not a defensible procedure.
 
-**A correlation below one is not by itself evidence of an interaction.** The
+A correlation below one is not by itself evidence of an interaction. The
 estimate cannot exceed one, so under the null every departure runs downward:
 on the exponential surface a tenth of null samples came back below 0.25. Use
 ``test``.
@@ -500,7 +500,7 @@ Built by inverting the same likelihood ratio :meth:`test_horizontal`
 computes, at chi-square on one at 0.975 because that is what a
 two-sided set at the Bonferroni .025 gives.
 
-**An end that did not close is ``None``, not a number.** Reporting the
+An end that did not close is ``None``, not a number. Reporting the
 edge of the search would be a statement about how far the search went
 rather than about the data. ``unbounded`` is true when neither end
 closed, and that is the identification diagnostic in its most useful
@@ -517,7 +517,7 @@ narrower search left open.
 
 Test the horizontal estimand ``c_prime`` against nought.
 
-**The null is a point, not a union**, which is what makes this the
+The null is a point, not a union, which is what makes this the
 simpler of the two tests. The direct inherited effect is a single
 signed coordinate -- an effect outside measured hearing may run either
 way -- so it is interior, and the ordinary chi-square on one degree of
@@ -525,7 +525,7 @@ freedom is the whole of the reference. There is no boundary mixture to
 choose and no simulated reference, so this costs two fits rather than
 the few hundred the vertical test can cost.
 
-**It refuses where the mediator loading is at nought.** There the
+It refuses where the mediator loading is at nought. There the
 inherited covariance carries the direct path and the outcome loading
 only as ``c'^2 + d^2``, the two rotate freely against each other, and a
 p-value would report which of the pair the optimiser happened to pick.
@@ -540,7 +540,7 @@ is a different statement from its being nought.
 
 Test the vertical estimand ``a * b`` against nought.
 
-**The null is a union, not a point.** ``a * b = 0`` holds whenever the
+The null is a union, not a point. ``a * b = 0`` holds whenever the
 mediator carries no inherited signal (``a = 0``) *or* the mediator does
 not reach the outcome (``b = 0``), and those are different models. One
 likelihood ratio has no reference distribution across a union, which is
@@ -567,7 +567,7 @@ those two stories.
 
 A 97.5 per cent confidence set for the vertical estimand.
 
-**Nought is decided differently from everywhere else, and has to be.**
+Nought is decided differently from everywhere else, and has to be.
 Away from nought, holding the estimand is one constraint on a curve --
 the estimand is a product, so a held value fixes the path at the value
 over the loading -- and the likelihood ratio has an ordinary
@@ -575,8 +575,8 @@ chi-square reference. At nought the null is a union, the loading is
 nought or the path is, and no single ratio spans it, so membership
 there comes from the intersection-union test instead.
 
-**Read ``disjoint`` before treating ``lower`` and ``upper`` as an
-interval.** The profile can admit values either side of nought while
+Read ``disjoint`` before treating ``lower`` and ``upper`` as an
+interval. The profile can admit values either side of nought while
 the union test excludes nought itself, and then the set is genuinely
 two pieces and the values between the ends are not all in it. The
 application requires such a set to be retained rather than reported as
@@ -594,7 +594,7 @@ Every person carries an unobserved liability and is a case when it crosses
 a threshold. Only the sign is ever seen, so the liability's variance is
 fixed at one and the threshold at nought, with the intercept carrying it.
 
-**The heritability is of the liability, not of the observed status**, which
+The heritability is of the liability, not of the observed status, which
 is what anybody means by the heritability of a disease. It is not comparable
 with the REML heritabilities the rest of this package reports, and the fit
 record says ``estimator: ml`` so the difference is visible rather than
@@ -654,7 +654,7 @@ matrix scaling. When every fixed component has a positive finite mean
 diagonal, ``mean_diagonal_proportions`` reports scale-invariant marginal
 covariance contributions instead.
 
-**Two cautions that the numbers do not carry themselves.** The range is
+Two cautions that the numbers do not carry themselves. The range is
 barely estimated: its interval reaches a bound in 98 per cent of calibration
 replicates, so report it as a point estimate or use ``integrated=True`` and
 be rid of it. And an interval for the spatial raw coefficient proportion
@@ -696,8 +696,8 @@ An interval for a raw coefficient proportion, or for the range.
 for the range when it has been integrated out is refused rather than
 answered.
 
-**A component index profiles the raw proportion, which is not the
-headline the fit reports.** ``fit`` leads with
+A component index profiles the raw proportion, which is not the
+headline the fit reports. ``fit`` leads with
 ``mean_diagonal_proportions`` where those are defined, because they do
 not move when a matrix is rescaled; the raw proportion does, and the two
 can differ by orders of magnitude for the same component of the same
@@ -734,20 +734,20 @@ without committing to which of them matters or which way each pushes.
 ``backgrounds`` are the covariance bases carrying everything that is not
 the set under test, and ``design`` must include its own intercept.
 
-**Pass ``Z = G * w``, not the kernel.** One row per person, one column per
+Pass ``Z = G * w``, not the kernel. One row per person, one column per
 variant, with the column weights already applied. Nothing is lost — the
 kernel is ``Z Z'`` — and nothing ``n by n`` is ever formed, so the memory
 is one column per variant rather than one per person squared and the
 eigenvalues come from a matrix the size of the set rather than the roster.
 
-**The weights are your choice and they are not innocent.** Squaring is
-implicit: a column multiplier ``w`` is a variance weight of ``w**2``. The
+The weights are your choice and they are not innocent. Squaring is
+implicit: a column multiplier ``w`` is a variance weight of ``w2``. The
 usual rare-focused choice is ``Beta(1, 25)`` evaluated at each minor allele
 frequency, but it encodes a belief about which variants matter, and a
 different belief gives a different answer. Running a small pre-specified
 set of weightings and combining them is more honest than picking one.
 
-**Why a score test and not a likelihood ratio.** The null sits on a
+Why a score test and not a likelihood ratio.** The null sits on a
 boundary, and Asterism's usual 50:50 reference is right only when the
 tested matrix spreads across many eigenvalues. A variant-set kernel does
 not — a burden kernel has rank one. Measured under the null on a
@@ -771,10 +771,10 @@ than a statistic of nought dressed up as a result.
 
 Score every set across a family of assumptions, and combine them.
 
-Two tests bet on different truths about a set. A **burden** test
+Two tests bet on different truths about a set. A burden test
 assumes every variant pushes the trait the same way and adds them into
 one score: powerful when true, blind when half raise the trait and half
-lower it, because they cancel. A **variance-component** test assumes
+lower it, because they cancel. A variance-component test assumes
 nothing about direction and asks only whether the effects are more
 scattered than chance allows: robust to a mixture, weaker when they
 genuinely agree.
@@ -783,8 +783,8 @@ They are two ends of one dial, and ``correlations`` is that dial — the
 assumed correlation between variant effects, nought giving the
 variance-component test and approaching one giving burden.
 
-**Taking the best of several tests inflates a p-value unless the
-looking is paid for.** These tests are strongly dependent, being one
+Taking the best of several tests inflates a p-value unless the
+looking is paid for. These tests are strongly dependent, being one
 score read under different assumptions, so the combination is the
 Cauchy method, whose tail is right whatever the dependence.
 ``strongest_correlation`` comes back because it says something about
@@ -813,8 +813,8 @@ Score one set across the family.
 
 Line a relationship matrix up with per-person values, by identifier.
 
-**Asterism's numerical interface is positional, and that is the one place a
-mistake makes no noise.** A relationship matrix whose rows are in a
+Asterism's numerical interface is positional, and that is the one place a
+mistake makes no noise. A relationship matrix whose rows are in a
 different order from the response does not fail, or warn, or look wrong: it
 returns a heritability, an interval and a p-value, all of them plausible and
 all of them for a pedigree nobody has. This does the alignment by
@@ -832,7 +832,7 @@ keyword column in that order, ``observed`` saying who has a complete set of
 values, and ``dropped`` naming anybody the matrix has and the values do not.
 Nothing is returned positionally, so no pair of outputs can be swapped.
 
-**Read ``dropped``.** A handful of names there is people without
+Read ``dropped``. A handful of names there is people without
 measurements. A great many is an identifier mismatch — one side writing
 ``001`` where the other writes ``1``, or a table that was filtered
 already — and the analysis would otherwise proceed, quietly, on whoever
@@ -907,7 +907,7 @@ Each trait is a dictionary with ``kind`` (``"continuous"``, ``"binary"`` or
 a censoring code of 1 is a case, and the limit is nought because the
 threshold is carried by the intercept.
 
-**A binary trait's variance is fixed at one** and comes back as one, because
+A binary trait's variance is fixed at one and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is therefore a
 liability heritability, while a continuous or censored trait's is a
 heritability of the observed scale. They are different quantities. The genetic correlation is
@@ -924,7 +924,7 @@ A 95 per cent profile-likelihood interval for one bivariate coordinate.
 ``coordinate`` is ``"heritability_one"``, ``"heritability_two"``,
 ``"genetic_correlation"`` or ``"residual_correlation"``.
 
-**The variances have no interval on purpose.** A binary trait's is fixed at
+The variances have no interval on purpose. A binary trait's is fixed at
 one because a liability has no scale of its own, so an interval on it would
 describe that assumption rather than the data.
 
@@ -983,7 +983,7 @@ ValueError
 
 The conditional region log-probability the censored models rest on.
 
-**Exposed so that it can be checked, not so that it can be used.** This uses
+Exposed so that it can be checked, not so that it can be used. This uses
 the univariate normal calculation at one coordinate, fixed sixteen-point
 quadrature at two, and Mendell-Elston sequential truncation above two. Every
 censored heritability in the package rests on it. All the evidence for those
@@ -1081,8 +1081,8 @@ Raises:
 Fit one trait whose measurement stops at a limit.
 
 ``censoring`` is 0 where the value was measured, 1 where it lies at or
-above its limit, and 2 where it lies at or below it. **The status is given
-rather than inferred**, because a censored value can carry the same number
+above its limit, and 2 where it lies at or below it. The status is given
+rather than inferred, because a censored value can carry the same number
 as a measured one — extended high-frequency audiometry records several
 limits within one frequency, and measured values coincide with them.
 
@@ -1106,7 +1106,7 @@ A 95 per cent profile-likelihood interval for the censored heritability.
 
 ``lower_limited`` and ``upper_limited`` say whether an end sits on the
 parameter's own bound rather than where the profile fell away. An end on a
-bound means **the data did not rule that end out**, which is a different
+bound means the data did not rule that end out, which is a different
 statement from the interval stopping there.
 
 ``profile_failures`` counts fits along the profile that failed or did not
