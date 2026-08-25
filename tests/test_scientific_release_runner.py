@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from tools.check_release import (
-    fit_record_reportability_errors,
+    fit_record_failures,
     release_evidence_errors,
 )
 from tools.compare_cross_platform import canonical_manifest_sha256
@@ -81,7 +81,7 @@ relative = {{ "fit.h2" = 1e-6 }}
 id = "one_trait_gaussian_heritability"
 support = "supported_in_0_1"
 entry_points = ["asterism.prepare"]
-reportable_quantities = ["h2"]
+supported_quantities = ["h2"]
 required_checks = ["{check_name}"]
 pass_rules_configured = true
 pass_rules = [
@@ -129,13 +129,13 @@ def passing_agreement(manifest_text: str) -> dict[str, Any]:
                     "analysis_id": "one_trait_gaussian_heritability",
                     "field": field,
                     "reference": {
-                        "outcome_status": "candidate",
+                        "outcome_status": "fitted",
                         "refusal_code": None,
                         "boundary_state": {},
                         "field_presence": ["fit", "fit.h2"],
                     }[field],
                     "candidate": {
-                        "outcome_status": "candidate",
+                        "outcome_status": "fitted",
                         "refusal_code": None,
                         "boundary_state": {},
                         "field_presence": ["fit", "fit.h2"],
@@ -184,32 +184,32 @@ def passing_agreement(manifest_text: str) -> dict[str, Any]:
     }
 
 
-def test_receipt_verifier_recomputes_reportability_from_the_fit_record() -> None:
-    """Reject internally self-consistent claims built from nonreportable fits."""
-    reportable: dict[str, Any] = {
+def test_receipt_verifier_recomputes_its_conditions_from_the_fit_record() -> None:
+    """Reject internally self-consistent claims built from incomplete fits."""
+    complete: dict[str, Any] = {
         "converged": True,
         "h2": 0.5,
         "interval": {"lower": 0.2, "upper": 0.8, "profile_failures": 0},
     }
     """Built the smallest finite converged record satisfying one promised field."""
 
-    assert fit_record_reportability_errors(reportable, ["h2"]) == []
-    assert "fit did not converge" in fit_record_reportability_errors(
-        {**reportable, "converged": False}, ["h2"]
+    assert fit_record_failures(complete, ["h2"]) == []
+    assert "fit did not converge" in fit_record_failures(
+        {**complete, "converged": False}, ["h2"]
     )
-    assert "required quantity h2 is missing" in fit_record_reportability_errors(
-        {**reportable, "h2": None}, ["h2"]
+    assert "required quantity h2 is missing" in fit_record_failures(
+        {**complete, "h2": None}, ["h2"]
     )
-    assert "interval.profile_failures is 2" in fit_record_reportability_errors(
+    assert "interval.profile_failures is 2" in fit_record_failures(
         {
-            **reportable,
+            **complete,
             "interval": {"lower": 0.2, "upper": 0.8, "profile_failures": 2},
         },
         ["h2"],
     )
-    assert "interval.upper is not finite" in fit_record_reportability_errors(
+    assert "interval.upper is not finite" in fit_record_failures(
         {
-            **reportable,
+            **complete,
             "interval": {
                 "lower": 0.2,
                 "upper": float("nan"),
@@ -292,11 +292,11 @@ receipt = {
     "schema_version": 1,
     "asterism_version": "0.1.0",
     "analysis": "one_trait_gaussian_heritability",
-    "outcome": "reportable",
+    "outcome": "fitted",
     "build": build,
     "release_state": {
         "release_ready": True,
-        "reportable_quantities": ["h2"],
+        "supported_quantities": ["h2"],
     },
     "model": {"estimator": "reml"},
     "provenance": {
@@ -314,7 +314,13 @@ receipt = {
         "build": build,
         "subject_order_sha256": order,
     },
-    "reportability_issues": [],
+    "facts": {
+        "converged": True,
+        "all_quantities_present": True,
+        "all_values_finite": True,
+        "all_profiles_evaluated": True,
+    },
+    "failures": [],
     "refusal": None,
 }
 receipt_path = args.output / "one_trait_gaussian_heritability.json"
@@ -324,7 +330,7 @@ index = {
     "schema_version": 1,
     "receipts": [{
         "analysis_id": "one_trait_gaussian_heritability",
-        "outcome": "reportable",
+        "outcome": "fitted",
         "path": receipt_path.name,
         "sha256": hashlib.sha256(payload).hexdigest(),
         "wheel_sha256": wheel_sha256,

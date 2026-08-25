@@ -6,7 +6,7 @@
   },
   "adapter": {
     "path": "checks/against_r.py",
-    "sha256": "e6d5052a9966fb39eb9c39de5c4fa8b9ae1ecb57a6bc3e861b6710f4f6a8f72e"
+    "sha256": "edc46285fb45bd355d4f4941b2516e7398b9fbcb69279778b9858b544be6d2ed"
   },
   "adapter_contract_version": 1,
   "check_id": "against_r",

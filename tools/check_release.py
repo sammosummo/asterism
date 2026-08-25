@@ -55,24 +55,24 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def fit_record_reportability_errors(
-    fit_record: dict[str, Any], reportable_quantities: list[str]
+def fit_record_failures(
+    fit_record: dict[str, Any], supported_quantities: list[str]
 ) -> list[str]:
-    """Recompute the release-critical reporting conditions for one fit.
+    """Recompute the release-critical conditions for one fit.
 
     Args:
-        fit_record: Parsed candidate fit retained in a standard receipt.
-        reportable_quantities: Fields the release state promises for this analysis branch.
+        fit_record: Parsed fit retained in a standard receipt.
+        supported_quantities: Fields the manifest declares for this branch.
 
     Returns:
-        Human-readable failures, or an empty list for a reportable candidate.
+        Human-readable failures, or an empty list where the fit met them all.
     """
     errors: list[str] = []
-    """Collected independent failures without trusting the receipt outcome label."""
+    """Collected independent failures without trusting the receipt's own facts."""
 
     if fit_record.get("converged") is not True:
         errors.append("fit did not converge")
-    for quantity in reportable_quantities:
+    for quantity in supported_quantities:
         if fit_record.get(quantity) is None:
             errors.append(f"required quantity {quantity} is missing")
     """Required the converged free fit and every promised top-level quantity."""
@@ -146,8 +146,8 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     Returns:
         Errors when conditional sets are ambiguous or do not cover the inventory.
     """
-    raw_sets: object = analysis.get("reportable_quantity_sets")
-    """Read optional mutually exclusive reportable-quantity selections."""
+    raw_sets: object = analysis.get("supported_quantity_sets")
+    """Read optional mutually exclusive supported-quantity selections."""
 
     if raw_sets is None:
         return []
@@ -157,7 +157,7 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     """Collected every conditional-reporting disagreement together."""
 
-    inventory: object = analysis.get("reportable_quantities")
+    inventory: object = analysis.get("supported_quantities")
     """Read the complete documentation inventory to be partitioned."""
 
     if (
@@ -165,13 +165,13 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
         or not inventory
         or not all(isinstance(quantity, str) and quantity for quantity in inventory)
     ):
-        return [f"release.toml: {identifier} has an invalid reportable inventory"]
+        return [f"release.toml: {identifier} has an invalid quantity inventory"]
     if (
         not isinstance(raw_sets, list)
         or not raw_sets
         or not all(isinstance(quantity_set, dict) for quantity_set in raw_sets)
     ):
-        return [f"release.toml: {identifier} reportable_quantity_sets must be tables"]
+        return [f"release.toml: {identifier} supported_quantity_sets must be tables"]
     """Required both the inventory and conditional selections to be explicit lists."""
 
     selected: list[str] = []
@@ -218,7 +218,7 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
         )
     if Counter(selected) != Counter(str(quantity) for quantity in inventory):
         errors.append(
-            f"release.toml: {identifier} quantity sets must partition reportable_quantities"
+            f"release.toml: {identifier} quantity sets must partition supported_quantities"
         )
     """Required unambiguous selection and exact, non-overlapping inventory coverage."""
 
@@ -794,8 +794,8 @@ def release_evidence_errors(
             analysis_id: object = indexed.get("analysis_id")
             """Read the stable analysis identifier expected inside this receipt."""
 
-            if indexed.get("outcome") != "reportable":
-                errors.append(f"synthetic receipt {index} is not reportable")
+            if indexed.get("outcome") != "fitted":
+                errors.append(f"synthetic receipt {index} did not produce a fit")
             relative_receipt: object = indexed.get("path")
             """Read the index-relative complete standard-receipt path."""
 
@@ -844,9 +844,16 @@ def release_evidence_errors(
                 or parsed_receipt.get("asterism_version")
                 != expected_receipt_build.get("version")
                 or parsed_receipt.get("analysis") != analysis_id
-                or parsed_receipt.get("outcome") != "reportable"
+                or parsed_receipt.get("outcome") != "fitted"
                 or parsed_receipt.get("refusal") is not None
-                or parsed_receipt.get("reportability_issues") != []
+                or parsed_receipt.get("failures") != []
+                or parsed_receipt.get("facts")
+                != {
+                    "converged": True,
+                    "all_quantities_present": True,
+                    "all_values_finite": True,
+                    "all_profiles_evaluated": True,
+                }
             ):
                 errors.append(f"synthetic receipt {index} outcome contract is invalid")
             if parsed_receipt.get("build") != expected_receipt_build:
@@ -873,7 +880,7 @@ def release_evidence_errors(
             ):
                 errors.append(f"synthetic receipt {index} fit identity is invalid")
             quantities: object = (
-                release_state.get("reportable_quantities")
+                release_state.get("supported_quantities")
                 if isinstance(release_state, dict)
                 else None
             )
@@ -884,18 +891,18 @@ def release_evidence_errors(
                 for quantity in quantities
             ):
                 errors.append(
-                    f"synthetic receipt {index} reportable quantities are incomplete"
+                    f"synthetic receipt {index} supported quantities are incomplete"
                 )
             else:
-                independent_issues: list[str] = fit_record_reportability_errors(
+                independent_failures: list[str] = fit_record_failures(
                     fit_record, quantities
                 )
-                """Recomputed scientific reportability from the retained fit itself."""
+                """Recomputed the conditions from the retained fit itself."""
 
-                if independent_issues:
+                if independent_failures:
                     errors.append(
-                        f"synthetic receipt {index} fit is not reportable: "
-                        + "; ".join(independent_issues)
+                        f"synthetic receipt {index} fit did not meet its conditions: "
+                        + "; ".join(independent_failures)
                     )
             provenance: object = parsed_receipt.get("provenance")
             """Read caller-owned wheel, dependency, source and input commitments."""
@@ -1263,8 +1270,8 @@ def main() -> int:
 
         if not analysis.get("entry_points"):
             errors.append(f"release.toml: {identifier} has no entry_points")
-        if not analysis.get("reportable_quantities"):
-            errors.append(f"release.toml: {identifier} has no reportable_quantities")
+        if not analysis.get("supported_quantities"):
+            errors.append(f"release.toml: {identifier} has no supported_quantities")
         if not analysis.get("required_checks"):
             errors.append(f"release.toml: {identifier} has no required_checks")
         errors.extend(conditional_quantity_errors(analysis))
@@ -1360,7 +1367,7 @@ def main() -> int:
                 errors.append(
                     "release.toml: synthetic receipt inventory does not cover every analysis"
                 )
-        """Kept public fit probes distinct from reportable run_analysis receipts."""
+        """Kept public fit probes distinct from run_analysis receipts."""
 
         for analysis in analyses:
             identifier = str(analysis.get("id", "<missing>"))

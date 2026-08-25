@@ -104,7 +104,7 @@ def probe_record(
     analyses: list[dict[str, Any]] = [
         {
             "analysis_id": analysis_id,
-            "outcome_status": "candidate",
+            "outcome_status": "fitted",
             "refusal_code": None,
             "boundary_state": {
                 "interval.lower_limited": False,
@@ -205,7 +205,7 @@ def test_numeric_difference_beyond_the_written_tolerance_fails() -> None:
 @pytest.mark.parametrize(
     ("field", "replacement", "expected"),
     [
-        ("outcome_status", "diagnostic-only", "outcome_status mismatch"),
+        ("outcome_status", "fitted-with-failures", "outcome_status mismatch"),
         ("refusal_code", "MODEL_REFUSED", "refusal_code mismatch"),
         (
             "boundary_state",

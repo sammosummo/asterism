@@ -6,7 +6,7 @@
   },
   "adapter": {
     "path": "checks/spatial_against_spamm.py",
-    "sha256": "63e66537a5a63464eec8f5042fca8e89dcb60f87454d9add51ee104c8e0a11b6"
+    "sha256": "6609a7dbe8168e4ec12db183bf538880fa3d26b8765f5157cf01819a161746e2"
   },
   "adapter_contract_version": 1,
   "check_id": "spatial_against_spamm",

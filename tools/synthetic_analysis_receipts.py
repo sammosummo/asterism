@@ -83,7 +83,7 @@ def subject_order() -> list[str]:
 
 
 def fit_one_trait_receipt(problem: dict[str, Any], commitment: str) -> dict[str, Any]:
-    """Fit the Gaussian model and return all three reportable quantities."""
+    """Fit the Gaussian model and return all three supported quantities."""
     prepared: Any = asterism.prepare(
         problem["design"],
         problem["relationship"],
@@ -104,7 +104,7 @@ def fit_component_receipt(problem: dict[str, Any], commitment: str) -> dict[str,
     """Built one supplied relationship component plus the residual."""
 
     record: dict[str, Any] = model.fit(problem["response"])
-    """Estimated the reportable mean-diagonal contributions and proportions."""
+    """Estimated the mean-diagonal contributions and proportions."""
 
     record["mean_diagonal_proportion_interval"] = model.interval(
         problem["response"], component=0
@@ -139,7 +139,7 @@ def fit_bivariate_receipt(problem: dict[str, Any], commitment: str) -> dict[str,
     """Built the documented unbalanced-capable bivariate model."""
 
     record: dict[str, Any] = model.fit(response)
-    """Estimated the reportable genetic correlation."""
+    """Estimated the genetic correlation."""
 
     record["interval"] = model.interval(response, "rho_g")
     """Attached the profile interval for genetic correlation."""
@@ -472,7 +472,7 @@ def write_synthetic_analysis_receipts(
     output_directory: Path,
     wheel_paths: list[Path],
 ) -> list[dict[str, Any]]:
-    """Write one reportable standard receipt for every supported analysis.
+    """Write one complete standard receipt for every supported analysis.
 
     Args:
         output_directory: New directory that will contain receipt JSON files.
@@ -544,7 +544,7 @@ def write_synthetic_analysis_receipts(
             },
             subject_order=order,
         )
-        """Ran preflight, fitting and reportability through the standard public seam."""
+        """Ran the checks and the fit through the standard public seam."""
 
         receipts.append(receipt)
     """Produced every receipt before allowing any evidence directory to exist."""
@@ -552,13 +552,14 @@ def write_synthetic_analysis_receipts(
     failures: list[str] = [
         f"{receipt['analysis']}:{receipt['outcome']}"
         for receipt in receipts
-        if receipt.get("outcome") != "reportable"
+        if receipt.get("outcome") != "fitted"
+        or not all(dict(receipt.get("facts") or {}).values())
     ]
-    """Named every analysis that failed the standard reportability contract."""
+    """Named every analysis that did not fit cleanly."""
 
     if failures:
         raise SyntheticReceiptError(
-            "SYNTHETIC_RECEIPT_NOT_REPORTABLE:" + ",".join(failures)
+            "SYNTHETIC_RECEIPT_INCOMPLETE:" + ",".join(failures)
         )
 
     output_directory.mkdir(parents=True)
@@ -583,7 +584,7 @@ def write_synthetic_analysis_receipts(
         index.append(
             {
                 "analysis_id": analysis_id,
-                "outcome": "reportable",
+                "outcome": "fitted",
                 "path": path.name,
                 "sha256": hashlib.sha256(payload).hexdigest(),
                 "wheel_sha256": artifact_sha256,
@@ -617,7 +618,7 @@ def main() -> int:
     except SyntheticReceiptError as error:
         print(f"synthetic analysis receipts refused: {error}", file=sys.stderr)
         return 1
-    print("All supported synthetic analysis receipts are reportable.")
+    print("Every supported analysis produced a complete synthetic receipt.")
     return 0
 
 

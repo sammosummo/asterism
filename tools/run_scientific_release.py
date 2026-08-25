@@ -1115,10 +1115,9 @@ def run_scientific_release(
                 synthetic_index_valid = [
                     receipt.get("analysis_id") for receipt in synthetic_receipts
                 ] == expected_ids and all(
-                    receipt.get("outcome") == "reportable"
-                    for receipt in synthetic_receipts
+                    receipt.get("outcome") == "fitted" for receipt in synthetic_receipts
                 )
-                """Required complete ordered reportable coverage before release."""
+                """Required a complete ordered set of fits before release."""
 
                 synthetic_index_sha256 = file_identity(synthetic_index_path)["sha256"]
                 """Committed the exact index bytes for independent verification."""

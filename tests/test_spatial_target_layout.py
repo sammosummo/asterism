@@ -130,7 +130,7 @@ def test_layout_generation_is_exactly_reproducible() -> None:
     assert np.array_equal(first.fixed_effects, second.fixed_effects)
 
 
-def test_target_decision_refuses_incomplete_or_nonreportable_inference() -> None:
+def test_target_decision_refuses_incomplete_or_failed_inference() -> None:
     """Make every fit and bootstrap failure decisive before target evidence."""
     module: ModuleType = target_module()
     """Loaded the prewritten target acceptance decision."""
@@ -149,7 +149,7 @@ def test_target_decision_refuses_incomplete_or_nonreportable_inference() -> None
         "requested": 199,
         "p_value": 0.005,
         "rule": "parametric_bootstrap_add_one",
-        "smallest_reportable": 0.005,
+        "smallest_p_value": 0.005,
     }
     """Built a complete target detection with the exact add-one reference."""
 
@@ -160,7 +160,7 @@ def test_target_decision_refuses_incomplete_or_nonreportable_inference() -> None
         alpha=0.05,
         refusal=None,
     )
-    """Scored the complete reportable result under the prewritten policy."""
+    """Scored the complete result under the prewritten policy."""
 
     assert passed == {"passed": True, "reason": "target_presence_detected"}
 
@@ -192,7 +192,7 @@ def test_target_decision_refuses_incomplete_or_nonreportable_inference() -> None
             alpha=0.05,
             refusal=refusal,
         )
-        """Scored one deliberately nonreportable target outcome."""
+        """Scored one deliberately incomplete target outcome."""
 
         assert decision == {"passed": False, "reason": reason}
 
@@ -216,7 +216,7 @@ def test_small_real_public_bootstrap_uses_every_requested_replicate() -> None:
     assert len(result["fit"]["subject_order_sha256"]) == 64
     assert result["bootstrap"]["requested"] == 3
     assert result["bootstrap"]["replicates"] == 3
-    assert result["bootstrap"]["smallest_reportable"] == 0.25
+    assert result["bootstrap"]["smallest_p_value"] == 0.25
     assert result["decision"] == {
         "passed": False,
         "reason": "target_presence_not_detected",

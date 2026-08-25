@@ -577,7 +577,7 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
         """Narrowed the returned public fit record without changing fields."""
 
     fit_heritability: float | None = finite_record_number(fit, "heritability")
-    """Read the reportable point estimate only when finite."""
+    """Read the point estimate only when finite."""
 
     fit_variance: float | None = finite_record_number(fit, "total_variance")
     """Read the latent complete-trait scale only when finite."""

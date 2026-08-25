@@ -415,13 +415,13 @@ def compare_reference(
         external_outputs: Frozen raw regress variance components.
 
     Returns:
-        Pass decision and all reportable-quantity differences.
+        Pass decision and all supported-quantity differences.
 
     Raises:
         ReferenceAdapterError: If the frozen independent output is incomplete.
     """
     required: tuple[str, ...] = ("a11", "a22", "a12", "r11", "r22", "r12")
-    """Named the six raw components required to derive four reportable ratios."""
+    """Named the six raw components required to derive four supported ratios."""
 
     if not isinstance(external_outputs, dict) or any(
         field not in external_outputs for field in required
@@ -728,7 +728,7 @@ def main() -> int:
         ("rho_g", ours["rho_g"], their_rg, truth["rg"]),
         ("rho_e", ours["rho_e"], their_re, truth["re"]),
     )
-    """Paired each reportable Asterism quantity with R and generating truth."""
+    """Paired each Asterism quantity with R and generating truth."""
 
     differences: dict[str, float] = {}
     """Initialised absolute disagreements for the evidence receipt."""

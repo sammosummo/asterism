@@ -140,7 +140,7 @@ def one(job: tuple[float, float, int]) -> dict[str, Any]:
             np.full(people, limit),
             np.ones((people, 1)),
         )
-        """Profiled the reportable interval through the documented public API."""
+        """Profiled the interval through the documented public API."""
     except ValueError as refusal:
         return {
             "heritability": heritability,

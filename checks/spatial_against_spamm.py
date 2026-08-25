@@ -840,7 +840,7 @@ def compare_reference(
             float(our_result[quantity])
             for quantity in ("additive", "spatial", "residual")
         )
-        """Defined the reportable trait-variance scale for component differences."""
+        """Defined the trait-variance scale for component differences."""
 
         differences: dict[str, float] = {
             quantity: (

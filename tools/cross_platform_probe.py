@@ -214,7 +214,7 @@ def boundary_fields(value: Any, prefix: str = "") -> dict[str, Any]:
     return states
 
 
-def diagnostic_only(value: Any) -> bool:
+def has_failures(value: Any) -> bool:
     """Return whether any required public fit or profile failed.
 
     Args:
@@ -229,10 +229,10 @@ def diagnostic_only(value: Any) -> bool:
                 return True
             if key == "profile_failures" and item != 0:
                 return True
-            if diagnostic_only(item):
+            if has_failures(item):
                 return True
     elif isinstance(value, list):
-        return any(diagnostic_only(item) for item in value)
+        return any(has_failures(item) for item in value)
     return False
 
 
@@ -246,9 +246,9 @@ def normalized_analysis(
 
     Args:
         analysis_id: Stable identifier from the release manifest.
-        result: Public fit, interval and test records, if a candidate exists.
+        result: Public fit, interval and test records, where a fit was made.
         numeric_fields: Preselected numerical values named by normalized paths.
-        refusal: Stable public ValueError when no candidate was produced.
+        refusal: Stable public ValueError when no fit was produced.
 
     Returns:
         Structural and selected numeric fields ready for exact comparison.
@@ -283,7 +283,7 @@ def normalized_analysis(
     return {
         "analysis_id": analysis_id,
         "outcome_status": (
-            "diagnostic-only" if diagnostic_only(normalized) else "candidate"
+            "fitted-with-failures" if has_failures(normalized) else "fitted"
         ),
         "refusal_code": None,
         "boundary_state": boundary_fields(normalized),
@@ -459,7 +459,7 @@ def probe_components(
     """Fitted scale-invariant mean-diagonal contributions."""
 
     interval: dict[str, Any] = model.interval(problem["response"], component=0)
-    """Profiled the reportable mean-diagonal component proportion."""
+    """Profiled the mean-diagonal component proportion."""
 
     test: dict[str, Any] = model.test(problem["response"], component=0)
     """Tested the structured component against its boundary null."""
@@ -504,10 +504,10 @@ def probe_bivariate(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
     """Built the documented unbalanced-capable public bivariate model."""
 
     fit: dict[str, Any] = model.fit(response)
-    """Estimated the reportable genetic correlation and descriptive quantities."""
+    """Estimated the genetic correlation and descriptive quantities."""
 
     interval: dict[str, Any] = model.interval(response, "rho_g")
-    """Profiled the reportable genetic correlation."""
+    """Profiled the genetic correlation."""
 
     test: dict[str, Any] = model.test(response, "rho_g", 0.0)
     """Tested the genetic correlation against the interior null."""
@@ -585,10 +585,10 @@ def probe_discrete_gxe(
     """Named both synthetic exposure levels explicitly at model construction."""
 
     fit: dict[str, Any] = model.fit(problem["response"])
-    """Fitted group-specific variances and the reportable genetic correlation."""
+    """Fitted group-specific variances and the genetic correlation."""
 
     interval: dict[str, Any] = model.correlation_interval(problem["response"])
-    """Profiled the reportable genetic correlation between environments."""
+    """Profiled the genetic correlation between environments."""
 
     test: dict[str, Any] = model.test(problem["response"], "gene_by_environment")
     """Ran the calibrated headline genetic-difference test."""

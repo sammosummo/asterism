@@ -43,7 +43,7 @@ analysis_ids = [
   "mixed_binary_censored_genetic_correlation",
 ]
 evidence = []
-blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every design range and pass rule is measured, then retain one reportable standard receipt per supported analysis in release evidence." }
+blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every design range and pass rule is measured, then retain one complete standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
 configured = true
@@ -186,7 +186,7 @@ relative = { "fit.genetic_correlation" = 1e-6, "fit.heritability[0]" = 1e-6, "fi
 id = "one_trait_gaussian_heritability"
 support = "supported_in_0_1"
 entry_points = ["asterism.prepare", "asterism.PreparedModel.fit"]
-reportable_quantities = ["h2", "interval", "test"]
+supported_quantities = ["h2", "interval", "test"]
 required_checks = [
   "against_r",
   "against_solar",
@@ -285,14 +285,14 @@ entry_points = [
   "asterism.ComponentModel.equality_test",
   "asterism.ComponentModel.contrasts",
 ]
-reportable_quantities = [
+supported_quantities = [
   "mean_diagonal_component_contributions",
   "mean_diagonal_proportions",
   "mean_diagonal_proportion_interval",
   "coefficients_for_zero_diagonal_bases",
   "contrasts_for_zero_diagonal_bases",
 ]
-reportable_quantity_sets = [
+supported_quantity_sets = [
   { when = { component_reporting = "mean_diagonal" }, quantities = [
     "mean_diagonal_component_contributions",
     "mean_diagonal_proportions",
@@ -342,7 +342,7 @@ entry_points = [
   "asterism.BivariateModel.interval",
   "asterism.BivariateModel.test",
 ]
-reportable_quantities = ["rho_g", "interval", "test"]
+supported_quantities = ["rho_g", "interval", "test"]
 required_checks = [
   "bivariate_against_r",
   "bivariate_against_solar",
@@ -391,7 +391,7 @@ entry_points = [
   "asterism.GxeModel.interval",
   "asterism.GxeModel.test",
 ]
-reportable_quantities = [
+supported_quantities = [
   "heritability",
   "genetic_correlation",
   "heritability_interval",
@@ -460,7 +460,7 @@ entry_points = [
   "asterism.DiscreteGxeModel.correlation_interval",
   "asterism.DiscreteGxeModel.test",
 ]
-reportable_quantities = [
+supported_quantities = [
   "genetic_correlation",
   "correlation_interval",
   "gene_by_environment_test",
@@ -506,7 +506,7 @@ entry_points = [
   "asterism.LiabilityModel.interval",
   "asterism.LiabilityModel.test",
 ]
-reportable_quantities = ["heritability", "interval", "test"]
+supported_quantities = ["heritability", "interval", "test"]
 required_checks = ["liability_against_solar", "liability_calibration"]
 pass_rules_configured = true
 
@@ -534,7 +534,7 @@ entry_points = [
   "asterism.tobit_interval",
   "asterism.tobit_test",
 ]
-reportable_quantities = ["heritability", "interval", "test"]
+supported_quantities = ["heritability", "interval", "test"]
 required_checks = [
   "tobit_against_censreg",
   "tobit_against_mcmcglmm",
@@ -601,7 +601,7 @@ entry_points = [
   "asterism.mixed_bivariate_interval",
   "asterism.mixed_bivariate_test",
 ]
-reportable_quantities = ["genetic_correlation", "interval", "test"]
+supported_quantities = ["genetic_correlation", "interval", "test"]
 required_checks = [
   "mixed_bivariate_against_solar",
   "mixed_bivariate_calibration",

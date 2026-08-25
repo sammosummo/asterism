@@ -980,7 +980,7 @@ def target_decision(
     p_value: object = bootstrap.get("p_value")
     """Selected the add-one bootstrap probability."""
 
-    smallest: object = bootstrap.get("smallest_reportable")
+    smallest: object = bootstrap.get("smallest_p_value")
     """Selected the public record's finite-resolution limit."""
 
     if not all(

@@ -496,7 +496,7 @@ def compare_reference(
         """Converted regress variance components to Asterism's reported scale."""
 
         their_h2: float = float(external_case["sigma_k"]) / their_total
-        """Converted the independent components to reportable heritability."""
+        """Converted the independent components to heritability."""
 
         beta_difference: float = max(
             relative(float(a), float(b))

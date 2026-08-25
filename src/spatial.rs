@@ -1483,8 +1483,8 @@ impl Stream {
 pub struct SpatialBootstrap {
     pub observed: f64,
     pub exceedances: usize,
-    /// Replicates that produced a usable statistic. A reportable bootstrap
-    /// requires this to equal `requested`.
+    /// Replicates that produced a usable statistic. When this is below
+    /// `requested`, some replicates failed.
     pub replicates: usize,
     pub requested: usize,
     pub p_value: f64,

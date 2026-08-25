@@ -56,10 +56,10 @@ WORKERS: int = int(os.environ.get("ASTERISM_WORKERS", "6"))
 """Selected the worker-process count from the environment."""
 
 LOW: float = -1.0
-"""Fixed the lower environment at which reportable quantities are profiled."""
+"""Fixed the lower environment at which supported quantities are profiled."""
 
 HIGH: float = 1.0
-"""Fixed the upper environment at which reportable quantities are profiled."""
+"""Fixed the upper environment at which supported quantities are profiled."""
 
 # Each surface gets an alternative from its own family, with a real interaction
 # in it: the genetic variance changes and the correlation across the range is
@@ -182,11 +182,11 @@ for name, setting in TRUTH.items():
 TRUE_VALUES: dict[str, dict[tuple[str, float, float], float]] = {
     name: truth_for(name) for name in TRUTH
 }
-"""Computed exact reportable truths for every generating surface family."""
+"""Computed exact truths for every generating surface family."""
 
 
 def one(job: tuple[str, int]) -> dict[str, Any]:
-    """Profile every reportable quantity for one simulated response.
+    """Profile every supported quantity for one simulated response.
 
     Args:
         job: Surface name and zero-based replicate number.

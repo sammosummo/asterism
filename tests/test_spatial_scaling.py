@@ -176,5 +176,5 @@ def test_spatial_bootstrap_completes_its_predeclared_null_reference() -> None:
 
     assert result["replicates"] == result["requested"] == 20
     assert result["rule"] == "parametric_bootstrap_add_one"
-    assert result["smallest_reportable"] == 1.0 / 21.0
+    assert result["smallest_p_value"] == 1.0 / 21.0
     """Required the exact predeclared denominator and its corresponding p-value floor."""

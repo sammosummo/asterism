@@ -3,7 +3,7 @@
 SciPy optimizes a separately assembled dense Gaussian likelihood in natural
 covariance coordinates.  Asterism receives the same participant-free arrays
 through ``GxeModel``.  The comparison covers the maximized likelihood and the
-surface-independent reportable quantities at a prespecified environment grid.
+surface-independent quantities at a prespecified environment grid.
 It does not share Asterism's likelihood, gradients, parameterization, starts, or
 optimizer.
 """
@@ -180,10 +180,10 @@ def summaries(
         """Built the genetic standard-deviation products."""
 
         correlation = genetic_covariance / denominator
-        """Converted reference covariances to the reportable correlation scale."""
+        """Converted reference covariances to the correlation scale."""
 
     heritability: np.ndarray = genetic_variance / (genetic_variance + residual_variance)
-    """Converted both reference surfaces to the common reportable estimand."""
+    """Converted both reference surfaces to the common estimand."""
 
     return {
         "genetic_variance": genetic_variance,
@@ -283,7 +283,7 @@ def fit_surface(
     """Fitted Asterism and evaluated the prespecified reporting grid."""
 
     expected: dict[str, np.ndarray] = summaries(surface, reference.parameters, GRID)
-    """Converted the independent natural parameters to reportable quantities."""
+    """Converted the independent natural parameters to the supported quantities."""
 
     differences: dict[str, float] = {
         name: float(

@@ -24,7 +24,7 @@ scientific_pass_rules_configured = true
 id = "one_trait_gaussian_heritability"
 support = "supported_in_0_1"
 entry_points = ["asterism.prepare", "asterism.PreparedModel.fit"]
-reportable_quantities = ["h2", "interval", "test"]
+supported_quantities = ["h2", "interval", "test"]
 required_checks = ["coverage"]
 pass_rules_configured = true
 
@@ -33,14 +33,14 @@ pass_rules_configured = true
 id = "several_covariance_components"
 support = "supported_in_0_1"
 entry_points = ["asterism.ComponentModel.fit"]
-reportable_quantities = [
+supported_quantities = [
   "mean_diagonal_component_contributions",
   "mean_diagonal_proportions",
   "mean_diagonal_proportion_interval",
   "coefficients_for_zero_diagonal_bases",
   "contrasts_for_zero_diagonal_bases",
 ]
-reportable_quantity_sets = [
+supported_quantity_sets = [
   { when = { component_reporting = "mean_diagonal" }, quantities = [
     "mean_diagonal_component_contributions",
     "mean_diagonal_proportions",
@@ -73,8 +73,8 @@ def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replaced every coupled field instead of creating an impossible mixed build."""
 
 
-def test_a_development_build_is_never_reportable() -> None:
-    """Keep a development build unreportable however ordinary its design."""
+def test_a_development_build_is_never_release_ready() -> None:
+    """Keep a development build from passing its checks, whatever the design."""
     design: dict[str, Any] = {
         "sample_size": 350,
         "largest_family": 14,
@@ -102,7 +102,7 @@ def test_a_development_build_is_never_reportable() -> None:
     assert receipt["refusal"]["missing_checks"] == [
         {
             "code": "BUILD_NOT_RELEASED",
-            "reason": "development builds cannot produce reportable results",
+            "reason": "this is a development build, not a release",
         }
     ]
     """Refused for the one reason that still applies, and named it."""
@@ -166,10 +166,10 @@ def test_an_unreleased_build_refuses_before_fitting() -> None:
     assert "s2" not in repr(receipt)
 
 
-def test_a_converged_finite_release_fit_is_reportable(
+def test_a_converged_finite_release_fit_meets_every_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A measured release fit crossed the public runner as reportable."""
+    """A measured release fit crossed the public runner meeting every check."""
     install_release_contract(monkeypatch)
     """Substituted the immutable build-metadata adapter with a complete release."""
 
@@ -205,7 +205,13 @@ def test_a_converged_finite_release_fit_is_reportable(
     )
     """Ran a complete fit through a measured fixed-release contract."""
 
-    assert receipt["outcome"] == "reportable"
+    assert receipt["outcome"] == "fitted"
+    assert receipt["facts"] == {
+        "converged": True,
+        "all_quantities_present": True,
+        "all_values_finite": True,
+        "all_profiles_evaluated": True,
+    }
     assert receipt["refusal"] is None
     assert receipt["fit_record"]["h2"] == 0.5
     assert receipt["fit_record"]["build"] == receipt["build"]
@@ -213,7 +219,7 @@ def test_a_converged_finite_release_fit_is_reportable(
         receipt["fit_record"]["subject_order_sha256"]
         == (receipt["provenance"]["input_commitments"]["subject_order_sha256"])
     )
-    assert json.loads(json.dumps(receipt, allow_nan=False))["outcome"] == "reportable"
+    assert json.loads(json.dumps(receipt, allow_nan=False))["outcome"] == "fitted"
 
 
 @pytest.mark.parametrize(
@@ -258,8 +264,8 @@ def test_a_receipt_selects_only_the_applicable_quantity_set(
     """Selected the report branch from the non-identifying component design."""
 
     assert state["release_ready"] is True
-    assert state["reportable_quantities"] == expected_quantities
-    assert set(state["reportable_quantity_inventory"]) == {
+    assert state["supported_quantities"] == expected_quantities
+    assert set(state["supported_quantity_inventory"]) == {
         "mean_diagonal_component_contributions",
         "mean_diagonal_proportions",
         "mean_diagonal_proportion_interval",
@@ -306,8 +312,9 @@ def test_component_receipt_requires_only_its_selected_report_branch(
     )
     """Ran the positive-mean-diagonal branch through the standard receipt path."""
 
-    assert receipt["outcome"] == "reportable"
-    assert receipt["reportability_issues"] == []
+    assert receipt["outcome"] == "fitted"
+    assert receipt["failures"] == []
+    assert all(receipt["facts"].values())
     assert "coefficients_for_zero_diagonal_bases" not in receipt["fit_record"]
     assert "contrasts_for_zero_diagonal_bases" not in receipt["fit_record"]
 
@@ -319,13 +326,13 @@ def test_component_receipt_requires_only_its_selected_report_branch(
         (True, 1, "PROFILE_EVALUATION_FAILED"),
     ],
 )
-def test_an_unresolved_fit_is_diagnostic_only(
+def test_an_unresolved_fit_records_which_check_it_failed(
     monkeypatch: pytest.MonkeyPatch,
     converged: bool,
     profile_failures: int,
     expected_code: str,
 ) -> None:
-    """A finite candidate never became reportable by being inspectable."""
+    """A finite estimate arrives beside the fact that a check did not hold."""
     install_release_contract(monkeypatch)
     """Substituted a complete clean release as the build-metadata adapter."""
 
@@ -358,9 +365,10 @@ def test_an_unresolved_fit_is_diagnostic_only(
     )
     """Ran the unresolved candidate through the standard analysis path."""
 
-    assert receipt["outcome"] == "diagnostic-only"
+    assert receipt["outcome"] == "fitted"
     assert receipt["fit_record"]["h2"] == 0.5
-    assert expected_code in {issue["code"] for issue in receipt["reportability_issues"]}
+    assert expected_code in {failure["code"] for failure in receipt["failures"]}
+    assert not all(receipt["facts"].values())
 
 
 def test_a_stable_estimator_value_error_becomes_a_refused_receipt(

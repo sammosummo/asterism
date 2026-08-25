@@ -194,7 +194,7 @@ def coverage(
     """Built the public component model reused across coverage replicates."""
 
     contained: dict[str, int] = dict.fromkeys(NAMES[:2], 0)
-    """Initialised interval-containment counts for reportable components."""
+    """Initialised interval-containment counts for the supported components."""
 
     attempted: dict[str, int] = dict.fromkeys(NAMES[:2], 0)
     """Initialised successful interval-attempt counts by component."""
@@ -215,7 +215,7 @@ def coverage(
         for index, name in enumerate(NAMES[:2]):
             try:
                 interval: dict[str, Any] = model.interval(y, index, reml=True)
-                """Profiled the reportable mean-diagonal component proportion."""
+                """Profiled the mean-diagonal component proportion."""
             except ValueError:
                 whole = False
                 """Marked the replicate incomplete after an interval refusal."""

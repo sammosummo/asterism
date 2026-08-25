@@ -86,7 +86,7 @@ def validate_references(
     interface for each model were gathered onto a page of its own. Absent
     companions are skipped, so a caller may point this at a lone document --
     which is what the tests that feed it a deliberately broken one do. Reading both
-    keeps this check exactly as strong as it was: a citation or a reportable
+    keeps this check exactly as strong as it was: a citation or a supported
     quantity satisfies it wherever it is written, and nowhere else.
     """
 
@@ -255,16 +255,16 @@ def validate_references(
         analysis_id: str = cast(str, analysis["id"])
         """Read the supported analysis named in a missing-quantity diagnostic."""
 
-        reportable_quantities: list[str] = cast(
-            list[str], analysis.get("reportable_quantities", [])
+        supported_quantities: list[str] = cast(
+            list[str], analysis.get("supported_quantities", [])
         )
         """Selected the exact manifest vocabulary requiring public-field mappings."""
 
-        for reportable_quantity in reportable_quantities:
-            if f"`{reportable_quantity}`" not in methods_text:
+        for supported_quantity in supported_quantities:
+            if f"`{supported_quantity}`" not in methods_text:
                 problems.append(
-                    f"reportable quantity is absent from methods: "
-                    f"{analysis_id}.{reportable_quantity}"
+                    f"supported quantity is absent from methods: "
+                    f"{analysis_id}.{supported_quantity}"
                 )
     """Required every manifest quantity to appear as an exact documented token."""
 

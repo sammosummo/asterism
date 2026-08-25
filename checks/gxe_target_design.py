@@ -1006,7 +1006,7 @@ def compare_surface_fit(
         reference.parameters,
         grid,
     )
-    """Converted independent coordinates to common reportable quantities."""
+    """Converted independent coordinates to common quantities."""
 
     quantity_names: tuple[str, ...] = (
         "genetic_variance",
@@ -1071,7 +1071,7 @@ def calibration_decision(
     Args:
         rejections: Public p-values at or below the prespecified level.
         attempted: Every requested null replicate in the denominator.
-        refused_or_nonconverged: Replicates lacking a complete reportable test.
+        refused_or_nonconverged: Replicates lacking a complete test.
         level: Prespecified type-I error level.
 
     Returns:
@@ -1254,7 +1254,7 @@ def run_null_replicate(
                 ),
             }
             """Stored every field needed to score or diagnose this target test."""
-        """Ran both reportable test families only after a converged free fit."""
+        """Ran both test families only after a converged free fit."""
 
     return {
         "surface": surface,
@@ -1365,7 +1365,7 @@ def aggregate_null_records(
     """Scored correlation and interaction references independently."""
 
     passed: bool = all(decision["passed"] is True for decision in decisions.values())
-    """Required both reportable target tests to pass without failures."""
+    """Required both target tests to pass without failures."""
 
     return {
         "surface": surface,
@@ -1665,7 +1665,7 @@ def run_target_full_fits(envelope: GxeTargetEnvelope) -> dict[str, object]:
             envelope.reporting_grid,
             reml=True,
         )
-        """Compared maximized REML and every common reportable quantity."""
+        """Compared maximized REML and every common quantity."""
 
         result["response_seed"] = 31_401 + index
         """Recorded the participant-free surface-specific response stream."""

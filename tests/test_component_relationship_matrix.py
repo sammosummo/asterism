@@ -264,7 +264,7 @@ def test_mean_diagonal_contributions_are_invariant_to_matrix_scaling() -> None:
 
 
 def test_mean_diagonal_interval_matches_the_reported_scale_invariant_quantity() -> None:
-    """The reportable component proportion and its interval use one scale."""
+    """The component proportion and its interval use one scale."""
     pairs: int = 80
     """Sibling pairs in the interval rescaling fixture."""
     matrix: np.ndarray = _paired_gene_matrix(pairs)

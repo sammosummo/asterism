@@ -56,7 +56,7 @@ class TargetDesign:
         relative_nonzero_pair_discrepancy: Aggregate structure-match discrepancy.
         prevalence: Generating population diagnosis prevalence.
         heritabilities: Generating liability and complete-hearing heritabilities.
-        genetic_correlations: Null and interior reportable-quantity truths.
+        genetic_correlations: Null and interior supported-quantity truths.
         residual_correlation: Generating residual cross-trait correlation.
         hearing_variance: Complete-hearing variance before censoring.
         censoring_shares: Intended 16 and 18 kHz right-censoring shares.
@@ -107,7 +107,7 @@ class TargetDesign:
     """Fixed generating heritabilities on both latent scales."""
 
     genetic_correlations: tuple[float, float]
-    """Fixed null and interior reportable-quantity truths."""
+    """Fixed null and interior supported-quantity truths."""
 
     residual_correlation: float
     """Fixed the generating residual cross-trait correlation."""
@@ -273,7 +273,7 @@ class ReplicateJob:
     """Identify one independently reproducible mixed-model attempt."""
 
     genetic_correlation: float
-    """Selected the null or interior reportable-quantity truth."""
+    """Selected the null or interior supported-quantity truth."""
 
     censoring_share: float
     """Selected the intended 16 or 18 kHz censoring level."""
@@ -862,7 +862,7 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
         job: Target cell, denominator position, and deterministic random seed.
 
     Returns:
-        Complete public inference or one explicit nonreportable outcome record.
+        Complete public inference or one explicit unsuccessful outcome record.
 
     Raises:
         RuntimeError: If no immutable worker state has been installed.
@@ -941,7 +941,7 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
     """Narrowed the returned public fit to its required record shape."""
 
     estimate: float | None = finite_float(fit.get("genetic_correlation"))
-    """Validated the reportable genetic-correlation point estimate."""
+    """Validated the genetic-correlation point estimate."""
 
     fit_loglik: float | None = finite_float(fit.get("loglik"))
     """Validated the free likelihood needed to bind subsequent inference."""
@@ -993,7 +993,7 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             state.design,
             coordinate="genetic_correlation",
         )
-        """Profiled the reportable genetic correlation through the public API."""
+        """Profiled the genetic correlation through the public API."""
     except ValueError as refusal:
         return ReplicateResult(
             genetic_correlation=job.genetic_correlation,

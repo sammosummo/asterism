@@ -172,7 +172,7 @@ def draw(chol: np.ndarray, n: int, seed: int) -> np.ndarray:
 
 
 def coverage(k: np.ndarray) -> dict[str, Any]:
-    """Measure coverage for every reportable bivariate interval.
+    """Measure coverage for every bivariate interval.
 
     Args:
         k: Additive relationship matrix for the simulation design.

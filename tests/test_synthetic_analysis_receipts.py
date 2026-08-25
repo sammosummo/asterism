@@ -66,7 +66,7 @@ def test_development_build_cannot_write_synthetic_release_receipts(
     assert not output.exists()
 
 
-def test_all_nine_lazy_jobs_return_converged_reportable_fields() -> None:
+def test_all_nine_lazy_jobs_return_converged_supported_fields() -> None:
     """Every receipt callback exercised its complete compiled public inference path."""
     from tools.cross_platform_probe import synthetic_problem
     from tools.synthetic_analysis_receipts import (
@@ -115,7 +115,7 @@ def test_all_nine_lazy_jobs_return_converged_reportable_fields() -> None:
             "test",
         },
     }
-    """Copied the reportable-field contract from accepted ADR 0012 explicitly."""
+    """Copied the supported-field contract from accepted ADR 0012 explicitly."""
 
     assert [job.analysis_id for job in jobs] == ANALYSIS_IDS
     for job in jobs:

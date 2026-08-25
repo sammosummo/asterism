@@ -1,4 +1,4 @@
-"""Check the reportable component interval's scale and record identity.
+"""Check the component interval's scale and record identity.
 
 This is a deterministic scientific identity check, not a coverage simulation.
 It fits the same covariance after multiplying its submitted relationship matrix
@@ -53,7 +53,7 @@ def relationship(pairs: int) -> np.ndarray:
 
 
 def main() -> int:
-    """Run both equivalent fits and fail on any reportable-quantity drift."""
+    """Run both equivalent fits and fail on any supported-quantity drift."""
     matrix: np.ndarray = relationship(PAIRS)
     """Built the submitted relationship matrix on its original scale."""
 
@@ -80,7 +80,7 @@ def main() -> int:
     """Prepared the equivalent model after positive matrix rescaling."""
 
     original_fit: dict[str, Any] = original_model.fit(response)
-    """Fitted the reportable component decomposition on the original scale."""
+    """Fitted the component decomposition on the original scale."""
 
     rescaled_fit: dict[str, Any] = rescaled_model.fit(response)
     """Fitted the same decomposition on the rescaled basis."""
@@ -89,7 +89,7 @@ def main() -> int:
     """Profiled the original mean-diagonal component proportion."""
 
     rescaled_interval: dict[str, Any] = rescaled_model.interval(response, 0)
-    """Profiled the same reportable quantity after rescaling."""
+    """Profiled the same quantity after rescaling."""
 
     failures: list[str] = []
     """Collected every identity failure for one actionable command result."""
@@ -129,7 +129,7 @@ def main() -> int:
             ),
         ),
     }
-    """Collected every scale-invariant reportable identity in one inventory."""
+    """Collected every scale-invariant identity in one inventory."""
 
     differences: dict[str, float] = {}
     """Recorded worst absolute differences for the machine-readable output."""
@@ -156,7 +156,7 @@ def main() -> int:
         point_difference: float = abs(
             float(interval["estimate"]) - float(fit["mean_diagonal_proportions"][0])
         )
-        """Compared the interval point with the public fit's reportable field."""
+        """Compared the interval point with the public fit's field."""
 
         if point_difference > ABSOLUTE_TOLERANCE:
             failures.append(f"{label} interval estimates a different quantity than fit")

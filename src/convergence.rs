@@ -171,8 +171,7 @@ where
 mod tests {
     use super::require;
 
-    /// Diagnostic candidates remain diagnostic: the common gate never lets a
-    /// false convergence verdict feed a reportable calculation.
+    /// The common gate never lets a false convergence flag through.
     #[test]
     fn required_fits_must_have_converged() {
         assert_eq!(require(true, "FAMILY_FIT_NOT_CONVERGED"), Ok(()));

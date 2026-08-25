@@ -251,7 +251,7 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
     )
 
 
-def test_conditional_reportable_sets_partition_the_component_inventory() -> None:
+def test_conditional_supported_sets_partition_the_component_inventory() -> None:
     """Select one honest component-reporting mode instead of requiring both."""
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
@@ -266,7 +266,7 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
     """Selected the analysis with mutually exclusive reporting conventions."""
 
     assert conditional_quantity_errors(component) == []
-    assert component["reportable_quantity_sets"] == [
+    assert component["supported_quantity_sets"] == [
         {
             "when": {"component_reporting": "mean_diagonal"},
             "quantities": [
@@ -287,12 +287,12 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
     malformed: dict[str, Any] = deepcopy(component)
     """Copied the contract so one duplicate cannot mutate the authoritative parse."""
 
-    malformed["reportable_quantity_sets"][1]["quantities"].append(
+    malformed["supported_quantity_sets"][1]["quantities"].append(
         "mean_diagonal_proportions"
     )
     """Made one field falsely required by both mutually exclusive modes."""
 
-    assert "must partition reportable_quantities" in "\n".join(
+    assert "must partition supported_quantities" in "\n".join(
         conditional_quantity_errors(malformed)
     )
 

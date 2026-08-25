@@ -211,7 +211,7 @@ def one(job: tuple[float, float, int]) -> dict[str, Any]:
             design,
             coordinate="genetic_correlation",
         )
-        """Profiled the reportable genetic correlation."""
+        """Profiled the genetic correlation."""
 
         test: dict[str, Any] = asterism.mixed_bivariate_test(
             relationship,

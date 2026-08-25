@@ -6,7 +6,7 @@
   },
   "adapter": {
     "path": "checks/bivariate_against_r.py",
-    "sha256": "4de121006ab075449a88cfe0df2da9e9e13320c7979d6452e8c4ff9df00c07bc"
+    "sha256": "7587e4f7c0f7c2eed792f9e0b96e12f18ddb70170858b0deebb091e076f3a9a2"
   },
   "adapter_contract_version": 1,
   "check_id": "bivariate_against_r",

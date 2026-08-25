@@ -71,7 +71,7 @@ TRUTH: dict[str, float] = {
 """Fixed covariance coefficients and decay rate used for every replicate."""
 
 TRUE_HALF_KM: float = np.log(2) / TRUTH["decay_per_km"]
-"""Converted the true decay rate to its reportable half-distance."""
+"""Converted the true decay rate to its half-distance."""
 
 
 def structure() -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
@@ -197,7 +197,7 @@ def main() -> int:
     """Run the spatial interval-coverage calibration campaign.
 
     Returns:
-        Zero when every reportable interval meets its coverage gate, otherwise one.
+        Zero when every interval meets its coverage gate, otherwise one.
     """
     _relationship, _distance, _design, n = structure()
     """Recovered the fixed sample size while discarding already-tested matrices."""

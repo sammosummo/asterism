@@ -326,7 +326,7 @@ def test_real_public_null_replicate_exercises_both_nonstandard_tests() -> None:
         assert result["fit_converged"] is True, result
         assert result["refusal"] is None
         tests: dict[str, dict[str, object]] = result["tests"]
-        """Selected both reportable public null comparisons."""
+        """Selected both public null comparisons."""
 
         assert set(tests) == {"correlation", "interaction"}
         assert tests["correlation"]["rule"] == "mixture_50_50"

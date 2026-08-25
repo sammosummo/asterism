@@ -567,7 +567,7 @@ class BivariateModel:
         ) = _core.bivariate_interval(
             self._k, self._observed, self._design, y, quantity, reml
         )
-        """Profiled the requested bivariate reportable quantity."""
+        """Profiled the requested bivariate quantity."""
         return {
             "estimate": estimate,
             "lower": lower,
@@ -886,7 +886,7 @@ class SpatialModel:
             "p_value": p_value,
             "rule": rule,
             "seed": seed,
-            "smallest_reportable": 1.0 / (used + 1),
+            "smallest_p_value": 1.0 / (used + 1),
         }
 
 

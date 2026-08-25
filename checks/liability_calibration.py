@@ -43,7 +43,7 @@ SCENARIOS: tuple[str, str] = ("null", "heritable")
 """Named the type-I-error and interval-coverage simulation cells."""
 
 COMPLETE_OUTCOME: str = "complete"
-"""Named the sole replicate state carrying reportable scientific output."""
+"""Named the sole replicate state carrying scientific output."""
 
 
 @dataclass(frozen=True)

@@ -171,13 +171,11 @@ def _release_state(
     analysis: str,
     design: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Report whether this build may produce a reportable result.
+    """Report whether this build is a release with its checks configured.
 
-    Private because nobody outside `run_analysis` should ask. A caller who
-    wants a fit calls the model and gets one; a caller who wants a receipt
-    calls `run_analysis`, which asks this itself. Exposing it publicly once
-    invited callers to check their design before fitting, which is not
-    something statistical software asks of anyone.
+    Private because nobody outside `run_analysis` needs it. A caller who wants
+    a fit calls the model and gets one; a caller who wants a receipt calls
+    `run_analysis`, which asks this itself.
 
     Args:
         analysis: Stable analysis identifier from the release manifest.
@@ -213,7 +211,7 @@ def _release_state(
         raise ValueError(f"ANALYSIS_OUTSIDE_RELEASE_SUPPORT:{analysis}")
 
     missing_checks: list[dict[str, Any]] = []
-    """Accumulated the reasons this build may not produce a reportable result."""
+    """Accumulated whatever this build is missing before it can be released."""
     if (
         manifest.get("scientific_pass_rules_configured") is not True
         or entry.get("pass_rules_configured") is not True
@@ -228,13 +226,13 @@ def _release_state(
         missing_checks.append(
             {
                 "code": "BUILD_NOT_RELEASED",
-                "reason": "development builds cannot produce reportable results",
+                "reason": "this is a development build, not a release",
             }
         )
-    """Refused reportable results from an unconfigured or development build."""
+    """Recorded an unconfigured or development build as not release ready."""
 
-    quantities: Any = entry.get("reportable_quantities")
-    """Read the quantities this release permits the analysis to report."""
+    quantities: Any = entry.get("supported_quantities")
+    """Read the quantities this analysis is supported to produce."""
     if not isinstance(quantities, list) or not all(
         isinstance(quantity, str) for quantity in quantities
     ):
@@ -242,16 +240,16 @@ def _release_state(
 
     applicable_quantities: list[str] = list(quantities)
     """Defaulted to the complete inventory for analyses with one report branch."""
-    raw_quantity_sets: Any = entry.get("reportable_quantity_sets")
+    raw_quantity_sets: Any = entry.get("supported_quantity_sets")
     """Read optional mutually exclusive report branches selected by the design."""
     if raw_quantity_sets is not None:
         if not isinstance(raw_quantity_sets, list) or not raw_quantity_sets:
-            raise ValueError(f"ANALYSIS_REPORTABLE_QUANTITY_SETS_INVALID:{analysis}")
+            raise ValueError(f"ANALYSIS_SUPPORTED_QUANTITY_SETS_INVALID:{analysis}")
         matched_quantity_sets: list[list[str]] = []
         """Collected report branches whose complete design predicate matched."""
         for raw_quantity_set in raw_quantity_sets:
             if not isinstance(raw_quantity_set, Mapping):
-                raise ValueError(f"ANALYSIS_REPORTABLE_QUANTITY_SET_INVALID:{analysis}")
+                raise ValueError(f"ANALYSIS_SUPPORTED_QUANTITY_SET_INVALID:{analysis}")
             predicate: Any = raw_quantity_set.get("when")
             """Read the exact design values selecting this report branch."""
             selected: Any = raw_quantity_set.get("quantities")
@@ -264,13 +262,13 @@ def _release_state(
                 or not all(isinstance(quantity, str) for quantity in selected)
                 or not set(selected).issubset(quantities)
             ):
-                raise ValueError(f"ANALYSIS_REPORTABLE_QUANTITY_SET_INVALID:{analysis}")
+                raise ValueError(f"ANALYSIS_SUPPORTED_QUANTITY_SET_INVALID:{analysis}")
             if all(design.get(field) == value for field, value in predicate.items()):
                 matched_quantity_sets.append(list(selected))
         """Matched report branches without letting a caller choose quantities directly."""
 
         if len(matched_quantity_sets) > 1:
-            raise ValueError(f"ANALYSIS_REPORTABLE_QUANTITY_SET_AMBIGUOUS:{analysis}")
+            raise ValueError(f"ANALYSIS_SUPPORTED_QUANTITY_SET_AMBIGUOUS:{analysis}")
         if matched_quantity_sets:
             applicable_quantities = matched_quantity_sets[0]
             """Required only the one branch implied by this measured design."""
@@ -279,7 +277,7 @@ def _release_state(
             """Withheld every quantity when no report branch matched the design."""
             if not missing_checks:
                 raise ValueError(
-                    f"ANALYSIS_REPORTABLE_QUANTITY_SET_UNMATCHED:{analysis}"
+                    f"ANALYSIS_SUPPORTED_QUANTITY_SET_UNMATCHED:{analysis}"
                 )
 
     return {
@@ -288,8 +286,8 @@ def _release_state(
         "analysis": analysis,
         "release_ready": not missing_checks,
         "missing_checks": missing_checks,
-        "reportable_quantities": applicable_quantities,
-        "reportable_quantity_inventory": list(quantities),
+        "supported_quantities": applicable_quantities,
+        "supported_quantity_inventory": list(quantities),
         "design": dict(design),
     }
 
@@ -397,7 +395,7 @@ def run_analysis(
             "fit_record": None,
             "refusal": {
                 "code": "ANALYSIS_BUILD_NOT_FIXED_RELEASE",
-                "message": "reportable analyses require a clean release build",
+                "message": "a supported analysis needs a clean release build",
             },
         }
 
@@ -443,15 +441,15 @@ def run_analysis(
     fit_record["subject_order_sha256"] = order_sha256
     """Bound the returned fit record to the exact fitted order."""
 
-    issues: list[dict[str, Any]] = []
-    """Accumulated reasons a finite candidate was diagnostic rather than reportable."""
+    failures: list[dict[str, Any]] = []
+    """Accumulated every named check the returned fit record did not meet."""
     if fit_record.get("converged") is not True:
-        issues.append({"code": "FIT_NOT_CONVERGED", "field": "converged"})
+        failures.append({"code": "FIT_NOT_CONVERGED", "field": "converged"})
 
-    for quantity in release_state["reportable_quantities"]:
+    for quantity in release_state["supported_quantities"]:
         if fit_record.get(quantity) is None:
-            issues.append({"code": "REPORTABLE_QUANTITY_MISSING", "field": quantity})
-    """Required every quantity promised by this supported analysis."""
+            failures.append({"code": "QUANTITY_MISSING", "field": quantity})
+    """Required every quantity this supported analysis declares."""
 
     pending: list[tuple[str, Any]] = [("fit_record", fit_record)]
     """Seeded a recursive inspection of serialisable numerical fields."""
@@ -463,7 +461,7 @@ def run_analysis(
                 child_path: str = f"{path}.{key}"
                 """Extended the diagnostic path through one mapping field."""
                 if key == "profile_failures" and child != 0:
-                    issues.append(
+                    failures.append(
                         {"code": "PROFILE_EVALUATION_FAILED", "field": child_path}
                     )
                 pending.append((child_path, child))
@@ -471,21 +469,27 @@ def run_analysis(
             for index, child in enumerate(value):
                 pending.append((f"{path}[{index}]", child))
         elif isinstance(value, float) and not math.isfinite(value):
-            issues.append({"code": "FIT_VALUE_NOT_FINITE", "field": path})
-    """Rejected non-finite values and every failed profile evaluation."""
+            failures.append({"code": "FIT_VALUE_NOT_FINITE", "field": path})
+    """Recorded non-finite values and every failed profile evaluation."""
 
-    outcome: str = "reportable" if not issues else "diagnostic-only"
-    """Applied the release's three-outcome reporting vocabulary."""
+    codes: set[str] = {failure["code"] for failure in failures}
+    """Collected the distinct codes so each fact can be stated separately."""
     return {
         "schema_version": 1,
         "asterism_version": release_state["asterism_version"],
         "analysis": analysis,
-        "outcome": outcome,
+        "outcome": "fitted",
         "build": build,
         "release_state": release_state,
         "model": dict(model),
         "provenance": receipt_provenance,
         "fit_record": fit_record,
-        "reportability_issues": issues,
+        "facts": {
+            "converged": "FIT_NOT_CONVERGED" not in codes,
+            "all_quantities_present": "QUANTITY_MISSING" not in codes,
+            "all_values_finite": "FIT_VALUE_NOT_FINITE" not in codes,
+            "all_profiles_evaluated": "PROFILE_EVALUATION_FAILED" not in codes,
+        },
+        "failures": failures,
         "refusal": None,
     }

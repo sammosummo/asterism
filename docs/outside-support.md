@@ -104,7 +104,7 @@ submitted layout.
 
 | Manifest quantity | Public field |
 | --- | --- |
-| `spatial_presence_test` | `SpatialModel.bootstrap(y)`: `statistic`, `p_value`, `rule`, `exceedances`, `replicates`, `requested`, `seed`, and `smallest_reportable` |
+| `spatial_presence_test` | `SpatialModel.bootstrap(y)`: `statistic`, `p_value`, `rule`, `exceedances`, `replicates`, `requested`, `seed`, and `smallest_p_value` |
 
 `SpatialModel.fit` supplies the prerequisite `converged`, `estimator`, and
 `range_treatment` fields. Its variance decomposition, `decay_per_km`, and

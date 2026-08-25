@@ -186,7 +186,7 @@ def test_one_trait_interval(
 def test_component_interval(
     k: npt.NDArray[np.float64], design: npt.NDArray[np.float64]
 ) -> None:
-    """Pin the several-component interval on its reportable contribution scale."""
+    """Pin the several-component interval on its contribution scale."""
     y: npt.NDArray[np.float64] = draw(k, 0.5, SEED + 1)
     """Drew the deterministic response reserved for the component interval."""
 

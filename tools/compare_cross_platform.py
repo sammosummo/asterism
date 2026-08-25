@@ -345,15 +345,15 @@ def validate_probe_matrix(
             """Selected the matching numeric field contract for this normalized result."""
 
             if analysis.get("outcome_status") not in {
-                "candidate",
-                "diagnostic-only",
+                "fitted",
+                "fitted-with-failures",
                 "refused",
             }:
                 raise AgreementConfigurationError(
                     f"{key!r}/{analysis_id}: outcome status is invalid"
                 )
             refusal_code: object = analysis.get("refusal_code")
-            """Read a stable refusal code only where no candidate was produced."""
+            """Read a stable refusal code only where no fit was produced."""
 
             if analysis.get("outcome_status") == "refused":
                 if not isinstance(refusal_code, str) or not refusal_code:
@@ -362,7 +362,7 @@ def validate_probe_matrix(
                     )
             elif refusal_code is not None:
                 raise AgreementConfigurationError(
-                    f"{key!r}/{analysis_id}: candidate outcome cannot carry refusal"
+                    f"{key!r}/{analysis_id}: a fitted outcome cannot carry a refusal"
                 )
             boundary_state: object = analysis.get("boundary_state")
             """Read every explicit boundary and limited-state field together."""
@@ -393,7 +393,7 @@ def validate_probe_matrix(
                 if analysis.get("outcome_status") == "refused"
                 else expected_numeric
             )
-            """Withheld numerical outputs only where no usable candidate exists."""
+            """Withheld numerical outputs only where no fit exists."""
 
             if (
                 not isinstance(numeric_fields, dict)
