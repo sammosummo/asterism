@@ -77,7 +77,6 @@ each one is a step nobody should take by accident:
 
 - Confirm the copyright holder with the institution and correct `LICENSE` if
   needed.
-- Add Sam's ORCID to `CITATION.cff`.
 - Make the repository public.
 - Remove the `Private :: Do Not Upload` classifier from `pyproject.toml`. It is
   a deliberate guard, and it is the reason nothing can reach PyPI by accident;

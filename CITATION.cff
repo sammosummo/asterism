@@ -18,8 +18,7 @@ authors:
     affiliation: >-
       Department of Psychiatry and Behavioral Medicine, Boston Children's
       Hospital
-    # TODO before publication: add Sam's ORCID here.
-    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    orcid: "https://orcid.org/0000-0002-0260-0865"
 repository-code: "https://github.com/sammosummo/asterism"
 license: MIT
 version: 0.1.0
