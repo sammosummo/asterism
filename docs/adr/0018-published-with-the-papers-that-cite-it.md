@@ -67,8 +67,10 @@ artefact, not a claim that the artefact is good. Each paper cites the version
 DOI of the release it actually ran; `CITATION.cff` carries the concept DOI.
 
 **Publication does not relax a single scientific gate.** A public release is
-still refused until its pass rules and design ranges are measured, and a
-reportable result still means what ADR 0012 and ADR 0016 say it means.
+still refused until its pass rules pass. (Design ranges, named here when this
+was written, were removed by [ADR 0020](0020-no-design-range-gates-a-result.md);
+what a receipt records is now
+[ADR 0021](0021-the-receipt-states-facts-not-a-verdict.md).)
 
 ## What is still to do at publication
 
