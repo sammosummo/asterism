@@ -255,7 +255,7 @@ def main() -> int:
     print(
         "\nAn intersection-union test rejects only when both parts do, so it is "
         "expected to\nsit at or below its level rather than on it. Conservative "
-        "costs power; over costs correctness."
+        "costs power; anti-conservative costs correctness."
     )
     print(
         "\nRead the refused column beside the rates. Under `a = 0` the direct "

@@ -20,9 +20,8 @@ Three pairings, because each exercises a different part:
   can fit;
 - **censored with censored**, two audiometry traits at once, which is what a
   genetic correlation between two extended high-frequency thresholds needs. The
-  model always allowed it -- the trait kinds are independent -- but nothing
-  measured it, so the supported design range could not name it and preflight
-  would have refused it.
+  model always allowed it -- the trait kinds are independent -- but until this
+  check nothing had measured it.
 
 Run with:
 

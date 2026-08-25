@@ -2,10 +2,9 @@
 
 **This analysis had no target-design rule, and it is the only one of the nine
 that had none.** Its two existing rules simulate four hundred people in sibling
-pairs, so the supported design range they justify is a largest family of two --
-which refuses every SAFS pedigree, where families reach a hundred and sixty
-five. A household model that cannot be run on the households it was built for
-is not a supported analysis.
+pairs, so the largest family they exercise is two, against SAFS pedigrees where
+families reach a hundred and sixty five. Nothing had been measured at the size
+the household model was built for.
 
 The design comes from the reviewed, participant-free aggregate already used by
 the spatial target layout: 1,792 analysed people, 190 relationship components
@@ -212,7 +211,7 @@ def main() -> int:
     """Counted the analysed people this design carries."""
 
     largest_family: int = largest_component
-    """Took the largest pedigree component, which is what a design range bounds.
+    """Took the largest pedigree component, which is the size that matters.
 
     Counting each person's nonzero relationships instead gives a smaller number
     -- 115 here -- because not everyone in a hundred and sixty five person

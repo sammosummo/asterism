@@ -43,7 +43,7 @@ analysis_ids = [
   "mixed_binary_censored_genetic_correlation",
 ]
 evidence = []
-blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every design range and pass rule is measured, then retain one complete standard receipt per supported analysis in release evidence." }
+blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every pass rule is measured, then retain one complete standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
 configured = true

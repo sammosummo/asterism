@@ -45,7 +45,7 @@ Repository = "https://github.com/sammosummo/asterism"
 Documentation = "https://github.com/sammosummo/asterism/blob/main/README.md"
 "API reference" = "https://github.com/sammosummo/asterism/blob/main/docs/api-reference.md"
 "Statistical methods" = "https://github.com/sammosummo/asterism/blob/main/docs/statistical-methods.md"
-"Numerical validation" = "https://github.com/sammosummo/asterism/blob/main/docs/numerical-validation.md"
+"Validation record" = "https://github.com/sammosummo/asterism/blob/main/docs/validation.md"
 
 [dependency-groups]
 dev = [
