@@ -15,7 +15,7 @@ therefore blocks release readiness.
 The object docstrings and `README.md` describe signatures and ordinary use. The
 statistical methods specification defines estimands, equations, inference and
 limitations. “Supported in 0.1” below means that the object belongs to a planned
-0.1 analysis; it does not make a development checkout reportable.
+0.1 analysis. It says nothing about the build it is imported from.
 
 | Public object | Status | 0.1 role |
 | --- | --- | --- |

@@ -1,6 +1,14 @@
 # 17. Machine-readable support and analysis receipts
 
-**Status: accepted.** Each release carries one structured manifest mapping its
+**Status: accepted, and amended twice since.**
+[ADR 0020](0020-no-design-range-gates-a-result.md) removed the measured design
+ranges and the preflight comparison described below.
+[ADR 0021](0021-the-receipt-states-facts-not-a-verdict.md) replaced the
+three-outcome receipt vocabulary with facts, and renamed the manifest's
+reportable quantities to supported quantities. Read those two for what the
+manifest and the receipt hold now.
+
+Each release carries one structured manifest mapping its
 supported analyses to their reportable quantities, documented Python entry
 points, measured design ranges, required checks, pre-written pass rules and
 evidence. Release automation reads this record rather than reconstructing the

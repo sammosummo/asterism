@@ -70,8 +70,8 @@ refuses that point instead of pretending it was evaluated.
 
 `fit["estimator"]` distinguishes `reml` from `ml`; `total_variance`, `beta`,
 `fixed_effects`, and `standard_errors` are descriptive. `converged`, `boundary`,
-`warnings`, `subject_order_sha256`, and `build` are required provenance or fit
-diagnostics rather than reportable targets.
+`warnings`, `subject_order_sha256`, and `build` are provenance or fit
+diagnostics rather than estimands.
 
 ### Assumptions and limits
 

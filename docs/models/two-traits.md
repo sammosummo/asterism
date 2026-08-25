@@ -36,8 +36,8 @@ model.test(values, "rho_g", null=0.0)
 the two traits. `design` and the values contain only observed person-trait rows,
 in person order with trait within person.
 
-The 0.1 reportable target is `rho_g` with its interval and test; the other
-fitted quantities describe the joint fit but are not additional 0.1 claims.
+The 0.1 supported quantity is `rho_g` with its interval and test; the other
+fitted quantities describe the joint fit but are not part of that support.
 
 `test` takes a `null`, and both interesting values are supported. Against
 nought it asks whether the traits share any genes at all, and nought is an
@@ -101,7 +101,7 @@ choice whose finite-sample calibration remains design-specific.
 | `test` | `BivariateModel.test(y, "rho_g", null=...)`: `statistic`, `p_value`, `rule`, `null_loglik`, `alternative_loglik` |
 
 `h2_first`, `h2_second`, `rho_e`, `rho_p`, and `total_variance` are descriptive
-in the 0.1 genetic-correlation analysis, not additional reportable targets.
+in the 0.1 genetic-correlation analysis, not additional supported quantities.
 
 ### Assumptions and limits
 

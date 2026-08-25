@@ -12,7 +12,7 @@ when a planned analysis needs it and not before.
 _Avoid_: engine, SOLAR replacement, platform, framework
 
 **Supported analyses**:
-The named analyses and reportable quantities a release promises are ready.
+The named analyses and quantities a release promises are ready.
 Capabilities outside the set remain deferred or explicitly not ready and do
 not block the release.
 _Avoid_: analysis envelope, feature-complete scope, universal readiness
@@ -34,20 +34,16 @@ analysis-ready release. It establishes engineering integrity, not scientific
 evidence for a reported quantity.
 _Avoid_: beauty, polish
 
-**Reportable result**:
-A result from a supported analysis, fitted with a fixed release build, whose
-required fits and profile evaluations converged and whose pre-written
-acceptance rules passed. A converged boundary estimate may be reportable; a
-failed fit may not. The size of the study does not decide this: what a check
-measured is recorded in its own evidence, and no bound on sample or family
-size gates a result.
-_Avoid_: successful-looking fit, usable result
-
-**Diagnostic-only result**:
-An inspectable fit record that preserves a finite candidate and the reason it
-did not become reportable. It is evidence for diagnosis, never permission to
-quote its estimates, intervals, tests or predictions as findings.
-_Avoid_: partial result, report with caution
+**Fitted result**:
+A result from a supported analysis where the estimator returned a fit record.
+It carries the estimates and four facts about them: whether the free fit and
+the fits used for inference converged, whether every declared quantity is
+present, whether every value is finite, and whether every profile evaluation
+succeeded. What those facts mean for a piece of science is the reader's to
+decide; Asterism states them and stops. The size of the study does not enter:
+what a check measured is recorded in its own evidence, and no bound on sample
+or family size gates anything.
+_Avoid_: reportable, diagnostic-only, successful-looking fit, usable result
 
 **Refused result**:
 A standard-analysis outcome carrying a stable refusal code when the inputs,
@@ -61,7 +57,7 @@ A machine-readable record stored with an analysis that identifies the saved
 wheel and dependencies, commits to the inputs without copying them, records the
 model and non-identifying design summary, retains the fit record when a
 candidate exists or the refusal code when none does, and states whether the
-outcome was reportable, diagnostic-only or refused.
+outcome was fitted or refused.
 _Avoid_: release evidence, log file, results dump
 
 **Statistical methods specification**:
@@ -81,7 +77,7 @@ _Avoid_: variance term, effect
 **Mean-diagonal contribution**:
 A component's coefficient multiplied by its relationship matrix's mean
 diagonal. It is invariant to positive rescaling of that matrix and is the basis
-of a reportable component proportion when every mean diagonal is positive.
+of a component proportion when every mean diagonal is positive.
 _Avoid_: raw coefficient share, generic variance share
 
 **Relationship matrix**:

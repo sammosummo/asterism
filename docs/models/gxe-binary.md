@@ -67,7 +67,7 @@ parameterisation and test catalogue below are Asterism constructions. Separate
 residual variances prevent unequal measurement noise from being mislabelled as
 a genetic difference. ML and REML are available; REML is the default.
 
-The reportable genetic tests are:
+The genetic tests are:
 
 | `null` | Null hypothesis | `rule` |
 | --- | --- | --- |

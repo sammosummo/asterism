@@ -72,9 +72,9 @@ public `censoring` array encodes $M$, $U$, and $L$ as 0, 1, and 2. Status is
 supplied rather than inferred from a numeric value. The free
 $\sigma^2$ is identified by measured observations, so $h^2$ concerns the
 complete trait that would have been observed without the instrument limit.
-The public likelihood accepts either censoring direction, but 0.1
-reportability is restricted to the right-censored audiogram analysis named in
-`release.toml`.
+The public likelihood accepts either censoring direction. The analysis named
+in `release.toml` is the right-censored audiogram one, so that is the direction
+the release's checks cover.
 
 [Tobin (1958)](../references.bib#tobin1958) is the foundational censored
 latent-Gaussian regression source. Normal mixed models with censoring are

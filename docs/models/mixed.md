@@ -120,9 +120,10 @@ sequential high-dimensional approximation are an Asterism synthesis. No single
 primary publication found in the source review establishes that exact
 combination.
 
-The reportable test is $H_0:\rho_g=0$. Zero is interior to $[-1,1]$, so its
-reference is $\chi^2_1$, not a boundary mixture. The interval uses the regular
-interior profile threshold.
+The default test is $H_0:\rho_g=0$. Zero is interior to $[-1,1]$, so its
+reference is $\chi^2_1$, not a boundary mixture, and the interval uses the
+regular interior profile threshold. A null of $\pm 1$ sits on the boundary and
+uses the even mixture instead.
 
 ### Public record mapping
 

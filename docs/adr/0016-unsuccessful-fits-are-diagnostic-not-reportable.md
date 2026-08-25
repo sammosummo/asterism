@@ -1,6 +1,11 @@
 # 16. Unsuccessful fits are diagnostic, not reportable
 
-**Status: accepted.** A supported analysis has three possible outcomes:
+**Status: partly superseded by
+[ADR 0021](0021-the-receipt-states-facts-not-a-verdict.md).** The three-outcome
+reporting vocabulary below is withdrawn and replaced by facts. What this ADR
+says about refusals and about boundary estimates still holds.
+
+A supported analysis has three possible outcomes:
 reportable, diagnostic-only and refused. A reportable result has valid inputs,
 lies inside the release's supported design range, has finite required fields,
 and has converged both its free fit and every fit used for its required

@@ -128,8 +128,8 @@ universal consequence of Self and Liang.
 
 `genetic_variance` and `residual_variance` support interpretation but are
 descriptive; `parameters` is diagnostic and does not have a common meaning
-across surfaces. `test(null="variance")` is public but is not a 0.1 reportable
-quantity. The powered-exponential family remains public but unsupported.
+across surfaces. `test(null="variance")` is public but is not one of the
+analysis's supported quantities. The powered-exponential family remains public but unsupported.
 
 ### Assumptions and limits
 

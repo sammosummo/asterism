@@ -109,8 +109,8 @@ submitted layout.
 `SpatialModel.fit` supplies the prerequisite `converged`, `estimator`, and
 `range_treatment` fields. Its variance decomposition, `decay_per_km`, and
 `half_distance_km` are descriptive in the spatial-presence analysis. Raw
-coefficient proportions and spatial intervals are diagnostic and are not 0.1
-reportable targets.
+coefficient proportions and spatial intervals are diagnostic, and are not part
+of the 0.1 support set.
 
 ### Assumptions, measured limitations, and unmet gates
 

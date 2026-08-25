@@ -42,7 +42,7 @@ REQUIRED_FIELDS: tuple[str, ...] = ("author", "title", "year", "doi", "url")
 """Required stable metadata on every canonical reference."""
 
 REQUIRED_HEADINGS: tuple[str, ...] = (
-    "## Release contract",
+    "## What a release requires",
     "## Numerical implementation",
 )
 """Named the method sections that must remain in the shared document.

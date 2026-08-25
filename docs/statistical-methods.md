@@ -1,4 +1,4 @@
-# Statistical methods and reportability contract
+# Statistical methods
 
 This document is the canonical statistical specification for analyses marked
 `supported_in_0_1` by [ADR 0012](adr/0012-small-analysis-ready-releases.md).
@@ -11,35 +11,28 @@ interpretation. Author-year links identify entries in the canonical
 Published theory and an Asterism implementation choice are not the same kind of
 evidence. Each section therefore separates the published basis from the exact
 construction used here. Numerical agreement, simulation, and a successful fit
-are also different claims. A result is reportable only when the release
-contract below is satisfied.
+are also different claims.
 
-## Release contract
+## What a release requires
 
-A public method can exist without being scientifically supported in 0.1. For a
-particular result to be reportable, all of the following must hold:
+A public method can exist without being one of the eight supported analyses.
+Before a release is made, each supported analysis must meet three conditions:
 
-1. its analysis is `supported_in_0_1` in `release.toml`;
-2. all required record fields are finite, the free fit reports
-   `converged: true`, and no stable refusal code is present;
-3. every null or constrained fit used for inference converges, and a reported
-   profile interval has `profile_failures == 0`;
-4. every required check named for the analysis has a configured pass rule and
-   passes for the released source and artifact; and
-5. the analysis record carries the release/build identity and input commitments
-   required by the public runner.
+1. it is marked `supported_in_0_1` in `release.toml`;
+2. every check named for it has a configured pass rule, and that rule passes
+   for the released source and artifact;
+3. its standard synthetic receipt records a fit with every fact true — finite
+   values, a converged free fit, converged constrained fits for inference, and
+   no failed profile evaluation.
 
-`release.toml` is presently a development manifest: `release = false`, its
-scientific pass rules are not configured.
-Consequently, **no current Asterism output is reportable yet**, even when the
-optimizer converges. Historical measurements below explain known behavior and
-limitations and are traceable through [Numerical
-validation](development.md); they do not silently fill those release
-gates.
+`release.toml` is presently a development manifest: `release = false`, and its
+pass rules are not configured. The figures in the [validation
+record](validation.md) come from development builds and earlier campaigns, and
+do not stand in for those checks.
 
 The eight 0.1 analysis families are:
 
-| Analysis ID | Public entry points | Reportable target |
+| Analysis ID | Public entry points | Supported quantities |
 | --- | --- | --- |
 | `one_trait_gaussian_heritability` | `prepare`; `PreparedModel.fit` | $h^2$, profile interval, and zero-heritability test |
 | `several_covariance_components` | `ComponentModel.fit`, `.interval`, `.test`, `.equality_test`, `.contrasts` | Mean-diagonal contributions/proportions and their intervals; coefficients/contrasts for zero-diagonal bases |
@@ -197,7 +190,7 @@ Asterism does not use one optimizer for every model:
 | L-BFGS-B with finite-difference gradients, central when possible and one-sided at bounds | Liability, Tobit, mixed bivariate | [Fornberg (1988)](references.bib#fornberg1988), plus the L-BFGS-B papers | Step size, parameter scale, integration error, and bounds can dominate gradient accuracy |
 | Sixteen-point Gauss–Legendre quadrature | Two-dimensional conditional normal probabilities | [Golub and Welsch (1969)](references.bib#golubWelsch1969) | Error increases near singular correlation; larger regions use a different approximation |
 | Dense Cholesky factorization | Noncommuting covariance bases and family blocks | Standard linear algebra | Successful factorization does not imply statistical identification |
-| Profile bisection | All supported interval families | [Venzon and Moolgavkar (1988)](references.bib#venzonMoolgavkar1988) for the profile construction | Failed/nonconverged points widen the interval and make it nonreportable |
+| Profile bisection | All supported interval families | [Venzon and Moolgavkar (1988)](references.bib#venzonMoolgavkar1988) for the profile construction | Failed or nonconverged points widen the interval, and the fit record counts them |
 
 The Rust dependency implements the L-BFGS-B algorithmic family described by
 the cited papers. Exact tolerances, bounds, multistart schedules, analytic

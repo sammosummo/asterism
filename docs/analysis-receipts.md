@@ -1,21 +1,29 @@
 # Analysis receipts
 
-A numerical fit is not automatically a reportable analysis. The public
-`asterism.run_analysis` path first compares a non-identifying design summary
-with the measured limits embedded in the installed wheel, runs the fitting
-callback only when the build may produce a reportable result, and returns
-one of three outcomes:
+`asterism.run_analysis` wraps a fit in a record of what produced it. It checks
+the installed wheel and the release manifest first, runs the fitting callback
+only if those pass, and returns a JSON-serialisable mapping.
 
-- `reportable`: the release and design checks passed, the free fit and every
-  required inference fit converged, required values are finite, and no profile
-  evaluation failed;
-- `diagnostic-only`: a candidate fit exists, but it failed at least one
-  reporting condition;
-- `refused`: fitting was not allowed or no usable candidate was produced.
+The record's `outcome` is one of two words:
 
-Development builds deliberately refuse before fitting. This lets an analysis
-wrapper and its tests be written without letting a mutable checkout create a
-result that looks released.
+- `fitted`: the callback returned a fit record;
+- `refused`: nothing was fitted, and `refusal` names the reason.
+
+A fitted outcome carries a `facts` mapping stating four things about it.
+
+| Fact | True when |
+| --- | --- |
+| `converged` | the free fit and every inference fit reported convergence |
+| `all_quantities_present` | every quantity the manifest declares for this analysis is present |
+| `all_values_finite` | every numerical value in the record is finite |
+| `all_profiles_evaluated` | no profile evaluation failed |
+
+`failures` names the field behind each fact that is false. What those facts
+mean for a particular analysis is the caller's to decide.
+
+Development builds refuse before fitting, so an analysis wrapper and its tests
+can be written without a mutable checkout producing a record that looks like a
+release.
 
 ## Standard release receipts
 
@@ -31,7 +39,7 @@ python tools/synthetic_analysis_receipts.py \
 The command uses only the public Python interface. It refuses a development or
 dirty build, binds every receipt to the saved wheel, embedded dependency lock,
 source commit, complete synthetic-input commitment and fitted row-order
-commitment, and requires all eight outcomes to be `reportable`. It keeps all
+commitment, and requires all eight fits to meet every fact. It keeps all
 receipts in memory until the entire set passes, then writes one strict JSON file
 per analysis and a checksummed `index.json`. A partial set is never release
 evidence. The independent release verifier reads every indexed file and
@@ -44,7 +52,7 @@ consumer commit and controlled receipt location.
 
 ## Fixed inputs
 
-A reportable caller installs one of the saved release wheels. Before calling
+A caller installs one of the saved release wheels. Before calling
 `run_analysis`, it records:
 
 - the wheel's SHA-256;
@@ -61,7 +69,7 @@ on the data-free Asterism release page.
 ## Caller pattern
 
 The fitting callback composes the point estimate and every inferential result
-that the manifest names as reportable. For the one-trait Gaussian path the
+the manifest names for that analysis. For the one-trait Gaussian path the
 prepared fit already contains its interval and test:
 
 ```python
@@ -123,5 +131,5 @@ If a fit record already carries build or subject-order identity,
 `run_analysis` verifies it and refuses a mismatch rather than overwriting it.
 Documented Asterism estimator `ValueError` codes become refused receipts;
 unexpected exceptions propagate so implementation faults cannot be presented
-as scientific refusals. Diagnostic-only records remain available for debugging,
-but their estimates and inference must not enter report tables.
+as scientific refusals. A fit whose facts are not all true is returned in full,
+with its estimates, so it can be inspected.

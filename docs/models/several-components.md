@@ -76,8 +76,8 @@ not a conventional result asserted by [Harville
 (1977)](../references.bib#harville1977).
 
 It is defined only when every structured basis has a positive finite mean
-diagonal. Split kinship-class bases have zero diagonal, so their reportable
-targets are coefficients and class deviations, never proportions. If $r$
+diagonal. Split kinship-class bases have zero diagonal, so they are read
+through coefficients and class deviations, never proportions. If $r$
 class coefficients are pooled under equality, the omnibus likelihood-ratio
 test uses $\chi^2_{r-1}$. Each class contrast is its coefficient's deviation
 from the constrained average; deviations sum to zero and use an interior

@@ -15,8 +15,8 @@ uv run maturin develop --release --locked
 ```
 
 That gives an editable build. An editable build is deliberately not a
-releasable one: it refuses to call any result reportable, because that status
-belongs to a checksummed wheel saved by a fixed release. See
+releasable one: `run_analysis` refuses before fitting, because a receipt is
+tied to a checksummed wheel saved by a fixed release. See
 [ADR 0012](adr/0012-small-analysis-ready-releases.md).
 
 ## The gate
