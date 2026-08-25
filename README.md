@@ -76,7 +76,7 @@ Eight models are currently supported. Each one has checks that measure it agains
 
 Matrices can come from anywhere. `relationship_matrix` builds one from a pedigree and `kinship_classes` splits a pedigree into separate bases, but every model accepts any finite, symmetric, positive-semidefinite matrix — a genomic relationship matrix, an estimated kinship, whatever you have. `align` lines a matrix up with your values by identifier, which matters because the numerical interface is positional and a misaligned fit does not warn, it silently destroys the signal.
 
-Each model has [a page of its own](docs/models/) carrying everything it needs: how to use it, its equations, what has been measured about it, and its interface. What they share is in [statistical-methods.md](docs/statistical-methods.md), and the whole public surface in the [API reference](docs/api-reference.md).
+Each model has [a page of its own](docs/models/) carrying everything it needs: how to use it, its equations, a summary of what has been measured about it, and its interface. What they share is in [statistical-methods.md](docs/statistical-methods.md), the comparisons and simulations in full are in the [validation record](docs/validation.md), and the whole public surface in the [API reference](docs/api-reference.md).
 
 ## Citing Asterism
 

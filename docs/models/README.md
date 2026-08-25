@@ -1,8 +1,8 @@
 # The models
 
 One page per supported model, each carrying everything that model needs: how to
-use it, the equations behind it, what has been measured about it, and its
-interface.
+use it, the equations behind it, a summary of what has been measured about it,
+and its interface.
 
 | Model | Page |
 | --- | --- |
@@ -15,11 +15,14 @@ interface.
 | Gene by environment, measured | [gxe-measured.md](gxe-measured.md) |
 | Gene by environment, binary | [gxe-binary.md](gxe-binary.md) |
 
-What every model shares — the notation, the Gaussian likelihood, the release
-contract and the numerical implementation — is in
+Every comparison and simulation behind those summaries is in the [validation
+record](../validation.md), in full.
+
+What every model shares — the notation, the Gaussian likelihood and the
+numerical implementation — is in
 [statistical-methods.md](../statistical-methods.md). What is common to running
-the checks is in [development.md](../development.md). Models
-Asterism does not support are in [outside-support.md](../outside-support.md).
+the checks is in [development.md](../development.md). Models Asterism does not
+support are in [outside-support.md](../outside-support.md).
 
 Each page's **Interface** section is generated from the package's own
 docstrings by `tools/build_model_pages.py`, using the entry points

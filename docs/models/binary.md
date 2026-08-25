@@ -87,114 +87,30 @@ $H_0:h^2=0$ uses the implemented 50:50 boundary mixture.
 descriptors; `loglik`, `scaled_gradient`, `polished`, and `converged` diagnose
 the fit.
 
-### Assumptions, measured limitations, and unmet gates
+### Assumptions and limits
 
 Status is a deterministic thresholding of a Gaussian liability, the supplied
 relationship matrix captures additive covariance, families are independent
-blocks, the relationship diagonal is normalized to the unit-liability scale,
-and the fixed effects correctly locate liability. The estimand is not
-observed-scale heritability. Historical calibration on the GOBS pedigree found
-0.0529 rejection at nominal 0.05 and 0.9443 coverage at true $h^2=0.25$; the
-two-person quadrature error grew near correlation one. Above two dimensions,
-accuracy depends on family size, correlation, imbalance, and truncation order.
-The independent SOLAR comparison has been refreshed live and frozen for
-portable verification. A values-free 1,909-person target check also exercised
-the largest 180-person family: its one null and one alternative smoke attempt
-both completed, and the alternative interval covered $h^2=0.25$. That is an
-execution seam, not a calibration estimate. The exact 200-replicate-per-scenario
-fixed-wheel campaign remains a release
-requirements.
+blocks, the relationship diagonal is normalised to the unit-liability scale,
+and the fixed effects correctly locate liability. The estimand is
+liability-scale, not observed-scale, heritability.
 
-## What stands behind it
+The two-person quadrature error grows near correlation one, which is why nearly
+perfectly related pairs are refused. Above two dimensions the accuracy of the
+sequential approximation depends on family size, correlation, imbalance and
+truncation order, and has not yet been bounded at the intended family sizes and
+prevalence.
 
-Against native SOLAR, liability heritability differed by at most 0.0134, or
-0.086 SOLAR standard errors, across three synthetic cases. The historical
-700-replicate campaign used the real GOBS pedigree structure: the
-zero-heritability test rejected 0.0529 at nominal 0.05 and 95% interval
-coverage was 0.9443 at true heritability 0.25. Those figures remain a recorded
-result, not reproducible release evidence, because the portable gate no longer
-reads participant material.
+## Validation
 
-`checks/liability_calibration.py` replaces that dependency with a reviewed,
-values-free target fixture. The fixture pins 1,909 rows in 202 relationship
-components, the exact component-size histogram, largest component 180, and the
-predecessor aggregate of 27,821 nonzero lower-triangle relationship pairs. The
-same deterministic synthetic generator used by the Gaussian target gate
-produces 27,691 such pairs, a prewritten discrepancy of 0.4673% inside the 0.5%
-limit. This is aggregate structure matching, not pedigree reconstruction: the
-fixture retains no identifiers, participant rows, phenotypes, covariates, or
-participant-derived relationship matrix, and claims neither coefficient nor
-eigenvalue identity. The liability-specific fixture SHA-256 is
-`863eedc4f18063bca27754e782b9ebb5faa341359912b034163a7ea2067c20aa`; it in
-turn binds the shared structural fixture SHA-256
-`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
+Liability heritability differs from SOLAR by at most 0.0134, or 0.086 SOLAR
+standard errors. A 700-replicate campaign on real pedigree structure rejected
+0.0529 at nominal 0.05 under zero heritability, and 95% interval coverage at
+true heritability 0.25 was 0.9443.
 
-For component $f$, the command generates
-
-$$
-\begin{aligned}
-\mathbf z_f &= \mathbf C_f\boldsymbol\varepsilon_f,
-&\boldsymbol\varepsilon_f&\sim N(\mathbf 0,\mathbf I),\\
-\mathbf C_f\mathbf C_f^{\mathsf T}
-  &=h^2\mathbf A_f+(1-h^2)\mathbf I,
-&Y_i&=\mathbb 1\!\left\{z_i>\Phi^{-1}(1-K)\right\},
-\end{aligned}
-$$
-
-with prevalence $K=0.254$, null truth $h^2=0$, and coverage truth
-$h^2=0.25$. It factors each independent synthetic pedigree block separately,
-then exercises only `asterism.LiabilityModel.fit`, `.test`, and `.interval`.
-The largest family therefore reaches the same above-two-person sequential
-Mendell--Elston path whose approximation needs stress; [Mendell and Elston
-(1974)](../references.bib#mendellElston1974) is the method lineage. The test must
-report `mixture_50_50`; this boundary reference is an implemented assumption to
-be calibrated, not a conclusion inherited automatically from [Self and Liang
-(1987)](../references.bib#selfLiang1987).
-
-Every attempted replicate remains in its scenario denominator. Too few cases
-or noncases, a public refusal, nonconvergence, a missing or malformed test or
-interval, and any failed constrained profile evaluation are failures; the
-release allowance is zero. Let $m_0$ be all attempted null replicates and
-$r_\alpha$ the complete public p-values no greater than level $\alpha$. At
-one-sided confidence $\gamma=0.95$, the exact [Clopper--Pearson
-(1934)](https://doi.org/10.1093/biomet/26.4.404) lower limit is
-
-$$
-L_\alpha=
-\begin{cases}
-0, & r_\alpha=0,\\
-B^{-1}_{1-\gamma}(r_\alpha,m_0-r_\alpha+1), & r_\alpha>0.
-\end{cases}
-$$
-
-The level cell fails only when $L_\alpha>\alpha$. Let $c$ be complete,
-failure-free intervals covering $h^2=0.25$ among all $m_1$ attempted
-alternative replicates. The corresponding exact upper limit is
-
-$$
-U=
-\begin{cases}
-1, & c=m_1,\\
-B^{-1}_{\gamma}(c+1,m_1-c), & c<m_1,
-\end{cases}
-$$
-
-and coverage fails when $U<0.95$. Numerical and profile failures fail the gate
-separately even when these exact-binomial bounds remain compatible, so neither
-calculation can hide a missing result by changing its denominator.
-
-On 21 August 2026, a bounded development-wheel smoke ran one replicate per
-scenario on the complete 1,909-person target. Both attempts returned complete
-public records with zero failures. The alternative interval covered 0.25 and
-its estimate was 0.1906. This two-attempt run verifies the loader, generator,
-largest-family approximation path, public interface, and executable decision;
-it does not estimate level or coverage. The release command fixes 200
-replicates per scenario, but that full 400-attempt campaign has not yet run and
-the manifest's scientific configured and measured flags remain false.
-
-The two-person quadrature error was at most `1.3e-9` for liability correlation
-below 0.5 and `2.3e-4` below 0.99. This motivates refusing nearly perfectly
-related pairs in the current numerical method.
+The designs behind those figures, the rules they are scored against, and
+what has still to run, are in the
+[validation record](../validation.md#binary-traits).
 
 <!-- API: generated by tools/build_model_pages.py -->
 

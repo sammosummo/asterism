@@ -60,7 +60,7 @@ def test_every_supported_model_has_a_page(analysis: dict[str, Any]) -> None:
     text: str = page.read_text(encoding="utf-8")
     """Read it."""
 
-    for heading in ("## The model", "## What stands behind it", "## Interface"):
+    for heading in ("## The model", "## Validation", "## Interface"):
         assert heading in text, f"{page.name} has no {heading!r}"
     """Required each page to carry the equations, the evidence and the API."""
 

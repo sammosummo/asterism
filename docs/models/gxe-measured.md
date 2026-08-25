@@ -131,159 +131,32 @@ descriptive; `parameters` is diagnostic and does not have a common meaning
 across surfaces. `test(null="variance")` is public but is not a 0.1 reportable
 quantity. The powered-exponential family remains public but unsupported.
 
-### Assumptions, measured limitations, and unmet gates
+### Assumptions and limits
 
 The chosen surface must be positive semidefinite and correctly describe how
 genetic covariance and residual variance change across the observed
-environment. Reportable $h^2(z)$ also assumes the qualified relationship
-normalisation, normally unit diagonal. Outcome-dependent family selection changes the estimand. In
-historical simulations the exponential correlation test rejected 0.048 at a
-nominal 0.05 flat null, but fitting an exponential surface to a misspecified
-linear rank-one surface rejected 0.107. Across studied settings, interval
-coverage was 0.953–0.983 while 80%–92% of genetic-correlation intervals reached
-a bound. Thus coverage did not imply precision. The independent dense sentinel
-and both target-sized blockwise fits now agree on the development build. A
-reduced target campaign completed 100 replicates per surface with no refusal or
-nonconvergence and compatible null rejection, while the manifest fixes 500 per
-surface. The 500-replicate target run, and the interval and calibration runs against a
-release wheel, have not been done. What is reported above is the reduced run.
+environment. Reading $h^2(z)$ as a variance proportion also assumes the
+qualified relationship normalisation, normally unit diagonal.
+Outcome-dependent family selection changes the estimand.
 
-## What stands behind it
+Surface misspecification can imitate genetic reordering: an exponential surface
+fitted to a linear rank-one truth rejected 0.107 at a nominal 0.05
+no-reordering test. Coverage does not imply precision here, either. Between 80%
+and 92% of genetic-correlation intervals reached a bound in the settings
+studied, and point estimates were pulled toward correlation one near the
+boundary.
 
-Across 2,000 simulations per scenario, the exponential gene-by-environment
-correlation test rejected 0.048 at nominal 0.05 under a flat null and 0.053
-when the true log-linear surface changed genetic scale without reordering. The
-random-regression boundary tests were conservative. A linear-scale rank-one
-surface fitted with the wrong exponential family produced a 0.107 rejection
-rate for a nominal 0.05 no-reordering test, showing that surface
-misspecification can imitate genetic reordering.
+## Validation
 
-Gene-by-environment 95% interval coverage ranged from 0.953 to 0.983 in the
-studied settings, but 80% to 92% of genetic-correlation intervals and up to 64%
-of some heritability intervals reached a bound. Point estimates were also
-pulled toward correlation one near the boundary.
+Both surfaces agree with an independent target-sized REML reference to
+`5.5e-07` or better on reported quantities and `2.7e-11` on the
+log-likelihood. Under a flat null the correlation test rejected 0.048 at
+nominal 0.05 across 2,000 simulations per scenario. Between 80% and 92% of
+genetic-correlation intervals reach a bound in the settings studied.
 
-The participant-free target-design gate is a pedigree-scale and design-identity
-stress test, not a reconstruction of GOBS ages, relationship coefficients,
-trait-specific missingness or outcomes. Its reviewed aggregate envelope has
-1,909 rows in 202 pedigree components, with largest component 180. The
-structure-matched synthetic pedigree has 27,691 nonzero lower-triangle
-relationships, 0.47% fewer than the predecessor aggregate receipt's 27,821;
-that discrepancy was recorded before fitting and was not tuned away. A
-deterministic synthetic standardised-age coordinate stays in the already
-qualified interval [-1.5, 1.5], varies within every non-singleton component,
-and combines with synthetic sex in the full-rank six-column design
-`1, z, z^2, s, zs, z^2s`. Quantities are judged only at z = -1, 0 and 1.
-
-For either supported surface, the independent reference assembles each pedigree
-block from
-
-\[
-V_{ij}=A_{ij}G(z_i,z_j)+\mathbf{1}_{i=j}R(z_i),
-\]
-
-then sums blockwise Gaussian sufficient statistics and profiles the six fixed
-effects globally. For the exponential surface,
-\(G(z_i,z_j)=\exp\{[\alpha_g+\gamma_g z_i]/2\}
-\exp\{[\alpha_g+\gamma_g z_j]/2\}
-\exp\{-\lambda_g|z_i-z_j|\}\) and
-\(R(z)=\exp(\alpha_e+\gamma_e z)\). The random-regression reference instead
-uses \(G(z_i,z_j)=[1,z_i]\Sigma_g[1,z_j]^\mathsf{T}\) and
-\(R(z)=[1,z]\Sigma_e[1,z]^\mathsf{T}\), with both coefficient-covariance
-matrices formed from independent Cholesky coordinates. Thus the target-sized
-reference does not call Asterism's covariance assembly or optimiser.
-
-On the reduced qualification run of 100 null replicates per surface on 21
-August 2026, both target-sized REML comparisons converged. The worst common
-quantity and log-likelihood differences were respectively **5.49e-07** and
-**2.68e-11** for the exponential surface, and **3.50e-07** and **3.64e-12**
-for random regression, against prewritten tolerances of 0.001 and 0.0001. The
-separate n = 80 dense-likelihood sentinel also passed both surfaces.
-
-The same run scored every one of its 200 surface-replicates under the flat
-\(V=0.5A+0.5I\) null, with no refused, nonconverged, incomplete or wrong-rule
-fits. At nominal 0.05, correlation and interaction rejection counts were 1 and
-5 of 100 for the exponential surface, and 1 and 4 of 100 for random regression.
-For \(r\) rejections among \(m\) attempted replicates, the refusal rule is
-
-\[
-L=\mathrm{Beta}^{-1}(0.05;r,m-r+1)>0.05,
-\]
-
-with \(L=0\) when \(r=0\): a cell fails only when its one-sided 95% exact
-binomial lower bound establishes anti-conservative rejection. Conservative
-cells remain visible rather than being misclassified as undercoverage, and any
-failed or unscored replicate fails the gate separately. The exact release rule
-is pinned at 500 replicates per surface but has not yet been executed; the
-evidence above is the completed 100-per-surface reduced qualification.
-
-The historical discrete-model campaign simulated 500 responses per scenario on
-the participant-backed, unbalanced GOBS pedigree, with sex as the environment.
-Those results remain informative but are not portable release evidence. The
-replacement gate uses a reviewed, values-free structural fixture with 1,910
-synthetic rows in 203 components, largest component 180, group counts 758 and
-1,152, and a full-rank four-column synthetic age/group design. The deterministic
-pedigree has 27,691 nonzero lower-triangle relationships, 0.4673% fewer than the
-retained aggregate of 27,821; its group assignment exactly matches the retained
-13,322 cross-group related pairs and 77 mixed-group components. It reconstructs
-neither participants nor participant rows, ages, phenotypes, relationship
-coefficients, matrices, or family-specific group composition. The exact fixture
-SHA-256 is
-`2cceae6f2c5ea3f0c3de5946daeaa55cf2f35edd6d365fd1f45499f463d4c1c6`.
-
-`checks/discrete_gxe_against_independent_full_fit.py` supplies a separate
-participant-free full-ML sentinel at 120 people in 30 four-sibling families.
-It parameterises the genetic covariance by its own Cholesky factor, residual
-variances on log scales, optimises with derivative-free SciPy Powell, and
-profiles fixed effects from a self-contained dense likelihood,
-
-\[
--2\ell=n\log(2\pi)+\log|V|+
-(y-X\widehat\beta)^\mathsf{T}V^{-1}(y-X\widehat\beta),\qquad
-\widehat\beta=(X^\mathsf{T}V^{-1}X)^{-1}X^\mathsf{T}V^{-1}y.
-\]
-
-It therefore shares neither likelihood code, parameterisation nor optimiser
-with Asterism. Both fits converged on 21 August 2026. The worst public-quantity
-difference was **7.69e-04** for genetic correlation and the log-likelihood
-difference was **4.92e-05**, inside prewritten tolerances 0.002 and 0.0002.
-
-The portable calibration scores every fit as complete, refused, nonconverged,
-or test-refused, and retains all attempts in the denominator. For \(r\)
-rejections in \(m\) attempts at level \(\alpha\), a level cell fails only when
-
-\[
-\mathrm{Beta}^{-1}(0.05;r,m-r+1)>\alpha,
-\]
-
-with zero allowed unsuccessful attempts; alternative-scenario power is
-descriptive rather than post-hoc gated. A one-replicate-per-scenario public-API
-smoke on the full values-free target envelope completed all four attempts in
-14.04 seconds, with zero refusals, nonconvergence, or test refusals. This is a
-route check, not Monte Carlo calibration. The pinned 500-by-four campaign has
-not run in this development environment: its 12-worker launch was refused by
-the sandbox before worker creation, so **0 of 2,000 scientific attempts** ran.
-
-In the historical participant-backed campaign, under the complete null,
-rejection at nominal 0.05 was 0.042 for the principal
-`gene_by_environment` test, 0.044 for equal genetic effects, 0.048 for equal
-genetic variances, 0.036 for equal residual variances, and 0.040 for
-`any_difference`. The fitted correlation sat on its upper bound in 52.8% of
-null fits, which is why the even mixture is the right reference and a plain
-chi-square would be conservative.
-
-The scenario that matters is one sex measured with more error and identical
-genetics. Every genetic test held its level there — 0.046 for the principal
-test, 0.040 for equal genetic effects and 0.040 for equal genetic variances —
-while `any_difference` and the residual test each rejected all 500 replicates.
-That is the claim the two free residual variances exist to support.
-`any_difference` equates the residual variances as well as the genetic ones, so
-what it rejects may be either.
-
-Against genuine alternatives the tests separate as they should: where the genes
-differ, the correlation test rejected 0.990 and the equal-variance test stayed
-at level (0.062); where only the genetic scale differs, the equal-variance test
-rejected 0.998 and the correlation test stayed at level (0.042).
+The designs behind those figures, the rules they are scored against, and
+what has still to run, are in the
+[validation record](../validation.md#gene-by-environment-measured).
 
 <!-- API: generated by tools/build_model_pages.py -->
 

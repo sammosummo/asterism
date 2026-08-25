@@ -137,108 +137,26 @@ Per-trait `heritability`, `total_variance`, `residual_correlation`,
 binary/right-censored analysis. Other public trait-kind combinations are not
 0.1-supported analyses.
 
-### Assumptions, measured limitations, and unmet gates
+### Assumptions and limits
 
 Both latent traits follow the joint Gaussian covariance above; the binary scale
-and relationship-matrix normalization are fixed correctly; censoring records
-and limits are correct; and family blocks are independent. Historical sibling-pair simulations gave genetic-correlation
-interval coverage of 0.940, 0.940, and 0.943 at true correlations 0, 0.4, and
-0.7 for the censored pairing, and the test rejected 0.060 at a nominal 0.05
-null. These runs do not validate larger-family sequential integration by
-themselves. The exact binary/right-censored driver now exists, and the SOLAR
-adapter has been refreshed live and frozen; calibration and coverage commands
-are executable too.
+and relationship-matrix normalisation are fixed correctly; censoring records
+and limits are correct; and family blocks are independent.
 
-The target driver selects a values-free structural fixture with SHA-256
-`aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645`,
-itself pinned to source-fixture SHA-256
-`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
-It matches the reviewed aggregate structure of 1,909 rows, 202 independent
-relationship components and a largest component of 180. The predecessor
-aggregate records 27,821 nonzero relationship pairs and the generated
-structure has 27,691; neither the fixture nor the check claims pedigree,
-relationship-matrix or participant-row reconstruction.
+Coverage and level have been measured on sibling pairs, which do not exercise
+the sequential integration used for larger families.
 
-The generating design fixes population prevalence at 0.254,
-$(h_1^2,h_2^2)=(0.5,0.5)$, $\rho_g\in\{0,0.4\}$,
-$\rho_e=0.15$, complete-hearing variance at 3, and intended right-censoring
-shares at 0.52 and 0.75. It exercises the public fit, genetic-correlation
-interval and zero-correlation test. `release.toml` fixes 300 replicates per
-correlation-by-censoring cell, 1,200 attempts in total. Neither a bounded smoke
-nor that exact campaign has completed: a local one-replicate-per-cell smoke was
-interrupted during public interval fitting (`KeyboardInterrupt`, exit 130)
-before producing a completed record. It is not evidence. The target range
-therefore remains unmeasured, with no target-design calibration, qualifying
-runtime or analysis-readiness claim, and the exact fixed-wheel campaign remains
-required before reporting the intended diagnosis/hearing genetic correlation.
+## Validation
 
-## What stands behind it
+The worst difference from SOLAR on the binary-with-continuous pair is 0.014.
+Genetic-correlation interval coverage on 300 replicates of 400 sibling pairs
+per cell ran from 0.930 to 0.957 across three pairings and three true
+correlations, and the tests against nought and against one both held their
+level.
 
-Against native SOLAR on the binary-with-continuous pair, the worst difference
-was 0.014. Recovery of a genetic correlation of 0.4 is mildly conservative in
-every pairing, an attenuation the all-continuous control shows too, so it
-belongs to maximum likelihood rather than to the censoring.
-
-Interval coverage for the genetic correlation, on 300 replicates of 400
-sibling pairs per cell, each cell drawn on its own stream, scored
-unconditionally with no refusals:
-
-| pairing | ρ = 0.0 | ρ = 0.4 | ρ = 0.7 |
-| --- | --- | --- | --- |
-| continuous | 0.950 | 0.957 | 0.957 |
-| binary | 0.930 | 0.943 | 0.943 |
-| censored | 0.940 | 0.940 | 0.943 |
-
-The test against nought holds its level in the same run: 0.050, 0.070 and 0.060
-against a nominal 0.05, with power at ρ = 0.7 of 0.997, 0.950 and 0.993. Nought
-is an interior point of a correlation's range, so the reference is a plain
-chi-square on one degree of freedom and no boundary mixture applies.
-
-This is the first measurement of that interval, and it found it broken.
-Before the fix, one end of every correlation interval sat on its own bound
-whatever the data said, giving widths of about 1.5 on a parameter that runs
-from minus one to one. The cause was the convergence flag: it was read from a
-raw maximum-absolute gradient, neither projected onto the coordinates the
-search is free to move nor divided by the objective. A held profile fit rests
-other coordinates on their bounds, so a perfectly good constrained maximum
-reported that it had not converged, the profile discarded it as a failure, and
-a failure reads as an end the data did not rule out.
-
-The interval contradicted this model's own test, which is how it was caught: a
-replicate reporting an interval of `[-1.0000, 0.8429]` -- containing nought --
-had a deviance at nought of 29.9 and a p-value of `4.5e-08`. Projecting and
-scaling the gradient, as the liability model already did, moved that interval
-to `[0.4928, 0.8429]` and brought the two into agreement. Widths fell from
-about 1.5 to between 0.44 and 0.97.
-
-`checks/mixed_binary_censored_target_design.py` defines the missing
-pedigree-scale check without retaining participant rows. Its values-free
-fixture has SHA-256
-`aed92270dcfafb00a46a24bfaf1f3a2b52950fdea1c34deb3740e5060d6f3645`
-and selects the structural generator pinned by source-fixture SHA-256
-`93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e`.
-It matches the reviewed aggregate structure of 1,909 rows, 202 independent
-relationship components and a largest component of 180. The reviewed
-predecessor aggregate has 27,821 nonzero relationship pairs and the synthetic
-structure has 27,691. This is a structure match, not a pedigree,
-relationship-matrix or participant-row reconstruction claim.
-
-The generating grid fixes population prevalence at 0.254, latent-trait
-heritabilities at $(0.5,0.5)$, genetic correlation at either 0 or 0.4,
-residual correlation at 0.15, complete-hearing variance at 3, and intended
-right-censoring share at either 0.52 or 0.75. Each attempted replicate calls
-the public `asterism.mixed_bivariate_fit`,
-`asterism.mixed_bivariate_interval`, and `asterism.mixed_bivariate_test`
-routes. The fixed command in `release.toml` requests 300 replicates in each of
-the four correlation-by-censoring cells, 1,200 attempts in total; its exact
-invocation is retained in the check inventory below.
-
-Neither a bounded smoke nor that exact campaign has completed. A local
-one-replicate-per-cell smoke started on 21 August 2026 and was later interrupted
-during public interval fitting (`KeyboardInterrupt`, exit 130) before producing
-a completed record. It is not evidence. The target design therefore has no
-coverage, type-I-error, recovery or qualifying runtime result and establishes
-no analysis-readiness claim.
+The designs behind those figures, the rules they are scored against, and
+what has still to run, are in the
+[validation record](../validation.md#mixed-pairs).
 
 <!-- API: generated by tools/build_model_pages.py -->
 

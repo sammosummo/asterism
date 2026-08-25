@@ -491,9 +491,8 @@ The bound-constrained implementation actually linked by the Rust modules is
 `rcompat-lbfgsb`, recorded in [`Cargo.toml`](../../Cargo.toml). The cited
 L-BFGS-B papers identify the algorithmic family; exact behavior, tolerances,
 starts, polishing, scaled-gradient checks, and convergence classification come
-from Asterism's source and tests. The numerical validation inventory is in
-[`numerical-validation.md`](../numerical-validation.md), but each result there
-must be tied to its source commit and target design before it supports a release.
+from Asterism's source and tests. The comparisons and simulations behind them
+are in the [validation record](../validation.md).
 
 ## 12. Gaps to close before canonical methods documentation
 

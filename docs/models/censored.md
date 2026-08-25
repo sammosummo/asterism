@@ -115,87 +115,28 @@ the 50:50 mixture. At least two measured values are required to identify scale.
 descriptive; `converged`, `scaled_gradient`, and `loglik` are diagnostics. A
 limit-substitution Gaussian heritability is a different, biased estimand.
 
-### Assumptions, measured limitations, and unmet gates
+### Assumptions and limits
 
-The complete trait is Gaussian with the stated covariance; censoring direction
-and each limit are correct; censoring is represented by the stated regions;
-the relationship basis has the qualified normalisation; and the measured
-portion identifies scale. Historical independent-person
-comparison with `censReg` agreed in log likelihood and fitted quantities within
-$9.6\times10^{-9}$. In simulations, limit substitution estimated 0.31 at 75%
-censoring when true $h^2=0.5$, while the censored model recovered the target.
-For 300 sibling-pair replicates per cell through 50% censoring, all nine 95%
-coverage cells included 0.95 in their exact binomial intervals. Those pair
-designs do not exercise the sequential approximation above two censored family
-members. Both independent R comparisons have now been refreshed live and
-frozen for portable verification, and the calibration plus explicit 52% and
-75% commands are executable with prewritten rules. A target-design smoke with
-one replicate in each scenario was route and failure-accounting evidence only:
-the 75%-censored null fit returned a finite $h^2=0$ candidate with
-`converged=false`, so no interval or test was computed for that attempt and the
-command failed. The smoke is not calibration. The 800-attempt exact campaign
-has not yet been retained from the fixed release wheel, so the censoring range
-remains unmeasured and no audiogram estimate is reportable under 0.1 yet.
+The complete trait is Gaussian with the stated covariance; the censoring
+direction and each limit are correct; censoring is represented by the stated
+regions; the relationship basis has the qualified normalisation; and the
+measured portion identifies scale.
 
-## What stands behind it
+Coverage has been measured on sibling pairs, which do not exercise the
+sequential approximation above two censored family members. Censoring beyond
+three quarters has not been measured.
 
-Against R's `censReg` with no relatedness, the log likelihood and all four
-reported quantities agreed to `9.6e-9` at 4,000 people with 1,131 censored.
-With relatedness, the maximum-likelihood estimates sit inside MCMCglmm's
-posterior. Substituting the limit -- the usual practice -- returns 0.46 at a
-quarter censored and 0.31 at three quarters where the truth is 0.5; the
-censored model recovers 0.5 at every rate to three quarters.
+## Validation
 
-Interval coverage, on 300 replicates of 300 sibling pairs per cell, scored
-unconditionally with no cell dropped and no refusals:
+The log-likelihood and all four reported quantities agree with R `censReg` to
+`9.6e-9`. On 300 replicates of 300 sibling pairs per cell, all nine cells of a
+heritability-by-censoring grid contain 0.95. Substituting the limit returns
+0.31 where the truth is 0.5 and three quarters are censored; the censored
+model recovers 0.5.
 
-| true h² | 0% censored | 25% | 50% |
-| --- | --- | --- | --- |
-| 0.0 | 0.937 | 0.950 | 0.960 |
-| 0.3 | 0.943 | 0.943 | 0.957 |
-| 0.5 | 0.953 | 0.950 | 0.933 |
-
-All nine cells contain the nominal 0.95 in their Clopper-Pearson intervals,
-**two-sided, including the cells at nought**.
-
-Correcting the receipt of 18 August 2026, which reported 0.980, 0.977 and 0.983
-in those three cells and passed them under a one-sided rule: the interval was
-missing the Self-Liang mixture that ADR 0004 requires, so a lower end of nought
-was read as containment whatever the likelihood there said. ADR 0004 had
-already measured what that costs -- 0.977 against 0.953 -- and the censored
-model reproduced it. The mixture is now on the record as
-`contains_lower_bound` and `contains_upper_bound`, the check reads it, and the
-boundary allowance that hid the fault is gone. `evidence/tobit-coverage-2026-08-18.json`
-predates the mixture and describes a recipe the code no longer implements.
-
-`checks/tobit_target_design.py` adds the missing pedigree-scale route without
-retaining participant records. It uses the reviewed values-free structural
-fixture to generate 1,909 synthetic rows in 202 relationship components, with a
-largest component of 180 and the same six-column participant-free fixed design.
-At the nearest attainable fractions to 52% and 75% right censoring (993/1,909 =
-0.52017 and 1,432/1,909 = 0.75013), it runs the public `asterism.tobit_fit`,
-`asterism.tobit_interval`, and `asterism.tobit_test` functions under a boundary
-truth of $h^2=0$ and an interior truth of $h^2=0.5$. The fixed release campaign
-requests 200 replicates in each of those four cells. Every requested replicate
-stays in its cell's denominator; unsuccessful outcomes are assigned exactly one
-of `invalid_censoring_count`, `refused`, `nonconverged`, `test_failed`,
-`interval_failed`, or `profile_failed`, and none is allowed. The null rule fails
-when the one-sided 95% Clopper--Pearson lower limit for the rejection rate is
-above 0.05. The interval rule fails when the corresponding upper limit for
-coverage is below 0.95.
-
-A bounded development smoke on 21 August 2026 ran one replicate per scenario at
-each censoring level: four attempted in 62.87 seconds, three complete, and one
-`nonconverged`. At 52% censoring, the null estimate was 0.0142 with $p=0.3403$
-and interval $[0,0.0949]$; the interior estimate was 0.4973 with interval
-$[0.3943,0.5989]$. At 75%, the interior estimate was 0.4762 with interval
-$[0.3390,0.6163]$, while the null fit returned a finite boundary candidate
-($h^2=0$, total variance 3.9412) with `converged=false`; the check therefore
-recorded `nonconverged` and did not compute an interval or test for that attempt.
-The command exited 1. This is route and failure-accounting evidence only, not a
-coverage or type-I-error calibration. The 800-attempt release campaign has not
-run; `pass_rules_configured`
-remains false.
+The designs behind those figures, the rules they are scored against, and
+what has still to run, are in the
+[validation record](../validation.md#censored-traits).
 
 <!-- API: generated by tools/build_model_pages.py -->
 
