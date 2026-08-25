@@ -52,17 +52,48 @@ def test_the_example_runs(example: Path) -> None:
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda path: path.name)
-def test_the_readme_shows_what_the_example_prints(example: Path) -> None:
-    """Stop the README quoting output an example no longer produces."""
-    readme: str = (ROOT / "README.md").read_text(encoding="utf-8")
-    """Read the front page that quotes them."""
+def test_the_docs_show_what_the_example_prints(example: Path) -> None:
+    """Stop the documentation quoting output an example no longer produces.
 
-    if f"examples/{example.name}" not in readme:
-        pytest.skip(f"{example.name} is not quoted in the README")
-    for line in run(example).splitlines():
-        if line.strip():
-            assert line in readme, f"the README no longer shows: {line!r}"
-    """Required every printed line to appear in the README exactly."""
+    A page may link to an example without quoting it, which is what an overview
+    does. But a page that quotes any of its output must quote all of it, and
+    inside a code fence. An earlier version looked only for the lines anywhere
+    on the page, and so passed while one example's output sat outside its fence
+    and rendered as prose.
+    """
+    pages: list[Path] = [ROOT / "README.md", *(ROOT / "docs").glob("*.md")]
+    """Looked wherever an example may legitimately be quoted."""
+
+    printed: str = run(example)
+    """Produced the output afresh rather than trusting a stored copy."""
+
+    first: str = next(line for line in printed.splitlines() if line.strip())
+    """Took one printed line as the sign that a page quotes this example."""
+
+    quoting: list[Path] = [
+        page for page in pages if first in page.read_text(encoding="utf-8")
+    ]
+    """Found the pages that quote it. Merely linking to it is not quoting it."""
+
+    if not quoting:
+        pytest.skip(f"{example.name} output is not quoted anywhere")
+
+    for page in quoting:
+        text: str = page.read_text(encoding="utf-8")
+        """Read one page that names this example."""
+
+        fenced: list[str] = text.split("```")[1::2]
+        """Took only what lies inside a code fence."""
+
+        inside: str = "\n".join(fenced)
+        """Joined every fenced block on the page."""
+
+        for line in printed.splitlines():
+            if line.strip():
+                assert line in inside, (
+                    f"{page.name} no longer shows this inside a code block: {line!r}"
+                )
+    """Required every printed line to appear, fenced, on every page naming it."""
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=lambda path: path.name)
