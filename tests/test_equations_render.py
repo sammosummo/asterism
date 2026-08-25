@@ -161,11 +161,19 @@ def test_no_macro_has_lost_its_backslash(page: Path) -> None:
 def test_mathematics_carries_no_literal_asterisk(page: Path) -> None:
     """Keep `*` out of mathematics, where Markdown claims it before MathJax.
 
-    Markdown pairs asterisks into emphasis before the mathematics is read, and
-    it pairs them across lines inside a display block and across equations
-    inside a paragraph. What reaches MathJax is then missing both characters,
-    which it reports as a double subscript. `\\ast` is the same symbol and
-    Markdown has no interest in it.
+    Markdown pairs asterisks into emphasis, and it will pair one inside a
+    display block with another on a later line of the same block, or one inline
+    equation's with the next equation's in the same paragraph. That pairing
+    crosses the dollar delimiters and breaks them, so what reaches MathJax has
+    lost both characters. It answers with "double subscripts" and shows the
+    equation as raw text. `\\ast` is the same symbol with nothing to pair.
+
+    Backslash-escaped punctuation is a different matter and is left alone.
+    `\\{`, `\\}`, `\\\\`, `\\,` and `\\%` all appear in these pages, and if
+    GitHub were stripping those backslashes the way Markdown strips them in
+    prose, every multi-line `aligned` block here would already be broken,
+    because its row separator is `\\\\`. Those blocks render. So the escapes
+    survive and only the emphasis pairing gets through.
     """
     text: str = prose(page)
     """Read everything outside a code fence."""
