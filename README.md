@@ -1,21 +1,51 @@
 # Asterism
 
-Asterism is a Rust/Python package for quantitative-genetic variance-component
-models. It accepts numerical arrays already in memory and returns ordinary
-Python dictionaries and arrays.
+Variance-component models for quantitative genetics, in Rust with a Python
+interface. It takes NumPy arrays already in memory and returns ordinary Python
+dictionaries and arrays. It reads no files and writes none.
 
-The model equations and interpretation are in
-[statistical-methods.md](docs/statistical-methods.md). Empirical comparisons,
-coverage simulations, and known numerical limitations are summarised in
-[numerical-validation.md](docs/numerical-validation.md).
+## Who this is for
 
-This checkout is a development build, not an analysis-ready release. Its
-embedded `release.toml` deliberately refuses reportable status until every 0.1
-scientific pass rule has been rerun on the exact release
-artifact. [Python API support status](docs/api-support.md) distinguishes what is
-planned for 0.1 from public capabilities outside its scientific support. The
-[analysis-receipt guide](docs/analysis-receipts.md) shows the fixed-wheel
-release-state check, three outcomes and caller-owned JSON boundary.
+A quantitative geneticist who already knows what a relationship matrix, REML,
+heritability and a genetic correlation are, and who needs to know two things:
+what this package's interface is, and what it has actually been validated to
+do.
+
+It does not teach variance components, and it does not assume you will accept a
+number because software produced it. Every supported analysis has a check that
+measures it against a known truth or an independent implementation, and those
+results are in
+[numerical-validation.md](docs/numerical-validation.md). The model equations
+are in [statistical-methods.md](docs/statistical-methods.md).
+
+## Start here
+
+```sh
+uv run python examples/quickstart.py
+```
+
+That builds a pedigree of eighty nuclear families, simulates one trait with a
+true heritability of 0.5, and fits it:
+
+```
+people:        480
+h2 (true 0.5): 0.605
+converged:     True
+95% interval:  [0.455, 0.745]
+p (h2 = 0):    1.11e-19
+```
+
+Every example below is a fragment for reading. The complete runnable versions
+are in [`examples/`](examples/).
+
+## What 0.1 supports
+
+Eight analyses, listed in
+[api-support.md](docs/api-support.md) with the public objects that fall outside
+that support. A development checkout refuses to call any result reportable:
+that status belongs to an installed release wheel, not an editable build. The
+[analysis-receipt guide](docs/analysis-receipts.md) explains the three
+outcomes.
 
 ## Installation
 

@@ -26,7 +26,14 @@ EXCEPTION_RULES: frozenset[str] = frozenset(
 )
 """Listed the four narrow exception names defined by the style guide."""
 
-MAINTAINED_ROOTS: tuple[str, ...] = ("python", "tests", "checks", "campaigns", "tools")
+MAINTAINED_ROOTS: tuple[str, ...] = (
+    "python",
+    "tests",
+    "checks",
+    "campaigns",
+    "tools",
+    "examples",
+)
 """Named source areas covered by Asterism's Python style contract."""
 
 EXCLUDED_PARTS: frozenset[str] = frozenset(
