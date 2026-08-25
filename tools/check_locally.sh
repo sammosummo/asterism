@@ -39,6 +39,9 @@ uv run python tools/check_python_style.py
 say "API reference is current"
 uv run python tools/build_api_reference.py --check
 
+say "Model pages are current"
+uv run python tools/build_model_pages.py --check
+
 say "Release metadata"
 uv run python tools/check_release.py --metadata
 

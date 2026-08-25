@@ -13,10 +13,14 @@ ROOT: Path = Path(__file__).resolve().parents[1]
 """Located the repository root containing the canonical documentation."""
 
 CITATION_PATTERN: re.Pattern[str] = re.compile(
-    r"\[(?P<label>[^\]]+?)\]\(references\.bib#(?P<key>[A-Za-z][A-Za-z0-9]*)\)",
+    r"\[(?P<label>[^\]]+?)\]\((?:\.\./)*references\.bib#(?P<key>[A-Za-z][A-Za-z0-9]*)\)",
     re.DOTALL,
 )
-"""Matched author-year links carrying a canonical BibTeX key."""
+"""Matched author-year links carrying a canonical BibTeX key.
+
+The leading `../` is optional because the per-model pages sit one
+directory below the bibliography they cite.
+"""
 
 ENTRY_PATTERN: re.Pattern[str] = re.compile(
     r"^@\w+\{(?P<key>[A-Za-z][A-Za-z0-9]*),\n(?P<body>.*?)^\}\s*$",
@@ -39,18 +43,18 @@ REQUIRED_FIELDS: tuple[str, ...] = ("author", "title", "year", "doi", "url")
 
 REQUIRED_HEADINGS: tuple[str, ...] = (
     "## Release contract",
-    "## One-trait Gaussian heritability",
-    "## Several covariance components",
-    "## Two Gaussian traits and genetic correlation",
-    "## Continuous gene by environment",
-    "## Gene by discrete environment",
-    "## Binary liability heritability",
-    "## One-trait censored Gaussian model",
-    "## Mixed binary and censored genetic correlation",
     "## Spatial covariance presence",
     "## Numerical implementation",
 )
-"""Named every release-blocking method section that must remain present."""
+"""Named the method sections that must remain in the shared document.
+
+Each supported model's own section left this list when the equations, the
+evidence and the interface for each were gathered onto a page of its own.
+That requirement did not go away, it moved: `tests/test_model_pages.py`
+requires every analysis in the manifest to have a page carrying "## The
+model", and takes the list from the manifest rather than repeating it here,
+so a new model cannot ship without one.
+"""
 
 
 def validate_references(
@@ -68,7 +72,19 @@ def validate_references(
     Returns:
         Stable human-readable failures; an empty list means the contract passed.
     """
-    methods_text: str = methods_path.read_text(encoding="utf-8")
+    pages: list[Path] = sorted((methods_path.parent / "models").glob("*.md"))
+    """Found the per-model pages, which now carry most of the equations.
+
+    The methods document was one file until the equations, the evidence and the
+    interface for each model were gathered onto a page of its own. Reading both
+    keeps this check exactly as strong as it was: a citation or a reportable
+    quantity satisfies it wherever it is written, and nowhere else.
+    """
+
+    methods_text: str = "\n".join(
+        [methods_path.read_text(encoding="utf-8")]
+        + [page.read_text(encoding="utf-8") for page in pages]
+    )
     """Read the methods specification whose equations and citations are checked."""
 
     bibliography_text: str = bibliography_path.read_text(encoding="utf-8")
@@ -184,18 +200,22 @@ def validate_references(
             problems.append(f"statistical methods uses retired field {legacy_field}")
     """Kept the canonical methods document on the shared public interval schema."""
 
-    local_targets: set[str] = {
-        match.group("target") for match in LOCAL_LINK_PATTERN.finditer(methods_text)
-    }
-    """Collected each repository-relative file linked from the methods document."""
+    for source in [methods_path, *pages]:
+        text: str = source.read_text(encoding="utf-8")
+        """Read one document, so its links resolve against its own directory."""
 
-    for target in sorted(local_targets):
-        target_path: Path = methods_path.parent / target
-        """Resolved the Markdown target relative to the methods document."""
+        for match in sorted(
+            {m.group("target") for m in LOCAL_LINK_PATTERN.finditer(text)}
+        ):
+            target_path: Path = source.parent / match
+            """Resolved the target relative to the page that links to it."""
 
-        if not target_path.is_file():
-            problems.append(f"local Markdown target does not exist: {target}")
-    """Rejected stale ADR, bibliography, and research-note links."""
+            if not target_path.exists():
+                problems.append(
+                    f"local Markdown target does not exist: {match} "
+                    f"(linked from {source.name})"
+                )
+    """Rejected stale links, each judged from where it is actually written."""
 
     for heading in REQUIRED_HEADINGS:
         if heading not in methods_text:
