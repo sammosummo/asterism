@@ -1,12 +1,12 @@
 name: Private release
 
+# Manual only. Asterism's GitHub Actions are switched off: the account does not
+# pay for hosted minutes, so every automatic run failed before it started. The
+# checks these workflows perform are run locally instead, by
+# `sh tools/check_locally.sh`. Restore the triggers here only if hosted
+# minutes are paid for.
 on:
-  push:
-    branches: [main]
-    paths:
-      - release.toml
-      - Cargo.toml
-      - pyproject.toml
+  workflow_dispatch:
 
 permissions:
   contents: write

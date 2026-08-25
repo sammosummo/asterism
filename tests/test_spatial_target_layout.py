@@ -238,9 +238,7 @@ def test_release_manifest_defers_the_spatial_presence_analysis() -> None:
     """Held the deferral, so no release evidence waits on the spatial target run."""
 
     assert TARGET_FIXTURE.is_file()
-    assert (
-        Path(__file__).parents[1] / "checks" / "spatial_target_layout.py"
-    ).is_file()
+    assert (Path(__file__).parents[1] / "checks" / "spatial_target_layout.py").is_file()
     """Kept the deferred material intact and runnable for a later release."""
 
 

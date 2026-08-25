@@ -12,9 +12,8 @@ from __future__ import annotations
 import json
 import platform
 
-import numpy as np
-
 import asterism
+import numpy as np
 
 rng: np.random.Generator = np.random.default_rng(20260824)
 """Fixed the generator so the smoke is reproducible from its seed alone."""
@@ -38,16 +37,12 @@ ids: list[str] = [name for pair in founders for name in pair] + [
 """Listed every founder first, then every offspring, in one stable order."""
 
 father: list[str | None] = [None] * (2 * families) + [
-    founders[family][0]
-    for family in range(families)
-    for _ in range(per_family - 2)
+    founders[family][0] for family in range(families) for _ in range(per_family - 2)
 ]
 """Left founders unparented and gave each child its family's father."""
 
 mother: list[str | None] = [None] * (2 * families) + [
-    founders[family][1]
-    for family in range(families)
-    for _ in range(per_family - 2)
+    founders[family][1] for family in range(families) for _ in range(per_family - 2)
 ]
 """Left founders unparented and gave each child its family's mother."""
 

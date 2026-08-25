@@ -180,7 +180,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     selectors: set[str] = set()
     """Collected design fields used to choose one applicable quantity set."""
 
-
     for index, quantity_set in enumerate(raw_sets):
         when: object = quantity_set.get("when")
         """Read the exact design predicate selecting this reporting mode."""
@@ -193,8 +192,8 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
                 f"release.toml: {identifier} quantity set {index} needs one design predicate"
             )
         else:
-            selector, selected_value = next(iter(when.items()))
-            """Read the single explicit field/value reporting selector."""
+            selector: object = next(iter(when))
+            """Read the single explicit field this branch is selected by."""
 
             selectors.add(str(selector))
 
@@ -224,7 +223,6 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     """Required unambiguous selection and exact, non-overlapping inventory coverage."""
 
     return errors
-
 
 
 def cross_platform_configuration_errors(
@@ -1367,7 +1365,6 @@ def main() -> int:
         for analysis in analyses:
             identifier = str(analysis.get("id", "<missing>"))
             """Named the analysis for precise release-readiness errors."""
-
 
             if not analysis.get("pass_rules_configured"):
                 errors.append(

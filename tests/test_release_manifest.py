@@ -200,8 +200,7 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
 
     assert manifest["scientific_pass_rules_configured"] is True
     assert all(
-        analysis["pass_rules_configured"] is True
-        for analysis in manifest["analyses"]
+        analysis["pass_rules_configured"] is True for analysis in manifest["analyses"]
     )
     statuses: set[str] = {
         rule["status"]
@@ -296,7 +295,6 @@ def test_conditional_reportable_sets_partition_the_component_inventory() -> None
     assert "must partition reportable_quantities" in "\n".join(
         conditional_quantity_errors(malformed)
     )
-
 
 
 def test_fixed_build_gate_refuses_stale_or_dirty_extension_identity() -> None:

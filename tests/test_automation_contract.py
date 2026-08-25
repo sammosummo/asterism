@@ -181,34 +181,49 @@ def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:
     assert "check_release.py --requested" in workflow
 
 
-def test_ordinary_automation_runs_once_for_a_commit_and_not_twice() -> None:
-    """An unfiltered `push:` doubles the bill for no extra coverage.
+def test_hosted_automation_never_starts_itself() -> None:
+    """Keep GitHub Actions from firing, because the account does not pay for it.
 
-    `push:` with no branch filter fires on every branch, and `pull_request:`
-    fires again on the same commit the moment a pull request is open, so every
-    commit under review ran both matrices twice over. Hosted minutes are finite
-    on a private repository and the Mac runners bill at ten times the Linux
-    ones, so the duplicate half was the larger share of what a branch cost --
-    and it is what exhausted the month.
+    Every automatic run failed three seconds in, before a single step, with
+    "the job was not started because recent account payments have failed".
+    Three red runs landed on every push and none of them checked anything.
 
-    Restricting `push` to `main` leaves branches covered by `pull_request`
-    alone and `main` covered by `push` alone. `release.yml` is deliberately not
-    checked here: it triggers on `main` only already, and nothing about it may
-    be cancelled part-way.
+    The workflows are kept, so the machinery is there if hosted minutes are
+    ever paid for, but nothing may start them on its own. What they used to
+    check runs in `tools/check_locally.sh` instead.
 
-    This reads the file as text, as the checks above it do, because the one
+    This reads the files as text, as the checks above it do, because the one
     thing worth avoiding here is making the test suite depend on a YAML parser
     the package does not otherwise need.
     """
-    for name in ("quality.yml", "wheels.yml"):
+    for name in ("quality.yml", "wheels.yml", "release.yml"):
         workflow: str = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-        """Read one ordinary workflow as its public configuration."""
+        """Read one workflow as its public configuration."""
 
-        assert "  push:\n    branches: [main]\n" in workflow, (
-            f"{name} runs on every push to every branch, which duplicates every "
-            "pull request's matrix"
+        assert "\n  push:\n" not in workflow, f"{name} still starts itself on a push"
+        assert "\n  pull_request:\n" not in workflow, (
+            f"{name} still starts itself on a pull request"
         )
-        assert "  pull_request:\n" in workflow
-        assert (
-            "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}" in workflow
-        ), f"{name} must supersede superseded branch runs, and never cancel main"
+        assert "  workflow_dispatch:\n" in workflow, (
+            f"{name} must stay startable by hand"
+        )
+    """Refused every trigger that spends money the account does not have."""
+
+    local: Path = ROOT / "tools" / "check_locally.sh"
+    """Located the gate that replaced the hosted one."""
+
+    assert local.is_file()
+    text: str = local.read_text(encoding="utf-8")
+    """Read the local gate once for every step it must still run."""
+
+    for step in (
+        "cargo fmt --check",
+        "cargo clippy",
+        "cargo test",
+        "ruff format",
+        "ruff check",
+        "check_python_style.py",
+        "pytest",
+    ):
+        assert step in text, f"the local gate no longer runs {step!r}"
+    """Required the local gate to keep running what the hosted one ran."""

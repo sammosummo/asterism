@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import platform
-import sys
 import tomllib
 from copy import deepcopy
 from pathlib import Path
@@ -48,14 +46,6 @@ def configured_manifest(check_name: str = "smoke") -> str:
     Returns:
         TOML text representing a deliberately configured release.
     """
-    operating_system: str = "linux" if sys.platform.startswith("linux") else "macos"
-    """Named the current supported operating-system family for resource evidence."""
-
-    python_version: str = f"{sys.version_info.major}.{sys.version_info.minor}"
-    """Selected the current standard-CPython minor version."""
-
-    input_sha256: str = hashlib.sha256(b"fixed target resource input").hexdigest()
-    """Committed the deterministic system-boundary target fixture."""
 
     return f'''schema_version = 1
 version = "0.1.0"
@@ -345,7 +335,6 @@ index = {
         encoding="utf-8",
     )
     """Created one deterministic system-boundary fixture emulating the real command."""
-
 
     wheel_path: Path = tmp_path / "asterism-0.1.0-cp313-abi3-manylinux.whl"
     """Selected the immutable artifact to bind into release evidence."""

@@ -8,9 +8,9 @@ import re
 from typing import Any
 
 import asterism
-from asterism.analysis import _release_state as release_state
 import pytest
 from asterism import _core
+from asterism.analysis import _release_state as release_state
 
 RELEASE_MANIFEST: str = """
 schema_version = 1

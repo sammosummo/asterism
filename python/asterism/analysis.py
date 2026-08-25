@@ -233,7 +233,6 @@ def _release_state(
         )
     """Refused reportable results from an unconfigured or development build."""
 
-
     quantities: Any = entry.get("reportable_quantities")
     """Read the quantities this release permits the analysis to report."""
     if not isinstance(quantities, list) or not all(
