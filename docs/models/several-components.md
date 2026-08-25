@@ -62,8 +62,8 @@ Raw coefficient proportions depend on arbitrary matrix scale. Asterism instead
 defines
 
 $$
-m_k=\frac{1}{n}\operatorname{tr}(\mathbf K_k),\qquad
-c_k=\widehat\theta_km_k,qquad
+m_k=\frac{1}{n}\mathrm{tr}(\mathbf K_k),\qquad
+c_k=\widehat\theta_km_k,\qquad
 p_k=\frac{c_k}{\sum_{j=1}^{q}c_j+\widehat\theta_e},
 $$
 

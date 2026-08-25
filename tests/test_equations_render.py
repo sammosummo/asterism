@@ -77,3 +77,81 @@ def test_display_blocks_stand_alone(page: Path) -> None:
         if not opener and index + 1 < len(lines) and lines[index + 1].strip():
             problems.append(f"line {index + 1}: no blank line after the block")
     assert not problems, f"{page.name}: " + "; ".join(problems[:4])
+
+
+DISALLOWED: tuple[str, ...] = (
+    "operatorname",
+    "def",
+    "newcommand",
+    "renewcommand",
+    "let",
+    "require",
+)
+"""Named macros GitHub's MathJax refuses, whatever LaTeX itself permits.
+
+GitHub answers `\\operatorname` with "The following macros are not allowed",
+and shows the equation as raw text. `\\mathrm` renders identically and is
+allowed.
+"""
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda path: path.name)
+def test_no_macro_github_refuses(page: Path) -> None:
+    """Keep every equation to the macros GitHub will actually render."""
+    body: str = prose(page)
+    """Read everything outside a code fence."""
+
+    found: list[str] = [
+        macro for macro in DISALLOWED if re.search(rf"\\{macro}\b", body)
+    ]
+    """Collected any macro GitHub would refuse."""
+
+    assert not found, (
+        f"{page.name} uses macros GitHub refuses to render: "
+        f"{', '.join('\\\\' + name for name in found)}"
+    )
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda path: path.name)
+def test_no_macro_has_lost_its_backslash(page: Path) -> None:
+    """Catch a macro written as a bare word, which renders as that word."""
+    known: tuple[str, ...] = (
+        "qquad",
+        "quad",
+        "frac",
+        "tfrac",
+        "sqrt",
+        "mathbf",
+        "boldsymbol",
+        "widehat",
+        "mathrm",
+        "sigma",
+        "rho",
+        "theta",
+        "alpha",
+        "beta",
+        "gamma",
+        "lambda",
+        "chi",
+        "times",
+        "cdot",
+    )
+    """Named macros common enough here that a bare one is a mistake."""
+
+    text: str = prose(page)
+    """Read everything outside a code fence."""
+
+    spans: list[str] = [
+        match.group(0) for match in re.finditer(r"(?ms)^\$\$$.*?^\$\$$", text)
+    ] + re.findall(r"\$[^$\n]+\$", text)
+    """Took every stretch of mathematics, display and inline."""
+
+    problems: list[str] = [
+        f"{macro!r} without its backslash"
+        for span in spans
+        for macro in known
+        if re.search(rf"(?<![\\a-zA-Z]){macro}(?![a-zA-Z])", span)
+    ]
+    """Found a macro name sitting inside mathematics as a bare word."""
+
+    assert not problems, f"{page.name}: {'; '.join(sorted(set(problems))[:4])}"

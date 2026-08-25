@@ -138,7 +138,7 @@ as complete, refused, nonconverged, interval-refused, or profile-failed. With
 undercoverage rule fails when the one-sided exact upper limit
 
 \[
-\operatorname{Beta}^{-1}(0.95;c+1,m-c)<0.94;
+\mathrm{Beta}^{-1}(0.95;c+1,m-c)<0.94;
 \]
 
 any incomplete denominator fails separately, while a one-sided lower limit

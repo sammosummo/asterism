@@ -208,7 +208,7 @@ fits. At nominal 0.05, correlation and interaction rejection counts were 1 and
 For \(r\) rejections among \(m\) attempted replicates, the refusal rule is
 
 \[
-L=\operatorname{Beta}^{-1}(0.05;r,m-r+1)>0.05,
+L=\mathrm{Beta}^{-1}(0.05;r,m-r+1)>0.05,
 \]
 
 with \(L=0\) when \(r=0\): a cell fails only when its one-sided 95% exact
@@ -254,7 +254,7 @@ or test-refused, and retains all attempts in the denominator. For \(r\)
 rejections in \(m\) attempts at level \(\alpha\), a level cell fails only when
 
 \[
-\operatorname{Beta}^{-1}(0.05;r,m-r+1)>\alpha,
+\mathrm{Beta}^{-1}(0.05;r,m-r+1)>\alpha,
 \]
 
 with zero allowed unsuccessful attempts; alternative-scenario power is

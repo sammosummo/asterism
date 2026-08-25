@@ -166,7 +166,7 @@ particular preflight or a universal numerical condition-number cutoff.
 Asterism's reportable scale-invariant summaries are defined by
 
 $$
-m_k=\frac{1}{n}\operatorname{tr}(\mathbf K_k),\qquad
+m_k=\frac{1}{n}\mathrm{tr}(\mathbf K_k),\qquad
 c_k=\widehat\theta_k m_k,\qquad
 p_k=\frac{c_k}{\sum_j c_j+\widehat\theta_e}.
 $$
@@ -225,7 +225,7 @@ because the optimizer returns it.
 For environments $z_i,z_j$, Asterism uses
 
 $$
-\operatorname{Cov}(g_i,g_j)
+\mathrm{Cov}(g_i,g_j)
 =A_{ij}\sqrt{g(z_i)g(z_j)}
 \exp\{-\lambda|z_i-z_j|\},
 $$
@@ -314,7 +314,7 @@ The model is
 $$
 L_i=\mathbf x_i^T\boldsymbol\beta+g_i+e_i,
 \qquad
-\operatorname{Var}(\mathbf L)=h^2\mathbf A+(1-h^2)\mathbf I,
+\mathrm{Var}(\mathbf L)=h^2\mathbf A+(1-h^2)\mathbf I,
 \qquad
 Y_i=\mathbb 1(L_i>0).
 $$

@@ -41,7 +41,7 @@ Asterism fixes liability variance to one and fits
 $$
 \begin{aligned}
 L_i&=\mathbf x_i^T\boldsymbol\beta+g_i+e_i,\\
-\operatorname{Cov}(\mathbf L)&=h^2\mathbf A+(1-h^2)\mathbf I_n,\\
+\mathrm{Cov}(\mathbf L)&=h^2\mathbf A+(1-h^2)\mathbf I_n,\\
 Y_i&=\mathbb 1(L_i>0),
 \end{aligned}
 $$
