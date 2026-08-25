@@ -2,24 +2,21 @@
 
 **Asterism** is statistical software for fitting the kinds of variance-component models typically found in quantitative genetics. It comprises a compiled numerical core written in Rust and a Python API, which takes NumPy arrays and returns ordinary Python objects.
 
-Two important things to note before using Asterism in your own research. First, almost every Asterism capability can be replicated in other software by design—great care has been taken to ensure the numbers you get from Asterism closely match those from SOLAR or R wherever they have the same capabilities. Second, Asterism code is **100% AI authored**. I (Sam Mathias) took great care in planning and overseeing development and I stand by the results, but I did not write the code myself. If this bothers you, use other software instead.
+Two important things to note before using Asterism in your own research. First, almost every Asterism capability can be replicated in other software by design — great care has been taken to ensure the numbers you get from Asterism closely match those from SOLAR or R wherever they have the same capabilities. Second, Asterism code is **100% AI authored**. I (Sam Mathias) took great care in planning and overseeing development and I stand by the results, but I did not write the code myself. If this bothers you, use other software instead.
 
 ## Installation
+
+Wheels are published for macOS on Apple silicon and for Linux on x86-64, and carry a compiled binary, so nothing is built on your machine and no Rust toolchain is needed. Python 3.13 or 3.14. The only runtime dependency is NumPy. Install in the usual way:
 
 ```sh
 pip install asterism
 ```
 
-Wheels are published for macOS on Apple silicon and for Linux on x86-64, and
-carry a compiled binary, so nothing is built on your machine and no Rust
-toolchain is needed. Python 3.13 or 3.14. The only runtime dependency is NumPy.
-
 To work on Asterism itself, see [development.md](docs/development.md).
 
 ## Quickstart
 
-Paste this. It builds a pedigree of eighty nuclear families, simulates one
-trait with a true heritability of 0.5, and fits it — no data required.
+The following builds a pedigree, simulates one trait with a true heritability of 0.5, and fits it — no data required.
 
 ```python
 import numpy as np
@@ -60,31 +57,58 @@ h2 (true 0.5): 0.605
 p (h2 = 0):    1.11e-19
 ```
 
-Every analysis below has a complete runnable program behind it in
-[`examples/`](examples/), which lives in the repository rather than in the
-installed package.
+Every analysis below has a complete runnable program behind it in [`examples/`](examples/), which lives in the repository rather than in the installed package.
 
-## What is supported
+## Capabilities
 
-Eight analyses are supported, meaning each one has checks that measure it
-against a known truth or an independent implementation, and those checks pass
-on the exact wheel you installed. They are listed in
-[api-support.md](docs/api-support.md), which also names the public objects that
-fall *outside* that support: models you can import and use, but whose numbers
-have not been established to the same standard. Those are documented separately,
-in [outside-support.md](docs/outside-support.md), and are deliberately not in
-this file.
+Eight models are currently supported. Each one has checks that measure it against a known truth or an independent implementation. They are listed in [api-support.md](docs/api-support.md), which also names the public objects that fall outside current support (models whose numbers have not been established to the same standard yet; see [outside-support.md](docs/outside-support.md)).
 
-What stands behind the supported ones is in
-[numerical-validation.md](docs/numerical-validation.md) — coverage simulations,
-comparisons against R, SOLAR, censReg and MCMCglmm, and agreement between
-platforms to within five parts in a thousand million.
+## Building the inputs
 
-Every fit carries the identity of the build that produced it, so a number can
-be traced back to an exact version. Results that did not converge are returned
-as diagnostic rather than quietly reported.
+The models take covariance matrices. Where those come from is your business:
+every model here accepts any finite, symmetric, positive-semidefinite matrix of
+the right size, whether it came from a pedigree, from genotypes, or from
+somewhere else entirely. Asterism ships two builders because pedigrees are
+tedious to turn into matrices, not because it insists on them.
 
-## One trait, one relationship matrix
+**`relationship_matrix`** builds the additive relationship matrix from a
+pedigree. Identifiers are strings and a founder's parents are `None`. It
+returns the matrix and the row order it is in, which will not be the order you
+supplied.
+
+```python
+relationship, order = asterism.relationship_matrix(ids, father, mother)
+```
+
+It returns twice the kinship coefficient, so full siblings are 0.5 and a parent
+and child are 0.5.
+
+**`kinship_classes`** splits a pedigree into separate zero-diagonal bases — one
+per relationship class — so their coefficients can be estimated and contrasted
+rather than assumed. Use it with `ComponentModel`.
+
+**`align`** matters whether or not you used a builder, because Asterism's
+numerical interface is positional — **and that is the one place a mistake makes
+no noise.** A relationship matrix whose rows are in a different
+order from the response does not fail or warn. On 300 people simulated at a
+heritability of 0.6, the aligned fit returns 0.490 with `p = 1.4e-06`; the same
+data with the response shuffled returns 0.000, an interval of `[0.000, 0.081]`
+and `p = 1`. It does not perturb the answer, it destroys the signal and then
+reports no heritability with confidence. `align` takes the matrix with its own
+identifiers and the values with theirs, lines them up once, and refuses what it
+cannot. It reads a genomic relationship matrix or an estimated kinship computed
+elsewhere just as well as a pedigree one — that pairing, a matrix beside a
+separate identifier file, is exactly where this goes wrong.
+
+```python
+data = asterism.align(k, order, table_ids, y=height, age=age)
+```
+
+**`subject_order_commitment`** takes the aligned order and returns a digest of
+it. Pass that to a model and it is echoed back on the fit record, so a result
+can be tied to the exact rows it came from without ever storing an identifier.
+
+## One trait, one variance component
 
 ```python
 import asterism
@@ -107,34 +131,16 @@ fit["h2"], fit["interval"], fit["test"]
 ml = model.fit(data["y"], estimator="ml")
 ```
 
-**Asterism's numerical interface is positional, and that is the one place a
-mistake makes no noise.** A relationship matrix whose rows are in a different
-order from the response does not fail or warn. On 300 people simulated at a
-heritability of 0.6, the aligned fit returns 0.490 with `p = 1.4e-06`; the same
-data with the response shuffled returns 0.000, an interval of `[0.000, 0.081]`
-and `p = 1`. It does not perturb the answer, it destroys the signal and then
-reports no heritability with confidence. `align` takes the matrix with its own
-identifiers and the values with theirs, lines them up once, and refuses what it
-cannot. It reads a genomic relationship matrix or an estimated kinship computed
-elsewhere just as well as a pedigree one — that pairing, a matrix beside a
-separate identifier file, is exactly where this goes wrong.
-
 `x` is the fixed-effect design and must include its own intercept column when
 one is wanted. `prepare` checks the matrix and design, diagonalises the
-relationship matrix, and stores everything independent of the response. Reuse
-one prepared model for multiple responses with the same rows and design.
-Every fit record carries the identity of the build that produced it, and an
-optional `subject_order_sha256`. That second one is a digest of the row order
-you fitted: pass it in and it is echoed back on the record, so a result can be
-tied to the exact rows it came from without ever storing an identifier.
+covariance matrix, and stores everything independent of the response — so one
+prepared model fits many responses with the same rows and design, at the cost
+of one decomposition. Every fit record carries the identity of the build that
+produced it.
 
 One fit returns everything about that fit: `interval` is the profile interval
 for the heritability and `test` is the test against nought, both already inside
 the record rather than separate calls that would refit.
-
-The relationship builder returns twice the kinship coefficient. `prepare`
-also accepts any finite, symmetric, positive-semidefinite matrix with the right
-dimensions.
 
 ## Several covariance components
 
@@ -143,6 +149,8 @@ Genes and a shared household, fitted together. The complete example is
 
 ```sh
 python examples/components.py
+```
+
 ```
 people:               600
 genetic   (true 0.4): 0.440
@@ -153,8 +161,6 @@ p (household = 0):    0.003
 A household that is exactly one family is nearly the pedigree itself, so
 the two variances are hard to tell apart: unbiased, but wide. Households
 holding people who share no genes are what separate them.
-```
-
 ```
 
 `mean_diagonal_proportions` gives each component's share of the *average
@@ -408,23 +414,10 @@ public and its checks are kept, but 0.1 makes no scientific claim about it.
 
 ## Citing Asterism
 
-Cite the archived version you actually ran, not the repository. Each release is
-archived with its own DOI, and that is what makes a number traceable — the
-repository moves, a release does not.
-
-Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
-publication rather than before it, so the DOI is added there when the first
-release is published — see
-[ADR 0018](docs/adr/0018-published-with-the-papers-that-cite-it.md).
+{{to complete when published/minted}}
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
 
-Asterism is original work. It depends on third-party packages, named in
-`Cargo.lock` and `uv.lock` and used under their own licences, and derives from
-nothing else. It has no affiliation with SOLAR or with any other quantitative
-genetics package. Where its answers are compared with SOLAR, R, `spaMM`,
-MCMCglmm or a published analysis, those are benchmarks: agreement proves
-fidelity and never correctness, which is
-[ADR 0006](docs/adr/0006-agreement-proves-fidelity.md).
+Asterism is original work that depends on third-party packages used under their own licences. It has no affiliation with any other quantitative genetics package. Where its answers are compared with other software packages or a published analysis, those are benchmarks not dependencies.
