@@ -155,3 +155,32 @@ def test_no_macro_has_lost_its_backslash(page: Path) -> None:
     """Found a macro name sitting inside mathematics as a bare word."""
 
     assert not problems, f"{page.name}: {'; '.join(sorted(set(problems))[:4])}"
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda path: path.name)
+def test_mathematics_carries_no_literal_asterisk(page: Path) -> None:
+    """Keep `*` out of mathematics, where Markdown claims it before MathJax.
+
+    Markdown pairs asterisks into emphasis before the mathematics is read, and
+    it pairs them across lines inside a display block and across equations
+    inside a paragraph. What reaches MathJax is then missing both characters,
+    which it reports as a double subscript. `\\ast` is the same symbol and
+    Markdown has no interest in it.
+    """
+    text: str = prose(page)
+    """Read everything outside a code fence."""
+
+    spans: list[str] = [
+        match.group(0) for match in re.finditer(r"(?ms)^\$\$$.*?^\$\$$", text)
+    ] + re.findall(r"\$[^$\n]+\$", text)
+    """Took every stretch of mathematics, display and inline."""
+
+    offenders: list[str] = [
+        " ".join(span.split())[:70] for span in spans if "*" in span
+    ]
+    """Found mathematics Markdown would eat an asterisk out of."""
+
+    assert not offenders, (
+        f"{page.name}: mathematics contains a literal asterisk, which Markdown "
+        f"takes as emphasis; write \\ast instead:\n  " + "\n  ".join(offenders[:4])
+    )

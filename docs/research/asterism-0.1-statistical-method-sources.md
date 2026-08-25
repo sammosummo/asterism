@@ -350,12 +350,12 @@ remain explicit qualification targets.
 
 ## 8. Censored Gaussian/Tobit mixed model
 
-Let $Y_i^*$ be the complete latent measurement and let the observed record be
+Let $Y_i^\ast$ be the complete latent measurement and let the observed record be
 either its exact value or a statement that it lies above or below a
 person-specific limit. Asterism uses
 
 $$
-\mathbf Y^*\sim N(\mathbf X\boldsymbol\beta,
+\mathbf Y^\ast\sim N(\mathbf X\boldsymbol\beta,
 \sigma^2\{h^2\mathbf A+(1-h^2)\mathbf I\}).
 $$
 

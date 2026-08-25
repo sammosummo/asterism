@@ -1,8 +1,8 @@
 # Asterism ⁂
 
-Asterism** is statistical software for fitting the kinds of variance-component models typically found in quantitative genetics. It comprises a compiled numerical core written in Rust and a Python API, which takes NumPy arrays and returns ordinary Python objects.
+**Asterism** is statistical software for fitting the kinds of variance-component models typically found in quantitative genetics. It comprises a compiled numerical core written in Rust and a Python API, which takes NumPy arrays and returns ordinary Python objects.
 
-Two important things to note before using Asterism in your own research. First, almost every Asterism capability can be replicated in other software by design — great care has been taken to ensure the numbers you get from Asterism closely match those from SOLAR or R wherever they have the same capabilities. Second, Asterism code is 100% AI authored**. I (Sam Mathias) took great care in planning and overseeing development and I stand by the results, but I did not write the code myself. If this bothers you, use other software instead.
+Two important things to note before using Asterism in your own research. First, almost every Asterism capability can be replicated in other software by design — care has been taken to ensure the numbers you get from Asterism closely match those from SOLAR or R wherever they have the same capabilities. Second, Asterism code is **100% AI authored**. I (Sam Mathias) planned development carefully and I stand by the results, but I did not write the code myself. If this bothers you, feel free to use the code provided here to replicate analysis in other software.
 
 ## Installation
 

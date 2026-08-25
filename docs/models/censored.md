@@ -50,12 +50,12 @@ project onto the null space of the design.
 
 ### Model and likelihood
 
-Let $Y_i^*$ be the complete measurement and let $C_i\in\{M,U,L\}$ denote
+Let $Y_i^\ast$ be the complete measurement and let $C_i\in\{M,U,L\}$ denote
 measured, upper/right-censored, or lower/left-censored status. Let $a_i$ be the
 observation-specific limit. Asterism fits
 
 $$
-\mathbf Y^*\sim N\left(
+\mathbf Y^\ast\sim N\left(
 \mathbf X\boldsymbol\beta,
 \sigma^2\{h^2\mathbf A+(1-h^2)\mathbf I_n\}
 \right).
@@ -66,8 +66,8 @@ $\sigma^2>0$ the total variance of the complete measurement, and
 $h^2\in[0,1]$ its heritability; $\mathbf X$ and $\boldsymbol\beta$ retain their
 shared fixed-effect meanings.
 
-When $C_i=M$, $Y_i^*$ is observed exactly. When $C_i=U$, only
-$Y_i^*\geq a_i$ is known; when $C_i=L$, only $Y_i^*\leq a_i$ is known. The
+When $C_i=M$, $Y_i^\ast$ is observed exactly. When $C_i=U$, only
+$Y_i^\ast\geq a_i$ is known; when $C_i=L$, only $Y_i^\ast\leq a_i$ is known. The
 public `censoring` array encodes $M$, $U$, and $L$ as 0, 1, and 2. Status is
 supplied rather than inferred from a numeric value. The free
 $\sigma^2$ is identified by measured observations, so $h^2$ concerns the
@@ -84,8 +84,8 @@ conditional factorisation
 
 $$
 L_f=f(\mathbf y_M;\boldsymbol\mu_M,\mathbf V_{MM})
-\Pr\{\mathbf Y_C^*\in\mathcal R_C\mid
-\mathbf Y_M^*=\mathbf y_M\},
+\Pr\{\mathbf Y_C^\ast\in\mathcal R_C\mid
+\mathbf Y_M^\ast=\mathbf y_M\},
 $$
 
 where $L_f$ is family $f$'s likelihood contribution, $\mathbf y_M$ is the
