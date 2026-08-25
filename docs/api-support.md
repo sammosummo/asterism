@@ -51,3 +51,5 @@ limitations. “Supported in 0.1” below means that the object belongs to a pla
 No public object is deprecated in the planned 0.1 release. Existing documented
 names, signatures and fit-record fields become compatibility commitments only
 when 0.1.0 is actually released.
+
+The models marked *public but outside 0.1 scientific support* are described in [outside-support.md](outside-support.md), with what each is for and what it does not do.
