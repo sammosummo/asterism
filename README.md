@@ -35,8 +35,9 @@ converged:     True
 p (h2 = 0):    1.11e-19
 ```
 
-Every example below is a fragment for reading. The complete runnable versions
-are in [`examples/`](examples/).
+Sections below that link to [`examples/`](examples/) have a complete runnable
+program behind them, and the output shown is what it prints. The rest are still
+fragments for reading, and are being converted.
 
 ## What 0.1 supports
 
@@ -118,36 +119,35 @@ dimensions.
 
 ## Several covariance components
 
+Genes and a shared household, fitted together. The complete example is
+[`examples/components.py`](examples/components.py):
+
+```sh
+uv run python examples/components.py
+```
+people:               600
+genetic   (true 0.4): 0.440
+household (true 0.2): 0.210
+converged:            True
+p (household = 0):    0.003
+
+A household that is exactly one family is nearly the pedigree itself, so
+the two variances are hard to tell apart: unbiased, but wide. Households
+holding people who share no genes are what separate them.
+```
+
+```
+
+`mean_diagonal_proportions` gives each component's share of the *average
+person's* variance. If half your sample belongs to no household, a true
+household variance of 0.2 is reported as 0.1, and that is right: the average
+person carries half as much of it.
+
 ```python
-model = asterism.ComponentModel([relationship, household], x)
+model = asterism.ComponentModel([relationship, household], design)
 fit = model.fit(y)
 interval = model.interval(y, component=1)
 test = model.test(y, component=1)
-```
-
-`fit["variances"]` contains the raw covariance coefficients, and
-`fit["raw_coefficient_proportions"]` divides those coefficients by their sum.
-The proportions depend on how each matrix is scaled and are not generic
-variance shares. `interval(..., component=...)` profiles the matching
-scale-invariant mean-diagonal proportion by default. The raw coefficient
-proportion remains available explicitly as a diagnostic quantity.
-
-When every structured matrix has a positive mean diagonal, the fit also returns
-`mean_diagonal_component_contributions` and `mean_diagonal_proportions`. These
-are invariant to positive rescaling of a matrix and its reciprocal coefficient.
-The numerical model rejects linearly dependent covariance bases, including a
-submitted identity matrix that duplicates the implicit residual. Passing that
-exact-rank check does not by itself prove that nearly collinear components are
-estimated precisely.
-
-For a relationship matrix split into off-diagonal kinship classes, the class
-bases have zero diagonal. Report coefficients and class contrasts, not shares:
-
-```python
-split = asterism.kinship_classes(ids, father, mother, sex, keep=analysed_ids)
-classes = asterism.ComponentModel(split["matrices"], x)
-omnibus = classes.equality_test(y)
-contrasts = classes.contrasts(y, classes=[1, 2, 3, 4])
 ```
 
 ## Two traits
