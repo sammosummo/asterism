@@ -55,10 +55,10 @@ No record needs to raise this again.
 ## Public when the papers are, and not before
 
 The repository becomes public at the same time as the papers that cite it, so
-that a reader who follows a citation finds the software. Not earlier: a release
-that refuses to call anything reportable is not useful to a stranger, and there
-is no reason to answer questions about it before there is a paper to anchor
-them.
+that a reader who follows a citation finds the software. Not earlier: a build
+whose checks are not configured refuses to produce a receipt at all, which is
+not useful to a stranger, and there is no reason to answer questions about it
+before there is a paper to anchor them.
 
 The archive is a DOI, minted by Zenodo from a public GitHub release. Zenodo
 applies no quality bar of its own — the bar is the release manifest's, and it
