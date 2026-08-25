@@ -934,17 +934,23 @@ for a correlation — rather than where the profile fell away. An end on a
 bound means the data did not rule that end out, which is a different
 statement from the interval stopping there.
 
-### `mixed_bivariate_test(relationship: 'Any', first: 'dict[str, Any]', second: 'dict[str, Any]', design: 'Any', coordinate: 'str' = 'genetic_correlation') -> 'dict[str, Any]'`
+### `mixed_bivariate_test(relationship: 'Any', first: 'dict[str, Any]', second: 'dict[str, Any]', design: 'Any', coordinate: 'str' = 'genetic_correlation', null: 'float' = 0.0) -> 'dict[str, Any]'`
 
-Test one correlation of the mixed bivariate model against nought.
+Test one correlation of the mixed bivariate model against a fixed value.
 
 ``coordinate`` is ``genetic_correlation`` or ``residual_correlation``, the
-same names the interval takes. Nought is an interior point of a
-correlation's range, so the reference is a plain chi-square on one degree
-of freedom and no boundary mixture applies.
+same names the interval takes.
 
-This is the question the model exists to answer: an estimate with an
-interval does not say whether the two traits share genes at all.
+``null`` is the value tested against, and the two worth asking are the ends
+of the question. Against nought: do these traits share any genes at all? An
+estimate with an interval does not answer that. Against one: are they the
+same genes?
+
+The reference distribution follows from which. Nought is interior to a
+correlation's range, so a plain chi-square on one degree of freedom applies
+and no boundary mixture is needed. Plus or minus one is the edge of that
+range, so the null rests on a bound and takes the Self-Liang even mixture,
+which is reported as ``mixture_50_50`` rather than ``chi2_1``.
 
 ### `prepare(x: 'Any', k: 'Any', *, subject_order_sha256: 'str | None' = None) -> 'PreparedModel'`
 

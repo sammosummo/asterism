@@ -367,10 +367,21 @@ be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
 
-`mixed_bivariate_test` takes no `null`: it tests against nought only, so it
-asks whether the two traits share any genes and cannot ask whether they are
-governed by the same ones. `BivariateModel.test` can do both, but only for a
-pair that is continuous on both sides.
+`mixed_bivariate_test` takes a `null`, and both interesting values work the
+same way they do for a continuous pair. Against nought it asks whether the two
+traits share any genes; against plus or minus one, whether the same genes
+govern both. Nought is interior so a plain chi-square applies, while one sits
+on the edge of a correlation's range and takes the Self-Liang mixture, reported
+as `mixture_50_50`.
+
+```python
+asterism.mixed_bivariate_test(relationship, first, second, design, null=0.0)
+asterism.mixed_bivariate_test(relationship, first, second, design, null=1.0)
+```
+
+Simulated at a true correlation of one, the boundary test rejects at 0.010,
+0.040 and 0.085 against nominal levels of 0.01, 0.05 and 0.10 over two hundred
+replicates, none refused — correctly sized or mildly conservative.
 
 0.1 supports the pairings that include a continuous trait: continuous with
 continuous, binary with continuous, and censored with continuous, along with

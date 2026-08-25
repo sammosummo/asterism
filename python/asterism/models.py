@@ -2248,16 +2248,23 @@ def mixed_bivariate_test(
     second: dict[str, Any],
     design: Any,
     coordinate: str = "genetic_correlation",
+    null: float = 0.0,
 ) -> dict[str, Any]:
-    """Test one correlation of the mixed bivariate model against nought.
+    """Test one correlation of the mixed bivariate model against a fixed value.
 
     ``coordinate`` is ``genetic_correlation`` or ``residual_correlation``, the
-    same names the interval takes. Nought is an interior point of a
-    correlation's range, so the reference is a plain chi-square on one degree
-    of freedom and no boundary mixture applies.
+    same names the interval takes.
 
-    This is the question the model exists to answer: an estimate with an
-    interval does not say whether the two traits share genes at all.
+    ``null`` is the value tested against, and the two worth asking are the ends
+    of the question. Against nought: do these traits share any genes at all? An
+    estimate with an interval does not answer that. Against one: are they the
+    same genes?
+
+    The reference distribution follows from which. Nought is interior to a
+    correlation's range, so a plain chi-square on one degree of freedom applies
+    and no boundary mixture is needed. Plus or minus one is the edge of that
+    range, so the null rests on a bound and takes the Self-Liang even mixture,
+    which is reported as ``mixture_50_50`` rather than ``chi2_1``.
     """
     coordinates: dict[str, int] = {
         "genetic_correlation": 4,
@@ -2267,6 +2274,8 @@ def mixed_bivariate_test(
 
     if coordinate not in coordinates:
         raise ValueError("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST")
+    if not np.isfinite(null) or abs(float(null)) > 1.0:
+        raise ValueError("MIXED_BIVARIATE_NULL_OUTSIDE_CORRELATION_RANGE")
     kinds: dict[str, int] = {"continuous": 0, "binary": 1, "censored": 2}
     """Mapped public trait-kind names to their compiled representation."""
 
@@ -2307,6 +2316,7 @@ def mixed_bivariate_test(
             second_limit,
             np.ascontiguousarray(design, dtype=float),
             coordinates[coordinate],
+            float(null),
         )
     )
     """Compared the free correlation with its zero-correlation joint model."""

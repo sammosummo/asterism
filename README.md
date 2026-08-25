@@ -70,7 +70,7 @@ Eight models are currently supported. Each one has checks that measure it agains
 | **Two traits**                    | Genetic, residual and phenotypic correlations, and a test of the genetic one against zero (no shared genes) or against one (the same genes) | [`bivariate.py`](examples/bivariate.py)       |
 | **Binary traits**                 | Heritability on the liability scale, which is what is meant by the heritability of a disease                                                | [`liability.py`](examples/liability.py)       |
 | **Censored traits**               | Heritability of the *complete* trait — what you would have measured if the instrument reached far enough                                    | [`censored.py`](examples/censored.py)         |
-| **Mixed pairs**                   | A genetic correlation between traits measured differently: censored beside continuous, binary beside continuous                             | [`mixed.py`](examples/mixed.py)               |
+| **Mixed pairs**                   | A genetic correlation between traits measured differently, with a test against zero (no shared genes) or one (the same genes)               | [`mixed.py`](examples/mixed.py)               |
 | **Gene by environment, measured** | Heritability at chosen points along an environment, and how alike genetic effects are at either end                                         | [`gxe.py`](examples/gxe.py)                   |
 | **Gene by environment, binary**   | A genetic variance for each of two groups — a sex, an exposure, a cohort — and the genetic correlation between them                         | [`discrete_gxe.py`](examples/discrete_gxe.py) |
 

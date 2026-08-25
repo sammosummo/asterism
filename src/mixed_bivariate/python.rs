@@ -106,7 +106,8 @@ pub fn mixed_bivariate_fit(
 ///
 /// `coordinate` is 4 for the genetic correlation and 5 for the residual one.
 /// Nought is an interior point of a correlation's range, so the reference is a
-/// plain chi-square on one degree of freedom rather than a boundary mixture.
+/// The reference is a plain chi-square on one degree of freedom for an interior
+/// null, and the Self-Liang even mixture where the null is plus or minus one.
 #[pyfunction]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn mixed_bivariate_test(
@@ -121,6 +122,7 @@ pub fn mixed_bivariate_test(
     second_limit: PyReadonlyArray1<'_, f64>,
     design: PyReadonlyArray2<'_, f64>,
     coordinate: usize,
+    null: f64,
 ) -> PyResult<(String, f64, f64, String, f64, f64)> {
     let a = relationship.as_array();
     let a = DMatrix::from_fn(a.shape()[0], a.shape()[1], |i, j| a[(i, j)]);
@@ -131,7 +133,7 @@ pub fn mixed_bivariate_test(
 
     let got = MixedBivariateModel::build(&a, first, second, &x)
         .map_err(PyValueError::new_err)?
-        .correlation_test(coordinate)
+        .correlation_test(coordinate, null)
         .map_err(PyValueError::new_err)?;
     Ok((
         got.what.to_owned(),

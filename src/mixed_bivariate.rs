@@ -386,18 +386,22 @@ impl MixedBivariateModel {
         self.fit_holding(None)
     }
 
-    /// One correlation against nought.
+    /// One correlation against a fixed value.
     ///
-    /// **This is the question the model was built to answer.** `CONTEXT.md`
+    /// **Nought is the question the model was built to answer.** `CONTEXT.md`
     /// names the analysis as the genetic correlation between a psychiatric
     /// diagnosis and hearing, and an estimate with an interval does not say
     /// whether the two traits share genes at all.
     ///
-    /// Nought is an interior point of the correlation's range, so the reference
-    /// is a plain chi-square on one degree of freedom. There is no mass at the
-    /// null and no mixture to apply. That is what separates this from a
-    /// variance against nought, which sits on its bound and needs the
-    /// Self-Liang rule instead.
+    /// Plus or minus one is the other question worth asking: not whether the
+    /// traits share genes but whether they share all of them.
+    ///
+    /// The reference distribution depends on which. Nought is an interior point
+    /// of the correlation's range, so a plain chi-square on one degree of
+    /// freedom applies, with no mass at the null and no mixture. Plus or minus
+    /// one is the edge of that range, so the null sits on a bound and takes the
+    /// Self-Liang even mixture instead -- the same rule a variance against
+    /// nought needs, and for the same reason.
     ///
     /// The statistic and the p-value both come from `deviance`, which honours
     /// the point mass at nought: two searches that land on the same likelihood
@@ -407,23 +411,46 @@ impl MixedBivariateModel {
     ///
     /// Returns a stable code if the coordinate is not testable or either
     /// required fit did not converge.
-    pub fn correlation_test(&self, coordinate: usize) -> Result<MixedBivariateTest, &'static str> {
+    pub fn correlation_test(
+        &self,
+        coordinate: usize,
+        null: f64,
+    ) -> Result<MixedBivariateTest, &'static str> {
         let what = match coordinate {
             GENETIC_CORRELATION => "genetic_correlation",
             RESIDUAL_CORRELATION => "residual_correlation",
             _ => return Err("MIXED_BIVARIATE_COORDINATE_HAS_NO_TEST"),
         };
+        if !null.is_finite() || null.abs() > 1.0 {
+            return Err("MIXED_BIVARIATE_NULL_OUTSIDE_CORRELATION_RANGE");
+        }
         let free = self.fit()?;
         crate::convergence::require(free.converged, "MIXED_BIVARIATE_FIT_NOT_CONVERGED")?;
-        let null = self.fit_holding(Some((coordinate, 0.0)))?;
-        crate::convergence::require(null.converged, "MIXED_BIVARIATE_NULL_FIT_NOT_CONVERGED")?;
-        let statistic = crate::deviance::deviance(free.loglik, null.loglik);
+        let held = self.fit_holding(Some((coordinate, null)))?;
+        crate::convergence::require(held.converged, "MIXED_BIVARIATE_NULL_FIT_NOT_CONVERGED")?;
+        let statistic = crate::deviance::deviance(free.loglik, held.loglik);
+        // A correlation of plus or minus one is the edge of the parameter
+        // space, so its null takes the even mixture rather than a plain
+        // chi-square. Anything strictly inside is an ordinary interior null.
+        let (p_value, rule) = if null.abs() < 1.0 {
+            (
+                crate::deviance::p_value(statistic, crate::deviance::chi2_one_df_upper_tail),
+                "chi2_1",
+            )
+        } else {
+            (
+                crate::deviance::p_value(statistic, |s| {
+                    0.5 * crate::deviance::chi2_one_df_upper_tail(s)
+                }),
+                "mixture_50_50",
+            )
+        };
         Ok(MixedBivariateTest {
             what,
             statistic,
-            p_value: crate::deviance::p_value(statistic, crate::deviance::chi2_one_df_upper_tail),
-            rule: "chi2_1",
-            null_loglik: null.loglik,
+            p_value,
+            rule,
+            null_loglik: held.loglik,
             alternative_loglik: free.loglik,
         })
     }
