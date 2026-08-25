@@ -152,20 +152,40 @@ test = model.test(y, component=1)
 
 ## Two traits
 
+Two continuous traits and the genetic correlation between them. `observed`
+is a boolean pair per person saying which traits they have; the values and
+the design are stacked, trait within person. The runnable version is
+[`examples/bivariate.py`](examples/bivariate.py):
+
+```sh
+uv run python examples/bivariate.py
+```
+
+```
+people:                600
+h2 first  (true 0.5):  0.431
+h2 second (true 0.4):  0.357
+rho_g     (true 0.6):  0.512
+converged:             True
+95% interval:          [0.224, 0.768]
+p (rho_g = 0):         7.52e-04
+```
+
 ```python
 model = asterism.BivariateModel(relationship, observed, design)
-fit = model.fit(y)
+fit = model.fit(values)
 fit["h2_first"], fit["h2_second"]
 fit["rho_g"], fit["rho_e"], fit["rho_p"]
-model.interval(y, "rho_g")
-model.test(y, "rho_g", null=0.0)
+model.interval(values, "rho_g")
+model.test(values, "rho_g", null=0.0)
 ```
 
 `observed` is one Boolean pair per person, permitting different missingness for
-the two traits. `design` and `y` contain only observed person-trait rows, in
-person order with trait within person.
-The 0.1 reportable target is `rho_g` with its interval and test; the other fitted
-quantities describe the joint fit but are not additional 0.1 claims.
+the two traits. `design` and the values contain only observed person-trait rows,
+in person order with trait within person.
+
+The 0.1 reportable target is `rho_g` with its interval and test; the other
+fitted quantities describe the joint fit but are not additional 0.1 claims.
 
 ## Spatial covariance — outside 0.1 scientific support
 
@@ -250,6 +270,23 @@ Mendell-Elston sequential approximation.
 
 ## A trait whose measurement stops at a limit
 
+The heritability returned is of the *complete* trait: what you would have
+had if the instrument reached far enough. It is maximum likelihood, never
+REML, so do not place it beside a REML heritability. The runnable version is
+[`examples/censored.py`](examples/censored.py):
+
+```sh
+uv run python examples/censored.py
+```
+
+```
+people:             800
+censored:           400 of 800
+h2 (true 0.5):      0.450
+converged:          True
+95% interval:       [0.282, 0.615]
+```
+
 ```python
 fit = asterism.tobit_fit(relationship, value, censoring, limit, design)
 fit["heritability"], fit["total_variance"], fit["censored_share"]
@@ -267,30 +304,43 @@ the case this was built for, and there the recorded maximum differs between
 frequencies and between sessions, so a censored value can carry the same number
 as a genuinely measured one. Only the status tells them apart.
 
-The heritability that comes back is the heritability of the *complete* variable
-— the number there would have been had the instrument reached far enough. It is
-comparable with an ordinary heritability of an uncensored trait, and **not**
-comparable with one fitted to values where the censored ones were replaced by
-their limit, which is the usual practice and the thing this exists to replace.
-It is maximum likelihood, never REML, because a censored observation has no
-response to project onto the null space of the design.
-The 16 and 18 kHz uses remain blocked until coverage at their approximately 52
-and 75 per cent censoring levels passes on the fixed release artifact.
+The heritability that comes back is that of the *complete* variable — the number
+there would have been had the instrument reached far enough. It is comparable
+with an ordinary heritability of an uncensored trait, and **not** comparable
+with one fitted to values where the censored ones were replaced by their limit,
+which is the usual practice and the thing this exists to replace. It is maximum
+likelihood, never REML, because a censored observation has no response to
+project onto the null space of the design.
 
 ## Two traits measured differently
+
+One trait censored, one not. This is the pairing the extended high-frequency
+work needs. The runnable version is
+[`examples/mixed.py`](examples/mixed.py):
+
+```sh
+uv run python examples/mixed.py
+```
+
+```
+people:                800
+censored:              320 of 800
+rho_g     (true 0.6):  0.538
+converged:             True
+95% interval:          [0.342, 0.722]
+```
 
 ```python
 first = {"kind": "censored", "value": v1, "censoring": c1, "limit": l1}
 second = {"kind": "continuous", "value": v2, "censoring": c2, "limit": l2}
-
 fit = asterism.mixed_bivariate_fit(relationship, first, second, design)
 fit["genetic_correlation"], fit["residual_correlation"]
 ```
 
-Either trait may be `continuous`, `binary` or `censored`, and the pair may be
-any combination of the three. The covariance is `BivariateModel`'s; what varies
-is only how each observation is seen — a density at a point, or the probability
-of a region, with a continuous value the degenerate region.
+Either trait may be `continuous`, `binary` or `censored`. The covariance is
+`BivariateModel`'s; what varies is only how each observation is seen — a density
+at a point, or the probability of a region, with a continuous value the
+degenerate region.
 
 **A binary trait's variance is fixed at one** and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is a liability
@@ -298,6 +348,7 @@ heritability while a continuous or censored trait's is not, and the two must not
 be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
+
 0.1 supports the pairings that include a continuous trait: continuous with
 continuous, binary with continuous, and censored with continuous, along with
 censored with censored. The binary-with-censored pair is deferred — it stays
