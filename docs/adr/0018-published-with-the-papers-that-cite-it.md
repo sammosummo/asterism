@@ -18,12 +18,9 @@ MIT, not the dual MIT/Apache-2.0 that ADR 0001 recorded as a working
 recommendation. The recommendation was never a decision, and one permissive
 licence is easier to explain to a journal, a collaborator and a reader than two.
 
-The copyright line names Sam. **This is the one thing here that is not settled
-by us**: the work was done as an employee of Boston Children's Hospital, and
-whether copyright vests in the author or the institution is the institution's
-question, not a technical one. It has to be confirmed before the repository is
-made public, and the line corrected if the answer differs. Nothing else in this
-record depends on the answer.
+The copyright line names Sam, and it stays that way: he holds the copyright,
+not Boston Children's Hospital. This was left open when the record was first
+written and has since been settled. `LICENSE` needs no change.
 
 ## The provenance question is closed
 
@@ -77,8 +74,6 @@ what a receipt records is now
 These are deliberately left undone while the repository is private, because
 each one is a step nobody should take by accident:
 
-- Confirm the copyright holder with the institution and correct `LICENSE` if
-  needed.
 - Make the repository public.
 - Remove the `Private :: Do Not Upload` classifier from `pyproject.toml`. It is
   a deliberate guard, and it is the reason nothing can reach PyPI by accident;

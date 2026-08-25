@@ -7,10 +7,9 @@ title: "Asterism: variance-component models for quantitative genetics"
 abstract: >-
   Asterism fits variance-component models for quantitative genetics. It takes
   numerical arrays already in memory and returns fit records, profile-likelihood
-  intervals and hypothesis tests. A result is reportable only when it comes from
-  a release build and every required fit, interval, test and pre-written
-  acceptance rule has passed; a fit that did not converge is diagnostic and
-  never evidence.
+  intervals and hypothesis tests. The models cover one or several variance
+  components, two traits, binary and censored traits, mixed pairs, and
+  gene-by-environment interaction with a measured or a binary environment.
 type: software
 authors:
   - given-names: Samuel
