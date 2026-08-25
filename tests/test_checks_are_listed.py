@@ -1,6 +1,6 @@
 """Every script in `checks/` is named in the document that lists them.
 
-`docs/numerical-validation.md` already states this rule, and states why: a
+`docs/development.md` carries the list and states why: a
 script missing from the list is a script nobody runs, which is how the
 association comparison sat broken and unnoticed through a change to the
 interface it called.
@@ -23,8 +23,8 @@ from pathlib import Path
 ROOT: Path = Path(__file__).resolve().parent.parent
 """Located the repository root from this test module."""
 
-DOCUMENT: Path = ROOT / "docs" / "numerical-validation.md"
-"""Located the canonical numerical-validation inventory."""
+DOCUMENT: Path = ROOT / "docs" / "development.md"
+"""Located the canonical inventory of scientific checks."""
 
 CHECKS: Path = ROOT / "checks"
 """Located the maintained independent-check scripts."""
@@ -42,7 +42,7 @@ def test_every_check_is_listed_in_the_validation_document() -> None:
 
     assert not unlisted, (
         "these scripts in checks/ are not named in "
-        f"docs/numerical-validation.md, so nobody runs them: "
+        f"docs/development.md, so nobody runs them: "
         f"{', '.join(unlisted)}"
     )
 
@@ -71,6 +71,5 @@ def test_the_document_does_not_name_a_check_that_has_gone() -> None:
     """Collected promised check scripts that no longer exist."""
 
     assert not gone, (
-        "docs/numerical-validation.md names scripts that are not in checks/: "
-        f"{', '.join(gone)}"
+        f"docs/development.md names scripts that are not in checks/: {', '.join(gone)}"
     )

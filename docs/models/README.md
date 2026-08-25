@@ -18,7 +18,7 @@ interface.
 What every model shares — the notation, the Gaussian likelihood, the release
 contract and the numerical implementation — is in
 [statistical-methods.md](../statistical-methods.md). What is common to running
-the checks is in [numerical-validation.md](../numerical-validation.md). Models
+the checks is in [development.md](../development.md). Models
 Asterism does not support are in [outside-support.md](../outside-support.md).
 
 Each page's **Interface** section is generated from the package's own

@@ -43,13 +43,13 @@ REQUIRED_FIELDS: tuple[str, ...] = ("author", "title", "year", "doi", "url")
 
 REQUIRED_HEADINGS: tuple[str, ...] = (
     "## Release contract",
-    "## Spatial covariance presence",
     "## Numerical implementation",
 )
 """Named the method sections that must remain in the shared document.
 
 Each supported model's own section left this list when the equations, the
-evidence and the interface for each were gathered onto a page of its own.
+evidence and the interface for each were gathered onto a page of its own, and
+the unsupported models' sections left with them, for outside-support.md.
 That requirement did not go away, it moved: `tests/test_model_pages.py`
 requires every analysis in the manifest to have a page carrying "## The
 model", and takes the list from the manifest rather than repeating it here,
@@ -72,11 +72,20 @@ def validate_references(
     Returns:
         Stable human-readable failures; an empty list means the contract passed.
     """
-    pages: list[Path] = sorted((methods_path.parent / "models").glob("*.md"))
+    pages: list[Path] = [
+        page
+        for page in (
+            *sorted((methods_path.parent / "models").glob("*.md")),
+            methods_path.parent / "outside-support.md",
+        )
+        if page.is_file()
+    ]
     """Found the per-model pages, which now carry most of the equations.
 
     The methods document was one file until the equations, the evidence and the
-    interface for each model were gathered onto a page of its own. Reading both
+    interface for each model were gathered onto a page of its own. Absent
+    companions are skipped, so a caller may point this at a lone document --
+    which is what the tests that feed it a deliberately broken one do. Reading both
     keeps this check exactly as strong as it was: a citation or a reportable
     quantity satisfies it wherever it is written, and nowhere else.
     """

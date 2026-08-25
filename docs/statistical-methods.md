@@ -34,7 +34,7 @@ scientific pass rules are not configured.
 Consequently, **no current Asterism output is reportable yet**, even when the
 optimizer converges. Historical measurements below explain known behavior and
 limitations and are traceable through [Numerical
-validation](numerical-validation.md); they do not silently fill those release
+validation](development.md); they do not silently fill those release
 gates.
 
 The eight 0.1 analysis families are:
@@ -186,98 +186,6 @@ not a derivation of an Asterism test; it is cited as a warning. Model-specific
 mixtures below are Asterism parameter-space derivations that still require the
 manifest's simulation gates.
 
-## Spatial covariance presence — outside 0.1 scientific support
-
-The model below is public and its checks are kept, but 0.1 makes no
-scientific claim about it. The method is recorded here so a later release
-can pick it up unchanged.
-
-### Model, range, and bootstrap
-
-Let $d_{ij}\geq0$ be the supplied distance in kilometres between observations
-$i$ and $j$.
-Asterism adds the exponential spatial kernel
-
-$$
-K_s(i,j;\lambda)=\exp(-\lambda d_{ij}),\qquad\lambda>0,
-$$
-
-to $q$ fixed covariance bases:
-
-$$
-\mathbf V=\sum_{k=1}^{q}\theta_k\mathbf K_k
-+\theta_s\mathbf K_s(\lambda)+\theta_e\mathbf I_n,
-\qquad \theta_s\geq0.
-$$
-
-Here $\mathbf K_k$ is fixed basis $k$, $\theta_k\geq0$ its coefficient,
-$\theta_s$ the spatial coefficient, $\theta_e\geq0$ the residual coefficient,
-and $\mathbf I_n$ the identity. ML and REML are available; REML is the default.
-
-Here $\lambda$ is decay per distance unit, $1/\lambda$ is the e-folding range,
-and $\log(2)/\lambda$ is the half-correlation distance. Gaussian spatial
-covariance ML is developed by [Mardia and Marshall
-(1984)](references.bib#mardiaMarshall1984). If $d_{ij}$ is great-circle
-distance, the exponential remains positive definite on a sphere by the
-completely monotone construction discussed by [Gneiting
-(2013)](references.bib#gneiting2013); Asterism still validates the submitted
-numeric covariance.
-
-Under $H_0:\theta_s=0$, $\lambda$ disappears. This is the nuisance-only-under-
-the-alternative problem studied by [Davies
-(1977)](references.bib#davies1977), so neither ordinary $\chi^2$ nor the simple
-50:50 component mixture supplies the spatial p-value. Asterism fits the reduced
-model, simulates $B$ responses from it, refits the reduced and full models, and
-uses
-
-$$
-p=\frac{1+\sum_{b=1}^{B}\mathbb 1(T_b\geq T_{\mathrm{obs}})}{B+1},
-$$
-
-where $T_{\mathrm{obs}}$ is the observed likelihood-ratio statistic and $T_b$
-is the statistic in bootstrap replicate $b$. The bootstrap originates with
-[Efron (1979)](references.bib#efron1979); the add-one Monte Carlo correction is
-justified by [Phipson and Smyth
-(2010)](references.bib#phipsonSmyth2010).
-
-The free fit may profile $\lambda$ or numerically integrate it over the
-implemented grid. The same choice is used for the observed and simulated
-statistics. Range is descriptive in 0.1. Weak joint identification of variance
-and range under fixed-domain asymptotics is established for Matérn models by
-[Zhang (2004)](references.bib#zhang2004); the exponential kernel is the
-Matérn-$1/2$ case. The theorem motivates caution but does not diagnose any one
-submitted layout.
-
-### Public record mapping
-
-| Manifest quantity | Public field |
-| --- | --- |
-| `spatial_presence_test` | `SpatialModel.bootstrap(y)`: `statistic`, `p_value`, `rule`, `exceedances`, `replicates`, `requested`, `seed`, and `smallest_reportable` |
-
-`SpatialModel.fit` supplies the prerequisite `converged`, `estimator`, and
-`range_treatment` fields. Its variance decomposition, `decay_per_km`, and
-`half_distance_km` are descriptive in the spatial-presence analysis. Raw
-coefficient proportions and spatial intervals are diagnostic and are not 0.1
-reportable targets.
-
-### Assumptions, measured limitations, and unmet gates
-
-Distances and their units are correct; the exponential kernel is appropriate;
-fixed covariance bases are valid and aligned; and the reduced-model generator
-represents the null. Monte Carlo resolution is never finer than $1/(B+1)$.
-Historical calibration with 199 bootstrap replicates gave rejection 0.050 at
-nominal 0.05. Profiled spatial-component and half-distance intervals covered
-at 0.984 and 0.976, but 98.4% of half-distance intervals reached a bound.
-Independent `spaMM` fits also agreed on a long-range case while both missed its
-true decay, illustrating that implementation agreement does not prove
-identification. SOLAR discards covariance that crosses pedigrees and is not an
-independent reference for that portion of the model. The SOLAR-limited and
-`spaMM` adapters have now been refreshed live and frozen. A values-free
-target-layout smoke completed its fit and one requested bootstrap replicate;
-the code also refuses any incomplete bootstrap denominator. The exact
-199-replicate fixed-wheel target command remains unrun, so this is operability
-evidence rather than a qualified presence test.
-
 ## Numerical implementation
 
 Asterism does not use one optimizer for every model:
@@ -306,38 +214,26 @@ traits. Non-Gaussian region probabilities use a univariate normal calculation
 in dimension one, fixed sixteen-point quadrature in dimension two, and a
 sequential approximation above dimension two.
 
-## Public capabilities outside 0.1 support
+## What is still outstanding
 
-The following public objects remain accessible under [ADR
-0013](adr/0013-scientific-support-does-not-remove-public-models.md), but their
-results are not
-scientifically supported by the 0.1 manifest: powered-exponential continuous
-G×E, autoregressive covariance, spatial covariance presence, association scans,
-variant-set tests, weighted chi-square tail utilities, latent mediation,
-saturated bivariate benchmarks, repeated-audiogram decomposition,
-BLUP/prediction headlines, and the mixed binary-with-right-censored pairing. Their
-continued presence is an API-compatibility decision, not a reportability claim.
+Every supported analysis has now been measured against the current build, and
+the cross-platform agreement and the Medusa installed-wheel smoke with it. What
+remains before a release is the standard synthetic receipts, which refuse to
+run on anything but a clean released build and are therefore produced during
+the release itself.
 
-## Qualification gaps that remain scientific work
+Two things that were on this list are gone rather than done: the target-sized
+time and memory budgets, withdrawn by
+[ADR 0019](adr/0019-no-resource-budget-gates-a-release.md), and the supported
+design range, withdrawn by
+[ADR 0020](adr/0020-no-design-range-gates-a-result.md).
 
-The following gates cannot be closed by improving prose or adding citations:
-
-- execute every exact prewritten scientific command against the clean release
-  wheel and retain its fail-closed receipt; this includes the two discrete-G×E
-  campaigns that made zero scientific attempts in the current sandbox;
-- record what each check measured beside its own evidence, and claim nothing
-  beyond it;
-- measure target-sized time and peak-memory budgets, macOS/Linux numerical
-  tolerances, the Medusa installed-wheel smoke, and all nine standard synthetic
-  analysis receipts;
-- bound several-component support by demonstrated matrix properties; exact
-  basis dependence now refuses, while a qualified near-dependence precision
-  rule is still needed before broadening the range beyond the tested bases;
-- retain the target liability and mixed-model campaigns needed to bound the
-  Mendell–Elston approximation at the intended family sizes, prevalence, and
-  censoring pattern; and
-- pin every qualification receipt to the released source, dependency locks,
-  saved-wheel checksum, and platform artifact.
+Two remain open as science rather than process. Several-component support is
+bounded by demonstrated matrix properties: exact basis dependence refuses, and
+a qualified near-dependence precision rule is still wanted before the tested
+bases are broadened. And the Mendell–Elston approximation is still to be
+bounded at the intended family sizes, prevalence and censoring pattern for the
+liability and mixed models.
 
 The primary-source audit behind this specification is retained in
 [`research/asterism-0.1-statistical-method-sources.md`](research/asterism-0.1-statistical-method-sources.md).
