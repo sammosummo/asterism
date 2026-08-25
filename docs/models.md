@@ -1,6 +1,6 @@
-# Using the models
+# Overview
 
-What each model is for, what it returns, and what it does not claim. The
+Asterism currently supports eight models for different analytic use cases, with more planned. What each model is for, what it returns, and what it does not claim. The
 [README](../README.md) is the overview; this is the detail behind it.
 
 Every model here is one of the eight Asterism supports. The ones it does not
