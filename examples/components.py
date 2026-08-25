@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asterism
 import numpy as np
+
 from synthetic import pedigree
 
 FAMILIES: int = 150

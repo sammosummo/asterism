@@ -47,6 +47,11 @@ ignore = [
   "E731",
 ]
 
+[tool.ruff.lint.isort]
+# `synthetic` is the helper beside the examples, not a package from PyPI.
+# Without this, ruff sorted it as third party and the fix flip-flopped.
+known-local-folder = ["synthetic"]
+
 [tool.maturin]
 manifest-path = "Cargo.toml"
 features = ["python"]

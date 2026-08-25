@@ -10,10 +10,10 @@ genetic variance grows away from its centre.
 
 from __future__ import annotations
 
-import numpy as np
-from synthetic import pedigree
-
 import asterism
+import numpy as np
+
+from synthetic import pedigree
 
 relationship, order = pedigree(families=500, children=2)
 """Built five hundred families of four people each: this test needs data."""

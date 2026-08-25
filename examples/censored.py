@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asterism
 import numpy as np
+
 from synthetic import pedigree, trait
 
 relationship, order = pedigree(families=200, children=2)

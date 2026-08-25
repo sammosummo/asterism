@@ -10,10 +10,10 @@ A genetic correlation below one is gene-by-environment interaction.
 
 from __future__ import annotations
 
-import numpy as np
-from synthetic import correlated_traits, pedigree
-
 import asterism
+import numpy as np
+
+from synthetic import correlated_traits, pedigree
 
 relationship, order = pedigree(families=250, children=2)
 """Built two hundred and fifty families of four people each."""

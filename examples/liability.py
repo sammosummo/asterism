@@ -9,10 +9,10 @@ the REML heritabilities the rest of this package reports.
 
 from __future__ import annotations
 
-import numpy as np
-from synthetic import pedigree, trait
-
 import asterism
+import numpy as np
+
+from synthetic import pedigree, trait
 
 relationship, order = pedigree(families=250, children=2)
 """Built two hundred and fifty families of four people each."""
