@@ -31,7 +31,7 @@ python tools/synthetic_analysis_receipts.py \
 The command uses only the public Python interface. It refuses a development or
 dirty build, binds every receipt to the saved wheel, embedded dependency lock,
 source commit, complete synthetic-input commitment and fitted row-order
-commitment, and requires all nine outcomes to be `reportable`. It keeps all
+commitment, and requires all eight outcomes to be `reportable`. It keeps all
 receipts in memory until the entire set passes, then writes one strict JSON file
 per analysis and a checksummed `index.json`. A partial set is never release
 evidence. The independent release verifier reads every indexed file and

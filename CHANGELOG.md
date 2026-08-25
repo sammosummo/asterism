@@ -43,8 +43,7 @@ tag and saved wheels.
 - Restricted continuous and discrete gene-by-environment analyses.
 - Binary liability heritability.
 - One-trait Tobit audiogram heritability.
-- Binary-diagnosis/censored-hearing genetic correlation.
-- Spatial-component presence testing.
+- Genetic correlation for a mixed pair including a continuous trait.
 
 ### Compatibility
 

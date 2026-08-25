@@ -37,7 +37,7 @@ limitations and are traceable through [Numerical
 validation](numerical-validation.md); they do not silently fill those release
 gates.
 
-The nine 0.1 analysis families are:
+The eight 0.1 analysis families are:
 
 | Analysis ID | Public entry points | Reportable target |
 | --- | --- | --- |
@@ -48,8 +48,7 @@ The nine 0.1 analysis families are:
 | `discrete_gene_by_environment` | `DiscreteGxeModel.fit`, `.correlation_interval`, `.test` | Genetic correlation, its interval, and the three genetic tests |
 | `binary_liability_heritability` | `LiabilityModel.fit`, `.interval`, `.test` | Liability-scale $h^2$, interval, and test |
 | `one_trait_tobit_audiogram` | `tobit_fit`, `tobit_interval`, `tobit_test` | Complete-trait $h^2$, interval, and test |
-| `mixed_binary_censored_genetic_correlation` | `mixed_bivariate_fit`, `mixed_bivariate_interval`, `mixed_bivariate_test` | Genetic correlation for the binary/right-censored pair, interval, and test |
-| `spatial_component_presence` | `SpatialModel.fit`, `.bootstrap` | Parametric-bootstrap test of spatial covariance presence |
+| `mixed_binary_censored_genetic_correlation` | `mixed_bivariate_fit`, `mixed_bivariate_interval`, `mixed_bivariate_test` | Genetic correlation for a mixed pair including a continuous trait, interval, and test |
 
 Quantities called *descriptive* below may accompany a reportable result but are
 not themselves a supported inferential claim. Quantities called *diagnostic*
@@ -847,7 +846,11 @@ therefore remains unmeasured, with no target-design calibration, qualifying
 runtime or analysis-readiness claim, and the exact fixed-wheel campaign remains
 required before reporting the intended diagnosis/hearing genetic correlation.
 
-## Spatial covariance presence
+## Spatial covariance presence — outside 0.1 scientific support
+
+The model below is public and its checks are kept, but 0.1 makes no
+scientific claim about it. The method is recorded here so a later release
+can pick it up unchanged.
 
 ### Model, range, and bootstrap
 
@@ -969,10 +972,10 @@ The following public objects remain accessible under [ADR
 0013](adr/0013-scientific-support-does-not-remove-public-models.md), but their
 results are not
 scientifically supported by the 0.1 manifest: powered-exponential continuous
-G×E, autoregressive covariance, association scans, variant-set tests, weighted
-chi-square tail utilities, latent mediation, saturated bivariate benchmarks,
-repeated-audiogram decomposition, BLUP/prediction headlines, and mixed
-trait-kind combinations other than the binary/right-censored target. Their
+G×E, autoregressive covariance, spatial covariance presence, association scans,
+variant-set tests, weighted chi-square tail utilities, latent mediation,
+saturated bivariate benchmarks, repeated-audiogram decomposition,
+BLUP/prediction headlines, and the mixed binary-with-right-censored pairing. Their
 continued presence is an API-compatibility decision, not a reportability claim.
 
 ## Qualification gaps that remain scientific work
