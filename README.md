@@ -78,6 +78,8 @@ Matrices can come from anywhere. `relationship_matrix` builds one from a pedigre
 
 Each model has [a page of its own](docs/models/) carrying everything it needs: how to use it, its equations, a summary of what has been measured about it, and its interface. What they share is in [statistical-methods.md](docs/statistical-methods.md), the comparisons and simulations in full are in the [validation record](docs/validation.md), and the whole public surface in the [API reference](docs/api-reference.md).
 
+For an analysis whose provenance has to be recorded — which wheel, which commit, which inputs — `run_analysis` returns a receipt alongside the fit. See [analysis-receipts.md](docs/analysis-receipts.md).
+
 ## Citing Asterism
 
 {{to complete when published/minted}}

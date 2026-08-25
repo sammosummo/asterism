@@ -143,8 +143,8 @@ did not build, on covariance that crosses families throughout.
 
 The check verifies two steps the deposit leaves undocumented. The overlap
 matrices carry no identifier file; reading their indices as the pedigree's row
-order yields exactly the 948 spring and 766 rut females the paper reports. And
-1,520 of the 4,051 deer have a known mother and no father, so each unknown
+order yields exactly the 948 spring and 766 rut females the paper reports.
+Separately, 1,520 of the 4,051 deer have a known mother and no father, so each unknown
 father is given its own founder identity, a construction that agrees with a
 longhand tabular recursion to `0.000e+00` and recovers 339 inbred animals.
 

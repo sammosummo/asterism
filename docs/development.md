@@ -69,9 +69,12 @@ that quotation exactly.
 
 ## Running the scientific checks
 
-Every script in `checks/` is listed here. A script missing from this list is a
-script nobody runs, which is how the association comparison sat broken and
-unnoticed through a change to the interface it calls.
+Several checks compare against native SOLAR, whose input files quantise the
+numbers written into them. What that means for reproducing a fixture is in
+[solar-reference-fixtures.md](solar-reference-fixtures.md).
+
+Every script in `checks/` is listed here. A script left off the list is never
+run, and so is never seen to break.
 
 The tests, and the equation checks that need only NumPy:
 
@@ -154,7 +157,7 @@ the order the coordinates are given in -- an order that is arbitrary, because
 when every censored value lies the same side of its limit there is no rarer
 class to sort by.
 
-So the result is conditional on the design. Fewer frequencies, heavier
+The result is conditional on the design. Fewer frequencies, heavier
 censoring, smaller families, or a person whose audiogram is mostly unmeasurable
 all reduce how much is conditioned on and move back towards the regime where it
 is not safe. Run it again when the design changes.
@@ -174,8 +177,8 @@ sixty five. It reuses the reviewed,
 participant-free aggregate the spatial target layout already uses: 1,792 people,
 190 families with the largest at 165, and 1,140 households sized one to seven.
 
-The household matrix has to cross families, and that is the point rather than a
-detail. A household that is exactly a sibling pair makes twice the kinship the
+The household matrix crosses families, which is what makes the design hard.
+A household that is exactly a sibling pair makes twice the kinship the
 identity plus the within-pair pattern and the household matrix the identity plus
 that same pattern, so the residual identity is their exact combination and the
 three bases have rank two. Nothing separates additive from shared household

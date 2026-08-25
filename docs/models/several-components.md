@@ -25,8 +25,8 @@ holding people who share no genes are what separate them.
 
 `mean_diagonal_proportions` gives each component's share of the *average
 person's* variance. If half your sample belongs to no household, a true
-household variance of 0.2 is reported as 0.1, and that is right: the average
-person carries half as much of it.
+household variance of 0.2 is reported as 0.1: the average person carries half
+as much of it.
 
 ```python
 model = asterism.ComponentModel([relationship, household], design)

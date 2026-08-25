@@ -249,7 +249,7 @@ Over the same 10 million tests, per draw:
 | `0.001` | 53.28 | 51.83 | 50 |
 | `1e-4` | 5.44 | 5.13 | 5 |
 
-So of the 22 excess crossings per draw at `0.01`, permuting removes about 12.
+Of the 22 excess crossings per draw at `0.01`, permuting removes about 12.
 That part is the pedigree kinship failing to describe the relatedness the real
 genotypes carry, which is why it is largest for common markers: those carry most
 of that signal. A genomic relationship matrix, rather than a pedigree one, is
@@ -257,10 +257,9 @@ what would close it.
 
 The remaining two per cent is the test's own, from reading a statistic with
 estimated variance components against a chi-square. It is marginal at 200 draws
--- 510.43 against a ceiling of 509.9 -- and has gone by `1e-4`, so it does not
-threaten a scan at genome-wide thresholds, but it is worth knowing before
-quoting a p-value near `0.01`. The check reports both parts separately and
-judges only this one.
+-- 510.43 against a ceiling of 509.9 -- and has gone by `1e-4`. It does not
+reach genome-wide thresholds, but it does affect a p-value near `0.01`. The
+check reports both parts separately and judges only this one.
 
 ## Variant sets: genes and pathways 
 
@@ -398,8 +397,8 @@ finite on the log scale.
 
 The normal tail underneath all of this is `erfc(x / sqrt 2) / 2` from FDLIBM.
 Against a sixty-digit evaluation it is right to an ulp for ordinary arguments
-and never worse than `4e-14` out to 36 deviations. This matters more than it
-looks: the tail `statrs` supplies is wrong by about `5e-11`, and its error
+and never worse than `4e-14` out to 36 deviations. The tail `statrs` supplies
+is wrong by about `5e-11`, and its error
 wanders from point to point rather than varying smoothly, which to a quadrature
 asking for `1e-13` is noise. The conditional integrand inherited it and the
 quadrature subdivided to its depth limit chasing rounding, refusing rectangles

@@ -54,15 +54,15 @@ itself agreed exactly, and refreshing after quantisation returned every native
 heritability, log likelihood and p-value unchanged to six significant figures,
 with only two standard errors moving in their fifth and fourth.
 
-So a generated value that reaches a native input file is quantised at
+A generated value that reaches a native input file is therefore quantised at
 generation, far coarser than the arithmetic underneath it. The liability check
 quantises age at six decimals, which is nine orders of magnitude above the
 difference between platforms.
 
-The other four checks pass on both platforms today. That is not the same as
-being safe: any of them that writes a raw generated float into a native input
-file has the same latent fault, and it would appear the first time a value
-landed near a boundary. Each is worth checking deliberately rather than waiting.
+The other four checks pass on both platforms today. Any of them that writes a
+raw generated float into a native input file has the same latent fault, which
+would appear the first time a value landed near a boundary. None has been
+checked for it.
 
 ## Refresh with native SOLAR
 

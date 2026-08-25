@@ -332,8 +332,8 @@ interval than the coverage it claims.
 
 ``lower_limited`` and ``upper_limited`` say whether an endpoint sat at
 the edge of what a correlation may be rather than where the likelihood
-fell away. An interval reaching a bound is coverage without precision,
-and that is worth knowing before it is quoted.
+fell away. An interval reaching a bound covers without pinning the
+value down.
 
 #### `DiscreteGxeModel.fit(self, y: 'Any', reml: 'bool' = True) -> 'dict[str, Any]'`
 

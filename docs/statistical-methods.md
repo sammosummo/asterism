@@ -224,7 +224,7 @@ design range, withdrawn by
 Two remain open as science rather than process. Several-component support is
 bounded by demonstrated matrix properties: exact basis dependence refuses, and
 a qualified near-dependence precision rule is still wanted before the tested
-bases are broadened. And the Mendell–Elston approximation is still to be
+bases are broadened. The Mendell–Elston approximation is also still to be
 bounded at the intended family sizes, prevalence and censoring pattern for the
 liability and mixed models.
 

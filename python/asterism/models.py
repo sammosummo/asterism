@@ -1523,8 +1523,8 @@ class DiscreteGxeModel:
 
         ``lower_limited`` and ``upper_limited`` say whether an endpoint sat at
         the edge of what a correlation may be rather than where the likelihood
-        fell away. An interval reaching a bound is coverage without precision,
-        and that is worth knowing before it is quoted.
+        fell away. An interval reaching a bound covers without pinning the
+        value down.
         """
         y = np.ascontiguousarray(y, dtype=np.float64)
         """Converted the response for genetic-correlation profile fits."""
