@@ -81,3 +81,47 @@ def test_the_example_recovers_the_truth_it_claims(example: Path) -> None:
             f"{example.name} recovered {estimate} for a true {truth}"
         )
     """Caught an example that quietly stopped recovering its own truth."""
+
+
+def test_the_readme_quickstart_runs_and_prints_what_it_shows() -> None:
+    """Keep the first code a reader pastes working, and honest about its output.
+
+    The quickstart is inline rather than a link, because someone who installed
+    Asterism from a wheel has no `examples/` directory. That makes it the one
+    piece of code in the documentation with nothing else guarding it.
+    """
+    readme: str = (ROOT / "README.md").read_text(encoding="utf-8")
+    """Read the front page."""
+
+    section: str = readme[readme.index("## Quickstart") :]
+    """Took the quickstart and whatever follows it."""
+
+    code: str = section.split("```python\n", 1)[1].split("```", 1)[0]
+    """Took the block a reader would copy."""
+
+    expected: str = section.split("```\n", 2)[2].split("```", 1)[0]
+    """Took the output the README claims that block produces."""
+
+    script: Path = ROOT / "examples" / ".readme_quickstart_check.py"
+    """Wrote it beside the examples so relative behaviour matches."""
+
+    script.write_text(code, encoding="utf-8")
+    try:
+        completed: subprocess.CompletedProcess[str] = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        """Ran exactly what the README tells a reader to paste."""
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == expected.strip(), (
+            "the README quickstart no longer prints what the README shows:\n"
+            f"  printed:  {completed.stdout.strip()!r}\n"
+            f"  README:   {expected.strip()!r}"
+        )
+    finally:
+        script.unlink(missing_ok=True)
+    """Removed the temporary copy however the check ended."""

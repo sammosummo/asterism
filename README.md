@@ -1,69 +1,87 @@
-# Asterism
+# Asterism ⁂
 
-Variance-component models for quantitative genetics, in Rust with a Python
-interface. It takes NumPy arrays already in memory and returns ordinary Python
-dictionaries and arrays. It reads no files and writes none.
+**Asterism** is statistical software for fitting the kinds of variance-component models typically found in quantitative genetics. It comprises a compiled numerical core written in Rust and a Python API, which takes NumPy arrays and returns ordinary Python objects.
 
-## Who this is for
+Two important things to note before using Asterism in your own research. First, almost every Asterism capability can be replicated in other software by design—great care has been taken to ensure the numbers you get from Asterism closely match those from SOLAR or R wherever they have the same capabilities. Second, Asterism code is **100% AI authored**. I (Sam Mathias) took great care in planning and overseeing development and I stand by the results, but I did not write the code myself. If this bothers you, use other software instead.
 
-A quantitative geneticist who already knows what a relationship matrix, REML,
-heritability and a genetic correlation are, and who needs to know two things:
-what this package's interface is, and what it has actually been validated to
-do.
-
-Every public object, with its signature and its own documentation, is in the
-[API reference](docs/api-reference.md), which is generated from the code.
-
-It does not teach variance components, and it does not assume you will accept a
-number because software produced it. Every supported analysis has a check that
-measures it against a known truth or an independent implementation, and those
-results are in
-[numerical-validation.md](docs/numerical-validation.md). The model equations
-are in [statistical-methods.md](docs/statistical-methods.md).
-
-## Start here
+## Installation
 
 ```sh
-uv run python examples/quickstart.py
+pip install asterism
 ```
 
-That builds a pedigree of eighty nuclear families, simulates one trait with a
-true heritability of 0.5, and fits it:
+Wheels are published for macOS on Apple silicon and for Linux on x86-64, and
+carry a compiled binary, so nothing is built on your machine and no Rust
+toolchain is needed. Python 3.13 or 3.14. The only runtime dependency is NumPy.
+
+To work on Asterism itself, see [development.md](docs/development.md).
+
+## Quickstart
+
+Paste this. It builds a pedigree of eighty nuclear families, simulates one
+trait with a true heritability of 0.5, and fits it — no data required.
+
+```python
+import numpy as np
+import asterism
+
+FAMILIES, CHILDREN = 80, 4
+
+# Two founders and four full siblings per family.
+parents = [(f"{f}-dad", f"{f}-mum") for f in range(FAMILIES)]
+ids = [name for pair in parents for name in pair] + [
+    f"{f}-child{c}" for f in range(FAMILIES) for c in range(CHILDREN)
+]
+father = [None] * (2 * FAMILIES) + [
+    parents[f][0] for f in range(FAMILIES) for _ in range(CHILDREN)
+]
+mother = [None] * (2 * FAMILIES) + [
+    parents[f][1] for f in range(FAMILIES) for _ in range(CHILDREN)
+]
+
+relationship, order = asterism.relationship_matrix(ids, father, mother)
+people = len(order)
+
+# Simulate a trait that really is 50% heritable.
+covariance = 0.5 * relationship + 0.5 * np.eye(people)
+trait = np.linalg.cholesky(covariance) @ np.random.default_rng(0).normal(size=people)
+
+model = asterism.prepare(np.ones((people, 1)), relationship)
+fit = model.fit(trait)          # REML by default
+
+print(f"h2 (true 0.5): {fit['h2']:.3f}")
+print(f"95% interval:  [{fit['interval']['lower']:.3f}, {fit['interval']['upper']:.3f}]")
+print(f"p (h2 = 0):    {fit['test']['p_value']:.2e}")
+```
 
 ```
-people:        480
 h2 (true 0.5): 0.605
-converged:     True
 95% interval:  [0.455, 0.745]
 p (h2 = 0):    1.11e-19
 ```
 
-Every analysis 0.1 supports has a complete runnable program behind it in
-[`examples/`](examples/), and the output shown is what it prints. The remaining
-fragments below all belong to capabilities outside 0.1's scientific support.
+Every analysis below has a complete runnable program behind it in
+[`examples/`](examples/), which lives in the repository rather than in the
+installed package.
 
-## What 0.1 supports
+## What is supported
 
-Eight analyses, listed in
-[api-support.md](docs/api-support.md) with the public objects that fall outside
-that support. A development checkout refuses to call any result reportable:
-that status belongs to an installed release wheel, not an editable build. The
-[analysis-receipt guide](docs/analysis-receipts.md) explains the three
-outcomes.
+Eight analyses are supported, meaning each one has checks that measure it
+against a known truth or an independent implementation, and those checks pass
+on the exact wheel you installed. They are listed in
+[api-support.md](docs/api-support.md), which also names the public objects that
+fall *outside* that support: models you can import and use, but whose numbers
+have not been established to the same standard. Sections below marked "outside
+scientific support" are those.
 
-## Installation
+What stands behind the supported ones is in
+[numerical-validation.md](docs/numerical-validation.md) — coverage simulations,
+comparisons against R, SOLAR, censReg and MCMCglmm, and agreement between
+platforms to within five parts in a thousand million.
 
-CPython 3.13 or 3.14, the repository-pinned Rust 1.97.1 toolchain, and `uv` are
-required for development. Build isolation, the development environment, and
-hosted wheel builds all use the locked Maturin 1.14.1 release.
-
-```sh
-uv sync --locked --all-groups
-uv run maturin develop --release --locked
-```
-
-An analysis that may become reportable installs a checksummed wheel saved by a
-fixed release; it never builds from an editable checkout.
+Every fit carries the identity of the build that produced it, so a number can
+be traced back to an exact version. Results that did not converge are returned
+as diagnostic rather than quietly reported.
 
 ## One trait, one relationship matrix
 
@@ -104,13 +122,10 @@ separate identifier file, is exactly where this goes wrong.
 one is wanted. `prepare` checks the matrix and design, diagonalises the
 relationship matrix, and stores everything independent of the response. Reuse
 one prepared model for multiple responses with the same rows and design.
-Every supported 0.1 fit record carries immutable build identity and a
-`subject_order_sha256` field. Supplying the commitment to its public fit route
-echoes the digest without retaining identifiers; the standard analysis runner
-also verifies and attaches it before a result can be reportable. Build identity
-binds the source commit, release manifest, `Cargo.lock`, and `uv.lock`, so two
-builds with the same public version but different source or dependencies remain
-distinguishable.
+Every fit record carries the identity of the build that produced it, and an
+optional `subject_order_sha256`. That second one is a digest of the row order
+you fitted: pass it in and it is echoed back on the record, so a result can be
+tied to the exact rows it came from without ever storing an identifier.
 
 One fit returns everything about that fit: `interval` is the profile interval
 for the heritability and `test` is the test against nought, both already inside
@@ -126,7 +141,7 @@ Genes and a shared household, fitted together. The complete example is
 [`examples/components.py`](examples/components.py):
 
 ```sh
-uv run python examples/components.py
+python examples/components.py
 ```
 people:               600
 genetic   (true 0.4): 0.440
@@ -161,7 +176,7 @@ the design are stacked, trait within person. The runnable version is
 [`examples/bivariate.py`](examples/bivariate.py):
 
 ```sh
-uv run python examples/bivariate.py
+python examples/bivariate.py
 ```
 
 ```
@@ -190,7 +205,7 @@ in person order with trait within person.
 The 0.1 reportable target is `rho_g` with its interval and test; the other
 fitted quantities describe the joint fit but are not additional 0.1 claims.
 
-## Spatial covariance — outside 0.1 scientific support
+## Spatial covariance — outside scientific support
 
 ```python
 model = asterism.SpatialModel([relationship], distance_km, design)
@@ -221,7 +236,7 @@ A measured environment, with the runnable version in
 [`examples/gxe.py`](examples/gxe.py):
 
 ```sh
-uv run python examples/gxe.py
+python examples/gxe.py
 ```
 
 ```
@@ -243,7 +258,7 @@ A binary environment, with the runnable version in
 [`examples/discrete_gxe.py`](examples/discrete_gxe.py):
 
 ```sh
-uv run python examples/discrete_gxe.py
+python examples/discrete_gxe.py
 ```
 
 ```
@@ -301,7 +316,7 @@ The runnable version is
 [`examples/liability.py`](examples/liability.py):
 
 ```sh
-uv run python examples/liability.py
+python examples/liability.py
 ```
 
 ```
@@ -332,7 +347,7 @@ REML, so do not place it beside a REML heritability. The runnable version is
 [`examples/censored.py`](examples/censored.py):
 
 ```sh
-uv run python examples/censored.py
+python examples/censored.py
 ```
 
 ```
@@ -375,7 +390,7 @@ work needs. The runnable version is
 [`examples/mixed.py`](examples/mixed.py):
 
 ```sh
-uv run python examples/mixed.py
+python examples/mixed.py
 ```
 
 ```
@@ -410,7 +425,7 @@ continuous, binary with continuous, and censored with continuous, along with
 censored with censored. The binary-with-censored pair is deferred — it stays
 public and its checks are kept, but 0.1 makes no scientific claim about it.
 
-## Marker association — outside 0.1 scientific support
+## Marker association — outside scientific support
 
 ```python
 scan = asterism.AssociationModel(relationship, design_with_pcs, y)
@@ -425,7 +440,7 @@ marker effects. Selective refitting is usually the useful compromise. The
 marker remains inside the relationship matrix; Asterism does not perform a
 leave-one-chromosome-out analysis or multiple-testing correction.
 
-## Variant sets: genes and pathways — outside 0.1 scientific support
+## Variant sets: genes and pathways — outside scientific support
 
 ```python
 model = asterism.VariantSetModel([relationship], design, y)
@@ -452,7 +467,7 @@ is a variance weight of `w**2`, and the usual rare-focused choice is a
 `Beta(1, 25)` density at each minor allele frequency. Under the null that shape
 is unidentified, so it cannot be fitted; run a few and combine them instead.
 
-## Latent mediation with continuous and threshold observations — outside 0.1 scientific support
+## Latent mediation with continuous and threshold observations — outside scientific support
 
 ```python
 families = [
@@ -510,23 +525,11 @@ The current implementation reports likelihoods and point estimates. It does
 not yet provide a calibrated p-value or interval for `a*b`, and QMC batch
 stability is a numerical diagnostic rather than an inferential error bound.
 
-## Testing
-
-```sh
-cargo test --release
-uv run pytest tests/ -q
-uv run --locked python checks/against_famskat.py
-```
-
-The full list of simulation and package-comparison commands is in
-[numerical-validation.md](docs/numerical-validation.md).
-
 ## Citing Asterism
 
-Cite the archived version you actually ran, not the repository. A development
-checkout is not a citable version: only a release wheel carries the build
-identity a result can be traced back to, and only a release has had its pass
-rules configured.
+Cite the archived version you actually ran, not the repository. Each release is
+archived with its own DOI, and that is what makes a number traceable — the
+repository moves, a release does not.
 
 Details are in [CITATION.cff](CITATION.cff). Asterism is archived at
 publication rather than before it, so the DOI is added there when the first
