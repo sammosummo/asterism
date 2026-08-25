@@ -35,9 +35,9 @@ converged:     True
 p (h2 = 0):    1.11e-19
 ```
 
-Sections below that link to [`examples/`](examples/) have a complete runnable
-program behind them, and the output shown is what it prints. The rest are still
-fragments for reading, and are being converted.
+Every analysis 0.1 supports has a complete runnable program behind it in
+[`examples/`](examples/), and the output shown is what it prints. The remaining
+fragments below all belong to capabilities outside 0.1's scientific support.
 
 ## What 0.1 supports
 
@@ -214,6 +214,44 @@ Prediction methods remain public but are outside 0.1 scientific support.
 
 ## Gene by environment, continuous and discrete
 
+A measured environment, with the runnable version in
+[`examples/gxe.py`](examples/gxe.py):
+
+```sh
+uv run python examples/gxe.py
+```
+
+```
+people:                    2000
+environment -1: h2 0.639, genetic variance 1.848
+environment +0: h2 0.502, genetic variance 0.998
+environment +1: h2 0.684, genetic variance 2.043
+rho_g between the ends:    0.026
+converged:                 True
+p (no interaction):        0.0001
+
+Genetic variance is smallest at the centre and grows towards either end,
+which is what a random-regression slope does. Genes at opposite ends of
+the environment are almost unrelated, and the test finds it. Detecting
+interaction takes far more data than estimating a heritability does.
+```
+
+A binary environment, with the runnable version in
+[`examples/discrete_gxe.py`](examples/discrete_gxe.py):
+
+```sh
+uv run python examples/discrete_gxe.py
+```
+
+```
+people:                 1000
+in environment 1:       500 of 1000
+rho_g     (true 0.6):   0.614
+converged:              True
+95% interval:           [0.297, 0.982]
+p (no interaction):     0.083
+```
+
 ```python
 gxe = asterism.GxeModel(
     relationship,
@@ -255,6 +293,21 @@ two environments; `any_difference` additionally equates them and therefore is
 not specifically a genetic test.
 
 ## Binary liability
+
+The runnable version is
+[`examples/liability.py`](examples/liability.py):
+
+```sh
+uv run python examples/liability.py
+```
+
+```
+people:                 1000
+cases:                  200 of 1000
+h2 liability (true 0.5): 0.641
+converged:              True
+95% interval:           [0.402, 0.861]
+```
 
 ```python
 model = asterism.LiabilityModel(relationship, affected, design)
