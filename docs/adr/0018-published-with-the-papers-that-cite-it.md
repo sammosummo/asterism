@@ -81,6 +81,26 @@ each one is a step nobody should take by accident:
 - Make the repository public.
 - Remove the `Private :: Do Not Upload` classifier from `pyproject.toml`. It is
   a deliberate guard, and it is the reason nothing can reach PyPI by accident;
-  it comes off only when a release is meant to be distributed.
+  it comes off only when a release is meant to be distributed. The rest of the
+  packaging metadata is now ready, so that removal is the only change needed:
+  the readme, licence, author, keywords, classifiers and project links are
+  declared and land in the built wheel, and tests hold both halves — that the
+  metadata is complete, and that the guard is still there.
+- The name `asterism` was unclaimed on PyPI when this was written. Nothing
+  reserves it, and names go.
 - Enable the Zenodo integration, cut the release, and record the concept DOI in
   `CITATION.cff` and the version DOI in each paper.
+
+## One question this record does not settle
+
+Whether Asterism should have a documentation site of its own, rather than the
+Markdown that GitHub renders in place.
+
+It is left open because the answer depends on something not decided here. A
+site is wanted when readers arrive who will not open a repository — and for the
+audience the README names, a quantitative geneticist reading a paper's methods,
+GitHub's own rendering may be enough. There is also a practical constraint:
+GitHub Pages needs a paid plan on a private repository, and this account does
+not pay for hosted minutes, which is why its Actions are switched off
+altogether. Once the repository is public, Pages becomes free and the question
+is purely whether the site earns its upkeep.

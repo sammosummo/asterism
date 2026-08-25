@@ -5,15 +5,47 @@ build-backend = "maturin"
 [project]
 name = "asterism"
 version = "0.1.0.dev0"
-description = "Variance components models for quantitative genetics (Mathias Lab)"
+description = "Variance-component models for quantitative genetics"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.13,<3.15"
+authors = [
+  { name = "Samuel Mathias" },
+]
+keywords = [
+  "quantitative genetics",
+  "variance components",
+  "heritability",
+  "genetic correlation",
+  "pedigree",
+  "REML",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  # The guard. PyPI refuses any package carrying this, which is the point:
+  # nothing can be distributed by accident. ADR 0018 takes it off, deliberately,
+  # when a release is meant to go out with the papers that cite it.
   "Private :: Do Not Upload",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Typing :: Typed",
 ]
 dependencies = [
     "numpy>=2",
 ]
+
+[project.urls]
+Repository = "https://github.com/sammosummo/asterism"
+Documentation = "https://github.com/sammosummo/asterism/blob/main/README.md"
+"API reference" = "https://github.com/sammosummo/asterism/blob/main/docs/api-reference.md"
+"Statistical methods" = "https://github.com/sammosummo/asterism/blob/main/docs/statistical-methods.md"
+"Numerical validation" = "https://github.com/sammosummo/asterism/blob/main/docs/numerical-validation.md"
 
 [dependency-groups]
 dev = [
