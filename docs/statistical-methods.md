@@ -94,8 +94,8 @@ $$
 +\widehat{\mathbf r}^{\,T}\mathbf V^{-1}\widehat{\mathbf r}\right\},
 $$
 
-where $\widehat{\mathbf r}=\mathbf y-
-\mathbf X\widehat{\boldsymbol\beta}(\boldsymbol\theta)$. Estimation from
+where $\widehat{\mathbf r}=\mathbf y-\mathbf X\widehat{\boldsymbol\beta}(\boldsymbol\theta)$.
+Estimation from
 error contrasts is due to [Patterson and Thompson
 (1971)](references.bib#pattersonThompson1971); the general ML/REML
 variance-component treatment is described by [Harville
