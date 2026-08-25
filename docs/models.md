@@ -163,6 +163,18 @@ in person order with trait within person.
 The 0.1 reportable target is `rho_g` with its interval and test; the other
 fitted quantities describe the joint fit but are not additional 0.1 claims.
 
+`test` takes a `null`, and both interesting values are supported. Against
+nought it asks whether the traits share any genes at all, and nought is an
+interior point so a plain chi-square on one degree of freedom applies. Against
+plus or minus one it asks whether they are governed by the *same* genes, and
+that value sits on the boundary of a correlation's range, so the reference is
+the Self–Liang mixture instead.
+
+```python
+model.test(values, "rho_g", null=0.0)   # any shared genes?
+model.test(values, "rho_g", null=1.0)   # the same genes?
+```
+
 
 ## Gene by environment, continuous and discrete
 
@@ -354,6 +366,11 @@ heritability while a continuous or censored trait's is not, and the two must not
 be read as the same quantity. The genetic correlation is unaffected by that
 difference, which is what makes a mixed pair worth fitting at all: a correlation
 is scale free even where one of its two scales is arbitrary.
+
+`mixed_bivariate_test` takes no `null`: it tests against nought only, so it
+asks whether the two traits share any genes and cannot ask whether they are
+governed by the same ones. `BivariateModel.test` can do both, but only for a
+pair that is continuous on both sides.
 
 0.1 supports the pairings that include a continuous trait: continuous with
 continuous, binary with continuous, and censored with continuous, along with
