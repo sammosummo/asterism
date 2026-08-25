@@ -282,9 +282,9 @@ A 95 per cent profile interval for one component proportion.
 
 The default profiles the scale-invariant ``mean_diagonal_proportion``
 reported by :meth:`fit`. The diagnostic
-``raw_coefficient_proportion`` remains available explicitly; it changes
-when a relationship matrix is rescaled and must not be reported as a
-generic variance share.
+``raw_coefficient_proportion`` remains available explicitly. It changes
+when a relationship matrix is rescaled, so it describes this
+parameterisation rather than the data alone.
 
 ### `ComponentModel.test(self, y: 'Any', component: 'int', reml: 'bool' = True) -> 'dict[str, Any]'`
 

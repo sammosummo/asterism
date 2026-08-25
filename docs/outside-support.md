@@ -7,9 +7,10 @@ implementation, and no release evidence stands behind them.
 
 They are here under [ADR 0013](adr/0013-scientific-support-does-not-remove-public-models.md),
 which keeps a public model available for simulations, power calculations and
-diagnostic work even when a release makes no claim about it. Use them for that.
-Do not report a number from one as though it carried the same weight as a
-supported analysis.
+diagnostic work even when a release makes no claim about it. What they lack is
+the evidence: no coverage simulation, no comparison against another
+implementation, and nothing in the release standing behind the numbers they
+return.
 
 ## Spatial covariance 
 

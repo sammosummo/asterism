@@ -257,8 +257,8 @@ threshold is carried by the intercept.
 
 **A binary trait's variance is fixed at one** and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is therefore a
-liability heritability, while a continuous or censored trait's is not; the
-two must not be read as the same quantity. The genetic correlation is
+liability heritability, while a continuous or censored trait's is a
+heritability of the observed scale. They are different quantities. The genetic correlation is
 unaffected, which is what makes a mixed pair worth fitting.
 
 ``subject_order_sha256`` optionally carries the lowercase SHA-256 from

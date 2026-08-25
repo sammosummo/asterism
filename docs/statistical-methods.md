@@ -50,10 +50,10 @@ The eight 0.1 analysis families are:
 | `one_trait_tobit_audiogram` | `tobit_fit`, `tobit_interval`, `tobit_test` | Complete-trait $h^2$, interval, and test |
 | `mixed_binary_censored_genetic_correlation` | `mixed_bivariate_fit`, `mixed_bivariate_interval`, `mixed_bivariate_test` | Genetic correlation for a mixed pair including a continuous trait, interval, and test |
 
-Quantities called *descriptive* below may accompany a reportable result but are
-not themselves a supported inferential claim. Quantities called *diagnostic*
-are for checking a fit or reproducing its parameterisation and must not be
-promoted to a scientific result.
+Quantities marked *descriptive* have no check standing behind them; they are
+returned because the fit computes them. Quantities marked *diagnostic* exist to
+inspect a fit or reproduce its parameterisation, and their values depend on how
+the problem was set up rather than only on the data.
 
 ## Shared notation and Gaussian likelihood
 

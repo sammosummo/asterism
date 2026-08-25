@@ -145,9 +145,8 @@ a bound. Thus coverage did not imply precision. The independent dense sentinel
 and both target-sized blockwise fits now agree on the development build. A
 reduced target campaign completed 100 replicates per surface with no refusal or
 nonconvergence and compatible null rejection, while the manifest fixes 500 per
-surface. The exact fixed-wheel interval, calibration, and 500-replicate target
-commands remain unrun release gates; the reduced run is qualification evidence,
-not permission to report an analysis.
+surface. The 500-replicate target run, and the interval and calibration runs against a
+release wheel, have not been done. What is reported above is the reduced run.
 
 ## What stands behind it
 
@@ -277,8 +276,9 @@ The scenario that matters is one sex measured with more error and identical
 genetics. **Every genetic test held its level there** — 0.046 for the principal
 test, 0.040 for equal genetic effects and 0.040 for equal genetic variances —
 while `any_difference` and the residual test each rejected all 500 replicates.
-That is the claim the two free residual variances exist to support, and it is
-why `any_difference` must not be reported as a genetic finding.
+That is the claim the two free residual variances exist to support.
+`any_difference` equates the residual variances as well as the genetic ones, so
+what it rejects may be either.
 
 Against genuine alternatives the tests separate as they should: where the genes
 differ, the correlation test rejected 0.990 and the equal-variance test stayed

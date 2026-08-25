@@ -221,9 +221,9 @@ A 95 per cent profile interval for one component proportion.
 
 The default profiles the scale-invariant ``mean_diagonal_proportion``
 reported by :meth:`fit`. The diagnostic
-``raw_coefficient_proportion`` remains available explicitly; it changes
-when a relationship matrix is rescaled and must not be reported as a
-generic variance share.
+``raw_coefficient_proportion`` remains available explicitly. It changes
+when a relationship matrix is rescaled, so it describes this
+parameterisation rather than the data alone.
 
 #### `ComponentModel.predict(self, y: 'Any', component: 'int', reml: 'bool' = True) -> 'dict[str, Any]'`
 
@@ -909,8 +909,8 @@ threshold is carried by the intercept.
 
 **A binary trait's variance is fixed at one** and comes back as one, because
 only the sign of a liability is ever seen. Its heritability is therefore a
-liability heritability, while a continuous or censored trait's is not; the
-two must not be read as the same quantity. The genetic correlation is
+liability heritability, while a continuous or censored trait's is a
+heritability of the observed scale. They are different quantities. The genetic correlation is
 unaffected, which is what makes a mixed pair worth fitting.
 
 ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
