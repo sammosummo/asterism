@@ -32,7 +32,7 @@ tag and saved wheels.
   cross-platform status/field comparison and model-specific numerical
   tolerances remain deliberately unconfigured release blockers.
 
-## 0.1.0 (planned)
+## 0.1.0 (2026-08-26)
 
 ### Supported analyses
 
