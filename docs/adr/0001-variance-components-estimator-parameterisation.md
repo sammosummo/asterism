@@ -70,7 +70,7 @@ a comparator, not a definition.
 **Amended by Sam on 11 August 2026.** As first written this decision said the
 engine lands here and *Astrarium depends on it*, leaving Astrarium as the
 package. That is no longer the design. **Asterism, at
-`staging/studies/existing/safs/projects/asterism`, holds both the engine and the
+`software/asterism`, holds both the engine and the
 package. Astrarium and the older Asterism are retired to read-only reference.**
 
 The reason is the count. Three implementations of this one idea already exist
@@ -671,7 +671,7 @@ no REML at all outside `prepared.rs`.
 
 ### 28. Where it lives
 
-`staging/studies/existing/safs/projects/asterism`, because SAFS is the immediate
+`software/asterism`, because SAFS is the immediate
 user. It is lab software, and the location says nothing about its scope.
 
 ### 29. Two traits are admitted, for the JASA reanalysis
