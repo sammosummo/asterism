@@ -20,10 +20,10 @@ authors:
     orcid: "https://orcid.org/0000-0002-0260-0865"
 repository-code: "https://github.com/sammosummo/asterism"
 license: MIT
-version: 0.1.0
+version: 0.1.1
 # The concept DOI, which always resolves to the newest version. Each paper
-# cites the version DOI of the release it actually ran; for 0.1.0 that is
-# 10.5281/zenodo.22113715.
+# cites the version DOI of the release it actually ran: 10.5281/zenodo.22116963
+# for 0.1.1, 10.5281/zenodo.22113715 for 0.1.0.
 doi: "10.5281/zenodo.22113714"
 keywords:
   - quantitative genetics
