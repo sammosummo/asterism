@@ -82,7 +82,12 @@ For an analysis whose provenance has to be recorded — which wheel, which commi
 
 ## Citing Asterism
 
-{{to complete when published/minted}}
+Cite the version you actually ran. A development checkout is not a citable version: only a release wheel carries the build identity a result can be traced to.
+
+- Version 0.1.0: [10.5281/zenodo.22113715](https://doi.org/10.5281/zenodo.22113715)
+- All versions: [10.5281/zenodo.22113714](https://doi.org/10.5281/zenodo.22113714)
+
+`CITATION.cff` carries the second, so GitHub's "Cite this repository" and most reference managers will pick it up.
 
 ## Licence
 

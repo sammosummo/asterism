@@ -21,10 +21,10 @@ authors:
 repository-code: "https://github.com/sammosummo/asterism"
 license: MIT
 version: 0.1.0
-# TODO at publication: Zenodo mints a DOI from the public GitHub release. Put
-# the concept DOI here -- the one that always resolves to the newest version --
-# and cite the version DOI in each paper.
-# doi: "10.5281/zenodo.XXXXXXX"
+# The concept DOI, which always resolves to the newest version. Each paper
+# cites the version DOI of the release it actually ran; for 0.1.0 that is
+# 10.5281/zenodo.22113715.
+doi: "10.5281/zenodo.22113714"
 keywords:
   - quantitative genetics
   - variance components
