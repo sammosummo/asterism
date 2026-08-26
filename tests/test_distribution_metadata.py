@@ -1,9 +1,9 @@
-"""The package is ready to distribute, and cannot be distributed by accident.
+"""The package is ready to distribute, and nothing silently blocks it.
 
-Two things at once. The metadata a reader would see on PyPI is complete, so
-publishing is a decision rather than a scramble. And the guard that stops
-anything reaching PyPI is still there, because taking it off is a step ADR 0018
-says nobody should take without meaning to.
+The metadata a reader would see on PyPI is complete, so publishing is a
+decision rather than a scramble. Until 0.1.1 this file also held the guard that
+stopped anything reaching PyPI by accident; ADR 0018 takes that off at
+publication, and the check now runs the other way.
 """
 
 from __future__ import annotations
@@ -21,12 +21,22 @@ PROJECT: dict[str, Any] = tomllib.loads(
 """Read the declared package metadata once."""
 
 
-def test_nothing_can_reach_pypi_by_accident() -> None:
-    """Keep the classifier PyPI refuses, which is why an upload cannot happen."""
-    assert "Private :: Do Not Upload" in PROJECT["classifiers"], (
-        "the upload guard is gone; ADR 0018 removes it deliberately, at "
-        "publication, and not before"
-    )
+def test_nothing_silently_blocks_distribution() -> None:
+    """Refuse a classifier PyPI rejects, in a package meant to be installed.
+
+    Until 0.1.1 this asserted the opposite: `Private :: Do Not Upload` had to
+    be present, so nothing could reach PyPI while the repository was private.
+    ADR 0018 removes it deliberately at publication, which is what 0.1.1 is.
+    From here the risk runs the other way, because a `Private ::` classifier
+    reintroduced by accident would break `pip install asterism` and the README
+    promises that command works.
+    """
+    blocking: list[str] = [
+        entry for entry in PROJECT["classifiers"] if entry.startswith("Private ::")
+    ]
+    """Collected any classifier PyPI refuses to accept."""
+
+    assert not blocking, f"PyPI will reject a package carrying {blocking}"
 
 
 def test_the_metadata_a_reader_would_see_is_complete() -> None:

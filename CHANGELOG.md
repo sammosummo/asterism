@@ -32,6 +32,13 @@ tag and saved wheels.
   cross-platform status/field comparison and model-specific numerical
   tolerances remain deliberately unconfigured release blockers.
 
+## 0.1.1 (2026-08-26)
+
+- Removed the `Private :: Do Not Upload` classifier so the package can be
+  distributed on PyPI. The guard existed to stop anything reaching PyPI while
+  the repository was private. No other change: nothing outside the packaging
+  metadata differs from 0.1.0.
+
 ## 0.1.0 (2026-08-26)
 
 ### Supported analyses

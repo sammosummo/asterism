@@ -1,6 +1,6 @@
 schema_version = 1
-version = "0.1.0"
-cargo_version = "0.1.0"
+version = "0.1.1"
+cargo_version = "0.1.1"
 rust_toolchain = "1.97.1"
 maturin_version = "1.14.1"
 uv_version = "0.11.21"

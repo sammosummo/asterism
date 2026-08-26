@@ -69,23 +69,26 @@ was written, were removed by [ADR 0020](0020-no-design-range-gates-a-result.md);
 what a receipt records is now
 [ADR 0021](0021-the-receipt-states-facts-not-a-verdict.md).)
 
-## What is still to do at publication
+## What publication actually took
 
-These are deliberately left undone while the repository is private, because
-each one is a step nobody should take by accident:
+Done on 26 August 2026, in this order:
 
-- Make the repository public.
-- Remove the `Private :: Do Not Upload` classifier from `pyproject.toml`. It is
-  a deliberate guard, and it is the reason nothing can reach PyPI by accident;
-  it comes off only when a release is meant to be distributed. The rest of the
-  packaging metadata is now ready, so that removal is the only change needed:
-  the readme, licence, author, keywords, classifiers and project links are
-  declared and land in the built wheel, and tests hold both halves — that the
-  metadata is complete, and that the guard is still there.
-- The name `asterism` was unclaimed on PyPI when this was written. Nothing
-  reserves it, and names go.
-- Enable the Zenodo integration, cut the release, and record the concept DOI in
-  `CITATION.cff` and the version DOI in each paper.
+- The repository was made public.
+- Zenodo archived the release. The concept DOI, 10.5281/zenodo.22113714, is in
+  `CITATION.cff`; each paper cites the version DOI of the release it ran, which
+  for 0.1.0 is 10.5281/zenodo.22113715. Zenodo only archives releases created
+  after its switch is flipped, so the existing GitHub release had to be deleted
+  and recreated from the same assets. The tag never moved.
+- The `Private :: Do Not Upload` classifier came off at 0.1.1. It is baked into
+  a built wheel's metadata, not only `pyproject.toml`, so removing it needs a
+  rebuild: the 0.1.0 wheels carry it and PyPI would refuse them. That is why
+  the distributed version is not the first archived one.
+
+The copyright question this record left open is settled: Sam holds it, and
+`LICENSE` needed no change.
+
+Still open: the name `asterism` was unclaimed on PyPI when 0.1.1 was prepared,
+and nothing reserves a name there without an upload.
 
 ## One question this record does not settle
 
