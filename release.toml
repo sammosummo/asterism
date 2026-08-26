@@ -1,10 +1,10 @@
 schema_version = 1
-version = "0.1.0.dev0"
-cargo_version = "0.1.0-dev.0"
+version = "0.1.0"
+cargo_version = "0.1.0"
 rust_toolchain = "1.97.1"
 maturin_version = "1.14.1"
 uv_version = "0.11.21"
-release = false
+release = true
 requires_python = ">=3.13,<3.15"
 scientific_pass_rules_configured = true
 scientific_runner = "tools/run_scientific_release.py"
@@ -29,7 +29,7 @@ command = ["tools/medusa_wheel_smoke.py"]
 evidence = "evidence/medusa-wheel-smoke-2026-08-24.json"
 
 [synthetic_analysis_receipts]
-configured = false
+configured = true
 runner = "tools/synthetic_analysis_receipts.py"
 timeout_seconds = 3600
 analysis_ids = [

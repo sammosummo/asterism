@@ -58,6 +58,38 @@ pass_rules_configured = true
 """A complete fixed release contract used only as the build-metadata adapter."""
 
 
+DEVELOPMENT_MANIFEST: str = (
+    RELEASE_MANIFEST.replace(
+        '\ncargo_version = "0.1.0"', '\ncargo_version = "0.1.0-dev.0"'
+    )
+    .replace('\nversion = "0.1.0"', '\nversion = "0.1.0.dev0"')
+    .replace("\nrelease = true", "\nrelease = false")
+)
+"""The same contract as a development build, so these tests own their own mode.
+
+They used to read whatever the checkout happened to be, which meant the suite
+could only pass while the repository was mid-development: cutting a release
+turned every "a development build refuses" test red.
+"""
+
+
+def install_development_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install one internally consistent development-build metadata adapter.
+
+    Args:
+        monkeypatch: Pytest adapter used to restore compiled metadata afterwards.
+    """
+    manifest_sha256: str = hashlib.sha256(
+        DEVELOPMENT_MANIFEST.encode("utf-8")
+    ).hexdigest()
+    """Committed to the exact replacement manifest as the build script would."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", DEVELOPMENT_MANIFEST)
+    monkeypatch.setattr(_core, "__release_manifest_sha256__", manifest_sha256)
+    monkeypatch.setattr(_core, "__source_dirty__", False)
+    """Replaced every coupled field instead of creating an impossible mixed build."""
+
+
 def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     """Install one internally consistent fixed-release metadata adapter.
 
@@ -73,8 +105,13 @@ def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replaced every coupled field instead of creating an impossible mixed build."""
 
 
-def test_a_development_build_is_never_release_ready() -> None:
+def test_a_development_build_is_never_release_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Keep a development build from passing its checks, whatever the design."""
+    install_development_contract(monkeypatch)
+    """Substituted a development build as the build-metadata adapter."""
+
     design: dict[str, Any] = {
         "sample_size": 350,
         "largest_family": 14,
@@ -108,8 +145,13 @@ def test_a_development_build_is_never_release_ready() -> None:
     """Refused for the one reason that still applies, and named it."""
 
 
-def test_an_unreleased_build_refuses_before_fitting() -> None:
+def test_an_unreleased_build_refuses_before_fitting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """An unreleased build never evaluated a real-outcome fit callback."""
+    install_development_contract(monkeypatch)
+    """Substituted a development build as the build-metadata adapter."""
+
     fitted: bool = False
     """Recorded whether the numerical callback was invoked."""
 

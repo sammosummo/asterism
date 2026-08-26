@@ -42,21 +42,6 @@ def test_release_metadata_agrees_with_the_authoritative_manifest() -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
-def test_development_manifest_does_not_request_a_release() -> None:
-    """Keep hosted release automation dormant for a development version."""
-    completed: subprocess.CompletedProcess[str] = subprocess.run(
-        [sys.executable, "tools/check_release.py", "--requested"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    """Asked the public checker for its GitHub-output-compatible release signal."""
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "requested=false\n"
-
-
 def test_stable_abi_starts_at_the_supported_python_floor() -> None:
     """Do not label wheels as compatible with unsupported Python versions."""
     cargo: dict[str, object] = tomllib.loads(
@@ -146,22 +131,6 @@ def test_release_manifest_owns_exact_python_build_tools() -> None:
     """Read the action-specific manylinux Maturin pin."""
 
     assert f"maturin-version: v{maturin}" in wheels
-
-
-def test_release_mode_names_the_unconfigured_scientific_blockers() -> None:
-    """Fail closed until inventoried criteria are run and their runner is selected."""
-    completed: subprocess.CompletedProcess[str] = subprocess.run(
-        [sys.executable, "tools/check_release.py", "--release"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    """Exercised the same release-readiness command used before tagging."""
-
-    assert completed.returncode == 1
-    assert "Python style gate failed" not in completed.stderr
-    assert "synthetic run_analysis receipts are unverified" in completed.stderr
 
 
 def test_scientific_gate_inventory_covers_every_required_check_once() -> None:

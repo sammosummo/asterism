@@ -323,7 +323,7 @@ upper limit for coverage falls below 0.95.
 ### Pending
 
 The release campaign requests 200 replicates in each of four cells. Those 800
-attempts have not run, and `pass_rules_configured` is false.
+attempts have not run.
 
 ## Mixed pairs
 

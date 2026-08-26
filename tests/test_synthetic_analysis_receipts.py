@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -40,12 +41,37 @@ def test_direct_command_exposes_its_release_interface() -> None:
 
 def test_development_build_cannot_write_synthetic_release_receipts(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A development checkout refused before creating apparent release evidence."""
+    """A development checkout refused before creating apparent release evidence.
+
+    The development build is substituted here rather than assumed from the
+    checkout. Reading the live build meant this test could only run while the
+    repository was unreleased, which is the opposite of when it is wanted.
+    """
+    from asterism import _core
+
     from tools.synthetic_analysis_receipts import (
         SyntheticReceiptError,
         write_synthetic_analysis_receipts,
     )
+
+    development: str = (
+        str(_core.__release_manifest__)
+        .replace("\nrelease = true", "\nrelease = false")
+        .replace('\ncargo_version = "0.1.0"', '\ncargo_version = "0.1.0-dev.0"')
+        .replace('\nversion = "0.1.0"', '\nversion = "0.1.0.dev0"')
+    )
+    """Took the compiled contract and made it a development one."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", development)
+    monkeypatch.setattr(
+        _core,
+        "__release_manifest_sha256__",
+        hashlib.sha256(development.encode("utf-8")).hexdigest(),
+    )
+    monkeypatch.setattr(_core, "__source_dirty__", False)
+    """Replaced every coupled field rather than making an impossible mixed build."""
 
     wheel: Path = tmp_path / "asterism-0.1.0.dev0-cp313-abi3-macosx.whl"
     """Created a named stand-in artifact whose bytes can be committed safely."""
