@@ -44,9 +44,7 @@ from pathlib import Path
 import asterism
 import numpy as np
 
-DATABASE: Path = Path(
-    "~/MathiasLab/staging/studies/existing/safs/data/SAFS.db"
-).expanduser()
+DATABASE: Path = Path("~/MathiasLab/data/safs-db/SAFS.db").expanduser()
 """Resolved the read-only study database used for pedigree structure."""
 
 REPLICATES: int = int(os.environ.get("ASTERISM_REPLICATES", "200"))

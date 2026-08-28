@@ -50,9 +50,7 @@ import asterism
 import numpy as np
 from asterism import _core
 
-DATABASE: Path = Path(
-    "~/MathiasLab/staging/studies/existing/safs/data/SAFS.db"
-).expanduser()
+DATABASE: Path = Path("~/MathiasLab/data/safs-db/SAFS.db").expanduser()
 """Resolved the read-only SAFS database used for pedigree and age metadata."""
 
 BULK: Path = Path(
