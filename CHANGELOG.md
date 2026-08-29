@@ -27,6 +27,21 @@ tag and saved wheels.
   probability of -88, where it previously returned the floor -- a likelihood
   wrong by six hundred nats, finite enough to be believed, in the tail a rare
   binary trait and a heavily censored one both occupy.
+- **Every component of a censored fit can be reported, not only adjusted for.**
+  `coefficient_interval(index)` and `coefficient_test(index)` profile and test
+  any component, and the fit record carries `mean_diagonal_contributions`,
+  `mean_diagonal_total` and `mean_diagonal_proportions` on the same footing
+  `ComponentModel` reports them -- which is the quantity to compare components
+  by, a raw coefficient not being comparable across matrices whose diagonals
+  differ. The three are absent, rather than NaN, where a component's mean
+  diagonal is not positive and finite.
+- **The censored test is offered at several components rather than refused**,
+  and carries `nuisance_at_bound`: true where another coefficient or the
+  residual also rested on nought in the null fit, which is when the 50:50
+  mixture is not the reference its p-value should be read against. It was
+  briefly refused there, which would have stopped the coverage check that
+  scores it from ever running. The interval's boundary verdict is still filled
+  at one component only, that being where it was scored.
 - **Breaking, an analysis is renamed.** `one_trait_tobit_audiogram` is now
   `one_trait_censored`. Having "audiogram" in the identifier implied the model
   applies only to audiograms; nothing in a censored variance-components model is

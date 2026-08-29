@@ -157,6 +157,31 @@ pub struct TobitFit {
     /// and `1 - sum` not the residual's share. `ComponentModel` reports the
     /// mean-diagonal contribution for this reason; see CONTEXT.md.
     pub coefficients: Vec<f64>,
+    /// Each component's marginal covariance contribution, **the residual's
+    /// last**, on the same footing as `ComponentModel` reports them: the
+    /// coefficient's variance multiplied by its matrix's mean diagonal.
+    ///
+    /// This is what makes a comparison between components scale-invariant. A
+    /// coefficient alone is not comparable across matrices whose diagonals
+    /// differ, which is why `coefficients` says what it says about unit
+    /// diagonals and this exists beside it.
+    ///
+    /// **Absent where a component's mean diagonal is not positive and finite.**
+    /// The proportion is undefined there, and `build` does not refuse such a
+    /// matrix: a kernel leaving somebody at nought throughout is a covariance
+    /// and fits perfectly well. So the fit is returned and this is left out,
+    /// which is ADR 0016's rule -- undefined is absent, not nought and not a
+    /// NaN. `ComponentModel` refuses instead, because there the caller asked
+    /// for the proportion and for nothing else.
+    pub mean_diagonal_contributions: Option<Vec<f64>>,
+    /// The contributions summed. Equal to `total_variance` where every
+    /// component carries a unit diagonal, and not otherwise. Absent on the same
+    /// condition as `mean_diagonal_contributions`.
+    pub mean_diagonal_total: Option<f64>,
+    /// Each contribution over their total, the residual's last. These are the
+    /// proportions to report; they sum to one by construction. Absent on the
+    /// same condition as `mean_diagonal_contributions`.
+    pub mean_diagonal_proportions: Option<Vec<f64>>,
     /// The largest family, because the region probability is exact to two
     /// people and approximate above it.
     pub largest_family: usize,
@@ -172,12 +197,30 @@ pub struct TobitTest {
     pub rule: &'static str,
     pub null_loglik: f64,
     pub alternative_loglik: f64,
+    /// Whether some **other** coefficient, or the residual, rested on nought in
+    /// the null fit.
+    ///
+    /// **This is the condition under which `rule` does not apply.** The
+    /// fifty-fifty mixture is the reference for one parameter resting on one
+    /// bound while the rest sit in the interior. Where a nuisance component is
+    /// on its bound too, that is a different null and the p-value above is read
+    /// against the wrong distribution. It is reported rather than refused
+    /// because it is a property of the data, not of the request, and because a
+    /// coverage check has to be able to run the test in order to score it --
+    /// issue 38.
+    ///
+    /// **The residual counts as a nuisance and is checked.** At one component
+    /// this is nonetheless always false, for a reason worth stating rather than
+    /// asserting: holding the only coefficient at nought leaves the residual
+    /// taking everything, so it cannot rest on its own bound at the same time.
+    pub nuisance_at_bound: bool,
 }
 
 /// Compatibility name for the one shared interval record.
 pub type TobitInterval = Interval;
 
 /// One trait, any number of components, per-observation censoring.
+#[derive(Clone)]
 pub struct TobitModel {
     components: Vec<DMatrix<f64>>,
     design: DMatrix<f64>,
@@ -309,6 +352,52 @@ impl TobitModel {
             blocks,
             rows,
         })
+    }
+
+    /// Whether some component other than the first, or the residual, rests on
+    /// nought in a fit.
+    ///
+    /// **Both fits are asked, not only the null.** Which reference a deviance
+    /// should be read against turns on where the parameters truly sit, and each
+    /// fit is a view of that. `components.rs` asks the free fit; the first
+    /// version here asked only the null, which left a component at nought in
+    /// the free fit but interior under the null going unflagged. Asking both is
+    /// the conservative reading, and the flag exists to raise doubt rather than
+    /// to settle it.
+    fn any_nuisance_at_bound(fit: &TobitFit) -> bool {
+        fit.coefficients
+            .iter()
+            .skip(1)
+            .any(|coefficient| crate::components::resting_on_zero(*coefficient))
+            || crate::components::resting_on_zero(1.0 - fit.coefficients.iter().sum::<f64>())
+    }
+
+    /// The same model with one component moved to the front.
+    ///
+    /// **Why the profile needs this.** Holding a coefficient is a box
+    /// constraint only for the first one: the search works in stick-breaking
+    /// coordinates, so the second coefficient is `left * coordinate` where
+    /// `left` depends on the first, and pinning it would be a constraint across
+    /// coordinates rather than on one. Moving the component to the front makes
+    /// its coefficient the first, which the existing machinery already holds.
+    ///
+    /// The likelihood is a sum over components, so it does not care about their
+    /// order; only the search path does, and the optimum it walks to is the
+    /// same. The blocks come from the union and are unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no component sits at that index.
+    fn with_component_first(&self, index: usize) -> Result<Self, &'static str> {
+        if index >= self.components.len() {
+            return Err("TOBIT_NO_SUCH_COMPONENT");
+        }
+        // Copied wholesale and then permuted, rather than field by field: a
+        // field added later would otherwise ship a half-copy and nothing would
+        // say so.
+        let mut reordered = self.clone();
+        reordered.components.swap(0, index);
+        Ok(reordered)
     }
 
     /// Turn a boxed search vector into coefficients that always sum within one.
@@ -535,17 +624,6 @@ impl TobitModel {
     /// give a deviance that is rounding rather than evidence, and that reads as
     /// a p-value of one rather than of a half.
     pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
-        // **The mixture rule was scored for one component and only one.**
-        // Holding the first share at nought while the others are free to rest
-        // on their own bounds is not the one-parameter-on-one-bound case the
-        // fifty-fifty mixture covers, so the p-value below would be read
-        // against the wrong reference. Refusing is what CONTEXT requires of an
-        // unscored verdict: an absent one means nobody has measured it yet.
-        // Interval coverage at several components is issue 38.
-        if self.components.len() != 1 {
-            return Err("TOBIT_TEST_NOT_SCORED_FOR_SEVERAL_COMPONENTS");
-        }
-
         let free = self.fit()?;
         let null = self.fit_holding(Some(0.0))?;
         crate::convergence::require(free.converged, "TOBIT_FIT_NOT_CONVERGED")?;
@@ -557,11 +635,56 @@ impl TobitModel {
                 0.5 * crate::deviance::chi2_one_df_upper_tail(value)
             }),
             rule: "mixture_50_50",
+            // The fifty-fifty mixture answers for the first coefficient resting
+            // on its bound. If a nuisance coefficient, or the residual, rests
+            // there too, the null is a different one and the reference is
+            // wrong. Saying so is the honest report; a coverage check scores it
+            // in issue 38.
+            nuisance_at_bound: Self::any_nuisance_at_bound(&null)
+                || Self::any_nuisance_at_bound(&free),
             null_loglik: null.loglik,
             alternative_loglik: free.loglik,
         })
     }
 
+    /// A profile-likelihood interval for one component's coefficient.
+    ///
+    /// `index` counts the components in the order they were given; the residual
+    /// is not among them and has no interval here.
+    ///
+    /// **The interval is on the coefficient, not on the mean-diagonal
+    /// proportion.** The two coincide where every component carries a unit
+    /// diagonal and differ otherwise. `ComponentModel` offers both, by way of
+    /// `component_mean_diagonal_interval`; this model offers only the first,
+    /// and a caller comparing components on unequal diagonals should read the
+    /// interval as being about the coefficient it is about.
+    ///
+    /// **The boundary verdict is filled only at one component.** The coverage
+    /// simulation that scored the mixture rule ran there. With several, more
+    /// than one coefficient can rest on nought at once, which is not the case
+    /// it scored, so the verdict is left absent rather than borrowed from a
+    /// measurement of a different model. Scoring it is issue 38.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the fit or the profile could not be made.
+    pub fn coefficient_interval(&self, index: usize) -> Result<TobitInterval, &'static str> {
+        self.with_component_first(index)?.heritability_interval()
+    }
+
+    /// A test that one component's coefficient is nought.
+    ///
+    /// `index` counts the components in the order they were given.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where either fit failed to converge.
+    pub fn coefficient_test(&self, index: usize) -> Result<TobitTest, &'static str> {
+        self.with_component_first(index)?.heritability_test()
+    }
+
+    /// A profile-likelihood interval for the first component's coefficient.
+    ///
     /// # Errors
     ///
     /// Returns a stable code if the free fit or the profile at its estimate is
@@ -785,10 +908,48 @@ impl TobitModel {
         }
 
         let coefficients = Self::coefficients_from(&theta[..parts]);
+        let total_variance = theta[parts].exp();
+        let residual_share = 1.0 - coefficients.iter().sum::<f64>();
+        // The coefficient's variance times its matrix's mean diagonal, and the
+        // residual last on a unit diagonal, which is `ComponentModel`'s recipe
+        // -- including its refusal, which came across with the arithmetic
+        // rather than being left behind with it.
+        let mut contributions = Vec::with_capacity(self.components.len() + 1);
+        let mut defined = true;
+        for (component, coefficient) in self.components.iter().zip(&coefficients) {
+            let mean_diagonal = component.diagonal().iter().sum::<f64>() / self.rows as f64;
+            if !mean_diagonal.is_finite() || mean_diagonal <= 0.0 {
+                defined = false;
+                break;
+            }
+            contributions.push(coefficient * total_variance * mean_diagonal);
+        }
+        contributions.push(residual_share * total_variance);
+        let contribution_total: f64 = contributions.iter().sum();
+        if !(contribution_total > 0.0) || !contribution_total.is_finite() {
+            defined = false;
+        }
+        let (mean_diagonal_contributions, mean_diagonal_total, mean_diagonal_proportions) =
+            if defined {
+                let proportions: Vec<f64> = contributions
+                    .iter()
+                    .map(|contribution| contribution / contribution_total)
+                    .collect();
+                (
+                    Some(contributions),
+                    Some(contribution_total),
+                    Some(proportions),
+                )
+            } else {
+                (None, None, None)
+            };
         Ok(TobitFit {
             heritability: coefficients[0],
             coefficients,
-            total_variance: theta[parts].exp(),
+            mean_diagonal_contributions,
+            mean_diagonal_total,
+            mean_diagonal_proportions,
+            total_variance,
             fixed_effects: theta[parts + 1..].to_vec(),
             loglik: -objective,
             // The shared rule, at last. This family had been testing a raw
@@ -1413,14 +1574,224 @@ mod tests {
         );
     }
 
+    /// A component that is singular at its full share says so in the record.
+    ///
+    /// A person-level matrix is ones within a person, so with two records each
+    /// it has half the rank of its size. At a coefficient of one the covariance
+    /// is that matrix alone and there is nothing left to make it invertible, so
+    /// the profile cannot be evaluated at the very top of the range.
+    ///
+    /// **The interval widens to the bound rather than narrowing**, which is the
+    /// safe direction, and the record says which kind of bound it is:
+    /// `upper_limited` is true either way, and `profile_failures` is what
+    /// separates a bound the likelihood never left from one the profile could
+    /// not reach. That distinction is the interval module's own, and this pins
+    /// that it is reported here rather than a bare endpoint that reads like a
+    /// likelihood statement.
+    #[test]
+    fn a_component_singular_at_its_full_share_reports_the_profile_failure() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(60, 0.5, 1.0, 0.0, Some(0.4), 515);
+        let rows = relationship.nrows();
+        let mut person = DMatrix::<f64>::zeros(rows, rows);
+        for i in 0..rows {
+            for j in 0..rows {
+                if i / 2 == j / 2 {
+                    person[(i, j)] = 1.0;
+                }
+            }
+        }
+        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
+            .expect("a person-level matrix is a covariance, singular or not");
+
+        // Holding it at everything leaves a covariance with no residual to make
+        // it invertible, so the fit refuses rather than returning a number.
+        let swapped = model
+            .with_component_first(1)
+            .expect("there is a second component");
+        assert_eq!(
+            swapped.fit_holding(Some(1.0)).err(),
+            Some("TOBIT_NO_START_CONVERGED"),
+            "a singular covariance has no feasible start"
+        );
+        assert!(
+            swapped.fit_holding(Some(0.99)).is_ok(),
+            "just below its full share there is still a residual, and a fit"
+        );
+
+        let interval = model
+            .coefficient_interval(1)
+            .expect("the interval is still computable");
+        assert!(
+            interval.upper_limited,
+            "the upper end rests on the bound here"
+        );
+        assert_eq!(
+            interval.profile_failures, 1,
+            "and the record says the profile could not be evaluated there, \
+             which is what distinguishes this from a bound the likelihood \
+             genuinely never left"
+        );
+    }
+
+    /// Every component gets an interval and a test, not only the first.
+    ///
+    /// A shared-environment term has to be reportable, not merely adjusted for,
+    /// or the model can say a household effect was allowed for but not what it
+    /// was. Profiling a coefficient other than the first needs it moved to the
+    /// front, because the search holds a coefficient by a box bound and only
+    /// the first one is a box bound in stick-breaking coordinates.
+    #[test]
+    fn each_component_can_be_intervalled_and_tested() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(60, 0.5, 1.0, 0.0, Some(0.4), 515);
+        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
+        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
+            .expect("two components build");
+
+        let fit = model.fit().expect("a fit");
+        for index in 0..model.components() {
+            let interval = model
+                .coefficient_interval(index)
+                .unwrap_or_else(|error| panic!("component {index} has no interval: {error}"));
+            let estimate = interval.estimate.expect("an interval has an estimate");
+            assert!(
+                interval.lower <= estimate && estimate <= interval.upper,
+                "component {index}: the estimate {estimate} is outside its own \
+                 interval [{}, {}]",
+                interval.lower,
+                interval.upper
+            );
+            assert!(
+                (0.0..=1.0).contains(&interval.lower) && (0.0..=1.0).contains(&interval.upper),
+                "component {index}: a coefficient's interval must stay inside [0, 1]"
+            );
+
+            let test = model
+                .coefficient_test(index)
+                .unwrap_or_else(|error| panic!("component {index} has no test: {error}"));
+            assert!(
+                (0.0..=1.0).contains(&test.p_value),
+                "component {index}: a p-value is a probability"
+            );
+        }
+
+        // Moving the first component to the front changes nothing, so this is
+        // the same profile the heritability entry point runs.
+        let by_index = model.coefficient_interval(0).expect("an interval");
+        let by_name = model.heritability_interval().expect("an interval");
+        assert_eq!(by_index.estimate, by_name.estimate);
+        assert_eq!(by_index.lower, by_name.lower);
+        assert_eq!(by_index.upper, by_name.upper);
+        assert_eq!(
+            by_name.estimate.expect("an estimate"),
+            fit.heritability,
+            "the interval is built around the fitted value"
+        );
+
+        assert_eq!(
+            model.coefficient_interval(2).err(),
+            Some("TOBIT_NO_SUCH_COMPONENT"),
+            "there is no third component to profile"
+        );
+        assert_eq!(
+            model.coefficient_test(9).err(),
+            Some("TOBIT_NO_SUCH_COMPONENT")
+        );
+    }
+
+    /// The mean-diagonal proportions are what a reader should compare.
+    ///
+    /// A coefficient is not comparable across matrices whose diagonals differ,
+    /// which is why `ComponentModel` reports the marginal contribution and this
+    /// model follows it. Where every component carries a unit diagonal the two
+    /// agree, and that agreement is what this pins: it is easy to write the
+    /// recipe so that it quietly disagrees with the coefficients in the
+    /// ordinary case and nobody notices.
+    #[test]
+    fn the_mean_diagonal_proportions_follow_the_shared_recipe() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(50, 0.5, 1.0, 0.0, Some(0.4), 8080);
+        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
+        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
+            .expect("two components build");
+        let fit = model.fit().expect("a fit");
+
+        let proportions = fit
+            .mean_diagonal_proportions
+            .as_ref()
+            .expect("unit diagonals throughout, so the proportions are defined");
+        assert_eq!(
+            proportions.len(),
+            model.components() + 1,
+            "one per component and the residual last"
+        );
+        let summed: f64 = proportions.iter().sum();
+        assert!(
+            (summed - 1.0).abs() < 1e-9,
+            "proportions must sum to one, and sum to {summed}"
+        );
+        assert!(
+            (fit.mean_diagonal_total.expect("defined") - fit.total_variance).abs() < 1e-9,
+            "with unit diagonals throughout, the marginal total is the total \
+             variance: {} against {}",
+            fit.mean_diagonal_total.expect("defined"),
+            fit.total_variance
+        );
+        for (index, coefficient) in fit.coefficients.iter().enumerate() {
+            assert!(
+                (proportions[index] - coefficient).abs() < 1e-9,
+                "component {index}: with a unit diagonal the proportion is the \
+                 coefficient, {} against {coefficient}",
+                proportions[index]
+            );
+        }
+        let residual = 1.0 - fit.coefficients.iter().sum::<f64>();
+        assert!(
+            (proportions[model.components()] - residual).abs() < 1e-9,
+            "the residual is last and is what the components leave"
+        );
+    }
+
+    /// At one component there is no nuisance to rest on a bound.
+    ///
+    /// The flag exists to say when the fifty-fifty mixture does not answer for
+    /// the null being tested. With a single component and a residual, the only
+    /// parameter on a bound under the null is the one being tested, which is
+    /// exactly the case the mixture is for -- so the flag must be false, or it
+    /// would be reporting doubt about the one configuration that was scored.
+    #[test]
+    fn one_component_has_no_nuisance_on_a_bound() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(60, 0.5, 1.0, 0.0, Some(0.4), 313);
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("one component builds");
+        let test = model.heritability_test().expect("a test");
+        assert!(
+            !test.nuisance_at_bound,
+            "there is no nuisance component at one component, so nothing can rest"
+        );
+        assert_eq!(test.rule, "mixture_50_50");
+    }
+
     /// An unscored verdict is withheld, not filled in from another model.
     ///
-    /// The boundary rule and the fifty-fifty mixture were scored by a coverage
-    /// simulation that ran at one component. With several, more than one
-    /// coefficient can rest on nought at once, which is not that case. So the
-    /// test refuses and the interval comes back with its boundary verdict
-    /// absent -- an absent verdict says nobody has measured it, and a filled
-    /// one would say somebody had.
+    /// The boundary rule was scored by a coverage simulation that ran at one
+    /// component. With several, more than one coefficient can rest on nought at
+    /// once, which is not that case, so the interval comes back with its
+    /// boundary verdict **absent**. An absent verdict says nobody has measured
+    /// it; a filled one would say somebody had.
+    ///
+    /// The test is a different matter and is not refused. Refusing it would
+    /// stop the coverage check that scores it from ever running -- issue 38
+    /// has to call this to measure it -- so it runs and carries
+    /// `nuisance_at_bound`, which says when its reference does not apply.
     #[test]
     fn the_scored_verdicts_are_withheld_at_several_components() {
         let (relationship, value, censoring, limit, design) =
@@ -1450,10 +1821,16 @@ mod tests {
         let several =
             TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
                 .expect("two components build");
-        assert_eq!(
-            several.heritability_test().err(),
-            Some("TOBIT_TEST_NOT_SCORED_FOR_SEVERAL_COMPONENTS"),
-            "the mixture rule was never scored here, so no p-value is offered"
+        // The test runs at several components and says on the record whether
+        // its reference applies -- it is not refused, because a coverage check
+        // has to be able to run it in order to score it.
+        let test = several
+            .heritability_test()
+            .expect("the test is offered at several components");
+        assert_eq!(test.rule, "mixture_50_50");
+        assert!(
+            test.p_value.is_finite() && (0.0..=1.0).contains(&test.p_value),
+            "a p-value is still a probability"
         );
         assert!(
             several

@@ -122,12 +122,15 @@ precedent but is not the implemented algorithm.
 Testing $H_0:h^2=0$ and deciding whether an interval contains that boundary use
 the 50:50 mixture. At least two measured values are required to identify scale.
 
-**Both are offered at one component only.** The coverage simulation that scored
-the boundary rule ran there; with several components more than one coefficient
-can rest on nought at once, which is not the case it scored. So the test refuses
-and the interval is returned with its boundary verdict absent rather than filled
-in from a measurement of a different model. Scoring them at several components
-is issue 38.
+**The interval's boundary verdict is filled at one component only.** The
+coverage simulation that scored the boundary rule ran there; with several
+components more than one coefficient can rest on nought at once, which is not
+the case it scored, so the verdict is left absent rather than borrowed from a
+measurement of a different model.
+
+The test is offered at every component and carries `nuisance_at_bound` instead
+of refusing. Refusing would stop the coverage check that scores it from ever
+running. Scoring both at several components is issue 38.
 
 ### Public record mapping
 
@@ -140,6 +143,45 @@ is issue 38.
 `total_variance`, `fixed_effects`, `censored_share`, and `largest_family` are
 descriptive; `converged`, `scaled_gradient`, and `loglik` are diagnostics. A
 limit-substitution Gaussian heritability is a different, biased estimand.
+
+### Reporting several components
+
+Every component can be reported, not only adjusted for -- a shared-environment
+term that cannot be quoted is a term the model allowed for without saying what
+it was.
+
+| What | Where |
+| --- | --- |
+| Each component's coefficient | `coefficients`, in the order the components were given, the residual not among them |
+| The comparable quantity | `mean_diagonal_proportions`, the residual's last, summing to one |
+| An interval for any component | `coefficient_interval(index)` |
+| A test that any component is nought | `coefficient_test(index)` |
+
+**Compare components by the mean-diagonal proportions, not by the
+coefficients.** A coefficient is comparable across matrices only where their
+diagonals agree; the proportion is the coefficient's variance scaled by its
+matrix's mean diagonal and normalised, which is what `ComponentModel` reports
+and for the same reason. Where every component carries a unit diagonal -- true
+of additive kinship, a person-level matrix and a household kernel -- the two
+agree.
+
+**An interval on a component may rest on its bound for two different
+reasons.** A component whose matrix is singular at its full share -- a
+person-level matrix is ones within a person, so with two records each it has
+half the rank of its size -- has no evaluable likelihood at a coefficient of
+one, because there is no residual left to make the covariance invertible. The
+interval widens to the bound, which is the safe direction, and
+`profile_failures` is what separates that from a bound the likelihood genuinely
+never left. Read the two together; `upper_limited` alone does not tell them
+apart.
+
+**Two things the record says about itself.** An interval's boundary verdict is
+filled only at one component, because that is where the coverage simulation
+scored the mixture rule; with several it is absent, and an absent verdict means
+nobody has measured it. And a test carries `nuisance_at_bound`, which is true
+where some other coefficient or the residual also rested on nought in the null
+fit -- the case in which the 50:50 mixture is not the reference the p-value
+should be read against. Scoring both at several components is issue 38.
 
 ### Assumptions and limits
 
