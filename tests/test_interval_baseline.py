@@ -472,6 +472,53 @@ def test_liability_interval(
     same(got["upper"], 1.0, "liability upper")
 
 
+def test_censored_component_interval(
+    k: npt.NDArray[np.float64], design: npt.NDArray[np.float64]
+) -> None:
+    """Pin the censored several-component interval on its proportion scale."""
+    y: npt.NDArray[np.float64] = draw(k, 0.5, SEED + 8)
+    """Drew the deterministic response reserved for this family."""
+
+    ceiling: float = float(np.quantile(y, 0.6))
+    """Censored two records in five, which is the regime this model is for."""
+
+    censoring: npt.NDArray[np.int64] = (y >= ceiling).astype(np.int64)
+    """Marked 1 at or above the limit, 0 where measured."""
+
+    value: npt.NDArray[np.float64] = np.where(censoring == 0, y, np.nan)
+    """Kept measured values; the censored ones are never read."""
+
+    limit: npt.NDArray[np.float64] = np.full(y.shape[0], ceiling)
+    """Gave every record the same limit."""
+
+    model: asterism.CensoredComponentModel = asterism.CensoredComponentModel(
+        [k, household()], design
+    )
+    """Prepared additive, household, and the residual the model keeps."""
+
+    got: dict[str, object] = model.interval(value, censoring, limit, component=0)
+    """Profiled the first component's mean-diagonal proportion."""
+
+    same(got["lower"], 0.0, "censored components lower")
+    same(got["upper"], 1.0, "censored components upper")
+    # **Both ends rest on their bounds, and neither is a fault.** Sixty sibling
+    # pairs with two records in five censored do not rule out the additive
+    # component taking everything, so the profile never falls away before the
+    # top of the range. `profile_failures` is nought, which is what separates
+    # this from an end the profile could not reach -- the two arrive as the same
+    # `upper_limited` and only the failure count tells them apart.
+    assert got["profile_failures"] == 0
+    assert got["lower_limited"] is True
+    assert got["upper_limited"] is True
+    # **The boundary verdict is absent, and that is the pin.** The coverage
+    # simulation that scored the mixture rule ran at one component; with
+    # several, more than one coefficient can rest on nought at once, which is
+    # not the case it scored. An absent verdict says nobody has measured it.
+    assert got["contains_lower_bound"] is None
+    assert got["contains_upper_bound"] is None
+    assert got["quantity"] == "mean_diagonal_proportion"
+
+
 def test_every_family_with_an_interval_is_pinned_here() -> None:
     """A new family must arrive with its endpoints pinned, or this fails.
 
@@ -487,6 +534,7 @@ def test_every_family_with_an_interval_is_pinned_here() -> None:
         "GxeModel",
         "DiscreteGxeModel",
         "LiabilityModel",
+        "CensoredComponentModel",
     }
     """Listed every family whose shared profile endpoints are pinned above."""
 

@@ -144,6 +144,50 @@ running. Scoring both at several components is issue 38.
 descriptive; `converged`, `scaled_gradient`, and `loglik` are diagnostics. A
 limit-substitution Gaussian heritability is a different, biased estimand.
 
+### Several components, from Python
+
+`CensoredComponentModel` is shaped like `ComponentModel`: the components and the
+design at construction, the censored data at each call.
+
+```sh
+python examples/censored_components.py
+```
+
+```
+records:              1200 (600 people, two each)
+censored:             480 of 1200
+additive (true 0.4):  0.458
+person   (true 0.3):  0.282
+residual (true 0.3):  0.260
+converged:            True
+person 95% interval:  [0.157, 1.000]
+upper on its bound:   True
+profile failures:     1
+```
+
+**That upper end is not a result.** It rests on its bound because the profile
+could not be evaluated there, not because the likelihood never fell away: at a
+proportion of one the person-level matrix is the whole covariance and is
+singular, so there is no residual left to make it invertible. `upper_limited`
+alone does not tell that apart from a genuine bound, which is why the failure
+count is printed beside it.
+
+```python
+listener = asterism.grouping_matrix([f"listener-{row // 2}" for row in range(rows)])
+model = asterism.CensoredComponentModel([expanded, listener], design)
+
+fit = model.fit(value, censoring, limit)
+fit["mean_diagonal_proportions"]        # the residual's share last
+
+model.interval(value, censoring, limit, component=1)   # on the proportion
+model.test(value, censoring, limit, component=1)       # against nought
+```
+
+`interval` gives the mean-diagonal proportion by default, which is the
+comparable quantity; pass `quantity="coefficient"` for the raw one. `test`
+carries `nuisance_at_bound`, and `interval` leaves its boundary verdict absent
+at several components -- see below.
+
 ### What separates one component from another
 
 A component is identified by resemblance the other components do not already

@@ -27,6 +27,15 @@ tag and saved wheels.
   probability of -88, where it previously returned the floor -- a likelihood
   wrong by six hundred nats, finite enough to be believed, in the tail a rare
   binary trait and a heavily censored one both occupy.
+- **`CensoredComponentModel` is the Python interface to a censored trait with
+  several components**, shaped like `ComponentModel`: the components and the
+  design at construction, the censored data at each call. `fit` reports each
+  coefficient and the mean-diagonal proportions; `interval` gives the proportion
+  by default and the coefficient on request; `test` carries `nuisance_at_bound`.
+  With one component it is bit-identical to `tobit_fit`. There is deliberately
+  no `heritability` key: it would be the first component's coefficient whatever
+  that component is, and it moves under a rescaling that the heritability does
+  not.
 - **`mean_diagonal_interval(index)` gives the interval to report** when
   components are compared, beside the coefficient interval that is not
   comparable across matrices whose diagonals differ. Rescaling a component's

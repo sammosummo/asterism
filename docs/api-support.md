@@ -22,6 +22,7 @@ scientifically supported.
 | `AssociationModel` | Public but outside 0.1 scientific support | Marker association is deferred. |
 | `AutoregressiveModel` | Public but outside 0.1 scientific support | Autoregressive modelling is deferred. |
 | `BivariateModel` | Supported in 0.1 | Bivariate genetic correlation. |
+| `CensoredComponentModel` | Public but outside 0.1 scientific support | One censored trait with any number of variance components. Its qualification is issues 35 to 38. |
 | `ComponentModel` | Supported in 0.1 | Mean-diagonal contributions and proportions, their matching intervals, and coefficients or contrasts for zero-diagonal bases. |
 | `DiscreteGxeModel` | Supported in 0.1 | Discrete-environment genetic correlation and calibrated genetic tests. |
 | `GxeModel` | Supported in 0.1 | Restricted continuous G×E surfaces after the manifest's required checks pass. |

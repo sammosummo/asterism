@@ -133,6 +133,91 @@ Against nought the value is interior and a plain chi-squared applies;
 against plus or minus one it sits on a bound and the Self–Liang mixture
 does. Heritabilities are not testable this way.
 
+### `CensoredComponentModel`
+
+One censored trait with any number of variance components.
+
+Shaped like :class:`ComponentModel`, and the same relation between the two
+holds as between an ordinary and a censored heritability: the residual is
+added for you and is never passed, so the coefficients are shares of the
+total and the residual takes what they leave.
+
+**One component is the case this began as.** With a single kinship matrix
+the first coefficient is the heritability and the fit is what
+:func:`tobit_fit` gives, to the last decimal.
+
+Two records per person want a person-level component beside the genetic
+one, or the resemblance between a person's own two records has nowhere to go
+but the heritability. :func:`asterism.grouping_matrix` builds that component
+and a household one from the same call.
+
+**Maximum likelihood, never REML**, because a censored observation has no
+response to project onto the null space of the design. A heritability from
+here must not be placed beside a REML one as though the two were the same.
+
+Parameters
+----------
+matrices
+    The structured components, in the order you want them reported. Each is
+    copied at construction. Row alignment is positional and is the caller's
+    responsibility.
+x
+    The fixed-effect design, one row per record, including its own intercept
+    column if one is wanted.
+subject_order_sha256
+    Optional lowercase SHA-256 from ``subject_order_commitment`` for the
+    exact fitted row order. It is echoed on every record.
+
+#### `CensoredComponentModel.fit(self, value: 'Any', censoring: 'Any', limit: 'Any') -> 'dict[str, Any]'`
+
+Fit, and return each component's coefficient and its proportion.
+
+``censoring`` is 0 where the value was measured, 1 where it lies at or
+above its limit, and 2 where it lies at or below it. The status is given
+rather than inferred, because a censored value can carry the same number
+as a measured one. ``value`` is read only where the status says
+measured, and ``limit`` only where it does not.
+
+``coefficients`` are shares of the total variance where every component
+carries a unit diagonal, and raw coefficients otherwise.
+``mean_diagonal_proportions`` is the comparable quantity, the residual's
+last, and is absent where a component's mean diagonal is not positive
+and finite.
+
+**There is no ``heritability`` key**, and its absence is deliberate.
+With one component it would be ``coefficients[0]``; with several it is
+the first component's coefficient whatever that component happens to be,
+and it moves when a matrix is rescaled while the heritability does not —
+multiplying the first matrix by four returned 0.141 where the
+heritability was 0.396. Read ``mean_diagonal_proportions[0]`` when the
+first component is additive kinship, knowing that you have decided it
+is. :class:`ComponentModel` carries no such key either.
+
+#### `CensoredComponentModel.interval(self, value: 'Any', censoring: 'Any', limit: 'Any', component: 'int', quantity: 'str' = 'mean_diagonal_proportion') -> 'dict[str, Any]'`
+
+A profile-likelihood interval for one component.
+
+``quantity`` is ``"mean_diagonal_proportion"`` by default, which is the
+comparable one and the one to report: rescaling a component's matrix
+describes the same model and leaves it alone. ``"coefficient"`` gives
+the interval on the raw coefficient, which that rescaling moves.
+
+``contains_lower_bound`` and ``contains_upper_bound`` are absent at
+several components. The coverage simulation that scored the boundary
+rule ran at one, and an absent verdict means nobody has measured it.
+
+#### `CensoredComponentModel.test(self, value: 'Any', censoring: 'Any', limit: 'Any', component: 'int') -> 'dict[str, Any]'`
+
+Test that one component's coefficient is nought.
+
+A proportion is nought exactly when its coefficient is, so this answers
+both questions.
+
+``nuisance_at_bound`` says whether another component or the residual
+also rested on nought. Where it is true, ``rule`` is not the reference
+the p-value should be read against: the fifty-fifty mixture answers for
+one parameter on one bound with the rest inside.
+
 ### `ComponentModel`
 
 One trait with any number of variance components.

@@ -28,6 +28,7 @@ __all__: list[str] = [
     "AssociationModel",
     "AutoregressiveModel",
     "BivariateModel",
+    "CensoredComponentModel",
     "ComponentModel",
     "DiscreteGxeModel",
     "GxeModel",
@@ -1985,6 +1986,237 @@ def kinship_classes(
         "class_names": names,
         "pairs": dict(zip(names, pairs, strict=True)),
     }
+
+
+class CensoredComponentModel:
+    """One censored trait with any number of variance components.
+
+    Shaped like :class:`ComponentModel`, and the same relation between the two
+    holds as between an ordinary and a censored heritability: the residual is
+    added for you and is never passed, so the coefficients are shares of the
+    total and the residual takes what they leave.
+
+    **One component is the case this began as.** With a single kinship matrix
+    the first coefficient is the heritability and the fit is what
+    :func:`tobit_fit` gives, to the last decimal.
+
+    Two records per person want a person-level component beside the genetic
+    one, or the resemblance between a person's own two records has nowhere to go
+    but the heritability. :func:`asterism.grouping_matrix` builds that component
+    and a household one from the same call.
+
+    **Maximum likelihood, never REML**, because a censored observation has no
+    response to project onto the null space of the design. A heritability from
+    here must not be placed beside a REML one as though the two were the same.
+
+    Parameters
+    ----------
+    matrices
+        The structured components, in the order you want them reported. Each is
+        copied at construction. Row alignment is positional and is the caller's
+        responsibility.
+    x
+        The fixed-effect design, one row per record, including its own intercept
+        column if one is wanted.
+    subject_order_sha256
+        Optional lowercase SHA-256 from ``subject_order_commitment`` for the
+        exact fitted row order. It is echoed on every record.
+    """
+
+    def __init__(
+        self,
+        matrices: list[Any],
+        x: Any,
+        *,
+        subject_order_sha256: str | None = None,
+    ) -> None:
+        self._subject_order_sha256 = _validated_subject_order_sha256(
+            subject_order_sha256
+        )
+        """Stored the validated row-order commitment without participant identifiers."""
+
+        if not matrices:
+            raise ValueError("TOBIT_NO_COMPONENTS")
+        self._matrices: list[npt.NDArray[np.float64]] = [
+            _owned_matrix(matrix, f"matrix_{index}")
+            for index, matrix in enumerate(matrices)
+        ]
+        """Copied every component into model-owned storage."""
+
+        self._x = _owned_matrix(x, "design")
+        """Stored an immutable copy of the fixed-effect design."""
+
+        self.components = len(self._matrices)
+        """Counted the components, the residual not among them."""
+
+    # Three entry points read the same five arrays in the same order, and a
+    # public one would invite a caller to assemble them differently from the
+    # way the model fits them.
+    # asterism-style: allow private-helper -- one reading of the inputs, shared by fit, interval and test
+    def _data(
+        self, value: Any, censoring: Any, limit: Any
+    ) -> tuple[list[Any], Any, Any, Any, Any]:
+        """Put the censored data and the model's matrices into core order."""
+        return (
+            [np.ascontiguousarray(m, dtype=float) for m in self._matrices],
+            np.ascontiguousarray(value, dtype=float),
+            np.ascontiguousarray(censoring, dtype=np.int64),
+            np.ascontiguousarray(limit, dtype=float),
+            np.ascontiguousarray(self._x, dtype=float),
+        )
+
+    def fit(self, value: Any, censoring: Any, limit: Any) -> dict[str, Any]:
+        """Fit, and return each component's coefficient and its proportion.
+
+        ``censoring`` is 0 where the value was measured, 1 where it lies at or
+        above its limit, and 2 where it lies at or below it. The status is given
+        rather than inferred, because a censored value can carry the same number
+        as a measured one. ``value`` is read only where the status says
+        measured, and ``limit`` only where it does not.
+
+        ``coefficients`` are shares of the total variance where every component
+        carries a unit diagonal, and raw coefficients otherwise.
+        ``mean_diagonal_proportions`` is the comparable quantity, the residual's
+        last, and is absent where a component's mean diagonal is not positive
+        and finite.
+
+        **There is no ``heritability`` key**, and its absence is deliberate.
+        With one component it would be ``coefficients[0]``; with several it is
+        the first component's coefficient whatever that component happens to be,
+        and it moves when a matrix is rescaled while the heritability does not —
+        multiplying the first matrix by four returned 0.141 where the
+        heritability was 0.396. Read ``mean_diagonal_proportions[0]`` when the
+        first component is additive kinship, knowing that you have decided it
+        is. :class:`ComponentModel` carries no such key either.
+        """
+        matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        """Put the components and the censored data into the order the core reads."""
+
+        (
+            coefficients,
+            mean_diagonal_proportions,
+            total_variance,
+            fixed_effects,
+            loglik,
+            converged,
+            scaled_gradient,
+            censored_share,
+            largest_family,
+        ) = _core.censored_component_fit(matrices, y, codes, limits, design)
+        """Fitted the latent complete trait while retaining every censoring limit."""
+        return {
+            "coefficients": coefficients,
+            "mean_diagonal_proportions": mean_diagonal_proportions,
+            "total_variance": total_variance,
+            "fixed_effects": fixed_effects,
+            "loglik": loglik,
+            "converged": converged,
+            "scaled_gradient": scaled_gradient,
+            "censored_share": censored_share,
+            "largest_family": largest_family,
+            "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
+        }
+
+    def interval(
+        self,
+        value: Any,
+        censoring: Any,
+        limit: Any,
+        component: int,
+        quantity: str = "mean_diagonal_proportion",
+    ) -> dict[str, Any]:
+        """A profile-likelihood interval for one component.
+
+        ``quantity`` is ``"mean_diagonal_proportion"`` by default, which is the
+        comparable one and the one to report: rescaling a component's matrix
+        describes the same model and leaves it alone. ``"coefficient"`` gives
+        the interval on the raw coefficient, which that rescaling moves.
+
+        ``contains_lower_bound`` and ``contains_upper_bound`` are absent at
+        several components. The coverage simulation that scored the boundary
+        rule ran at one, and an absent verdict means nobody has measured it.
+        """
+        if quantity not in ("mean_diagonal_proportion", "coefficient"):
+            raise ValueError("TOBIT_INTERVAL_QUANTITY_UNKNOWN")
+        matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        """Put the components and the censored data into the order the core reads."""
+
+        (
+            estimate,
+            lower,
+            upper,
+            lower_limited,
+            upper_limited,
+            level,
+            contains_lower_bound,
+            contains_upper_bound,
+            profile_failures,
+        ) = _core.censored_component_interval(
+            matrices,
+            y,
+            codes,
+            limits,
+            design,
+            component,
+            quantity == "mean_diagonal_proportion",
+        )
+        """Profiled the requested component, holding it while the rest refit."""
+        return {
+            "estimate": estimate,
+            "lower": lower,
+            "upper": upper,
+            "lower_limited": lower_limited,
+            "upper_limited": upper_limited,
+            "level": level,
+            "contains_lower_bound": contains_lower_bound,
+            "contains_upper_bound": contains_upper_bound,
+            "profile_failures": profile_failures,
+            "quantity": quantity,
+            "component": component,
+            "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
+        }
+
+    def test(
+        self, value: Any, censoring: Any, limit: Any, component: int
+    ) -> dict[str, Any]:
+        """Test that one component's coefficient is nought.
+
+        A proportion is nought exactly when its coefficient is, so this answers
+        both questions.
+
+        ``nuisance_at_bound`` says whether another component or the residual
+        also rested on nought. Where it is true, ``rule`` is not the reference
+        the p-value should be read against: the fifty-fifty mixture answers for
+        one parameter on one bound with the rest inside.
+        """
+        matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        """Put the components and the censored data into the order the core reads."""
+
+        (
+            statistic,
+            p_value,
+            rule,
+            null_loglik,
+            alternative_loglik,
+            nuisance_at_bound,
+        ) = _core.censored_component_test(matrices, y, codes, limits, design, component)
+        """Tested the component against nought by a likelihood ratio."""
+        return {
+            "statistic": statistic,
+            "p_value": p_value,
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
+            "nuisance_at_bound": nuisance_at_bound,
+            "component": component,
+            "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
+        }
 
 
 def tobit_fit(

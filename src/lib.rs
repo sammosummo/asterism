@@ -162,6 +162,18 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(tobit::python::tobit_test, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
+        tobit::python::censored_component_fit,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        tobit::python::censored_component_interval,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        tobit::python::censored_component_test,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
         mixed_bivariate::python::mixed_bivariate_test,
         module
     )?)?;

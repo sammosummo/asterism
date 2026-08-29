@@ -162,3 +162,180 @@ pub fn tobit_test(
         got.alternative_loglik,
     ))
 }
+
+/// Turn the Python matrices into the model's own storage.
+fn components_from(components: &[PyReadonlyArray2<'_, f64>]) -> Vec<DMatrix<f64>> {
+    components
+        .iter()
+        .map(|component| {
+            let view = component.as_array();
+            DMatrix::from_fn(view.shape()[0], view.shape()[1], |i, j| view[(i, j)])
+        })
+        .collect()
+}
+
+/// The censored data every entry point below reads the same way.
+type CensoredInputs = (Vec<f64>, Vec<Censoring>, Vec<f64>, DMatrix<f64>);
+
+/// Read them once, so three entry points cannot drift on how they do it.
+fn inputs(
+    value: &PyReadonlyArray1<'_, f64>,
+    censoring: &PyReadonlyArray1<'_, i64>,
+    limit: &PyReadonlyArray1<'_, f64>,
+    design: &PyReadonlyArray2<'_, f64>,
+) -> PyResult<CensoredInputs> {
+    let x = design.as_array();
+    let x = DMatrix::from_fn(x.shape()[0], x.shape()[1], |i, j| x[(i, j)]);
+    let censoring: Vec<Censoring> = censoring
+        .as_array()
+        .iter()
+        .map(|c| censoring_from(*c))
+        .collect::<PyResult<_>>()?;
+    Ok((
+        value.as_array().iter().copied().collect(),
+        censoring,
+        limit.as_array().iter().copied().collect(),
+        x,
+    ))
+}
+
+/// Fit one censored trait with any number of variance components.
+///
+/// Returns the coefficients, the mean-diagonal proportions where they are
+/// defined, the total variance, the fixed effects, the log likelihood, whether
+/// the search converged, its scaled gradient, the censored share and the
+/// largest block the region probability had to cover.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+pub fn censored_component_fit(
+    components: Vec<PyReadonlyArray2<'_, f64>>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+) -> PyResult<(
+    Vec<f64>,
+    Option<Vec<f64>>,
+    f64,
+    Vec<f64>,
+    f64,
+    bool,
+    f64,
+    f64,
+    usize,
+)> {
+    let (value, censoring, limit, x) = inputs(&value, &censoring, &limit, &design)?;
+    let fit = TobitModel::build(
+        &components_from(&components),
+        &value,
+        &censoring,
+        &limit,
+        &x,
+    )
+    .map_err(PyValueError::new_err)?
+    .fit()
+    .map_err(PyValueError::new_err)?;
+    Ok((
+        fit.coefficients,
+        fit.mean_diagonal_proportions,
+        fit.total_variance,
+        fit.fixed_effects,
+        fit.loglik,
+        fit.converged,
+        fit.scaled_gradient,
+        fit.censored_share,
+        fit.largest_family,
+    ))
+}
+
+/// A profile-likelihood interval for one component.
+///
+/// With `proportion` true the interval is on the component's mean-diagonal
+/// proportion, which is the comparable quantity; with it false, on the raw
+/// coefficient.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+pub fn censored_component_interval(
+    components: Vec<PyReadonlyArray2<'_, f64>>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    index: usize,
+    proportion: bool,
+) -> PyResult<(
+    f64,
+    f64,
+    f64,
+    bool,
+    bool,
+    f64,
+    Option<bool>,
+    Option<bool>,
+    usize,
+)> {
+    let (value, censoring, limit, x) = inputs(&value, &censoring, &limit, &design)?;
+    let model = TobitModel::build(
+        &components_from(&components),
+        &value,
+        &censoring,
+        &limit,
+        &x,
+    )
+    .map_err(PyValueError::new_err)?;
+    let got = if proportion {
+        model.mean_diagonal_interval(index)
+    } else {
+        model.coefficient_interval(index)
+    }
+    .map_err(PyValueError::new_err)?;
+    Ok((
+        got.estimate
+            .ok_or_else(|| PyValueError::new_err("TOBIT_PROFILE_NOT_EVALUABLE"))?,
+        got.lower,
+        got.upper,
+        got.lower_limited,
+        got.upper_limited,
+        got.level,
+        got.contains_lower_bound,
+        got.contains_upper_bound,
+        got.profile_failures,
+    ))
+}
+
+/// A test that one component's coefficient is nought.
+///
+/// Returns the statistic, the p-value, the reference rule, the two log
+/// likelihoods, and whether another component or the residual also rested on
+/// nought -- which is when that rule is not the one to read the p-value
+/// against.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+pub fn censored_component_test(
+    components: Vec<PyReadonlyArray2<'_, f64>>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    index: usize,
+) -> PyResult<(f64, f64, String, f64, f64, bool)> {
+    let (value, censoring, limit, x) = inputs(&value, &censoring, &limit, &design)?;
+    let got = TobitModel::build(
+        &components_from(&components),
+        &value,
+        &censoring,
+        &limit,
+        &x,
+    )
+    .map_err(PyValueError::new_err)?
+    .coefficient_test(index)
+    .map_err(PyValueError::new_err)?;
+    Ok((
+        got.statistic,
+        got.p_value,
+        got.rule.to_owned(),
+        got.null_loglik,
+        got.alternative_loglik,
+        got.nuisance_at_bound,
+    ))
+}

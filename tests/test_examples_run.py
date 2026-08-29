@@ -61,7 +61,12 @@ def test_the_docs_show_what_the_example_prints(example: Path) -> None:
     on the page, and so passed while one example's output sat outside its fence
     and rendered as prose.
     """
-    pages: list[Path] = [ROOT / "README.md", *(ROOT / "docs").glob("*.md")]
+    # **Recursive on purpose.** This globbed `docs/*.md` only, so nothing under
+    # `docs/models/` was ever read -- a model page could quote an example's
+    # output and the quote would go unchecked, the test skipping instead of
+    # comparing. That is worse than not quoting it at all, because the page
+    # looks verified.
+    pages: list[Path] = [ROOT / "README.md", *(ROOT / "docs").rglob("*.md")]
     """Looked wherever an example may legitimately be quoted."""
 
     printed: str = run(example)
@@ -71,9 +76,16 @@ def test_the_docs_show_what_the_example_prints(example: Path) -> None:
     """Took one printed line as the sign that a page quotes this example."""
 
     quoting: list[Path] = [
-        page for page in pages if first in page.read_text(encoding="utf-8")
+        page
+        for page in pages
+        if example.name in (text := page.read_text(encoding="utf-8")) and first in text
     ]
-    """Found the pages that quote it. Merely linking to it is not quoting it."""
+    """Found the pages that quote it: they name the example **and** show a line
+    of its output. Merely linking to it is not quoting it, and a printed line on
+    its own is not enough either -- two examples here open with
+    `people:                 1000`, so once this began reading `docs/models/`
+    each was matched against the other's page and both failed on lines that were
+    never theirs."""
 
     if not quoting:
         pytest.skip(f"{example.name} output is not quoted anywhere")
