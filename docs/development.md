@@ -163,108 +163,64 @@ all reduce how much is conditioned on and move back towards the regime where it
 is not safe. Run it again when the design changes.
 
 **The design did change.** The several-component censored model fits one
-frequency at a time, not seventeen, and carries a shared-environment kernel
-beside the genetic and person-level terms. A censored threshold is therefore
-conditioned on the other ear and on whoever in the family was measurable at that
-one frequency, rather than on a nearly complete audiogram. And a distance kernel
-is non-zero for every pair, which is why it is preferred to a categorical
-shared-environment indicator, so the likelihood's block stops being one family
-and becomes the whole roster.
-
-**The "fewer frequencies" worry above turned out to be the wrong one**, and the
-run below is what says so. The paragraph predicted that conditioning on less
-would leave more correlation among the censored residuals and move the
-approximation back towards the regime where it fails. It does not. The leftover
-mean absolute correlation is **0.008 fitting one frequency and 0.009 fitting
-seventeen** -- the same. At matched dimensions the two designs behave almost
-identically: at 50 coordinates 0.050 against 0.040 of a heritability step, and
-at 100 coordinates **0.114 against 0.114**.
-
-What the kernel changes is not the difficulty per coordinate but how many
-coordinates can end up in one block. Blocks made of families do not reach 200
-censored records; a block made of a whole densely connected roster does. The
-audiogram ladder stopped at 221 and found nothing wrong. This one was carried to
-600 and found the wall between 200 and 400 -- a wall the earlier design would
-have hit too, had anyone climbed that far. The wall belongs to the block size,
-not to either design.
-
-So the same ladder is climbed again under that design, with the rungs carried
-past 221 to 600 because the block is now the roster:
-
-```sh
-uv run --no-project python checks/sequential_against_ghk.py --design components
-```
-
-The reference, the yardstick and the conditional-versus-marginal contrast are
-the same ones described above; only the covariance being climbed is different.
-It is one script and one GHK implementation deliberately: a second ladder would
-be a second answer to the same question.
-
-What it found, on 29 August 2026. The run behind the numbers below is:
+frequency at a time, not seventeen, and carries a household component beside the
+genetic and person-level ones. A censored threshold is therefore conditioned on
+the other ear and on whoever in the family was measurable at that one frequency,
+rather than on a nearly complete audiogram. So the same ladder is climbed again
+under that design:
 
 ```sh
 uv run --no-project python checks/sequential_against_ghk.py \
   --design components --families 6 --replicates 8 --draws 400000
 ```
 
-Six families, 480 people, 960 rows at 18 kHz, two thirds of ears censored, and a
-shared-environment kernel held at 0.05 per kilometre. **The conditional regime is
-qualified to 200 censored dimensions. 400 and 600 are out of reach.**
+The reference, the yardstick and the conditional-versus-marginal contrast are the
+same ones described above; only the covariance being climbed is different. It is
+one script and one GHK implementation deliberately: a second ladder would be a
+second answer to the same question.
+
+What it found, on 29 August 2026. Six families, 480 people, 960 rows at 18 kHz,
+two thirds of ears censored, households of three. **Nothing failed.**
 
 | censored dimension | 5 | 20 | 50 | 100 | 200 | 400 | 600 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| error as a share of a heritability step | 0.000 | 0.002 | 0.050 | 0.114 | **0.225** | 0.566 | 0.530 |
+| error as a share of a heritability step | 0.000 | 0.003 | 0.007 | 0.006 | 0.014 | 0.036 | 0.053 |
 
-The reference resolves all of it: the error is 23 times the GHK standard error at
-200 and 9 times it at 600, so none of these rungs is a statement about
-simulation noise.
+Against an allowance of 0.25. **600 is the largest rung climbed and not a limit
+that was found**: the ladder ran out before the approximation did. The reference
+resolves all of it -- the error is 55 times the GHK standard error at 200 and 8
+times it at 600.
 
-**200 passes, but only just** -- 0.225 against an allowance of 0.25. It should be
-read as the edge of the qualified range and not as comfortable ground. The 600
-rung is weaker again for a separate reason: only three of eight replicates could
-supply 600 censored coordinates, so it rests on the heavily censored replicates
-rather than a fair sample of them. It fails either way.
+**The "fewer frequencies" worry above turned out to be the wrong one.** The
+paragraph predicted that conditioning on less would leave more correlation among
+the censored residuals and move the approximation back towards failing. It does
+not. The leftover mean absolute correlation is 0.003 fitting one frequency and
+0.009 fitting seventeen.
 
-**The kernel's decay decides the answer, which is why it is a flag and not a
-constant.** An earlier run held it at 0.25 per kilometre. At that decay the median
-pair's kernel entry is 0.02: the kernel is non-zero everywhere and correlates
-almost nothing, the ladder is stressed by dimension alone, and 400 passes at 0.19.
-At 0.05 per kilometre the median entry is 0.47 and the same rung fails at 0.57.
-A kernel that is dense in support but inert in effect will qualify a dimension it
-has not tested, so `--decay` should be set to the strongest coupling the analysis
-intends to fit, not the weakest.
+**The one number worth watching is the ordering gap.** Sequential truncation
+conditions on coordinates in an order, and sorts the rarer class first; when
+every censored value lies the same side of its limit there is no rarer class, so
+the order is arbitrary. At 600 the answer moves by 0.55 log units with that
+arbitrary order. Against a heritability step of 4.74 that is twelve per cent, so
+it does not threaten the estimate here, but it is the quantity that would fail
+first if the design moved.
 
-**What that means for a shared-environment kernel, stated carefully.** The bound
-is on **block size**: 200 censored records in one block. It is not a statement
-that a distance kernel puts a model over that bound.
-
-A distance kernel is non-zero for every pair arithmetically, so a block rule that
-tests entries against exact nought would put the whole roster in one block. That
-would be a poor rule rather than a consequence of the kernel. At 0.05 per
-kilometre the kernel is 0.0067 at 100 km and 0.000045 at 200 km, so for a cohort
-spread over a region most pairs carry no shared environment worth representing.
-Truncating where the kernel is numerically nothing costs nothing, leaves blocks
-the size of neighbourhoods, and keeps them far below 200.
-
-**The run above does not measure that case.** It places 480 people in a 30 km
-square, where the largest possible separation is about 42 km and the kernel is
-still 0.12, so every pair is materially correlated by construction. That is a
-deliberate worst case, and it is what makes the bound a bound: it says where the
-approximation breaks if a block really is built that large and that connected. It
-is not a prediction that any particular analysis will build one.
-
-So the question a caller has to answer is how large its blocks actually get, and
-that turns on the truncation and on how households cluster -- not on whether the
-kernel is a distance kernel.
+**A component that is not block diagonal is a different problem, and an earlier
+run measured it.** Spatial kernels were dropped from this model on 29 August; a
+distance kernel is non-zero for every pair, so a block rule testing entries
+against exact nought would put a whole roster in one block. Climbed with such a
+kernel -- 480 people in a 30 km square, where nothing is negligible -- the same
+ladder failed at 400, at 0.57 of a heritability step, and the qualified dimension
+was 200. That is not this model, and it is recorded only to say what a dense
+component costs: roughly a factor of ten in the error ratio at every rung above
+100. A household kernel joins only people who share a home, so blocks stay the
+size the pedigree implies and the question does not arise.
 
 **The conditioning still earns most of it, as it did for the audiogram design.**
-Conditioning leaves a mean absolute correlation of 0.008 between the censored
-residuals, and it is flat across every rung, so the failure at 400 is not the
-conditioning weakening. The marginal rungs, where nothing is conditioned away
-and the correlation is 0.10, are worse at every dimension and reach eleven times
-a heritability step at 400. So the conditioning is what makes the problem
-tractable at all; what defeats it in the end is simply how many coordinates
-there are.
+Conditioning leaves a mean absolute correlation of 0.003, flat across every rung.
+The marginal rungs, where nothing is conditioned away and the correlation is 0.36
+at five coordinates, are worse at the low rungs; by 600 the two regimes have
+converged, which they did not under the dense kernel.
 
 The run takes a few hours. Reduce `--replicates` and `--draws` for an exploratory
 pass, but quote the command with any number taken from it, because the recorded

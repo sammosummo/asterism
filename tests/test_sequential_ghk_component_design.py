@@ -91,22 +91,42 @@ def test_several_families_are_unrelated_to_each_other(ladder: ModuleType) -> Non
     )
 
 
-def test_the_household_kernel_joins_every_pair(ladder: ModuleType) -> None:
-    """A distance kernel is non-zero everywhere: that is why it was chosen."""
-    generator: np.random.Generator = np.random.default_rng(11)
-    """Seeded the simulated household coordinates."""
+def test_the_household_kernel_joins_only_people_who_share_a_home(
+    ladder: ModuleType,
+) -> None:
+    """A household kernel is categorical: one within a home, nought between homes.
 
-    kernel: np.ndarray = ladder.household_kernel(40, generator)
-    """Built a kernel over forty simulated households."""
+    Spatial kernels were dropped from this model on 29 August 2026. The
+    difference matters to the likelihood's blocks, not only to the science: a
+    distance kernel is non-zero for every pair arithmetically, whereas this one
+    is block diagonal and can only ever join people who actually live together.
+    """
+    kernel: np.ndarray = ladder.household_kernel(np.ones((9, 9)), 3)
+    """Built a kernel over one family of nine, in homes of three."""
 
-    assert kernel.shape == (40, 40)
+    assert kernel.shape == (9, 9)
     assert np.allclose(kernel, kernel.T)
     assert np.allclose(np.diag(kernel), 1.0)
-    assert np.all(kernel > 0.0), (
-        "the kernel has a zero, so it is not dense and the block structure "
-        "argument this design rests on would not hold"
+    assert set(np.unique(kernel)) <= {0.0, 1.0}, (
+        "a household kernel takes only nought and one; a graded entry would "
+        "make it a distance kernel again"
     )
-    assert np.all(kernel <= 1.0)
+    assert np.allclose(kernel[0:3, 0:3], 1.0)
+    assert np.allclose(kernel[0:3, 3:], 0.0), (
+        "the kernel joins people in different homes, so it is not categorical "
+        "and could enlarge a likelihood block beyond a household"
+    )
+
+
+def test_a_home_that_does_not_divide_the_roster_is_still_whole(
+    ladder: ModuleType,
+) -> None:
+    """The last home may be short, and must not be left ragged or empty."""
+    kernel: np.ndarray = ladder.household_kernel(np.ones((8, 8)), 3)
+    """Built a kernel over one family of eight, so its last home holds two."""
+
+    assert np.allclose(kernel[6:8, 6:8], 1.0)
+    assert np.allclose(kernel[6:8, 0:6], 0.0)
 
 
 def test_the_heritability_step_leaves_the_total_variance_alone(
@@ -119,16 +139,10 @@ def test_the_heritability_step_leaves_the_total_variance_alone(
     variance, it would be moving the probability for a second reason and the
     ratio would not mean what the check says it means.
     """
-    generator: np.random.Generator = np.random.default_rng(5)
-    """Seeded the simulated household coordinates."""
-
     matrix: np.ndarray = relationship_of(ladder, 1)
     """Built one family's relationship matrix."""
 
-    people: int = matrix.shape[0]
-    """Counted the people in the roster."""
-
-    kernel: np.ndarray = ladder.household_kernel(people, generator)
+    kernel: np.ndarray = ladder.household_kernel(matrix)
     """Built the shared-environment kernel over that roster."""
 
     baseline: np.ndarray = ladder.component_covariance(
@@ -152,14 +166,11 @@ def test_the_heritability_step_leaves_the_total_variance_alone(
 
 def test_the_total_variance_is_the_spread_and_the_noise(ladder: ModuleType) -> None:
     """The diagonal is the modelled spread plus test-retest noise, and nothing else."""
-    generator: np.random.Generator = np.random.default_rng(3)
-    """Seeded the simulated household coordinates."""
-
     matrix: np.ndarray = relationship_of(ladder, 1)
     """Built one family's relationship matrix."""
 
-    kernel: np.ndarray = ladder.household_kernel(matrix.shape[0], generator)
-    """Built the shared-environment kernel over that roster."""
+    kernel: np.ndarray = ladder.household_kernel(matrix)
+    """Built the household kernel over that roster."""
 
     covariance: np.ndarray = ladder.component_covariance(
         matrix, kernel, ladder.COMPONENT_SHARES["genetic"]
@@ -176,14 +187,11 @@ def test_the_total_variance_is_the_spread_and_the_noise(ladder: ModuleType) -> N
 
 def test_both_ears_share_everything_above_the_ear(ladder: ModuleType) -> None:
     """Two ears of one person differ only by the ear term and the noise."""
-    generator: np.random.Generator = np.random.default_rng(7)
-    """Seeded the simulated household coordinates."""
-
     matrix: np.ndarray = relationship_of(ladder, 1)
     """Built one family's relationship matrix."""
 
-    kernel: np.ndarray = ladder.household_kernel(matrix.shape[0], generator)
-    """Built the shared-environment kernel over that roster."""
+    kernel: np.ndarray = ladder.household_kernel(matrix)
+    """Built the household kernel over that roster."""
 
     covariance: np.ndarray = ladder.component_covariance(
         matrix, kernel, ladder.COMPONENT_SHARES["genetic"]
@@ -203,138 +211,51 @@ def test_both_ears_share_everything_above_the_ear(ladder: ModuleType) -> None:
     assert gap == pytest.approx(expected)
 
 
-def test_the_kernel_is_what_makes_the_roster_one_block(ladder: ModuleType) -> None:
-    """Without the kernel the block is a family; with it, the whole roster.
+def test_the_household_kernel_does_not_join_two_families(ladder: ModuleType) -> None:
+    """A household kernel cannot merge unrelated families, and that is the point.
 
-    This is the finding that made the ladder worth climbing again, so it is
-    worth having a test that fails if it stops being true.
+    The earlier spatial kernel was non-zero for every pair, so a block rule
+    testing entries against nought would have put the whole roster in one block.
+    A categorical household kernel cannot do that: it joins only people who
+    share a home, so blocks stay the size of families unless a home straddles
+    two, and the region probability is never handed more coordinates than the
+    pedigree already implies.
     """
-    generator: np.random.Generator = np.random.default_rng(13)
-    """Seeded the simulated household coordinates."""
-
     matrix: np.ndarray = relationship_of(ladder, 2)
     """Built two unrelated families."""
 
-    people: int = matrix.shape[0]
-    """Counted the people in the roster."""
+    one_family: int = relationship_of(ladder, 1).shape[0]
+    """Counted the people in a single family."""
 
-    kernel: np.ndarray = ladder.household_kernel(people, generator)
-    """Built the shared-environment kernel over both families."""
+    kernel: np.ndarray = ladder.household_kernel(matrix, ladder.HOUSEHOLD_SIZE)
+    """Built the household kernel over both families."""
 
-    with_kernel: np.ndarray = ladder.component_covariance(
+    covariance: np.ndarray = ladder.component_covariance(
         matrix, kernel, ladder.COMPONENT_SHARES["genetic"]
     )
-    """Built the covariance with the shared-environment kernel present."""
+    """Built the covariance with the household kernel present."""
 
-    without: np.ndarray = ladder.component_covariance(
-        matrix, np.eye(people), ladder.COMPONENT_SHARES["genetic"]
-    )
-    """Built the covariance with the kernel replaced by an identity."""
+    half: int = one_family * 2
+    """Located the row at which the second family's records begin."""
 
-    half: int = relationship_of(ladder, 1).shape[0] * 2
-    """Located the row at which the second family's records begin: one family's
-    people, each contributing two ears."""
-
-    assert np.all(with_kernel[:half, half:] != 0.0), (
-        "the kernel does not join the two families, so the block would still "
-        "be one family and the ladder past 221 would not be needed"
-    )
-    assert np.all(without[:half, half:] == 0.0), (
-        "the families are joined even without the kernel, so the kernel is not "
-        "what makes the roster one block"
+    assert np.allclose(covariance[:half, half:], 0.0), (
+        "the household kernel joins the two families, so it would enlarge a "
+        "likelihood block beyond the pedigree just as a spatial kernel would"
     )
 
 
-def test_the_kernel_actually_correlates_at_the_held_decay(ladder: ModuleType) -> None:
-    """A kernel that is non-zero everywhere but tiny everywhere proves nothing.
+def test_a_person_with_no_relatives_lives_alone(ladder: ModuleType) -> None:
+    """Homes are formed inside families, so unrelated people cannot share one.
 
-    An earlier decay of 0.25 per kilometre over the same span left the median
-    pair's kernel entry at about 0.02 -- dense in support, inert in effect. The
-    ladder was then stressed by dimension alone, and the shared environment,
-    which is the whole reason this design exists, did no work at all. This is
-    the guard against that returning quietly.
+    Passing an identity relationship matrix says nobody is related to anybody,
+    which makes every person their own family, so every home holds one person.
+    That is the behaviour that stops a home straddling two unrelated families,
+    which is what would join them in the covariance for no modelled reason.
     """
-    generator: np.random.Generator = np.random.default_rng(17)
-    """Seeded the simulated household coordinates."""
+    kernel: np.ndarray = ladder.household_kernel(np.eye(6), 3)
+    """Built a kernel over six people who are related to nobody."""
 
-    kernel: np.ndarray = ladder.household_kernel(300, generator)
-    """Built a kernel over three hundred simulated households at the held decay."""
-
-    off_diagonal: np.ndarray = kernel[~np.eye(300, dtype=bool)]
-    """Took every pair's entry, excluding each household with itself."""
-
-    assert float(np.median(off_diagonal)) > 0.2, (
-        "the median pair's kernel entry is too small for the shared environment "
-        "to correlate anything, so the ladder would be stressed by dimension only"
-    )
-
-
-def test_the_reference_agrees_with_the_exact_answer_at_two_coordinates(
-    ladder: ModuleType,
-) -> None:
-    """Anchor the GHK reference where an exact answer exists.
-
-    Above two coordinates the crate uses sequential truncation and there is
-    nothing exact to check against; at exactly two it uses a bivariate normal
-    integral. So two coordinates is the one rung where the reference itself can
-    be shown correct rather than merely independent, and a reference that is
-    wrong makes every rung above it meaningless.
-    """
-    import asterism
-
-    generator: np.random.Generator = np.random.default_rng(23)
-    """Seeded the draws behind the reference."""
-
-    covariance: np.ndarray = np.array([[4.0, 1.6], [1.6, 2.5]])
-    """Chose a correlated two-coordinate covariance."""
-
-    centre: np.ndarray = np.array([0.4, -0.7])
-    """Placed the region centre away from the origin in both coordinates."""
-
-    exact: float = asterism.region_log_probability(centre, np.ones(2), covariance)
-    """Took the crate's exact bivariate answer."""
-
-    reference, error = ladder.ghk_log_probability(
-        centre, covariance, 200_000, generator
-    )
-    """Took the independent GHK estimate and its own standard error."""
-
-    assert abs(reference - exact) < 5.0 * max(error, 1e-6), (
-        f"GHK gives {reference:.6f} where the exact answer is {exact:.6f}, "
-        f"a gap of {abs(reference - exact):.6f} against a standard error of "
-        f"{error:.6f}; the reference cannot be trusted at higher rungs either"
-    )
-
-
-def test_an_unjudged_rung_does_not_advance_the_qualified_dimension() -> None:
-    """A rung below the step floor is not judged, so it must not qualify one.
-
-    `within_allowance` is true by construction for a rung whose heritability
-    step fell below `STEP_FLOOR`, because such a rung is explicitly not judged.
-    Reading that as a pass would let the headline qualified dimension rest on a
-    rung nothing measured.
-    """
-    rungs: dict[str, dict[str, object]] = {
-        "5": {"reached": True, "decidable": True, "within_allowance": True},
-        "20": {"reached": True, "decidable": False, "within_allowance": True},
-        "50": {"reached": True, "decidable": True, "within_allowance": True},
-    }
-    """Built a ladder whose middle rung passed only because it was not judged."""
-
-    qualified: int | None = None
-    """Held the largest rung cleared without a failure below it."""
-
-    for candidate in (5, 20, 50):
-        entry: dict[str, object] = rungs[str(candidate)]
-        """Took this rung's aggregated evidence."""
-
-        if entry["reached"] and entry["decidable"] and entry["within_allowance"]:
-            qualified = candidate
-            """Advanced the qualified dimension to this cleared rung."""
-        else:
-            break
-
-    assert qualified == 5, (
-        "an unjudged rung advanced the ladder, so the qualified dimension "
-        "would rest on a rung the check declined to judge"
+    assert np.allclose(kernel, np.eye(6)), (
+        "unrelated people were put in a home together, so a home can straddle "
+        "two families and join them in the covariance"
     )

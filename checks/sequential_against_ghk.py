@@ -303,15 +303,11 @@ COMPONENT_SHARES: dict[str, float] = {
 }
 """Set the four variance shares of the several-component design."""
 
-HOUSEHOLD_DECAY_PER_KM: float = 0.05
-"""Held the shared-environment kernel's decay, which this model never estimates.
-At this decay and span the median pair's kernel entry is about 0.47, so the
-kernel genuinely correlates the roster. An earlier 0.25 left it at 0.02, which
-is dense in support but inert in effect: the ladder was then stressed by
-dimension alone and not by the shared environment at all."""
-
-HOUSEHOLD_SPAN_KM: float = 30.0
-"""Set the square within which simulated households are placed."""
+HOUSEHOLD_SIZE: int = 3
+"""People sharing a household. The shared-environment component is a household
+kernel and not a spatial one: people in the same home share an effect, and people
+in different homes do not. Spatial kernels were dropped from this model on 29
+August 2026."""
 
 COMPONENT_FAMILIES: int = 6
 """Independent families simulated, so the genetic term is block diagonal and only
@@ -354,30 +350,77 @@ def many_families(
 
 
 def household_kernel(
-    people: int, rng: np.random.Generator, decay: float = HOUSEHOLD_DECAY_PER_KM
+    relationship: np.ndarray, household_size: int = HOUSEHOLD_SIZE
 ) -> np.ndarray:
-    """A fixed-decay shared-environment kernel over simulated households.
+    """A household kernel: one within a home, nought between homes.
 
-    The decay is held rather than estimated, which is what lets the kernel be
-    passed as an ordinary component: comparing several held decays is the
-    sensitivity analysis, and no range parameter is ever searched for.
+    This is a categorical shared environment, not a distance kernel. It is block
+    diagonal by construction, so it can only ever join people who actually live
+    together, and it cannot enlarge a likelihood block the way a kernel that is
+    non-zero for every pair arithmetically could.
+
+    **Homes are formed inside families, never across them.** Taking consecutive
+    runs of the whole roster instead would put a home astride two unrelated
+    families wherever a family's size did not divide by the household size, which
+    would join those families in the covariance for no reason anyone modelled.
+
+    Within a family the roster is built parents before children, so a home holds
+    close relatives. That is the property that matters: it is what makes a
+    household term hard to tell apart from a genetic one, and it is the
+    correlation the region probability has to cope with.
 
     Args:
-        people: Number of people in the roster.
-        rng: Source of the simulated household coordinates.
-        decay: The held decay in reciprocal kilometres.
+        relationship: The additive relationship matrix, whose connected blocks
+            are the families homes are formed inside.
+        household_size: People sharing each home.
 
     Returns:
         The kernel, people by people, with a unit diagonal.
     """
-    coordinates: np.ndarray = rng.uniform(0.0, HOUSEHOLD_SPAN_KM, size=(people, 2))
-    """Placed each person's household in the simulated square."""
+    people: int = relationship.shape[0]
+    """Counted the people in the roster."""
 
-    separation: np.ndarray = np.linalg.norm(
-        coordinates[:, None, :] - coordinates[None, :, :], axis=2
-    )
-    """Measured the distance in kilometres between every pair of households."""
-    return np.exp(-decay * separation)
+    kernel: np.ndarray = np.zeros((people, people))
+    """Initialised the kernel with nobody sharing a home."""
+
+    seen: np.ndarray = np.zeros(people, dtype=bool)
+    """Marked which people have already been placed in a family."""
+
+    for root in range(people):
+        if seen[root]:
+            continue
+        stack: list[int] = [root]
+        """Started a search from this person, who begins a family not yet walked."""
+
+        seen[root] = True
+        """Marked this person as placed."""
+
+        family: list[int] = []
+        """Initialised the family this person belongs to."""
+
+        while stack:
+            index: int = stack.pop()
+            """Took the next person whose relatives are still to be followed."""
+
+            family.append(index)
+            joined: np.ndarray = np.flatnonzero((relationship[index] != 0.0) & ~seen)
+            """Found everyone related to this person and not yet placed."""
+
+            seen[joined] = True
+            """Marked those relatives as placed, so no person joins two families."""
+
+            stack.extend(int(other) for other in joined)
+        """Walked the family out from this person, which is the same partition the
+        likelihood's own block finder would make from the relationship matrix."""
+
+        family.sort()
+        for offset in range(0, len(family), household_size):
+            home: list[int] = family[offset : offset + household_size]
+            """Took the next home from within this family."""
+
+            kernel[np.ix_(home, home)] = 1.0
+            """Set every pair inside this home to one."""
+    return kernel
 
 
 def component_covariance(
@@ -391,7 +434,7 @@ def component_covariance(
 
     Args:
         relationship: The additive relationship matrix over people.
-        household: The fixed-decay shared-environment kernel over people.
+        household: The household kernel over people.
         heritability: The genetic share, the remainder of the step going to the
             person-level term so the total variance is unchanged.
 
@@ -436,21 +479,19 @@ def one_component_replicate(
     rng: np.random.Generator,
     dimensions: list[int],
     draws: int,
-    decay: float,
+    household_size: int,
 ) -> tuple[dict[str, dict[int, dict[str, float]]], float]:
     """Simulate one roster under the several-component design and climb the ladder.
 
-    The shared-environment kernel is drawn here rather than passed in, so each
-    replicate gets its own household geography. Holding one geography across
-    every replicate would make the kernel a fixed feature of the check instead
-    of something it averages over.
+    The household kernel is built here rather than passed in, so it stays beside
+    the roster it describes.
 
     Args:
         relationship: The additive relationship matrix over the roster.
         rng: Source of the households, ages, limits and simulated values.
         dimensions: The censored dimensions forming the rungs.
         draws: Total GHK draws behind each reference probability.
-        decay: The held kernel decay in reciprocal kilometres.
+        household_size: People sharing each home.
 
     Returns:
         The assessed rungs by regime and dimension, and the censored share.
@@ -461,8 +502,8 @@ def one_component_replicate(
     rows: int = people * 2
     """Calculated the person-by-ear response dimension: one frequency only."""
 
-    household: np.ndarray = household_kernel(people, rng, decay)
-    """Drew this replicate's household geography and its kernel."""
+    household: np.ndarray = household_kernel(relationship, household_size)
+    """Built the household kernel, with homes formed inside families."""
 
     covariance: np.ndarray = component_covariance(
         relationship, household, COMPONENT_SHARES["genetic"]
@@ -1141,11 +1182,10 @@ def main() -> int:
         help="unrelated families, for the components design only",
     )
     parser.add_argument(
-        "--decay",
-        type=float,
-        default=HOUSEHOLD_DECAY_PER_KM,
-        help="held kernel decay per kilometre, for the components design only; "
-        "a larger value weakens the shared environment",
+        "--household-size",
+        type=int,
+        default=HOUSEHOLD_SIZE,
+        help="people sharing a home, for the components design only",
     )
     parser.add_argument(
         "--dimensions", type=int, nargs="+", default=None, help="the rungs to climb"
@@ -1187,8 +1227,8 @@ def main() -> int:
             f"({FREQS[COMPONENT_FREQUENCY_INDEX]} Hz), two ears -- {people * 2} rows"
         )
         print(
-            "  the shared-environment kernel is non-zero for every pair, so the "
-            "likelihood's block is the whole roster and not one family"
+            f"  households of {arguments.household_size}; the household kernel is "
+            "block diagonal, so it joins only people who share a home"
         )
     else:
         print(
@@ -1207,7 +1247,7 @@ def main() -> int:
     for replicate in range(arguments.replicates):
         if components:
             results, share = one_component_replicate(
-                relationship, rng, dimensions, arguments.draws, arguments.decay
+                relationship, rng, dimensions, arguments.draws, arguments.household_size
             )
             """Simulated and assessed one several-component replicate."""
         else:
@@ -1359,7 +1399,7 @@ def main() -> int:
             "rows": people * 2,
             "families": arguments.families,
             "component_shares": COMPONENT_SHARES,
-            "household_decay_per_km": arguments.decay,
+            "household_size": arguments.household_size,
         }
         if components
         else {
@@ -1370,8 +1410,8 @@ def main() -> int:
     )
     """Gathered every fact that depends on which design was climbed, chosen once
     rather than at each field: a third design should be one edit here and not five
-    scattered through the record. The decay recorded is the one actually used, not
-    the module default, which the two need not agree on."""
+    scattered through the record. The household size recorded is the one actually
+    used, not the module default, which the two need not agree on."""
 
     receipt: dict[str, object] = {
         "largest_qualified_censored_dimension": qualified,
