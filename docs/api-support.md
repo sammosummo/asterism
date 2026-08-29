@@ -43,7 +43,7 @@ scientifically supported.
 | `release_manifest` | Supported infrastructure | Read-only access to the exact manifest embedded in the wheel. |
 | `run_analysis` | Supported infrastructure | Standard outcome and receipt-data path. |
 | `subject_order_commitment` | Supported infrastructure | Non-identifying commitment to positional subject order. |
-| `tobit_fit` | Supported in 0.1 | One-trait censored audiogram heritability. |
+| `tobit_fit` | Supported in 0.1 | One-trait censored heritability. |
 | `tobit_interval` | Supported in 0.1 | Interval for censored-trait heritability. |
 | `tobit_test` | Supported in 0.1 | Test for censored-trait heritability. |
 | `weighted_chi2_upper_tail` | Public but outside 0.1 scientific support | Diagnostic numerical primitive, not a supported analysis. |

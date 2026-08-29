@@ -797,9 +797,7 @@ def test_manifest_binds_one_exact_unmeasured_target_design_rule() -> None:
     """Selected the supported scientific analysis inventory."""
 
     analysis: dict[str, object] = next(
-        candidate
-        for candidate in analyses
-        if candidate["id"] == "one_trait_tobit_audiogram"
+        candidate for candidate in analyses if candidate["id"] == "one_trait_censored"
     )
     """Selected the sole censored one-trait release claim."""
 

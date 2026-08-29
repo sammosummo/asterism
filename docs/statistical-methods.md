@@ -41,7 +41,7 @@ The eight 0.1 analysis families are:
 | `continuous_gene_by_environment` | `GxeModel.fit`, `.interval`, `.test` | Heritability and genetic correlation at prespecified environments, their intervals, and correlation/interaction tests |
 | `discrete_gene_by_environment` | `DiscreteGxeModel.fit`, `.correlation_interval`, `.test` | Genetic correlation, its interval, and the three genetic tests |
 | `binary_liability_heritability` | `LiabilityModel.fit`, `.interval`, `.test` | Liability-scale $h^2$, interval, and test |
-| `one_trait_tobit_audiogram` | `tobit_fit`, `tobit_interval`, `tobit_test` | Complete-trait $h^2$, interval, and test |
+| `one_trait_censored` | `tobit_fit`, `tobit_interval`, `tobit_test` | Complete-trait $h^2$, interval, and test |
 | `mixed_binary_censored_genetic_correlation` | `mixed_bivariate_fit`, `mixed_bivariate_interval`, `mixed_bivariate_test` | Genetic correlation for a mixed pair including a continuous trait, interval, and test |
 
 Quantities marked *descriptive* have no check standing behind them; they are

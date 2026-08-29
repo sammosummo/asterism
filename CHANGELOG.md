@@ -27,6 +27,14 @@ tag and saved wheels.
   probability of -88, where it previously returned the floor -- a likelihood
   wrong by six hundred nats, finite enough to be believed, in the tail a rare
   binary trait and a heavily censored one both occupy.
+- **Breaking, an analysis is renamed.** `one_trait_tobit_audiogram` is now
+  `one_trait_censored`. Having "audiogram" in the identifier implied the model
+  applies only to audiograms; nothing in a censored variance-components model is
+  specific to hearing, and the same analysis fits any right- or left-censored
+  trait. Extended high-frequency audiometry stays in the documentation as the
+  case it was built for and as the source of its design facts. Retained 0.1.x
+  evidence keeps the name it was measured under, and `evidence/README.md` says
+  which analysis that is now.
 - **Breaking, error codes.** Seven codes lost their `LATENT_MEDIATION_` prefix
   now that three models raise them: `NORMAL_VARIATE_NOT_FINITE`,
   `BIVARIATE_CORRELATION_INVALID`, `BIVARIATE_THRESHOLD_INVALID`,

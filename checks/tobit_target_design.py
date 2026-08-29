@@ -1225,7 +1225,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
     evidence: dict[str, object] = {
         "check": "tobit_target_design",
-        "analysis_id": "one_trait_tobit_audiogram",
+        "analysis_id": "one_trait_censored",
         "participant_free": True,
         "target_contract": "aggregate_structure_match_not_reconstruction",
         "fixture_sha256": target.fixture_sha256,

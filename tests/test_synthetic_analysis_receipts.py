@@ -18,7 +18,7 @@ ANALYSIS_IDS: list[str] = [
     "continuous_gene_by_environment",
     "discrete_gene_by_environment",
     "binary_liability_heritability",
-    "one_trait_tobit_audiogram",
+    "one_trait_censored",
     "mixed_binary_censored_genetic_correlation",
 ]
 """Fixed the complete 0.1 supported-analysis inventory independently of the tool."""
@@ -134,7 +134,7 @@ def test_all_nine_lazy_jobs_return_converged_supported_fields() -> None:
             "genetic_variance_test",
         },
         "binary_liability_heritability": {"heritability", "interval", "test"},
-        "one_trait_tobit_audiogram": {"heritability", "interval", "test"},
+        "one_trait_censored": {"heritability", "interval", "test"},
         "mixed_binary_censored_genetic_correlation": {
             "genetic_correlation",
             "interval",

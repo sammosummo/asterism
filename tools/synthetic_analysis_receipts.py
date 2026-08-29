@@ -405,7 +405,7 @@ def receipt_jobs(problem: dict[str, Any], commitment: str) -> list[ReceiptJob]:
             partial(fit_liability_receipt, problem, commitment),
         ),
         ReceiptJob(
-            "one_trait_tobit_audiogram",
+            "one_trait_censored",
             {
                 **common,
                 "trait_type": "right_censored_continuous",

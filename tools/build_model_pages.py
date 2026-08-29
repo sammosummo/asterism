@@ -33,7 +33,7 @@ SLUGS: dict[str, str] = {
     "continuous_gene_by_environment": "gxe-measured",
     "discrete_gene_by_environment": "gxe-binary",
     "binary_liability_heritability": "binary",
-    "one_trait_tobit_audiogram": "censored",
+    "one_trait_censored": "censored",
     "mixed_binary_censored_genetic_correlation": "mixed",
 }
 """Named the page each analysis writes to."""

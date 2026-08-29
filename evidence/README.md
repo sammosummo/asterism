@@ -319,3 +319,16 @@ One thing the share's interval cannot do either: its lower endpoint reaching
 nought is not a test of whether there is a spatial effect. Under that null the
 decay rate is unidentified and the deviance has no chi-squared reference, which
 is the whole reason the test is bootstrapped.
+
+## `cross-platform-agreement-2026-08-24.json`
+
+**The analysis it names has since been renamed.** This record calls it
+**`one_trait_tobit_audiogram`**. That analysis is now called
+**`one_trait_censored`**; it was renamed on 29 August 2026 because "audiogram"
+in the name implied the model applies only to audiograms, and nothing in a
+censored variance-components model is specific to hearing.
+
+**The record keeps the name it was measured under**, which is the point of a
+record. Rewriting it would make it say that a run happened under a name that
+did not exist when it ran. Extended high-frequency audiometry remains the case
+the model was built for, and the model's own page still says so.

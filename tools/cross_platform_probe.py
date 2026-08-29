@@ -86,7 +86,7 @@ NUMERIC_FIELDS_BY_ANALYSIS: dict[str, tuple[str, ...]] = {
         "test.statistic",
         "test.p_value",
     ),
-    "one_trait_tobit_audiogram": (
+    "one_trait_censored": (
         "fit.heritability",
         "fit.total_variance",
         "fit.loglik",
@@ -825,7 +825,7 @@ def run_all_probes() -> list[dict[str, Any]]:
         ("continuous_gene_by_environment", probe_continuous_gxe),
         ("discrete_gene_by_environment", probe_discrete_gxe),
         ("binary_liability_heritability", probe_liability),
-        ("one_trait_tobit_audiogram", probe_tobit),
+        ("one_trait_censored", probe_tobit),
         ("mixed_binary_censored_genetic_correlation", probe_mixed_bivariate),
     )
     """Mapped the exact manifest inventory to independently testable public probes."""
@@ -924,7 +924,7 @@ def run_probe(wheel_path: Path) -> dict[str, Any]:
         "continuous_gene_by_environment",
         "discrete_gene_by_environment",
         "binary_liability_heritability",
-        "one_trait_tobit_audiogram",
+        "one_trait_censored",
         "mixed_binary_censored_genetic_correlation",
     ]
     """Fixed the probe implementation to the exact accepted 0.1 analysis inventory."""

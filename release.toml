@@ -39,7 +39,7 @@ analysis_ids = [
   "continuous_gene_by_environment",
   "discrete_gene_by_environment",
   "binary_liability_heritability",
-  "one_trait_tobit_audiogram",
+  "one_trait_censored",
   "mixed_binary_censored_genetic_correlation",
 ]
 evidence = []
@@ -151,7 +151,7 @@ absolute = { "fit.heritability" = 1e-9, "fit.loglik" = 1e-9, "fit.prevalence" = 
 relative = { "fit.heritability" = 1e-6, "fit.loglik" = 1e-6, "fit.prevalence" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
-analysis_id = "one_trait_tobit_audiogram"
+analysis_id = "one_trait_censored"
 measured = true
 numeric_fields = [
   "fit.heritability",
@@ -527,7 +527,7 @@ status = "ready"
 design_facts = { participant_free = true, measured = false, sample_size = { min = 1909, max = 1909 }, largest_family = { max = 180 }, trait_type = ["binary"], components = ["additive_relationship", "unit_liability"], relationship_components = 202, replicates_per_scenario = 200 }
 
 [[analyses]]
-id = "one_trait_tobit_audiogram"
+id = "one_trait_censored"
 support = "supported_in_0_1"
 entry_points = [
   "asterism.tobit_fit",
