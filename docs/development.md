@@ -164,12 +164,28 @@ is not safe. Run it again when the design changes.
 
 **The design did change.** The several-component censored model fits one
 frequency at a time, not seventeen, and carries a shared-environment kernel
-beside the genetic and person-level terms. That is "fewer frequencies" exactly:
-a censored threshold is conditioned on the other ear and on whoever in the
-family was measurable at that one frequency, rather than on a nearly complete
-audiogram. And a distance kernel is non-zero for every pair, which is why it is
-preferred to a categorical shared-environment indicator, so the likelihood's
-block stops being one family and becomes the whole roster.
+beside the genetic and person-level terms. A censored threshold is therefore
+conditioned on the other ear and on whoever in the family was measurable at that
+one frequency, rather than on a nearly complete audiogram. And a distance kernel
+is non-zero for every pair, which is why it is preferred to a categorical
+shared-environment indicator, so the likelihood's block stops being one family
+and becomes the whole roster.
+
+**The "fewer frequencies" worry above turned out to be the wrong one**, and the
+run below is what says so. The paragraph predicted that conditioning on less
+would leave more correlation among the censored residuals and move the
+approximation back towards the regime where it fails. It does not. The leftover
+mean absolute correlation is **0.008 fitting one frequency and 0.009 fitting
+seventeen** -- the same. At matched dimensions the two designs behave almost
+identically: at 50 coordinates 0.050 against 0.040 of a heritability step, and
+at 100 coordinates **0.114 against 0.114**.
+
+What the kernel actually changes is not the difficulty per coordinate but the
+**number of coordinates**. Blocks made of families do not reach 200 censored
+records; a block made of the whole roster does. The audiogram ladder stopped at
+221 and found nothing wrong. This one was carried to 600 and found the wall
+between 200 and 400 -- a wall the earlier design would have hit too, had anyone
+climbed that far.
 
 So the same ladder is climbed again under that design, with the rungs carried
 past 221 to 600 because the block is now the roster:
@@ -225,11 +241,14 @@ truncating the kernel beyond a distance where `exp(-lambda d)` is negligible,
 which restores the block structure, and then showing that the truncation does not
 move the answer. It does not mean switching the integral, per ADR 0010.
 
-**The conditioning still earns most of it, as it did for the audiogram design,**
-and the real kernel makes that starker. Conditioning leaves a mean absolute
-correlation of 0.008 between the censored residuals. The marginal rungs, where
-nothing is conditioned away and the correlation is 0.10, are worse at every
-dimension and reach eleven times a heritability step at 400.
+**The conditioning still earns most of it, as it did for the audiogram design.**
+Conditioning leaves a mean absolute correlation of 0.008 between the censored
+residuals, and it is flat across every rung, so the failure at 400 is not the
+conditioning weakening. The marginal rungs, where nothing is conditioned away
+and the correlation is 0.10, are worse at every dimension and reach eleven times
+a heritability step at 400. So the conditioning is what makes the problem
+tractable at all; what defeats it in the end is simply how many coordinates
+there are.
 
 The run takes a few hours. Reduce `--replicates` and `--draws` for an exploratory
 pass, but quote the command with any number taken from it, because the recorded
