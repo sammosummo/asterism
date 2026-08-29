@@ -27,6 +27,14 @@ tag and saved wheels.
   probability of -88, where it previously returned the floor -- a likelihood
   wrong by six hundred nats, finite enough to be believed, in the tail a rare
   binary trait and a heavily censored one both occupy.
+- **`grouping_matrix` builds a component from what rows share.** One where two
+  rows share a group, nought where they do not, one on the diagonal. Pass
+  household identifiers and it is a household matrix; pass the person each row
+  belongs to and it is the person-level matrix, which is the listener kernel
+  where a listener contributes two ears. The relation is sharing, and a home is
+  only one thing to share. `None` is a group nobody knows: that row shares with
+  nobody and keeps its diagonal, so its effect cannot be told apart from its
+  residual.
 - **Every component of a censored fit can be reported, not only adjusted for.**
   `coefficient_interval(index)` and `coefficient_test(index)` profile and test
   any component, and the fit record carries `mean_diagonal_contributions`,

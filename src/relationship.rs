@@ -175,6 +175,56 @@ fn ancestor_closure(people: &[Person], keep: &[String]) -> Result<HashSet<usize>
     Ok(wanted)
 }
 
+/// Build a grouping matrix: one where two rows share a group, nought where they
+/// do not, one on the diagonal.
+///
+/// **One builder, several components.** Pass household identifiers and it is a
+/// household matrix. Pass the identifier of the person each row belongs to and
+/// it is the person-level matrix -- the listener kernel, when a listener
+/// contributes two ears -- because sharing a person is the same relation as
+/// sharing a home. Pass a testing session and it is a session effect. The
+/// matrix does not know which it is, and neither does the model: what it means
+/// is what you grouped by.
+///
+/// It is a covariance, being block diagonal with a block of ones per group,
+/// each of which is positive semi-definite.
+///
+/// **It joins only rows that share a group**, so it cannot enlarge a
+/// likelihood block beyond the groups that straddle two families. A kernel over
+/// distances would join every pair arithmetically, which is a different thing.
+///
+/// **`None` is a group nobody knows, not the absence of one.** Such a row keeps
+/// a diagonal of one and shares with nobody. That is deliberate: the person does
+/// have a home, and what is missing is which. The consequence is worth stating,
+/// because it is not obvious -- an unshared group effect cannot be told apart
+/// from that row's residual, so the row informs the component only by not
+/// sharing, never by resembling somebody.
+///
+/// The diagonal is one throughout so that the coefficients are proportions of
+/// the total variance. Giving the ungrouped a nought diagonal instead would put
+/// them on a different scale from everyone else and make the mean-diagonal
+/// correction necessary for a reason nobody chose.
+#[must_use]
+pub fn grouping_matrix(groups: &[Option<String>]) -> DMatrix<f64> {
+    let size = groups.len();
+    let mut matrix = DMatrix::<f64>::zeros(size, size);
+    for row in 0..size {
+        matrix[(row, row)] = 1.0;
+    }
+    for row in 0..size {
+        let Some(group) = groups[row].as_deref() else {
+            continue;
+        };
+        for column in (row + 1)..size {
+            if groups[column].as_deref() == Some(group) {
+                matrix[(row, column)] = 1.0;
+                matrix[(column, row)] = 1.0;
+            }
+        }
+    }
+    matrix
+}
+
 /// Build the additive relationship matrix.
 ///
 /// With `keep` empty the matrix covers everybody, in an order with parents
@@ -262,6 +312,105 @@ pub fn relationship_matrix(
         }
     }
     Ok((out, keep.to_vec()))
+}
+
+#[cfg(test)]
+mod grouping_tests {
+    use super::grouping_matrix;
+    use nalgebra::{DMatrix, SymmetricEigen};
+
+    fn homes(ids: &[&str]) -> Vec<Option<String>> {
+        ids.iter()
+            .map(|id| (!id.is_empty()).then(|| (*id).to_owned()))
+            .collect()
+    }
+
+    /// One within a home, nought between, one on the diagonal.
+    #[test]
+    fn people_sharing_a_home_share_the_effect() {
+        let matrix = grouping_matrix(&homes(&["a", "a", "b"]));
+        assert_eq!(matrix[(0, 1)], 1.0);
+        assert_eq!(matrix[(1, 0)], 1.0);
+        assert_eq!(matrix[(0, 2)], 0.0);
+        assert_eq!(matrix[(1, 2)], 0.0);
+        for row in 0..3 {
+            assert_eq!(matrix[(row, row)], 1.0, "everybody has a home of their own");
+        }
+    }
+
+    /// A home nobody knows is still a home.
+    ///
+    /// The row keeps its diagonal and shares with nobody. Giving it a nought
+    /// diagonal instead would put that person on a different variance scale
+    /// from everyone else, which is what makes a mean-diagonal correction
+    /// necessary; here nothing chose that.
+    #[test]
+    fn an_unknown_home_shares_with_nobody_and_keeps_its_diagonal() {
+        let matrix = grouping_matrix(&homes(&["a", "", "", "a"]));
+        assert_eq!(matrix[(1, 1)], 1.0);
+        assert_eq!(matrix[(2, 2)], 1.0);
+        assert_eq!(
+            matrix[(1, 2)],
+            0.0,
+            "two unknown homes are not the same home"
+        );
+        assert_eq!(matrix[(0, 3)], 1.0, "and the known ones still pair up");
+    }
+
+    /// It has to be a covariance, or `build` will refuse it.
+    #[test]
+    fn a_household_matrix_is_a_covariance() {
+        let matrix = grouping_matrix(&homes(&["a", "a", "a", "b", "b", "", "c"]));
+        assert_eq!(matrix, matrix.transpose(), "symmetric");
+        let smallest = SymmetricEigen::new(matrix)
+            .eigenvalues
+            .iter()
+            .fold(f64::INFINITY, |worst, value| worst.min(*value));
+        assert!(
+            smallest > -1e-10,
+            "a block of ones per home is positive semi-definite, and the \
+             smallest eigenvalue came back at {smallest}"
+        );
+    }
+
+    /// It cannot join people who do not share a home.
+    ///
+    /// This is the property that separates it from a kernel over distances,
+    /// which is non-zero for every pair and would make the likelihood's block
+    /// the whole roster.
+    #[test]
+    fn it_joins_nobody_beyond_their_own_home() {
+        let matrix = grouping_matrix(&homes(&["a", "a", "b", "b"]));
+        let joined = DMatrix::from_fn(4, 4, |i, j| f64::from(u8::from(matrix[(i, j)] != 0.0)));
+        assert_eq!(joined[(0, 2)], 0.0);
+        assert_eq!(joined[(1, 3)], 0.0);
+        assert_eq!(
+            crate::blocks::union_blocks(&[matrix]).len(),
+            2,
+            "two homes are two blocks, and stay two"
+        );
+    }
+
+    /// The same builder makes the listener kernel.
+    ///
+    /// Grouping by the person a row belongs to, rather than by their home,
+    /// gives one within a person and nought across -- which is the person-level
+    /// component exactly. Two listeners with two ears each come back as the
+    /// two-by-two blocks of ones that a person-level term is. It is worth a
+    /// test because it is the reason this builder is not called a household
+    /// one: the relation is sharing, and a home is only one thing to share.
+    #[test]
+    fn grouping_by_person_gives_the_listener_kernel() {
+        let by_listener = grouping_matrix(&homes(&["L1", "L1", "L2", "L2"]));
+        let expected = DMatrix::from_row_slice(
+            4,
+            4,
+            &[
+                1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+            ],
+        );
+        assert_eq!(by_listener, expected);
+    }
 }
 
 #[cfg(test)]
@@ -420,7 +569,27 @@ mod python {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
 
-    use super::{Person, relationship_matrix};
+    use super::{Person, grouping_matrix, relationship_matrix};
+
+    /// Build a grouping matrix from the group each row belongs to.
+    ///
+    /// One where two rows share a group, nought where they do not, one on the
+    /// diagonal. Pass household identifiers for a household component; pass the
+    /// person each row belongs to for a person-level one, which is the listener
+    /// kernel where a listener contributes two ears. `None` is a group nobody
+    /// knows: that row shares with nobody and keeps its diagonal.
+    #[pyfunction]
+    pub fn grouping(py: Python<'_>, groups: Vec<Option<String>>) -> PyResult<Py<PyArray2<f64>>> {
+        let matrix = grouping_matrix(&groups);
+        let rows = matrix.nrows();
+        let values: Vec<f64> = (0..rows)
+            .flat_map(|i| (0..rows).map(move |j| (i, j)))
+            .map(|(i, j)| matrix[(i, j)])
+            .collect();
+        let array = numpy::ndarray::Array2::from_shape_vec((rows, rows), values)
+            .map_err(|_| PyValueError::new_err("GROUPING_MATRIX_SHAPE"))?;
+        Ok(array.into_pyarray(py).unbind())
+    }
 
     /// Build the additive relationship matrix from a pedigree held in memory.
     ///
@@ -468,4 +637,4 @@ mod python {
 }
 
 #[cfg(feature = "python")]
-pub use python::relationship;
+pub use python::{grouping, relationship};

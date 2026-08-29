@@ -144,6 +144,29 @@ running. Scoring both at several components is issue 38.
 descriptive; `converged`, `scaled_gradient`, and `loglik` are diagnostics. A
 limit-substitution Gaussian heritability is a different, biased estimand.
 
+### What separates one component from another
+
+A component is identified by resemblance the other components do not already
+explain, and which pairs of rows carry that information differs by component.
+It is worth knowing which, because it decides what a given sample can support.
+
+- **Additive against person-level.** Two records of one person resemble each
+  other through both, so a person's own rows say nothing about the split; only
+  the correlation between relatives carries the additive term alone. The
+  information therefore scales with **related pairs**, not with records, and
+  giving everybody a second record sharpens their sum while doing nothing for
+  the split. Measured on simulated sibling pairs at a true 0.40 and 0.30, the
+  estimates are unbiased at every size and their standard deviation falls as the
+  square root of the sample: 0.21 at 80 people, 0.11 at 400, 0.036 at 2400.
+- **Household against additive.** People who share a home are usually close
+  relatives, so a household term is separated from a genetic one by the pairs
+  who share a home **without** being closely related. In an extended-family
+  sample those can be few, and the precision of the household coefficient
+  follows their number rather than the sample's.
+
+Neither is a failure of identification, and neither is settled by argument: fit
+the model and read the intervals, which is what they are for.
+
 ### Reporting several components
 
 Every component can be reported, not only adjusted for -- a shared-environment

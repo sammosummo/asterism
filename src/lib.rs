@@ -49,7 +49,7 @@ pub use mixed_bivariate::{
 };
 pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, LikelihoodRatioTest, PreparedModel};
-pub use relationship::{PedigreeError, Person, relationship_matrix};
+pub use relationship::{PedigreeError, Person, grouping_matrix, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
 pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
 pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
@@ -66,6 +66,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(relationship::relationship, module)?)?;
+    module.add_function(pyo3::wrap_pyfunction!(relationship::grouping, module)?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         bivariate::bivariate_objective,
         module

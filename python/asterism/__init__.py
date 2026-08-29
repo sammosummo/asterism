@@ -34,6 +34,7 @@ from typing import Any
 import numpy as np
 
 from ._core import PreparedModel, __version__
+from ._core import grouping as _grouping
 from ._core import relationship as _relationship
 from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from .analysis import (
@@ -78,6 +79,7 @@ __all__: list[str] = [
     "__version__",
     "align",
     "build_identity",
+    "grouping_matrix",
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",
@@ -160,6 +162,43 @@ def weighted_chi2_upper_tail(q: float, weights: Any) -> dict[str, Any]:
     ]
     """Flattened the caller's nonnegative mixture weights for the Rust routine."""
     return dict(_weighted_chi2_upper_tail(float(q), values))
+
+
+def grouping_matrix(groups: list[str | None]) -> Any:
+    """Build a grouping matrix: one where two rows share a group.
+
+    **One builder, several components.** Pass household identifiers and it is a
+    household matrix. Pass the person each row belongs to and it is the
+    person-level matrix — the listener kernel, where a listener contributes two
+    ears — because sharing a person is the same relation as sharing a home.
+    Pass a testing session and it is a session effect. The matrix does not know
+    which it is, and neither does the model: what it means is what you grouped
+    by.
+
+    Parameters
+    ----------
+    groups
+        One entry per row, in the row order the fit will use. ``None`` or an
+        empty string is a group nobody knows: that row shares with nobody and
+        keeps its diagonal. It is not the absence of a group — the person does
+        have a home, and what is missing is which — so their effect cannot be
+        told apart from their residual and they inform the component only by
+        not sharing.
+
+    Returns
+    -------
+    A square matrix, rows in the order given. One on the diagonal throughout, so
+    a coefficient fitted against it is a proportion of the total variance.
+
+    Notes
+    -----
+    It joins only rows that share a group, so it cannot enlarge a likelihood
+    block beyond the groups that straddle two families. A kernel over distances
+    would join every pair arithmetically, which is a different thing.
+    """
+    prepared: list[str | None] = [group if group else None for group in groups]
+    """Treated an empty string as an unknown group, as the pedigree builder does."""
+    return _grouping(prepared)
 
 
 def relationship_matrix(

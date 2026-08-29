@@ -33,6 +33,7 @@ scientifically supported.
 | `__version__` | Supported infrastructure | Immutable public package version. |
 | `align` | Supported utility | Identifier-based alignment before positional numerical fitting. |
 | `build_identity` | Supported infrastructure | Immutable build identity for fit records and receipts. |
+| `grouping_matrix` | Supported utility | Grouping-matrix construction: one where two rows share a group. Household from a home identifier, person-level from a person identifier. |
 | `kinship_classes` | Supported utility | Zero-diagonal component bases reported through coefficients and contrasts. |
 | `mixed_bivariate_fit` | Supported in 0.1 | Genetic correlation for a mixed pair with a continuous trait; the binary-with-censored pairing is deferred. |
 | `mixed_bivariate_interval` | Supported in 0.1 | Interval for the mixed-pair genetic correlation. |
