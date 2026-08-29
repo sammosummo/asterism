@@ -27,6 +27,11 @@ tag and saved wheels.
   probability of -88, where it previously returned the floor -- a likelihood
   wrong by six hundred nats, finite enough to be believed, in the tail a rare
   binary trait and a heavily censored one both occupy.
+- **The released censored analysis was re-measured after the integral changed**,
+  and all six of its pass rules hold. `censReg` agrees to 9.6e-09 relative, all
+  three points sit inside `MCMCglmm`'s posterior intervals, coverage holds at
+  both censoring shares, and the target-design campaign ran 800 replicates at
+  1,909 people with zero failed fits of a permitted zero.
 - **`grouping_matrix` builds a component from what rows share.** One where two
   rows share a group, nought where they do not, one on the diagonal. Pass
   household identifiers and it is a household matrix; pass the person each row

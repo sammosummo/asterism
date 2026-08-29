@@ -225,6 +225,17 @@ logarithm is about that tolerance divided by the probability, and at 1e-10 that
 is 1.6e-05. The log-scale routine is accurate relative to the answer wherever it
 is asked.
 
+**The released censored analysis was re-measured after that change**, on
+29 August 2026, and all six of its pass rules hold. The two that matter most are
+the comparisons with engines that know nothing about what changed: `censReg`
+agrees to a worst relative difference of 9.6e-09, and all three Asterism points
+sit inside `MCMCglmm`'s 95% posterior intervals. Interval coverage is 0.946,
+0.952 and 0.948 at 52 per cent censoring and 0.962, 0.959 and 0.949 at 75, and
+the target-design campaign ran its full 800 replicates at 1,909 people with
+**zero failed fits of a permitted zero** -- no refusal, no non-convergence, no
+failed profile, no failed test. Recorded in
+`evidence/censored-pass-rules-rerun-2026-08-29.json`.
+
 It was not always. Until 29 August 2026 a sixteen-point quadrature stood here,
 whose error was 1.3e-9 for a correlation below 0.5 but 2.3e-4 at 0.99 -- and
 that second figure held only at thresholds of nought and nought, being about

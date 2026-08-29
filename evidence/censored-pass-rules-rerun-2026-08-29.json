@@ -1,0 +1,68 @@
+{
+  "what": "the six pass rules of one_trait_censored, re-run after the two-person normal integral was replaced and the model generalised to several components",
+  "date": "2026-08-29",
+  "why": "Issue 42 replaced the integral every censored heritability rests on, and issues 30 and 32 generalised the model around it. The released analysis had not been re-measured since. Agreement with an external engine is the part that matters: censReg and MCMCglmm know nothing about what changed.",
+  "source_commit": "276e7f11e5cb840bf04646150939d1f9d8ea8f65",
+  "analysis_id": "one_trait_censored",
+  "renamed_from": "one_trait_tobit_audiogram",
+  "rules": {
+    "tobit_against_censreg": {
+      "passed": true,
+      "asterism_recomputed": true,
+      "worst_relative_difference": 9.557136814038294e-09,
+      "note": "the R side is stored and the Asterism side refitted; censReg's answer does not change, ours could"
+    },
+    "tobit_against_mcmcglmm": {
+      "passed": true,
+      "asterism_recomputed": true,
+      "heritability": 0.4764817333763306,
+      "posterior_mean": 0.481558506,
+      "inside_posterior": {
+        "heritability": true,
+        "intercept": true,
+        "total_variance": true
+      }
+    },
+    "tobit_calibration": {
+      "passed": true,
+      "note": "the truth is recovered at every censoring rate tried"
+    },
+    "tobit_coverage_52_percent": {
+      "passed": true,
+      "coverage": [
+        0.946,
+        0.952,
+        0.948
+      ],
+      "nominal": 0.95
+    },
+    "tobit_coverage_75_percent": {
+      "passed": true,
+      "coverage": [
+        0.962,
+        0.959,
+        0.949
+      ],
+      "nominal": 0.95
+    },
+    "tobit_target_design": {
+      "passed": true,
+      "attempted_replicates": 800,
+      "failed_replicates": 0,
+      "maximum_failed_replicates": 0,
+      "failure_buckets": {
+        "interval_failed": 0,
+        "invalid_censoring_count": 0,
+        "nonconverged": 0,
+        "profile_failed": 0,
+        "refused": 0,
+        "test_failed": 0
+      },
+      "exact_release_campaign": true,
+      "elapsed_seconds": 3039.2609427080024,
+      "fixture_sha256": "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e"
+    }
+  },
+  "passed": true,
+  "verdict": "All six re-run and unmoved. The movement recorded against the SOLAR successor when the integral changed -- at most 1.2e-6, or 2.7e-9 of the value -- is below what any of these rules can resolve, and none of them moved off its verdict."
+}

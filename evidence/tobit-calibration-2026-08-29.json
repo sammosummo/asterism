@@ -1,0 +1,61 @@
+{
+  "what": "recovery of the censored model across censoring rates",
+  "date": "2026-08-29",
+  "pairs": 400,
+  "replicates": 200,
+  "truth": {
+    "heritability": 0.5,
+    "variance": 4.0,
+    "mean": 10.0
+  },
+  "standard_errors_allowed": 3.0,
+  "by_censoring_rate": {
+    "0.00": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.4960516893144113,
+      "heritability_standard_error": 0.006734687296088292,
+      "variance_mean": 3.9886259055856703,
+      "variance_standard_error": 0.013959838719572331,
+      "naive_heritability_mean": 0.4960516893144113
+    },
+    "0.10": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49625721646288057,
+      "heritability_standard_error": 0.006828778445254925,
+      "variance_mean": 3.9841199272162533,
+      "variance_standard_error": 0.014887352730684483,
+      "naive_heritability_mean": 0.48379249561577153
+    },
+    "0.25": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49891554357683077,
+      "heritability_standard_error": 0.007258948226029898,
+      "variance_mean": 3.9788331830121795,
+      "variance_standard_error": 0.01689988131642309,
+      "naive_heritability_mean": 0.4579599849374829
+    },
+    "0.50": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.4940878793763238,
+      "heritability_standard_error": 0.00833868933901309,
+      "variance_mean": 3.983907464284034,
+      "variance_standard_error": 0.021799135508795194,
+      "naive_heritability_mean": 0.3981632334751252
+    },
+    "0.75": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49776393282095144,
+      "heritability_standard_error": 0.010556369594673364,
+      "variance_mean": 3.9308284950607715,
+      "variance_standard_error": 0.03494256644347419,
+      "naive_heritability_mean": 0.3100617500746765
+    }
+  },
+  "passed": true,
+  "failures": []
+}
