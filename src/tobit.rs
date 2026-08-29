@@ -23,8 +23,10 @@
 //!
 //! **The residual is what the components leave.** It is never supplied and its
 //! coefficient is never estimated directly, which is what puts the others on a
-//! common scale rather than each needing one of its own. A set summing past one
-//! describes no covariance and is refused.
+//! common scale rather than each needing one of its own. The search works in
+//! stick-breaking coordinates, so a set summing past one is unreachable rather
+//! than refused and the bounded optimiser meets no cliff -- see
+//! `TobitModel::coefficients_from`.
 //!
 //! Those coefficients are **proportions of the total variance exactly when
 //! every component carries a unit diagonal** -- true of additive kinship, of a
@@ -309,6 +311,36 @@ impl TobitModel {
         })
     }
 
+    /// Turn a boxed search vector into coefficients that always sum within one.
+    ///
+    /// **The feasible set is a simplex and the optimiser only understands a
+    /// box.** Written the obvious way -- each coefficient boxed in `[0, 1]` and
+    /// the sum refused past one -- the search meets a cliff the central
+    /// difference cannot read: the objective jumps to its infeasible value, the
+    /// gradient comes back as a number the size of that jump, and the search
+    /// does not move. Measured before this was fixed: at a true split of 0.45
+    /// and 0.50, leaving a residual of 0.05, five seeds all returned the
+    /// starting values unchanged with `converged` false. A small residual is
+    /// the case this model exists for, so that is not a corner worth losing.
+    ///
+    /// Stick-breaking removes the cliff instead of guarding it. Each search
+    /// coordinate takes a share of what the earlier ones left, so every point
+    /// of the box maps to a valid set and no point of the box is infeasible.
+    ///
+    /// **At one component this is the identity**: `left` is one, so the first
+    /// coefficient is the first coordinate and the model's arithmetic is
+    /// exactly what it was.
+    fn coefficients_from(search: &[f64]) -> Vec<f64> {
+        let mut coefficients = Vec::with_capacity(search.len());
+        let mut left = 1.0;
+        for &coordinate in search {
+            let taken = left * coordinate;
+            coefficients.push(taken);
+            left -= taken;
+        }
+        coefficients
+    }
+
     /// How many components the fit estimates, the residual not among them.
     #[must_use]
     pub fn components(&self) -> usize {
@@ -503,8 +535,6 @@ impl TobitModel {
     /// give a deviance that is rounding rather than evidence, and that reads as
     /// a p-value of one rather than of a half.
     pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
-        let free = self.fit()?;
-        let null = self.fit_holding(Some(0.0))?;
         // **The mixture rule was scored for one component and only one.**
         // Holding the first share at nought while the others are free to rest
         // on their own bounds is not the one-parameter-on-one-bound case the
@@ -515,6 +545,9 @@ impl TobitModel {
         if self.components.len() != 1 {
             return Err("TOBIT_TEST_NOT_SCORED_FOR_SEVERAL_COMPONENTS");
         }
+
+        let free = self.fit()?;
+        let null = self.fit_holding(Some(0.0))?;
         crate::convergence::require(free.converged, "TOBIT_FIT_NOT_CONVERGED")?;
         crate::convergence::require(null.converged, "TOBIT_NULL_FIT_NOT_CONVERGED")?;
         let statistic = crate::deviance::deviance(free.loglik, null.loglik);
@@ -608,8 +641,12 @@ impl TobitModel {
         }
 
         let value_of = |theta: &[f64]| -> f64 {
-            self.loglik(&theta[..parts], theta[parts].exp(), &theta[parts + 1..])
-                .map_or(INFEASIBLE, |v| -v)
+            self.loglik(
+                &Self::coefficients_from(&theta[..parts]),
+                theta[parts].exp(),
+                &theta[parts + 1..],
+            )
+            .map_or(INFEASIBLE, |v| -v)
         };
         // The region probability has no derivative worth writing, so the
         // gradient is a central difference, as the liability model's is.
@@ -649,16 +686,12 @@ impl TobitModel {
         for &heritability in starts {
             let mut start = vec![0.0; count];
             start[0] = heritability;
-            // The other coefficients start small and equal. The divisor counts
-            // the remaining components **and the residual**, so what is left
-            // after the first is split evenly among them and the residual keeps
-            // a share of its own. Starting them at their full share instead
-            // would begin on the face where the residual is nought, which is a
-            // corner of the feasible set rather than a point inside it, and a
-            // bounded search that starts in a corner has fewer directions to
-            // leave in than it looks.
-            for coefficient in start.iter_mut().take(parts).skip(1) {
-                *coefficient = (1.0 - heritability) / (parts as f64 + 1.0);
+            // Each later coordinate takes an even split of what is left,
+            // counting the residual as one more claimant, so the start sits
+            // inside the simplex rather than on the face where the residual is
+            // nought. These are stick-breaking coordinates, not coefficients.
+            for (index, coordinate) in start.iter_mut().enumerate().take(parts).skip(1) {
+                *coordinate = 1.0 / (parts - index + 1) as f64;
             }
             start[parts] = spread.ln();
             start[parts + 1] = centre;
@@ -751,9 +784,10 @@ impl TobitModel {
             scaled_gradient = better.scaled_gradient;
         }
 
+        let coefficients = Self::coefficients_from(&theta[..parts]);
         Ok(TobitFit {
-            heritability: theta[0],
-            coefficients: theta[..parts].to_vec(),
+            heritability: coefficients[0],
+            coefficients,
             total_variance: theta[parts].exp(),
             fixed_effects: theta[parts + 1..].to_vec(),
             loglik: -objective,
@@ -1178,13 +1212,12 @@ mod tests {
         );
     }
 
-    /// Several components are recovered, not just accepted.
+    /// Several components, with censoring, recovered rather than just accepted.
     ///
     /// Two records per person, a person-level component beside the additive
-    /// one, and a quarter of the values censored. The person-level share is
-    /// what makes both ears of one person resemble each other beyond their
-    /// kinship, and a fit that could not find it would be reporting a genetic
-    /// share that had quietly swallowed it.
+    /// one, and a quarter of the values censored -- so this is the only test
+    /// that exercises censoring and a second component at once, which is what
+    /// the model is for.
     #[test]
     fn several_components_are_recovered_from_data_that_has_them() {
         let people = 120;
@@ -1261,13 +1294,116 @@ mod tests {
             "the shares must leave the residual something: {:?}",
             fit.coefficients
         );
+        // **On the sum, and deliberately not on each.** Across seeds this
+        // design returns the person-level coefficient anywhere from 0.001 to
+        // 0.6 against a truth of 0.3, while their sum stays near 0.7. Sibling
+        // pairs with two records each do not tell an additive component from a
+        // person-level one, which is a fact about the design and not about the
+        // arithmetic -- it is what issue 35 exists to measure. An assertion on
+        // the individual coefficient passed here only by the luck of the seed,
+        // which is worse than no assertion at all.
+        let together: f64 = fit.coefficients.iter().sum();
         assert!(
-            fit.coefficients[1] > 0.05,
-            "the person-level share came back at {:.3}, so a real one was \
-             missed and its variance has gone somewhere else",
-            fit.coefficients[1]
+            (together - (genetic_share + person_share)).abs() < 0.2,
+            "the components together came to {together:.3} where the truth is \
+             {:.3}; the residual takes what is left, so their sum is what this \
+             design does identify",
+            genetic_share + person_share
         );
         assert_eq!(fit.estimator, "ml");
+    }
+
+    /// A small residual is a place the search must be able to reach.
+    ///
+    /// **The regression this exists for.** With the coefficients boxed
+    /// individually and their sum refused past one, the feasible set is a
+    /// simplex and the optimiser only understands a box. At a true split of
+    /// 0.45 and 0.50 -- a residual of 0.05 -- the search began beside the
+    /// refused region, the central difference read the infeasible value as a
+    /// gradient the size of that jump, and the coefficients never moved from
+    /// their starting values across every seed tried. `fit` still returned
+    /// `Ok`, with `converged` false.
+    ///
+    /// A small residual is the audiogram case: additive, person-level and
+    /// household terms together can leave little behind. Stick-breaking makes
+    /// every point of the box a valid set, so there is no cliff to be stopped
+    /// at.
+    ///
+    /// The assertion is on the **sum** of the two coefficients, not on each.
+    /// Telling an additive component from a person-level one is a question
+    /// about the design rather than the arithmetic, and issue 35 is the check
+    /// that measures it; this test is about the search reaching the answer at
+    /// all.
+    #[test]
+    fn the_search_reaches_a_split_that_leaves_almost_no_residual() {
+        let people = 160;
+        let rows = people * 2;
+        let mut seed = 20_260_829_u64;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((seed >> 11) as f64 / (1_u64 << 53) as f64) - 0.5
+        };
+
+        let mut additive = DMatrix::<f64>::zeros(rows, rows);
+        let mut person = DMatrix::<f64>::zeros(rows, rows);
+        for i in 0..rows {
+            for j in 0..rows {
+                let (a, b) = (i / 2, j / 2);
+                if a == b {
+                    person[(i, j)] = 1.0;
+                    additive[(i, j)] = 1.0;
+                } else if a / 2 == b / 2 {
+                    additive[(i, j)] = 0.5;
+                }
+            }
+        }
+
+        let (genetic, level, total): (f64, f64, f64) = (0.45, 0.50, 4.0);
+        let mut value = vec![0.0; rows];
+        for family in 0..(people / 2) {
+            let shared = next() + next() + next();
+            for member in 0..2 {
+                let who = family * 2 + member;
+                let own = next() + next() + next();
+                let breeding = 0.7 * shared + 0.71 * own;
+                let personal = next() + next() + next();
+                for ear in 0..2 {
+                    let noise = next() + next() + next();
+                    value[who * 2 + ear] = 10.0
+                        + total.sqrt()
+                            * (genetic.sqrt() * breeding
+                                + level.sqrt() * personal
+                                + (1.0 - genetic - level).sqrt() * noise);
+                }
+            }
+        }
+
+        let censoring = vec![Censoring::Measured; rows];
+        let limits = vec![0.0; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+        let model = TobitModel::build(&[additive, person], &value, &censoring, &limits, &design)
+            .expect("two components build");
+
+        let fit = model.fit().expect("a fit is returned");
+        let together: f64 = fit.coefficients.iter().sum();
+        assert!(
+            fit.converged,
+            "the search stopped without converging, at {:?}",
+            fit.coefficients
+        );
+        assert!(
+            (together - (genetic + level)).abs() < 0.15,
+            "the components together came to {together:.3} where the truth is \
+             {:.3}; the residual is what is left, so getting their sum wrong is \
+             getting the residual wrong",
+            genetic + level
+        );
+        assert!(
+            together < 1.0,
+            "the coefficients must leave the residual something"
+        );
     }
 
     /// An unscored verdict is withheld, not filled in from another model.

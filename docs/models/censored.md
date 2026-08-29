@@ -68,7 +68,12 @@ retain their shared fixed-effect meanings.
 
 **Any number of components may be supplied.** The residual takes
 $1-\sum_c p_c$ and is never passed, which is what puts the coefficients on a
-common scale; a set summing past one describes no covariance and is refused.
+common scale. The search works in stick-breaking coordinates, each in
+$[0,1]$ and each taking a share of what the earlier ones left, so a set summing
+past one is unreachable rather than refused: the feasible set is a box and the
+bounded optimiser meets no cliff. A small residual is therefore reachable, which
+matters, because additive, person-level and household terms together can leave
+little behind.
 They are proportions of $\sigma^2$ exactly where every $\mathbf K_c$ carries a
 unit diagonal, which additive kinship, a person-level matrix and a household
 kernel all do.
