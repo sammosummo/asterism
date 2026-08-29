@@ -372,6 +372,36 @@ impl TobitModel {
             || crate::components::resting_on_zero(1.0 - fit.coefficients.iter().sum::<f64>())
     }
 
+    /// The same model with every component rescaled to a unit mean diagonal.
+    ///
+    /// **This is what turns a coefficient into a proportion.** A component's
+    /// marginal contribution is its coefficient times its matrix's mean
+    /// diagonal, so dividing each matrix by that mean leaves the covariance
+    /// unchanged -- `p * K` is `(p * w) * (K / w)` -- while making every
+    /// coefficient a share of the mean-diagonal total. The total variance then
+    /// *is* that total, and the coefficients sum with the residual to one.
+    ///
+    /// Where every component already carries a unit diagonal, which additive
+    /// kinship, a person-level matrix and a household kernel all do, this is
+    /// the identity and the two intervals are the same interval.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where a mean diagonal is not positive and finite,
+    /// as `ComponentModel` does: the proportion is undefined there and a number
+    /// would be worse than a refusal.
+    fn with_unit_mean_diagonals(&self) -> Result<Self, &'static str> {
+        let mut rescaled = self.clone();
+        for component in &mut rescaled.components {
+            let mean_diagonal = component.diagonal().iter().sum::<f64>() / self.rows as f64;
+            if !mean_diagonal.is_finite() || mean_diagonal <= 0.0 {
+                return Err("TOBIT_MEAN_DIAGONAL_PROPORTION_UNDEFINED");
+            }
+            *component /= mean_diagonal;
+        }
+        Ok(rescaled)
+    }
+
     /// The same model with one component moved to the front.
     ///
     /// **Why the profile needs this.** Holding a coefficient is a box
@@ -654,10 +684,10 @@ impl TobitModel {
     ///
     /// **The interval is on the coefficient, not on the mean-diagonal
     /// proportion.** The two coincide where every component carries a unit
-    /// diagonal and differ otherwise. `ComponentModel` offers both, by way of
-    /// `component_mean_diagonal_interval`; this model offers only the first,
-    /// and a caller comparing components on unequal diagonals should read the
-    /// interval as being about the coefficient it is about.
+    /// diagonal and differ otherwise, because rescaling a matrix moves a
+    /// coefficient and leaves a proportion alone. For the comparable quantity
+    /// use [`Self::mean_diagonal_interval`], which is what to report when
+    /// components are set beside each other.
     ///
     /// **The boundary verdict is filled only at one component.** The coverage
     /// simulation that scored the mixture rule ran there. With several, more
@@ -670,6 +700,33 @@ impl TobitModel {
     /// Returns a stable code where the fit or the profile could not be made.
     pub fn coefficient_interval(&self, index: usize) -> Result<TobitInterval, &'static str> {
         self.with_component_first(index)?.heritability_interval()
+    }
+
+    /// A profile-likelihood interval for one component's **mean-diagonal
+    /// proportion**.
+    ///
+    /// This is the interval to report when components are compared, and the one
+    /// `ComponentModel` gives by default. A coefficient is not comparable
+    /// across matrices whose diagonals differ; rescaling a matrix moves its
+    /// coefficient and leaves its proportion alone, which is the whole point.
+    ///
+    /// Where every component carries a unit diagonal this is exactly
+    /// [`Self::coefficient_interval`], because there the two quantities are the
+    /// same one.
+    ///
+    /// **There is no separate test.** A proportion is nought exactly when its
+    /// coefficient is, so [`Self::coefficient_test`] answers both questions.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where no component sits at that index, where a
+    /// mean diagonal is not positive and finite, or where the fit or profile
+    /// could not be made.
+    pub fn mean_diagonal_interval(&self, index: usize) -> Result<TobitInterval, &'static str> {
+        if index >= self.components.len() {
+            return Err("TOBIT_NO_SUCH_COMPONENT");
+        }
+        self.with_unit_mean_diagonals()?.coefficient_interval(index)
     }
 
     /// A test that one component's coefficient is nought.
@@ -1787,6 +1844,93 @@ mod tests {
                 "component {index} has an interval"
             );
         }
+    }
+
+    /// The proportion's interval is the one that survives a rescaling.
+    ///
+    /// **This is the property the coefficient interval lacks**, and the reason
+    /// both exist. Multiplying a component's matrix by a constant leaves the
+    /// model it describes untouched -- the coefficient simply absorbs the
+    /// constant -- so an interval that moves under that rescaling is measuring
+    /// the parameterisation as much as the data. The proportion does not move.
+    ///
+    /// Where every component carries a unit diagonal the two intervals are the
+    /// same interval, which is also pinned here: it is easy to write a
+    /// rescaling that quietly disagrees in the ordinary case.
+    #[test]
+    fn the_proportion_interval_is_unmoved_by_rescaling_a_component() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(60, 0.5, 1.0, 0.0, Some(0.4), 4711);
+        let rows = relationship.nrows();
+        let person = DMatrix::<f64>::identity(rows, rows);
+
+        let plain = TobitModel::build(
+            &[relationship.clone(), person.clone()],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("two components build");
+        // The same model, with the second component written four times larger.
+        let scaled = TobitModel::build(
+            &[relationship, person * 4.0],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("a rescaled covariance is still a covariance");
+
+        let plain_proportion = plain.mean_diagonal_interval(1).expect("an interval");
+        let scaled_proportion = scaled.mean_diagonal_interval(1).expect("an interval");
+        assert!(
+            (plain_proportion.lower - scaled_proportion.lower).abs() < 1e-6
+                && (plain_proportion.upper - scaled_proportion.upper).abs() < 1e-6,
+            "rescaling moved the proportion's interval, from [{}, {}] to [{}, {}]",
+            plain_proportion.lower,
+            plain_proportion.upper,
+            scaled_proportion.lower,
+            scaled_proportion.upper
+        );
+
+        let plain_coefficient = plain.coefficient_interval(1).expect("an interval");
+        let scaled_coefficient = scaled.coefficient_interval(1).expect("an interval");
+        assert!(
+            (plain_coefficient.upper - scaled_coefficient.upper).abs() > 1e-6
+                || (plain_coefficient.lower - scaled_coefficient.lower).abs() > 1e-6,
+            "the coefficient interval was expected to move under rescaling, and \
+             did not -- if that has changed, the two quantities are no longer \
+             distinct and this test has stopped saying anything"
+        );
+
+        // With unit diagonals throughout, the two are the same interval.
+        assert!(
+            (plain_proportion.lower - plain_coefficient.lower).abs() < 1e-9
+                && (plain_proportion.upper - plain_coefficient.upper).abs() < 1e-9,
+            "at unit diagonals the proportion and the coefficient are one \
+             quantity, and their intervals must agree"
+        );
+    }
+
+    /// An undefined proportion is refused rather than returned.
+    #[test]
+    fn a_component_with_no_mean_diagonal_has_no_proportion_interval() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(40, 0.5, 1.0, 0.0, Some(0.4), 99);
+        let rows = relationship.nrows();
+        let empty = DMatrix::<f64>::zeros(rows, rows);
+        let model = TobitModel::build(&[relationship, empty], &value, &censoring, &limit, &design)
+            .expect("a nought matrix is a covariance, if a dull one");
+        assert_eq!(
+            model.mean_diagonal_interval(1).err(),
+            Some("TOBIT_MEAN_DIAGONAL_PROPORTION_UNDEFINED"),
+            "a component contributing nothing to any diagonal has no share of it"
+        );
+        assert_eq!(
+            model.mean_diagonal_interval(7).err(),
+            Some("TOBIT_NO_SUCH_COMPONENT")
+        );
     }
 
     /// The mean-diagonal proportions are what a reader should compare.

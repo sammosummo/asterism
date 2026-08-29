@@ -204,7 +204,8 @@ it was.
 | --- | --- |
 | Each component's coefficient | `coefficients`, in the order the components were given, the residual not among them |
 | The comparable quantity | `mean_diagonal_proportions`, the residual's last, summing to one |
-| An interval for any component | `coefficient_interval(index)` |
+| An interval for a component's coefficient | `coefficient_interval(index)` |
+| An interval for its proportion, which is the one to report | `mean_diagonal_interval(index)` |
 | A test that any component is nought | `coefficient_test(index)` |
 
 **Compare components by the mean-diagonal proportions, not by the
@@ -213,7 +214,16 @@ diagonals agree; the proportion is the coefficient's variance scaled by its
 matrix's mean diagonal and normalised, which is what `ComponentModel` reports
 and for the same reason. Where every component carries a unit diagonal -- true
 of additive kinship, a person-level matrix and a household kernel -- the two
-agree.
+agree exactly.
+
+The difference is easiest to see in what a rescaling does. Multiplying a
+component's matrix by four describes the same model, the coefficient simply
+absorbing the constant: the proportion's interval does not move and the
+coefficient's does. An interval that shifts when nothing about the model has is
+measuring the parameterisation as much as the data.
+
+There is no separate test on a proportion, because a proportion is nought
+exactly when its coefficient is.
 
 **An interval on a component may rest on its bound for two different
 reasons.** A component whose matrix is singular at its full share -- a
