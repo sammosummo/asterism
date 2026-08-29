@@ -196,16 +196,6 @@ impl TobitModel {
                 }
             }
         }
-        // The same guard the liability model carries, for the same reason: the
-        // two-person quadrature loses accuracy as the correlation approaches
-        // one, and a relationship of one produces that at a high heritability.
-        for i in 0..rows {
-            for j in 0..i {
-                if relationship[(i, j)].abs() > 0.9 {
-                    return Err("TOBIT_RELATIONSHIP_TOO_CLOSE");
-                }
-            }
-        }
         for index in 0..rows {
             match censoring[index] {
                 Censoring::Measured => {
@@ -654,7 +644,12 @@ mod tests {
 
     /// Produced by the three-start code this replaced, at the same seed and
     /// the same held value.
-    const PINNED_HELD_LOGLIK: f64 = -102.736_491_872_357_05;
+    // Re-pinned on 29 August 2026, when the two-person normal integral was
+    // replaced by an accurate one. It moved by 2.9e-09, which is 2.8e-11 of the
+    // value: the search still lands in the same place, the place is simply
+    // located a little more precisely than the retired quadrature could locate
+    // it. The equality below is still an equality, and still says what it says.
+    const PINNED_HELD_LOGLIK: f64 = -102.736_491_869_479_9;
 
     /// A relationship matrix that is not a covariance is refused where the
     /// caller can still do something about it.
@@ -1005,6 +1000,40 @@ mod tests {
         assert_eq!(
             model.fit_holding(Some(1.5)).err(),
             Some("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE")
+        );
+    }
+
+    /// A relationship of one is a real thing, not a mistake.
+    ///
+    /// Monozygotic twins have one. So do two records of the same person, which
+    /// is what a person-level component is made of. `build` used to refuse any
+    /// off-diagonal above 0.9, because the two-person quadrature it then used
+    /// lost accuracy as the correlation approached one -- so the model could
+    /// not fit a twin, and could not carry a person-level component at all.
+    /// The integral was replaced on 29 August 2026 and the refusal went with
+    /// it.
+    #[test]
+    fn a_relationship_of_one_is_accepted() {
+        // Two people, two records each, a person's records carrying one with
+        // each other and the ordinary coefficient with the other person's.
+        let base = DMatrix::from_row_slice(2, 2, &[1.0, 0.5, 0.5, 1.0]);
+        let mut relationship = DMatrix::<f64>::zeros(4, 4);
+        for i in 0..4 {
+            for j in 0..4 {
+                relationship[(i, j)] = base[(i / 2, j / 2)];
+            }
+        }
+        assert_eq!(relationship[(0, 1)], 1.0, "the two records of one person");
+
+        let value = [1.0, 2.0, 3.0, 4.0];
+        let censoring = [Censoring::Measured; 4];
+        let limit = [0.0; 4];
+        let design = DMatrix::from_element(4, 1, 1.0);
+        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
+            .expect("a relationship of one is a covariance and must be accepted");
+        assert!(
+            model.loglik(0.4, 1.0, &[2.5]).is_some(),
+            "the likelihood must evaluate where a person shares a record with themselves"
         );
     }
 

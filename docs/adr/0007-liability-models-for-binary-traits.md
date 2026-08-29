@@ -97,6 +97,22 @@ therefore refuses an off-diagonal relationship above 0.9 rather than returning a
 number quietly worth less than it looks. Removing that guard means replacing the
 quadrature first.
 
+**Superseded on 29 August 2026, on this section's own terms.** The quadrature
+was replaced, so the guard went. The two-person probability is now an accurate
+integral shared with the latent-mediation model -- measured against an
+independent reference at 53 points from a correlation of -0.99 to 0.9999 and at
+thresholds away from the symmetric centre, worst error under 1e-9 -- and
+`LiabilityModel::build` accepts a relationship of one. Monozygotic twins and one
+person entered twice are fittable, as is any model carrying a component a person
+shares in full with themselves, which is what a person-level component is.
+
+Two things this section got right are worth keeping. The guard was the correct
+response to the arithmetic as it then stood. And the measured figures it quotes
+were honest about the case they measured: 2.3e-04 at a correlation of 0.99 holds
+at thresholds of nought and nought. What was not known then is that the error
+depends on where the rectangle sits as well as how strongly the coordinates
+correlate, and is some seventy times larger away from that centre.
+
 ## Consequences
 
 - The code is cannibalised from the SOLAR successor at

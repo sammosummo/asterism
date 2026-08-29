@@ -14,6 +14,12 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::{ContinuousCDF, Normal};
 
+use crate::normal_integrals::{
+    BIVARIATE_ABSOLUTE_TOLERANCE, adaptive_simpson, bivariate_normal_cdf, interval_probability,
+    log_bivariate_geometry_upper_bound, log_interval_probability, log_normal_sf, normal_cdf,
+    normal_sf,
+};
+
 const LOG_TWO_PI: f64 = 1.837_877_066_409_345_3;
 const LOG_HALF: f64 = -std::f64::consts::LN_2;
 const TOLERANCE: f64 = 1.0e-10;
@@ -27,10 +33,6 @@ const BOOTSTRAP_REPLICATES: usize = 200;
 /// Fixed, so the same data give the same p-value. A reference that moved
 /// between runs would be a reference nobody could check.
 const BOOTSTRAP_SEED: u64 = 20_260_817;
-// Below this absolute scale, the corner-difference recipe cannot distinguish
-// a probability from numerical zero and the log-scale conditional quadrature
-// takes over.
-const BIVARIATE_ABSOLUTE_TOLERANCE: f64 = 1.0e-12;
 // Corner differences carry roughly sixteen epsilons of rounding, so their
 // relative accuracy degrades as the probability shrinks; below this scale the
 // log-scale conditional quadrature is the more accurate recipe.
@@ -2055,59 +2057,8 @@ fn qmc_shift(replicate: usize, row: usize) -> f64 {
     ((replicate as f64 + 1.0) * (SHIFT_PRIMES[row] as f64).sqrt().fract()).fract()
 }
 
-fn interval_probability(lower: f64, upper: f64) -> Result<f64, &'static str> {
-    if lower >= upper {
-        return Ok(0.0);
-    }
-    if lower == f64::NEG_INFINITY {
-        return if upper == f64::INFINITY {
-            Ok(1.0)
-        } else {
-            normal_cdf(upper)
-        };
-    }
-    if upper == f64::INFINITY {
-        return normal_sf(lower);
-    }
-    if lower >= 0.0 {
-        return Ok((normal_sf(lower)? - normal_sf(upper)?).max(0.0));
-    }
-    Ok((normal_cdf(upper)? - normal_cdf(lower)?).max(0.0))
-}
-
 fn normal() -> Result<Normal, &'static str> {
     Normal::new(0.0, 1.0).map_err(|_| "LATENT_MEDIATION_NORMAL_UNAVAILABLE")
-}
-
-fn normal_cdf(value: f64) -> Result<f64, &'static str> {
-    normal_sf(-value)
-}
-
-/// Upper tail of the standard normal, as `erfc(x / sqrt 2) / 2`.
-///
-/// **Not `statrs`'s `Normal::cdf`, which is not accurate enough to integrate
-/// against.** That routes through an `erfc` approximation carrying about 5e-11
-/// of relative error -- it puts the tail at 3 deviations at 1.349898031574e-3
-/// where the true value is 1.349898031630e-3 -- and the error wanders from
-/// point to point rather than varying smoothly. To a quadrature asking for
-/// 1e-13 that is noise, and the conditional integrand inherited it: panels
-/// around 6.06 deviations kept returning an error estimate that fell only as
-/// fast as the panel width, the signature of a rough integrand, so the routine
-/// subdivided to its depth limit and refused rectangles as ordinary as
-/// [6, 40] x [5, inf) at a correlation of 0.7.
-///
-/// `libm`'s is the FDLIBM routine. Against a sixty-digit evaluation it is right
-/// to an ulp for ordinary arguments and never worse than 4e-14 out to 36
-/// deviations -- three orders better than `statrs` at its best -- while running
-/// about four times faster than routing the same quantity through the
-/// regularised incomplete gamma, which is equally accurate but pays for a
-/// generality this does not need. Below nought the argument is negative and the
-/// result lies between one and two, so there is no cancellation to avoid.
-fn normal_sf(value: f64) -> Result<f64, &'static str> {
-    if !value.is_finite() {
-        return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
-    }
-    Ok(0.5 * libm::erfc(value / std::f64::consts::SQRT_2))
 }
 
 /// The point whose upper tail is `target`, for `target` at most `log 0.5`.
@@ -2121,7 +2072,7 @@ fn normal_sf(value: f64) -> Result<f64, &'static str> {
 /// 1e-308 where an ordinary-scale quantile has to give up.
 fn inverse_log_normal_sf(target: f64) -> Result<f64, &'static str> {
     if target.is_nan() {
-        return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
+        return Err("NORMAL_VARIATE_NOT_FINITE");
     }
     if target == f64::NEG_INFINITY {
         return Ok(f64::INFINITY);
@@ -2234,7 +2185,7 @@ fn bivariate_rectangle(
     }
     let correlation = covariance[(0, 1)] / (first_sd * second_sd);
     if correlation.abs() >= 1.0 || !correlation.is_finite() {
-        return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
+        return Err("BIVARIATE_CORRELATION_INVALID");
     }
     let standardised_lower = [
         (lower[0] - mean[0]) / first_sd,
@@ -2277,7 +2228,7 @@ fn bivariate_rectangle(
             let absolute_budget = 4.0 * BIVARIATE_ABSOLUTE_TOLERANCE + rounding_budget;
             if probability > absolute_budget {
                 if probability > geometry_bound + absolute_budget {
-                    return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
+                    return Err("BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
                 }
                 return Ok(BivariateRectangle {
                     log_probability: probability.clamp(0.0, 1.0).ln(),
@@ -2285,9 +2236,7 @@ fn bivariate_rectangle(
                 });
             }
         } else if let Some(error) = corners.iter().find_map(|corner| match corner {
-            Err(error) if *error != "LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED" => {
-                Some(*error)
-            }
+            Err(error) if *error != "BIVARIATE_PROBABILITY_UNRESOLVED" => Some(*error),
             _ => None,
         }) {
             return Err(error);
@@ -2298,7 +2247,7 @@ fn bivariate_rectangle(
     // A relative slack of 1e-8 on the probability, which is an absolute slack
     // on its logarithm and so holds equally at every depth.
     if log_probability > log_geometry_bound + 1.0e-8 {
-        return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
+        return Err("BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
     }
     Ok(BivariateRectangle {
         // A probability cannot exceed one, so its logarithm cannot exceed
@@ -2311,47 +2260,6 @@ fn bivariate_rectangle(
 struct BivariateRectangle {
     log_probability: f64,
     method: &'static str,
-}
-
-/// Log of the upper tail of the standard normal, stable arbitrarily far out.
-fn log_normal_sf(value: f64) -> Result<f64, &'static str> {
-    if value.is_nan() {
-        return Err("LATENT_MEDIATION_NORMAL_VARIATE_NOT_FINITE");
-    }
-    if value == f64::NEG_INFINITY {
-        return Ok(0.0);
-    }
-    if value == f64::INFINITY {
-        return Ok(f64::NEG_INFINITY);
-    }
-    if value <= 6.0 {
-        // The survival value is at least 1e-9 here, so its logarithm keeps
-        // full relative accuracy.
-        return Ok(normal_sf(value)?.ln());
-    }
-    // Mills-ratio continued fraction: the survival equals
-    // phi(x) / (x + 1/(x + 2/(x + 3/(...)))), evaluated backward.
-    let mut tail = 0.0;
-    for level in (1..=40u32).rev() {
-        tail = f64::from(level) / (value + tail);
-    }
-    Ok(-0.5 * value * value - 0.5 * LOG_TWO_PI - (value + tail).ln())
-}
-
-/// Log of a standard-normal interval probability, stable in either tail.
-fn log_interval_probability(lower: f64, upper: f64) -> Result<f64, &'static str> {
-    if lower >= upper {
-        return Ok(f64::NEG_INFINITY);
-    }
-    if lower >= 0.0 {
-        let log_lower_tail = log_normal_sf(lower)?;
-        let log_upper_tail = log_normal_sf(upper)?;
-        return Ok(log_lower_tail + (-(log_upper_tail - log_lower_tail).exp()).ln_1p());
-    }
-    if upper <= 0.0 {
-        return log_interval_probability(-upper, -lower);
-    }
-    Ok(interval_probability(lower, upper)?.ln())
 }
 
 /// Log of a standardised bivariate normal rectangle by conditional
@@ -2394,7 +2302,7 @@ fn log_bivariate_rectangle(
     // narrowest there, so the divisor most needs its digits.
     let conditional_sd = ((1.0 - correlation) * (1.0 + correlation)).sqrt();
     if !(conditional_sd > 0.0) {
-        return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
+        return Err("BIVARIATE_CORRELATION_INVALID");
     }
     let log_integrand = |x: f64| -> Result<f64, &'static str> {
         let shifted_lower = (inner[0] - correlation * x) / conditional_sd;
@@ -2554,224 +2462,6 @@ fn log_bivariate_rectangle(
         return Ok(f64::NEG_INFINITY);
     }
     Ok(log_peak + quadrature.value.ln())
-}
-
-/// An upper bound on a standardised rectangle's probability, on the log scale.
-///
-/// **On the log scale because the bound is used to check the tail answer, and
-/// an ordinary-scale bound underflows before the answers it is meant to
-/// check.** Past about 38 deviations the bound arrives as nought, the guard
-/// reads `bound > 0` and steps aside, and the deep tail -- the one place the
-/// conditional quadrature is the only recipe available and so the one place a
-/// check is worth having -- went unchecked.
-fn log_bivariate_geometry_upper_bound(
-    lower: &[f64; 2],
-    upper: &[f64; 2],
-    correlation: f64,
-) -> Result<f64, &'static str> {
-    if correlation.abs() >= 1.0 || !correlation.is_finite() {
-        return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
-    }
-    let marginal_bound = log_interval_probability(lower[0], upper[0])?
-        .min(log_interval_probability(lower[1], upper[1])?);
-
-    // For standardised X and Y, S=X+Y and D=X-Y are independent Gaussian
-    // variables.  Every point in the rectangle lies in both induced
-    // intervals, hence P(rectangle) <= P(S interval) P(D interval).
-    let sum_sd = (2.0 * (1.0 + correlation)).sqrt();
-    let difference_sd = (2.0 * (1.0 - correlation)).sqrt();
-    let sum_probability = log_interval_probability(
-        (lower[0] + lower[1]) / sum_sd,
-        (upper[0] + upper[1]) / sum_sd,
-    )?;
-    let difference_probability = log_interval_probability(
-        (lower[0] - upper[1]) / difference_sd,
-        (upper[0] - lower[1]) / difference_sd,
-    )?;
-    Ok(marginal_bound
-        .min(sum_probability + difference_probability)
-        .min(0.0))
-}
-
-fn bivariate_normal_cdf(first: f64, second: f64, correlation: f64) -> Result<f64, &'static str> {
-    if correlation.abs() >= 1.0 || !correlation.is_finite() {
-        return Err("LATENT_MEDIATION_BIVARIATE_CORRELATION_INVALID");
-    }
-    if first == f64::NEG_INFINITY || second == f64::NEG_INFINITY {
-        return Ok(0.0);
-    }
-    if first == f64::INFINITY && second == f64::INFINITY {
-        return Ok(1.0);
-    }
-    if first == f64::INFINITY {
-        return normal_cdf(second);
-    }
-    if second == f64::INFINITY {
-        return normal_cdf(first);
-    }
-    if !first.is_finite() || !second.is_finite() {
-        return Err("LATENT_MEDIATION_BIVARIATE_THRESHOLD_INVALID");
-    }
-    let geometry_bound = log_bivariate_geometry_upper_bound(
-        &[f64::NEG_INFINITY, f64::NEG_INFINITY],
-        &[first, second],
-        correlation,
-    )?
-    .exp();
-    if geometry_bound <= BIVARIATE_ABSOLUTE_TOLERANCE {
-        return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED");
-    }
-    if correlation < 0.0 {
-        return Ok(normal_cdf(first)? - bivariate_normal_cdf(first, -second, -correlation)?);
-    }
-    let independent = normal_cdf(first)? * normal_cdf(second)?;
-    if correlation.abs() <= f64::EPSILON {
-        return Ok(independent);
-    }
-    let integrand = |angle: f64| {
-        let sine = angle.sin();
-        let cosine = angle.cos();
-        let exponent =
-            (first - second).powi(2) / (2.0 * cosine * cosine) + first * second / (1.0 + sine);
-        (-exponent).exp() / (2.0 * std::f64::consts::PI)
-    };
-    let quadrature = adaptive_simpson(
-        &integrand,
-        0.0,
-        correlation.asin(),
-        BIVARIATE_ABSOLUTE_TOLERANCE / 8.0,
-        // An ordinary integrand on the ordinary scale, so an epsilon.
-        f64::EPSILON,
-        24,
-    )?;
-    let probability = independent + quadrature.value;
-    if probability <= quadrature.estimated_error {
-        return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED");
-    }
-    let upper_bound = normal_cdf(first)?.min(normal_cdf(second)?);
-    // **The Frechet bounds can cross by rounding, and `clamp` panics when they
-    // do.** With both marginals at essentially one, the lower bound is
-    // `p + q - 1` and the upper is `min(p, q)`; these meet exactly at one and
-    // an ulp of arithmetic is enough to put the lower above the upper --
-    // measured at 0.9999999910267894 against 0.9999999910267893, which brought
-    // the whole process down through the Python boundary rather than returning
-    // an error. Ordering them costs nothing and the interval they describe is
-    // a point at that precision anyway.
-    let lower_bound = (normal_cdf(first)? + normal_cdf(second)? - 1.0)
-        .max(0.0)
-        .min(upper_bound);
-    if probability < lower_bound - 1.0e-10 || probability > upper_bound + 1.0e-10 {
-        return Err("LATENT_MEDIATION_BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS");
-    }
-    Ok(probability.clamp(lower_bound, upper_bound))
-}
-
-#[derive(Debug)]
-struct QuadratureResult {
-    value: f64,
-    estimated_error: f64,
-}
-
-fn adaptive_simpson<F>(
-    function: &F,
-    lower: f64,
-    upper: f64,
-    tolerance: f64,
-    // The relative rounding the integrand itself carries. An ordinary
-    // integrand carries an epsilon; one built from a large exponent carries an
-    // epsilon of that exponent.
-    noise: f64,
-    maximum_depth: usize,
-) -> Result<QuadratureResult, &'static str>
-where
-    F: Fn(f64) -> f64,
-{
-    fn simpson<F>(function: &F, lower: f64, upper: f64) -> f64
-    where
-        F: Fn(f64) -> f64,
-    {
-        let midpoint = lower.midpoint(upper);
-        (upper - lower) * (function(lower) + 4.0 * function(midpoint) + function(upper)) / 6.0
-    }
-    fn recurse<F>(
-        function: &F,
-        lower: f64,
-        upper: f64,
-        estimate: f64,
-        tolerance: f64,
-        noise: f64,
-        depth: usize,
-    ) -> Result<QuadratureResult, &'static str>
-    where
-        F: Fn(f64) -> f64,
-    {
-        let midpoint = lower.midpoint(upper);
-        let left = simpson(function, lower, midpoint);
-        let right = simpson(function, midpoint, upper);
-        let error = left + right - estimate;
-        if !left.is_finite() || !right.is_finite() {
-            return Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_NOT_FINITE");
-        }
-        // The error budget is halved at every level, so it eventually asks for
-        // less than the arithmetic can deliver: a panel is accepted once its
-        // error reaches the level of its own rounding, because no amount of
-        // further splitting can improve on that. Without this the routine
-        // answers a rough integrand by subdividing to its depth limit and then
-        // refusing, which is the worst of both -- it spends the most work
-        // exactly where it will fail, and a likelihood that declines to be
-        // evaluated stops an optimiser dead.
-        let rounding = 16.0 * noise * (left.abs() + right.abs());
-        if error.abs() <= (15.0 * tolerance).max(rounding) {
-            Ok(QuadratureResult {
-                value: left + right + error / 15.0,
-                estimated_error: error.abs() / 15.0,
-            })
-        } else if depth == 0 {
-            Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_DID_NOT_CONVERGE")
-        } else {
-            let left_result = recurse(
-                function,
-                lower,
-                midpoint,
-                left,
-                tolerance / 2.0,
-                noise,
-                depth - 1,
-            )?;
-            let right_result = recurse(
-                function,
-                midpoint,
-                upper,
-                right,
-                tolerance / 2.0,
-                noise,
-                depth - 1,
-            )?;
-            Ok(QuadratureResult {
-                value: left_result.value + right_result.value,
-                estimated_error: left_result.estimated_error + right_result.estimated_error,
-            })
-        }
-    }
-    if lower >= upper {
-        return Ok(QuadratureResult {
-            value: 0.0,
-            estimated_error: 0.0,
-        });
-    }
-    let estimate = simpson(function, lower, upper);
-    if !estimate.is_finite() {
-        return Err("LATENT_MEDIATION_BIVARIATE_QUADRATURE_NOT_FINITE");
-    }
-    recurse(
-        function,
-        lower,
-        upper,
-        estimate,
-        tolerance,
-        noise,
-        maximum_depth,
-    )
 }
 
 /// A deterministic stream, so a simulated campaign can be rerun exactly.
@@ -4642,13 +4332,10 @@ mod tests {
     fn near_singular_opposed_tail_is_refused_instead_of_returning_residue() {
         let error = bivariate_normal_cdf(-5.5, 5.0, -0.999_999_998_999)
             .expect_err("unbounded cancellation must fail closed");
-        assert_eq!(error, "LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED");
+        assert_eq!(error, "BIVARIATE_PROBABILITY_UNRESOLVED");
         let neighboring_error = bivariate_normal_cdf(-5.5, 5.0, -0.999_999_98)
             .expect_err("the same impossible geometry remains unresolved");
-        assert_eq!(
-            neighboring_error,
-            "LATENT_MEDIATION_BIVARIATE_PROBABILITY_UNRESOLVED"
-        );
+        assert_eq!(neighboring_error, "BIVARIATE_PROBABILITY_UNRESOLVED");
 
         let correlation: f64 = -0.999_999_998_999;
         let expected = 0.25 + correlation.asin() / (2.0 * std::f64::consts::PI);
@@ -4661,10 +4348,7 @@ mod tests {
     fn adaptive_simpson_refuses_depth_exhaustion() {
         let error = adaptive_simpson(&|value| value.powi(4), 0.0, 1.0, 1.0e-16, 0.0, 0)
             .expect_err("an exhausted error budget must not be returned as success");
-        assert_eq!(
-            error,
-            "LATENT_MEDIATION_BIVARIATE_QUADRATURE_DID_NOT_CONVERGE"
-        );
+        assert_eq!(error, "BIVARIATE_QUADRATURE_DID_NOT_CONVERGE");
     }
 
     #[test]

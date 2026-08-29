@@ -25,10 +25,11 @@ Before a release is made, each supported analysis must meet three conditions:
    values, a converged free fit, converged constrained fits for inference, and
    no failed profile evaluation.
 
-`release.toml` is presently a development manifest: `release = false`, and its
-pass rules are not configured. The figures in the [validation
-record](validation.md) come from development builds and earlier campaigns, and
-do not stand in for those checks.
+The current `release.toml` enables the 0.1.1 release and configures the pass
+rules for its supported analyses. The figures in the [validation
+record](validation.md) provide broader scientific context; the release
+manifest and its recorded evidence remain the authority for the released
+artifact.
 
 The eight 0.1 analysis families are:
 
@@ -188,7 +189,8 @@ Asterism does not use one optimizer for every model:
 | Bounded golden-section refinement after a fixed grid | Prepared one-kernel Gaussian | [Kiefer (1953)](references.bib#kiefer1953) | Endpoints, singular boundaries, and convergence are checked locally |
 | L-BFGS-B with analytic gradients | Multiple components, bivariate Gaussian, continuous/discrete G×E, spatial | [Byrd et al. (1995)](references.bib#byrdEtAl1995); [Zhu et al. (1997)](references.bib#zhuEtAl1997) | Deterministic starts, bounds, polishing, and projected/scaled-gradient acceptance are Asterism choices |
 | L-BFGS-B with finite-difference gradients, central when possible and one-sided at bounds | Liability, Tobit, mixed bivariate | [Fornberg (1988)](references.bib#fornberg1988), plus the L-BFGS-B papers | Step size, parameter scale, integration error, and bounds can dominate gradient accuracy |
-| Sixteen-point Gauss–Legendre quadrature | Two-dimensional conditional normal probabilities | [Golub and Welsch (1969)](references.bib#golubWelsch1969) | Error increases near singular correlation; larger regions use a different approximation |
+| Owen's angular form, integrated adaptively to a tolerance | Two-dimensional conditional normal probabilities | [Owen (1956)](references.bib#owen1956) | Measured against an independent reference to under 1e-9 across the whole correlation range and away from the symmetric centre; larger regions use a different approximation |
+| Fixed-order Gauss–Legendre quadrature | Banded inversion of the weighted chi-square tail | [Golub and Welsch (1969)](references.bib#golubWelsch1969) | Fixed-order accuracy deteriorates where the integrand oscillates fastest, which the banding is chosen to bound |
 | Dense Cholesky factorization | Noncommuting covariance bases and family blocks | Standard linear algebra | Successful factorization does not imply statistical identification |
 | Profile bisection | All supported interval families | [Venzon and Moolgavkar (1988)](references.bib#venzonMoolgavkar1988) for the profile construction | Failed or nonconverged points widen the interval, and the fit record counts them |
 
@@ -204,8 +206,8 @@ largest unblocked covariance dimension. Spatial covariance crosses families and
 therefore loses the pedigree block savings; its bootstrap repeats a costly full
 fit. The Gaussian bivariate implementation is deliberately limited to two
 traits. Non-Gaussian region probabilities use a univariate normal calculation
-in dimension one, fixed sixteen-point quadrature in dimension two, and a
-sequential approximation above dimension two.
+in dimension one, an adaptively integrated Owen angular form in dimension two,
+and a sequential approximation above dimension two.
 
 ## What is still outstanding
 

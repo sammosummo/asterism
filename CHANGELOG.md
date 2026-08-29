@@ -6,6 +6,28 @@ tag and saved wheels.
 
 ## Unreleased
 
+- **The two-person normal probability is one accurate integral, and a
+  relationship of one is accepted.** The package carried two implementations of
+  the same integral: a sixteen-point quadrature beside the liability model and
+  an adaptive Owen form beside latent mediation. The first was accurate at
+  thresholds of nought and nought and about seventy times worse away from them,
+  reaching 4.5e-02 in the log probability at a correlation of 0.99. Because of
+  it, `build` refused any off-diagonal relationship above 0.9 in the liability,
+  censored and mixed-bivariate models -- so **monozygotic twins could not be
+  fitted**, nor any model carrying a component a person shares in full with
+  themselves, which is what a person-level component is. The integral is now
+  shared, measured against two independent integrations at 53 points to
+  1.7e-11, and the refusal is gone. Replacing it moved the liability model
+  against its SOLAR successor by at most 1.2e-6, or 2.7e-9 of the value, and
+  most in the tail where the retired arithmetic was weakest.
+- **Breaking, error codes.** Seven codes lost their `LATENT_MEDIATION_` prefix
+  now that three models raise them: `NORMAL_VARIATE_NOT_FINITE`,
+  `BIVARIATE_CORRELATION_INVALID`, `BIVARIATE_THRESHOLD_INVALID`,
+  `BIVARIATE_PROBABILITY_UNRESOLVED`, `BIVARIATE_PROBABILITY_OUTSIDE_BOUNDS`,
+  `BIVARIATE_QUADRATURE_NOT_FINITE` and `BIVARIATE_QUADRATURE_DID_NOT_CONVERGE`.
+  Three codes are retired with the guard: `LIABILITY_RELATIONSHIP_TOO_CLOSE`,
+  `TOBIT_RELATIONSHIP_TOO_CLOSE` and `MIXED_BIVARIATE_RELATIONSHIP_TOO_CLOSE`.
+
 - Asterism is MIT licensed, carries a `CITATION.cff`, and is archived with a
   DOI at publication rather than before it. ADR 0018 restores the citation
   requirement ADR 0001 made and ADR 0012 dropped, and records that Asterism is

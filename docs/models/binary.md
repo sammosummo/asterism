@@ -95,8 +95,12 @@ blocks, the relationship diagonal is normalised to the unit-liability scale,
 and the fixed effects correctly locate liability. The estimand is
 liability-scale, not observed-scale, heritability.
 
-The two-person quadrature error grows near correlation one, which is why nearly
-perfectly related pairs are refused. Above two dimensions the accuracy of the
+The two-person probability is accurate across the whole correlation range,
+measured against an independent reference to under 1e-9 including in the tail,
+so nearly perfectly related pairs -- monozygotic twins, one person entered
+twice -- are accepted. They were refused until 29 August 2026, when the
+sixteen-point quadrature that could not carry them was replaced. Above two
+dimensions the accuracy of the
 sequential approximation depends on family size, correlation, imbalance and
 truncation order, and has not yet been bounded at the intended family sizes and
 prevalence.

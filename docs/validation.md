@@ -210,9 +210,18 @@ its heritabilities at easier values, so the record is
 | --- | --- | --- | --- | --- |
 | SOLAR | ML | three synthetic cases | 0.0134 in liability heritability, or 0.086 SOLAR standard errors | Reproducible |
 
-The two-person quadrature error was at most 1.3e-9 for liability correlation
-below 0.5 and 2.3e-4 below 0.99. That is why the current numerical method
-refuses nearly perfectly related pairs.
+The two-person probability is measured against an independent reference at 53
+points, spanning correlations from -0.99 to 0.9999 and thresholds away from the
+symmetric centre: worst absolute error under 1e-9.
+
+It was not always. Until 29 August 2026 a sixteen-point quadrature stood here,
+whose error was 1.3e-9 for a correlation below 0.5 but 2.3e-4 at 0.99 -- and
+that second figure held only at thresholds of nought and nought, being about
+seventy times larger away from them. Nearly perfectly related pairs were refused
+for that reason, and are now accepted. Replacing it moved the liability
+model against its SOLAR successor by at most 1.2e-6, which is 2.7e-9 of the
+value, and the movement is largest in the tail where the retired arithmetic was
+weakest.
 
 ### Coverage and level
 

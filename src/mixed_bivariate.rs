@@ -213,9 +213,6 @@ impl MixedBivariateModel {
                 if (relationship[(i, j)] - relationship[(j, i)]).abs() > 1e-10 {
                     return Err("MIXED_BIVARIATE_RELATIONSHIP_NOT_SYMMETRIC");
                 }
-                if relationship[(i, j)].abs() > 0.9 {
-                    return Err("MIXED_BIVARIATE_RELATIONSHIP_TOO_CLOSE");
-                }
             }
         }
         Ok(Self {

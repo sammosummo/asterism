@@ -1728,9 +1728,11 @@ class LiabilityModel:
     rarer class first. Agreement with native SOLAR is exact where no
     approximation is used and within a tenth of a standard error where it is.
 
-    ``build`` refuses a relationship above 0.9 off the diagonal. Twins and
-    duplicated people push the liability correlation to ``h2`` rather than
-    ``h2 / 2``, which is where the two-person quadrature starts losing digits.
+    A relationship of one off the diagonal is accepted. Monozygotic twins and
+    one person entered twice push the liability correlation to ``h2`` rather
+    than ``h2 / 2``; ``build`` used to refuse them because the quadrature behind
+    the two-person probability lost digits there, and since 29 August 2026 the
+    integral is accurate across the whole range and the refusal has gone.
 
     ``subject_order_sha256`` optionally carries the lowercase SHA-256 from
     ``subject_order_commitment`` for the exact fitted row order. Every fit
@@ -2432,8 +2434,9 @@ def region_log_probability(mean: Any, sign: Any, covariance: Any) -> float:
     """The conditional region log-probability the censored models rest on.
 
     Exposed so that it can be checked, not so that it can be used. This uses
-    the univariate normal calculation at one coordinate, fixed sixteen-point
-    quadrature at two, and Mendell-Elston sequential truncation above two. Every
+    the univariate normal calculation at one coordinate, an adaptively
+    integrated Owen angular form at two, and Mendell-Elston sequential
+    truncation above two. Every
     censored heritability in the package rests on it. All the evidence for those
     models was generated on pairs, where the sequential branch never runs at
     all, so the only way to learn how it behaves in a large family is to call it

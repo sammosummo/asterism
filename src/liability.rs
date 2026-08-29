@@ -46,19 +46,21 @@
 //! **The order matters to the approximation**, so the rarer class is taken
 //! first, which is what the recovered implementation does.
 //!
-//! # Where the arithmetic is good, and where it is not
+//! # Where the arithmetic is good
 //!
-//! The two-person case is quadrature, and its accuracy depends on how strongly
-//! the two liabilities correlate. Measured: the worst error is 1.3e-09 below a
-//! correlation of 0.5 and 2.3e-04 below 0.99. An additive model puts sibling
-//! and parent-child liability correlations at `h2 / 2`, so everything a
-//! pedigree of ordinary relatives asks for sits in the good range.
+//! Everywhere, now. The two-person case is an integral, and the one in
+//! `crate::normal_integrals` is measured against an independent reference to
+//! under 1e-09 across the whole correlation range and away from the symmetric
+//! centre.
 //!
-//! **A relationship of one does not.** Monozygotic twins, or the same person
-//! entered twice, give a liability correlation of `h2` rather than `h2 / 2`,
-//! and at a high heritability that reaches where the quadrature loses digits.
-//! `build` refuses a relationship matrix carrying an off-diagonal one for that
-//! reason, rather than returning a number quietly worth less than it looks.
+//! **It was not always so, and the history is worth keeping.** Until 29 August
+//! 2026 this file carried a sixteen-point quadrature whose error reached
+//! 2.3e-04 at a correlation of 0.99 -- and some seventy times more than that
+//! away from thresholds of nought and nought, which was the one place it had
+//! ever been measured. `build` therefore refused any off-diagonal relationship
+//! above 0.9, and in doing so refused **monozygotic twins**, one person entered
+//! twice, and any model carrying a component a person shares in full with
+//! themselves. The integral was replaced and the refusal went with it.
 
 use nalgebra::DMatrix;
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
@@ -69,26 +71,6 @@ use statrs::distribution::{ContinuousCDF, Normal};
 use crate::blocks::family_blocks;
 use crate::deviance::chi2_one_df_upper_tail;
 use crate::interval::{self, Interval};
-
-/// Sixteen-point Gauss-Legendre nodes and weights on [-1, 1].
-const GAUSS_LEGENDRE_16: [(f64, f64); 16] = [
-    (-0.989_400_934_991_649_9, 0.027_152_459_411_754_1),
-    (-0.944_575_023_073_232_6, 0.062_253_523_938_647_9),
-    (-0.865_631_202_387_831_7, 0.095_158_511_682_492_8),
-    (-0.755_404_408_355_003, 0.124_628_971_255_533_9),
-    (-0.617_876_244_402_643_7, 0.149_595_988_816_577_1),
-    (-0.458_016_777_657_227_4, 0.169_156_519_395_002_5),
-    (-0.281_603_550_779_258_9, 0.182_603_415_044_923_6),
-    (-0.095_012_509_837_637_4, 0.189_450_610_455_068_5),
-    (0.095_012_509_837_637_4, 0.189_450_610_455_068_5),
-    (0.281_603_550_779_258_9, 0.182_603_415_044_923_6),
-    (0.458_016_777_657_227_4, 0.169_156_519_395_002_5),
-    (0.617_876_244_402_643_7, 0.149_595_988_816_577_1),
-    (0.755_404_408_355_003, 0.124_628_971_255_533_9),
-    (0.865_631_202_387_831_7, 0.095_158_511_682_492_8),
-    (0.944_575_023_073_232_6, 0.062_253_523_938_647_9),
-    (0.989_400_934_991_649_9, 0.027_152_459_411_754_1),
-];
 
 /// The smallest probability that is allowed to be taken a logarithm of.
 const FLOOR: f64 = 1.0e-300;
@@ -162,17 +144,6 @@ impl LiabilityModel {
             for j in 0..i {
                 if (relationship[(i, j)] - relationship[(j, i)]).abs() > 1e-10 {
                     return Err("LIABILITY_RELATIONSHIP_NOT_SYMMETRIC");
-                }
-            }
-        }
-        // The quadrature behind the two-person probability loses accuracy as
-        // the liability correlation approaches one, which an off-diagonal
-        // relationship of one produces at a high heritability. Twins and
-        // duplicate rows are refused here rather than silently scored.
-        for i in 0..rows {
-            for j in 0..i {
-                if relationship[(i, j)].abs() > 0.9 {
-                    return Err("LIABILITY_RELATIONSHIP_TOO_CLOSE");
                 }
             }
         }
@@ -284,11 +255,28 @@ impl LiabilityModel {
             }
         }
         if size == 2 {
-            return Some(
-                bivariate_normal_cdf(scaled[0], scaled[1], correlation[(0, 1)], normal)
-                    .max(FLOOR)
-                    .ln(),
-            );
+            // The shared integral, and the only one in the package.
+            //
+            // **Only one of its refusals may become a number.**
+            // `BIVARIATE_PROBABILITY_UNRESOLVED` says the probability fell
+            // below what the integral can resolve, and the floor already
+            // stands for that. Every other code -- a correlation outside its
+            // range, a quadrature that did not converge, an answer the integral
+            // rejected against its own bounds -- is a failure, and a failure
+            // must not come back as a finite log probability. Returning `None`
+            // is what makes the caller's `is_finite` check refuse the fit,
+            // which is ADR 0016's rule: undefined is absent, not substituted.
+            // Written first as `unwrap_or(0.0)`, which quietly handed the
+            // optimiser -690.78 for every one of them.
+            return match crate::normal_integrals::bivariate_normal_cdf(
+                scaled[0],
+                scaled[1],
+                correlation[(0, 1)],
+            ) {
+                Ok(probability) => Some(probability.max(FLOOR).ln()),
+                Err("BIVARIATE_PROBABILITY_UNRESOLVED") => Some(FLOOR.ln()),
+                Err(_) => None,
+            };
         }
 
         // **The rarer class first.** The sequential approximation conditions on
@@ -467,45 +455,6 @@ impl LiabilityModel {
     }
 }
 
-/// The bivariate standard normal distribution function, by sixteen-point
-/// Gauss-Legendre quadrature of the conditional.
-fn bivariate_normal_cdf(a: f64, b: f64, rho: f64, normal: &Normal) -> f64 {
-    if !a.is_finite() || !b.is_finite() || !rho.is_finite() {
-        return f64::NAN;
-    }
-    if a <= -10.0 || b <= -10.0 {
-        return 0.0;
-    }
-    if a >= 10.0 {
-        return normal.cdf(b);
-    }
-    if b >= 10.0 {
-        return normal.cdf(a);
-    }
-    if rho.abs() <= 1.0e-12 {
-        return normal.cdf(a) * normal.cdf(b);
-    }
-    let rho = rho.clamp(-0.999_999, 0.999_999);
-    let (lower, upper) = (-10.0, a.min(10.0));
-    if upper <= lower {
-        return 0.0;
-    }
-    let half_width = 0.5 * (upper - lower);
-    let centre = 0.5 * (upper + lower);
-    // Factored rather than `(1 - rho^2)`, which cancels as the correlation
-    // approaches one and loses most of the significand exactly where the
-    // conditional distribution is narrowest.
-    let conditional_sd = ((1.0 - rho) * (1.0 + rho)).sqrt();
-    GAUSS_LEGENDRE_16
-        .iter()
-        .map(|(node, weight)| {
-            let x = centre + half_width * node;
-            weight * density(x) * normal.cdf((b - rho * x) / conditional_sd)
-        })
-        .sum::<f64>()
-        * half_width
-}
-
 /// The standard normal density.
 fn density(value: f64) -> f64 {
     const INV_SQRT_TWO_PI: f64 = 0.398_942_280_401_432_7;
@@ -564,7 +513,8 @@ fn mendell_elston(thresholds: &[f64], correlation: &DMatrix<f64>, normal: &Norma
 
 #[cfg(test)]
 mod tests {
-    use super::{LiabilityModel, bivariate_normal_cdf, mendell_elston};
+    use super::{LiabilityModel, mendell_elston};
+    use crate::normal_integrals::bivariate_normal_cdf;
     use nalgebra::DMatrix;
     use statrs::distribution::{ContinuousCDF, Normal};
 
@@ -578,32 +528,28 @@ mod tests {
         let normal = Normal::new(0.0, 1.0).unwrap();
         for &(a, b) in &[(0.0, 0.0), (1.0, -0.5), (-1.3, 2.0)] {
             let product = normal.cdf(a) * normal.cdf(b);
-            let got = bivariate_normal_cdf(a, b, 0.0, &normal);
+            let got = bivariate_normal_cdf(a, b, 0.0).expect("a resolvable probability");
             assert!(
                 (got - product).abs() < 1e-9,
                 "independence: {got} against {product}"
             );
         }
-        // **The quadrature is excellent where it is used and poor outside
-        // it**, and the two are worth separating. Measured over a grid of
-        // correlations: the worst error below |rho| = 0.5 is 1.3e-09, and the
-        // worst below 0.99 is 2.3e-04. An additive model puts sibling and
-        // parent-child liability correlations at h2/2, so the first is the
-        // range that occurs and the second is the guard rail.
-        for &rho in &[-0.5_f64, -0.3, 0.0, 0.25, 0.5] {
+        // **One tolerance, across the whole range.** This test used to carry
+        // two: 1e-8 below |rho| = 0.5, where an additive model puts sibling and
+        // parent-child correlations, and 1e-3 above it. The second band was
+        // written around the sixteen-point quadrature that used to sit here,
+        // whose error reached 2.3e-04 at a correlation of 0.99 -- and only at
+        // thresholds of nought and nought, being some seventy times worse away
+        // from them. A tolerance written to accommodate a fault will not report
+        // it. The integral is now accurate everywhere, so the accommodation is
+        // gone and the high correlations are held to the same bar as the low.
+        for &rho in &[
+            -0.99_f64, -0.95, -0.5, -0.3, 0.0, 0.25, 0.5, 0.9, 0.99, 0.999,
+        ] {
             let wanted = 0.25 + rho.asin() / (2.0 * std::f64::consts::PI);
-            let got = bivariate_normal_cdf(0.0, 0.0, rho, &normal);
+            let got = bivariate_normal_cdf(0.0, 0.0, rho).expect("a resolvable probability");
             assert!(
-                (got - wanted).abs() < 1e-8,
-                "at rho {rho}, inside the range that occurs: {got} against the \
-                 closed form {wanted}"
-            );
-        }
-        for &rho in &[-0.95_f64, 0.9, 0.99] {
-            let wanted = 0.25 + rho.asin() / (2.0 * std::f64::consts::PI);
-            let got = bivariate_normal_cdf(0.0, 0.0, rho, &normal);
-            assert!(
-                (got - wanted).abs() < 1e-3,
+                (got - wanted).abs() < 1e-9,
                 "at rho {rho}: {got} against the closed form {wanted}"
             );
         }
@@ -696,6 +642,31 @@ mod tests {
     /// **With no family resemblance there is none to find.** A liability model
     /// that manufactures heritability from unrelated people is worse than one
     /// that misses it.
+    /// Monozygotic twins are people, and the model must take them.
+    ///
+    /// `build` refused any off-diagonal relationship above 0.9 until 29 August
+    /// 2026, because the quadrature behind the two-person probability lost
+    /// digits as the correlation approached one. Twins carry a relationship of
+    /// one, so the model could not fit a pedigree containing any -- a
+    /// limitation recorded nowhere. The integral was replaced and the refusal
+    /// went with it.
+    #[test]
+    fn a_relationship_of_one_is_accepted() {
+        let mut relationship = DMatrix::<f64>::identity(6, 6);
+        for pair in 0..3 {
+            relationship[(2 * pair, 2 * pair + 1)] = 1.0;
+            relationship[(2 * pair + 1, 2 * pair)] = 1.0;
+        }
+        let status = vec![1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+        let design = DMatrix::from_element(6, 1, 1.0);
+        let model = LiabilityModel::build(&relationship, &status, &design)
+            .expect("three pairs of monozygotic twins are a covariance");
+        assert!(
+            model.loglik(0.5, &[0.0]).is_some(),
+            "the likelihood must evaluate on a pedigree carrying twins"
+        );
+    }
+
     #[test]
     fn no_liability_heritability_is_not_invented() {
         let (relationship, status, design) = simulate(0.0, 0.3, 5150);
@@ -810,8 +781,41 @@ mod against_the_source {
             let ours = model
                 .loglik(heritability, &[-their_beta])
                 .expect("evaluates");
+            // **Loosened from 1e-8 on 29 August 2026, when the two-person
+            // integral was replaced. The movement is worth reading rather than
+            // waving through.**
+            //
+            // | h2  | beta    | moved   |
+            // | --- | ------- | ------- |
+            // | 0   | -0.2    | 4.4e-11 |
+            // | 0   | -0.5244 | 1.8e-11 |
+            // | 0   | -0.8    | 2.3e-08 |
+            // | 0.1 | -0.2    | 9.9e-08 |
+            // | 0.1 | -0.8    | 1.1e-06 |
+            // | 0.2 | -0.8    | 1.2e-06 |
+            //
+            // **It tracks the tail, not the correlation.** At a heritability of
+            // nought there is no correlation at all and the only thing that
+            // changed is the univariate tail -- `erfc` in place of `statrs`,
+            // whose error is relative and so bites where the probability is
+            // small. Hence 1.8e-11 at a middling threshold and 2.3e-08 at
+            // -0.8. Where the heritability is positive the two-person integral
+            // runs as well and the same tail dependence appears an order up.
+            //
+            // So the retired code agreed with the successor more closely in the
+            // body of the distribution and less closely in its tail, which is
+            // where both of its approximations were weakest. That is not
+            // evidence it was right: the replacement is measured against an
+            // independent reference to under 1e-09 across the whole correlation
+            // range **and** in the tail, at thresholds down to -2.5, and the
+            // retired one never was. Two engines carrying similar
+            // approximations agree with each other more closely than either
+            // agrees with the truth.
+            //
+            // What this check establishes is unchanged: the two engines
+            // describe the same likelihood, to 2.7e-09 of it at worst.
             assert!(
-                (ours - wanted).abs() < 1e-8,
+                (ours - wanted).abs() < 2e-6,
                 "at h2 {heritability} and their beta {their_beta}: this package \
                  gives {ours}, the successor gives {wanted}"
             );

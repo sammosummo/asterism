@@ -21,6 +21,7 @@ mod latent_mediation;
 mod liability;
 mod mixed_bivariate;
 mod mixture_tail;
+mod normal_integrals;
 mod prepared;
 mod relationship;
 mod spatial;

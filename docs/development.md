@@ -142,6 +142,23 @@ cannot serve as the reference here: it refuses above 25 dimensions.
 uv run --no-project python checks/sequential_against_ghk.py
 ```
 
+The two-person probability against two independent integrations. Below three
+coordinates the region probability is a bivariate normal integral rather than
+the sequential update, and that integral has its own reference: Owen's angular
+form and the conditional form, computed here and required to agree with each
+other before either is believed. It exists because `src/normal_integrals.rs`
+carries a table of reference values, and a table nothing can recompute is not a
+check:
+
+```sh
+uv run --no-project python checks/bivariate_against_owen.py
+```
+
+On 29 August 2026: 53 points, worst absolute error 1.72e-11 in the log
+probability. The grid moves the rectangle as well as the correlation, because
+the sixteen-point quadrature this replaced was accurate at thresholds of nought
+and nought and some seventy times worse away from them.
+
 What it found, on 19 August 2026. Conditioned on the rest of the family --
 which is what the models actually evaluate -- the error at 221 dimensions is
 0.062 log units, about 0.09 of what a heritability step of 0.1 does to the same
