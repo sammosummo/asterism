@@ -20,6 +20,13 @@ tag and saved wheels.
   1.7e-11, and the refusal is gone. Replacing it moved the liability model
   against its SOLAR successor by at most 1.2e-6, or 2.7e-9 of the value, and
   most in the tail where the retired arithmetic was weakest.
+- **The deep tail keeps its probability.** Below 1e-3 the two-person region is
+  evaluated on the log scale, because the ordinary-scale integral holds an
+  absolute tolerance and so loses the logarithm as the probability shrinks. The
+  region is now accurate to 6.9e-12 in the log probability out to a log
+  probability of -88, where it previously returned the floor -- a likelihood
+  wrong by six hundred nats, finite enough to be believed, in the tail a rare
+  binary trait and a heavily censored one both occupy.
 - **Breaking, error codes.** Seven codes lost their `LATENT_MEDIATION_` prefix
   now that three models raise them: `NORMAL_VARIATE_NOT_FINITE`,
   `BIVARIATE_CORRELATION_INVALID`, `BIVARIATE_THRESHOLD_INVALID`,

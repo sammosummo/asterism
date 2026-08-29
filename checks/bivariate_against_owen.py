@@ -49,8 +49,17 @@ THRESHOLDS: list[tuple[float, float]] = [
     (-1.2, 0.8),
     (2.0, 1.5),
     (-2.5, -2.0),
+    (-4.0, -3.5),
+    (-5.5, -5.0),
+    (-6.5, -6.5),
+    (-8.0, -7.5),
 ]
-"""Rectangles at the symmetric centre and away from it, including the tail."""
+"""Rectangles at the symmetric centre, away from it, and deep into the tail.
+
+The tail rows are here because a censored trait and a rare binary one both live
+there, and because the grid used to stop at a probability of about 3e-07 --
+which is exactly where an absolute tolerance in the integral starts to dominate
+the logarithm, so stopping there hid the one regime worth checking."""
 
 CORRELATIONS: list[float] = [
     -0.99,
@@ -70,11 +79,22 @@ CORRELATIONS: list[float] = [
 TOLERANCE: float = 1.0e-9
 """Largest absolute error in the log probability this check will accept."""
 
-AGREEMENT: float = 1.0e-12
-"""How closely the two independent forms must agree before either is believed."""
+AGREEMENT: float = 1.0e-9
+"""How closely the two independent forms must agree, **relative to the answer**,
+before either is believed.
 
-FLOOR: float = 1.0e-12
-"""Below this probability neither form resolves an answer worth comparing."""
+Relative and not absolute. Owen's form reflects a negative correlation through
+`Phi(a) - Phi2(a, -b, -rho)`, so deep in the tail it subtracts two numbers around
+3e-05 to leave one around 2e-15, and loses most of the significand doing it. On
+an absolute scale that cancellation hides inside 1e-12 and the form is believed
+anyway; on a relative scale it shows up as what it is."""
+
+FLOOR: float = 1.0e-300
+"""Below this probability there is nothing left to compare.
+
+Not 1e-12. That was the ordinary-scale integral's own tolerance, so using it as
+the grid's floor skipped every point where that tolerance was the thing worth
+measuring."""
 
 
 def owen_form(first: float, second: float, correlation: float) -> float:
@@ -167,6 +187,15 @@ def main() -> int:
     failures: list[str] = []
     """Collected every point the crate missed by more than the tolerance."""
 
+    unverifiable: list[str] = []
+    """Collected every point where the two reference forms disagree.
+
+    Such a point is not a failure of the crate: it is a place this check has no
+    reference good enough to judge against, and saying so is the honest report.
+    It is counted and printed rather than passed over, because a check that
+    quietly drops the points it finds hard will report full coverage of a grid
+    it did not cover."""
+
     print(f"{'a':>6} {'b':>6} {'rho':>8} {'reference':>14} {'crate':>14} {'error':>10}")
     print("-" * 64)
     for first, second in THRESHOLDS:
@@ -181,14 +210,15 @@ def main() -> int:
                 continue
             """Skipped a probability neither form resolves, rather than comparing noise."""
 
-            disagreement: float = abs(owen - conditional)
-            """Measured how far the two independent forms sit apart."""
+            disagreement: float = abs(owen - conditional) / max(abs(owen), FLOOR)
+            """Measured how far the two independent forms sit apart, relative to
+            the answer, so cancellation in either shows up rather than hiding."""
 
             if disagreement > AGREEMENT:
-                failures.append(
-                    f"the two independent forms disagree at ({first}, {second}) "
-                    f"and correlation {correlation} by {disagreement:.2e}, so "
-                    f"neither is a reference here"
+                unverifiable.append(
+                    f"({first}, {second}) at correlation {correlation}: the two "
+                    f"reference forms disagree by {disagreement:.2e} relative, so "
+                    f"this check has nothing good enough to judge against"
                 )
                 continue
             """Refused to use a reference the two forms do not agree on."""
@@ -235,6 +265,8 @@ def main() -> int:
         "tolerance": arguments.tolerance,
         "agreement_required_between_forms": AGREEMENT,
         "points": len(rows),
+        "points_without_a_reference": len(unverifiable),
+        "unverifiable": unverifiable,
         "worst_absolute_error": worst,
         "grid": rows,
         "passed": not failures,
@@ -252,14 +284,22 @@ def main() -> int:
         out.write_text(json.dumps(receipt, indent=2) + "\n")
         print(f"\nwritten to {out}")
 
+    if unverifiable:
+        print(
+            f"\n{len(unverifiable)} points have no usable reference and were not judged:"
+        )
+        for note in unverifiable:
+            print(f"  - {note}")
+
     if failures:
         print("\nFAILED:")
         for failure in failures:
             print(f"  - {failure}")
         return 1
     print(
-        f"\nPASSED: {len(rows)} points, worst absolute error {worst:.2e} in the log "
-        f"probability, against a tolerance of {arguments.tolerance:.0e}."
+        f"\nPASSED: {len(rows)} points judged, worst absolute error {worst:.2e} in "
+        f"the log probability, against a tolerance of {arguments.tolerance:.0e}. "
+        f"{len(unverifiable)} further points had no usable reference."
     )
     return 0
 

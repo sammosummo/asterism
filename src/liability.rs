@@ -74,6 +74,13 @@ use crate::interval::{self, Interval};
 
 /// The smallest probability that is allowed to be taken a logarithm of.
 const FLOOR: f64 = 1.0e-300;
+/// Below this probability the two-person region is evaluated on the log scale.
+///
+/// The ordinary-scale integral holds an absolute tolerance, so its error in the
+/// logarithm grows as the probability shrinks -- about the tolerance divided by
+/// the probability. At 1e-3 that is 1e-9, which is the accuracy the integral is
+/// measured to, so this is where the log-scale routine takes over.
+const LOG_SCALE_BELOW: f64 = 1.0e-3;
 
 /// A fitted liability model.
 #[derive(Clone, Debug)]
@@ -273,8 +280,38 @@ impl LiabilityModel {
                 scaled[1],
                 correlation[(0, 1)],
             ) {
-                Ok(probability) => Some(probability.max(FLOOR).ln()),
-                Err("BIVARIATE_PROBABILITY_UNRESOLVED") => Some(FLOOR.ln()),
+                // **A small probability goes to the log scale too, not only an
+                // unresolvable one.** The ordinary-scale integral works to an
+                // *absolute* tolerance of 1e-12, so its error in the logarithm
+                // is about that tolerance divided by the probability: fine at
+                // 0.4, and 1.6e-05 at 1e-10. The log-scale routine is accurate
+                // relative to the answer wherever it is asked, so below this
+                // threshold it is simply the better of the two. At 1e-3 the
+                // ordinary path's implied log error is 1e-9, which is where the
+                // measured tolerance is set.
+                Ok(probability) if probability >= LOG_SCALE_BELOW => {
+                    Some(probability.max(FLOOR).ln())
+                }
+                Ok(_) | Err("BIVARIATE_PROBABILITY_UNRESOLVED") => {
+                    crate::normal_integrals::log_bivariate_rectangle(
+                        &[f64::NEG_INFINITY, f64::NEG_INFINITY],
+                        &[scaled[0], scaled[1]],
+                        correlation[(0, 1)],
+                    )
+                    .ok()
+                }
+                // **Not the floor.** The ordinary-scale integral refuses below
+                // 1e-12, and the floor is 1e-300, so substituting it turned
+                // every probability between the two into -690.78. At two
+                // thresholds of -6.5 and a correlation of 0.5 that returned
+                // -690.78 where the answer is -32.89: a likelihood the
+                // optimiser would believe, wrong by six hundred nats, in the
+                // tail that a low prevalence and a heavily censored trait both
+                // live in. The retired quadrature had no such gap, because it
+                // returned a small number rather than refusing.
+                //
+                // So the deep tail goes to the log-scale routine, which is
+                // written for it and cannot underflow.
                 Err(_) => None,
             };
         }
@@ -642,6 +679,50 @@ mod tests {
     /// **With no family resemblance there is none to find.** A liability model
     /// that manufactures heritability from unrelated people is worse than one
     /// that misses it.
+    /// The deep tail must be a probability, not the floor.
+    ///
+    /// **This is the test the first attempt needed and did not have.** The
+    /// ordinary-scale integral refuses below 1e-12, and the floor here is
+    /// 1e-300, so mapping that refusal to the floor turned every probability
+    /// between the two into -690.78. At two thresholds of -6.5 and a
+    /// correlation of 0.5 that is a likelihood wrong by six hundred nats and
+    /// finite enough for the optimiser to believe -- in the tail where a rare
+    /// binary trait and a heavily censored one both live. A prevalence of 1e-4
+    /// puts a threshold at -3.7.
+    ///
+    /// The references are the conditional form integrated to about 1e-13, which
+    /// does not underflow where the ordinary scale does.
+    #[test]
+    fn the_deep_tail_is_a_probability_and_not_the_floor() {
+        let reference: [(f64, f64, f64, f64); 4] = [
+            (-6.5, -6.5, 0.5, -32.886_826_836_5),
+            (-8.0, -7.5, 0.7, -40.155_105_300_5),
+            (-10.0, -9.0, 0.3, -75.573_637_132_1),
+            (-12.0, -11.0, 0.6, -88.854_000_363_4),
+        ];
+        let normal = Normal::new(0.0, 1.0).unwrap();
+        for (first, second, correlation, wanted) in reference {
+            let covariance = DMatrix::from_row_slice(2, 2, &[1.0, correlation, correlation, 1.0]);
+            let got = LiabilityModel::region_log_probability(
+                &[first, second],
+                &[1.0, 1.0],
+                &covariance,
+                &normal,
+            )
+            .expect("the deep tail has a probability, small though it is");
+            assert!(
+                (got - wanted).abs() < 1e-6,
+                "at ({first}, {second}) and correlation {correlation}: {got} \
+                 against {wanted}"
+            );
+            assert!(
+                got > -600.0,
+                "at ({first}, {second}) the region came back at {got}, which is \
+                 the floor standing in for an answer"
+            );
+        }
+    }
+
     /// Monozygotic twins are people, and the model must take them.
     ///
     /// `build` refused any off-diagonal relationship above 0.9 until 29 August

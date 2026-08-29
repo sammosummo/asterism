@@ -27,6 +27,8 @@
 
 const LOG_TWO_PI: f64 = 1.837_877_066_409_345_3;
 
+const CLIMB_STEPS: usize = 200;
+
 // Below this absolute scale, the corner-difference recipe cannot distinguish
 // a probability from numerical zero and the log-scale conditional quadrature
 // takes over.
@@ -356,9 +358,211 @@ where
     )
 }
 
+/// Log of a standardised bivariate normal rectangle by conditional
+/// quadrature: the outer coordinate is integrated with the inner interval
+/// probability evaluated on the log scale, so no cancellation occurs and
+/// tails far beyond the corner-difference recipe stay accurate.
+pub(crate) fn log_bivariate_rectangle(
+    lower: &[f64; 2],
+    upper: &[f64; 2],
+    correlation: f64,
+) -> Result<f64, &'static str> {
+    // Integrate over the more extreme coordinate, which concentrates the
+    // integrand and keeps the inner interval ordinary.
+    //
+    // **Extremity is how far into a tail the interval sits, not how near an
+    // edge is to the origin.** Scoring it as the smaller absolute endpoint
+    // called `(-inf, 40]` more extreme than `(7, inf)`, when the first holds
+    // essentially all the mass and the second holds 1e-12 of it, so the outer
+    // and inner coordinates were chosen the wrong way round for every rectangle
+    // with a half-line in it. An interval containing the mode is not extreme at
+    // all, whatever its edges; one lying wholly in a tail is as extreme as its
+    // nearest edge is far out.
+    let extremity = |low: f64, high: f64| {
+        if low > 0.0 {
+            low
+        } else if high < 0.0 {
+            -high
+        } else {
+            0.0
+        }
+    };
+    let swap = extremity(lower[1], upper[1]) > extremity(lower[0], upper[0]);
+    let (outer, inner) = if swap {
+        (([lower[1], upper[1]]), ([lower[0], upper[0]]))
+    } else {
+        (([lower[0], upper[0]]), ([lower[1], upper[1]]))
+    };
+    // Factored rather than `(1 - rho^2)`: the squared form cancels as the
+    // correlation approaches one, and the conditional distribution is
+    // narrowest there, so the divisor most needs its digits.
+    let conditional_sd = ((1.0 - correlation) * (1.0 + correlation)).sqrt();
+    if !(conditional_sd > 0.0) {
+        return Err("BIVARIATE_CORRELATION_INVALID");
+    }
+    let log_integrand = |x: f64| -> Result<f64, &'static str> {
+        let shifted_lower = (inner[0] - correlation * x) / conditional_sd;
+        let shifted_upper = (inner[1] - correlation * x) / conditional_sd;
+        Ok(-0.5 * x * x - 0.5 * LOG_TWO_PI
+            + log_interval_probability(shifted_lower, shifted_upper)?)
+    };
+    // The integrand is log-concave, so it has a single peak and a
+    // golden-section search finds it -- but only once the search is given a
+    // bracket that contains it.
+    //
+    // **Where the peak sits is a property of the whole rectangle, not of the
+    // outer interval alone.** With correlation `rho` and an inner interval
+    // beginning at `c`, the exponent `-x^2/2 + log P(inner | x)` is stationary
+    // where `x = rho * m` for `m` the conditional mean of the inner interval,
+    // which puts the peak near `rho * c` -- far from the origin and far from
+    // the outer edges whenever the inner interval is distant. A window fixed
+    // relative to the rectangle cannot find that, and it also loses the
+    // ordinary case: anchored sixty either side of the rectangle's own edge,
+    // a left half-line `(-inf, t]` was searched over `[t - 60, t]`, so once `t`
+    // passed sixty the range began above the mode and threw nearly all the mass
+    // away. The probability of a strictly growing region then strictly shrank,
+    // by 1805 nats between `t = 40` and `t = 120`, and past `t = 300` the
+    // quadrature failed outright.
+    //
+    // So rather than guess a window, climb: start from the point of the outer
+    // interval nearest the origin, step out doubling the stride while the
+    // integrand rises, and stop when it falls or the interval ends. Log
+    // concavity makes that one climb enough, and it brackets the peak wherever
+    // the peak happens to be.
+    let lower_edge = outer[0];
+    let upper_edge = outer[1];
+    if !(lower_edge < upper_edge) {
+        return Ok(f64::NEG_INFINITY);
+    }
+    let anchor = 0.0_f64.clamp(lower_edge, upper_edge);
+    let towards = |direction: f64, from: f64, step: f64| -> f64 {
+        let proposed = from + direction * step;
+        if direction > 0.0 {
+            proposed.min(upper_edge)
+        } else {
+            proposed.max(lower_edge)
+        }
+    };
+    let mut low = anchor;
+    let mut high = anchor;
+    let at_anchor = log_integrand(anchor)?;
+    for direction in [1.0_f64, -1.0] {
+        let mut previous = at_anchor;
+        let mut step = 1.0;
+        let mut reached = anchor;
+        for _ in 0..CLIMB_STEPS {
+            let candidate = towards(direction, anchor, step);
+            if candidate == reached {
+                break;
+            }
+            let value = log_integrand(candidate)?;
+            reached = candidate;
+            if value <= previous {
+                break;
+            }
+            previous = value;
+            step *= 2.0;
+        }
+        if direction > 0.0 {
+            high = reached;
+        } else {
+            low = reached;
+        }
+    }
+    let golden = 0.5 * (5.0_f64.sqrt() - 1.0);
+    for _ in 0..120 {
+        // Stop once the bracket is at the resolution of the numbers in it.
+        // Running the full count regardless spent most of its evaluations
+        // splitting an interval that had already collapsed.
+        if high - low <= 1.0e-13 * (1.0 + high.abs().max(low.abs())) {
+            break;
+        }
+        let first = high - golden * (high - low);
+        let second = low + golden * (high - low);
+        if log_integrand(first)? < log_integrand(second)? {
+            low = first;
+        } else {
+            high = second;
+        }
+    }
+    let peak = 0.5 * (low + high);
+    let log_peak = log_integrand(peak)?;
+    if log_peak == f64::NEG_INFINITY {
+        return Ok(f64::NEG_INFINITY);
+    }
+    // Integrate out to where the integrand has fallen eighty logs below its
+    // peak; the part beyond contributes a relative 1e-35 and is immaterial at
+    // any tolerance used here. The same doubling climb finds that point, so the
+    // integration range is set by the integrand rather than by a constant, and
+    // a bisection then places it precisely.
+    let drop = 80.0;
+    let spent = |direction: f64| -> Result<f64, &'static str> {
+        let mut inside = peak;
+        let mut step = 1.0;
+        let mut outside = None;
+        for _ in 0..CLIMB_STEPS {
+            let candidate = towards(direction, peak, step);
+            if log_integrand(candidate)? < log_peak - drop {
+                outside = Some(candidate);
+                break;
+            }
+            if candidate == inside {
+                break;
+            }
+            inside = candidate;
+            step *= 2.0;
+        }
+        let Some(mut outside) = outside else {
+            return Ok(inside);
+        };
+        for _ in 0..80 {
+            let middle = 0.5 * (inside + outside);
+            if log_integrand(middle)? >= log_peak - drop {
+                inside = middle;
+            } else {
+                outside = middle;
+            }
+        }
+        Ok(outside)
+    };
+    let left_edge = spent(-1.0)?;
+    let right_edge = spent(1.0)?;
+    let shifted = |x: f64| match log_integrand(x) {
+        Ok(value) => (value - log_peak).exp(),
+        Err(_) => f64::NAN,
+    };
+    let width = right_edge - left_edge;
+    if !(width > 0.0) {
+        return Ok(f64::NEG_INFINITY);
+    }
+    // **How much rounding the integrand carries depends on how large its
+    // exponent is.** `shifted` is `exp(g(x) - g(peak))`, and `g` is computed to
+    // a relative accuracy of an epsilon, so its absolute error is an epsilon of
+    // its own size and the exponential inherits that as relative noise. At a
+    // correlation of -0.999999 the exponent runs to a million and the noise is
+    // 2e-10 rather than 2e-16. The request stays where it is -- an ordinary
+    // rectangle should still be answered to 1e-13 -- and the noise is passed
+    // in separately, so the quadrature stops at its own rounding rather than
+    // subdividing to its depth limit and refusing an answer that is perfectly
+    // well defined.
+    let noise = f64::EPSILON * log_peak.abs().max(1.0);
+    let quadrature = adaptive_simpson(
+        &shifted,
+        left_edge,
+        right_edge,
+        1.0e-13 * width.max(1.0e-6),
+        noise,
+        32,
+    )?;
+    if !(quadrature.value > 0.0) {
+        return Ok(f64::NEG_INFINITY);
+    }
+    Ok(log_peak + quadrature.value.ln())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::bivariate_normal_cdf;
+    use super::{adaptive_simpson, bivariate_normal_cdf};
 
     /// (a, b, correlation, the probability), 53 points.
     ///
@@ -461,8 +665,11 @@ mod tests {
         }
         assert!(
             worst < 1.0e-9,
-            "worst absolute error {worst:.3e} at thresholds {:?} and correlation {}, \
-             against a reference good to 1e-12",
+            "worst absolute error {worst:.3e} **on the probability scale** at \
+             thresholds {:?} and correlation {}, against a reference good to 1e-12. \
+             The log-probability scale is checked by checks/bivariate_against_owen.py, \
+             and the two are not the same bound: a probability of 1e-10 known to \
+             1e-12 absolutely is known to only 1e-02 in its logarithm.",
             (worst_at.0, worst_at.1),
             worst_at.2
         );
@@ -507,5 +714,12 @@ mod tests {
                  where the limiting value is {limit}"
             );
         }
+    }
+
+    #[test]
+    fn adaptive_simpson_refuses_depth_exhaustion() {
+        let error = adaptive_simpson(&|value| value.powi(4), 0.0, 1.0, 1.0e-16, 0.0, 0)
+            .expect_err("an exhausted error budget must not be returned as success");
+        assert_eq!(error, "BIVARIATE_QUADRATURE_DID_NOT_CONVERGE");
     }
 }

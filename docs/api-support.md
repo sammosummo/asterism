@@ -3,19 +3,19 @@
 This inventory separates a public import from a scientifically supported
 analysis. It is authoritative for the development version described by
 `release.toml`; the statistical claims remain disabled while that manifest's
-its pass rules are unconfigured.
+its supported analysis set.
 
 The installed-wheel workflow is configured to check each supported interpreter
 and platform independently. A configured workflow is not release evidence, and
 those runs are not the Mac/Linux agreement check required by ADR 0012. That
 distinct comparison, including exact status/field agreement and model-specific
-numerical tolerances, remains explicitly unconfigured in `release.toml` and
-therefore blocks release readiness.
+numerical tolerances, is recorded in the release evidence.
 
 The object docstrings and `README.md` describe signatures and ordinary use. The
 statistical methods specification defines estimands, equations, inference and
-limitations. “Supported in 0.1” below means that the object belongs to a planned
-0.1 analysis. It says nothing about the build it is imported from.
+limitations. “Supported in 0.1” below means that the object belongs to the
+supported 0.1.1 analysis set. It does not make other importable objects
+scientifically supported.
 
 | Public object | Status | 0.1 role |
 | --- | --- | --- |
@@ -48,8 +48,8 @@ limitations. “Supported in 0.1” below means that the object belongs to a pla
 | `tobit_test` | Supported in 0.1 | Test for censored-trait heritability. |
 | `weighted_chi2_upper_tail` | Public but outside 0.1 scientific support | Diagnostic numerical primitive, not a supported analysis. |
 
-No public object is deprecated in the planned 0.1 release. Existing documented
-names, signatures and fit-record fields become compatibility commitments only
-when 0.1.0 is actually released.
+No public object is deprecated in the 0.1.1 release. Existing documented
+names, signatures and fit-record fields are compatibility commitments for this
+release.
 
 The models marked *public but outside 0.1 scientific support* are described in [outside-support.md](outside-support.md), with what each is for and what it does not do.

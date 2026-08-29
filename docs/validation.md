@@ -210,9 +210,20 @@ its heritabilities at easier values, so the record is
 | --- | --- | --- | --- | --- |
 | SOLAR | ML | three synthetic cases | 0.0134 in liability heritability, or 0.086 SOLAR standard errors | Reproducible |
 
-The two-person probability is measured against an independent reference at 53
-points, spanning correlations from -0.99 to 0.9999 and thresholds away from the
-symmetric centre: worst absolute error under 1e-9.
+The two-person probability is measured against two independent integrations --
+Owen's angular form and the conditional form, required to agree with each other
+relative to the answer before either is used -- at 82 points, spanning
+correlations from -0.99 to 0.9999 and thresholds from the symmetric centre out
+to a log probability of -88. **Worst absolute error 6.9e-12 in the log
+probability**, which is the scale that enters a likelihood. Four further points
+are reported as having no usable reference, because both forms lose accuracy
+there, rather than being passed over.
+
+Below a probability of 1e-3 the region is evaluated on the log scale instead.
+The ordinary-scale integral holds an *absolute* tolerance, so its error in the
+logarithm is about that tolerance divided by the probability, and at 1e-10 that
+is 1.6e-05. The log-scale routine is accurate relative to the answer wherever it
+is asked.
 
 It was not always. Until 29 August 2026 a sixteen-point quadrature stood here,
 whose error was 1.3e-9 for a correlation below 0.5 but 2.3e-4 at 0.99 -- and
