@@ -180,12 +180,13 @@ seventeen** -- the same. At matched dimensions the two designs behave almost
 identically: at 50 coordinates 0.050 against 0.040 of a heritability step, and
 at 100 coordinates **0.114 against 0.114**.
 
-What the kernel actually changes is not the difficulty per coordinate but the
-**number of coordinates**. Blocks made of families do not reach 200 censored
-records; a block made of the whole roster does. The audiogram ladder stopped at
-221 and found nothing wrong. This one was carried to 600 and found the wall
-between 200 and 400 -- a wall the earlier design would have hit too, had anyone
-climbed that far.
+What the kernel changes is not the difficulty per coordinate but how many
+coordinates can end up in one block. Blocks made of families do not reach 200
+censored records; a block made of a whole densely connected roster does. The
+audiogram ladder stopped at 221 and found nothing wrong. This one was carried to
+600 and found the wall between 200 and 400 -- a wall the earlier design would
+have hit too, had anyone climbed that far. The wall belongs to the block size,
+not to either design.
 
 So the same ladder is climbed again under that design, with the rungs carried
 past 221 to 600 because the block is now the roster:
@@ -233,13 +234,28 @@ A kernel that is dense in support but inert in effect will qualify a dimension i
 has not tested, so `--decay` should be set to the strongest coupling the analysis
 intends to fit, not the weakest.
 
-**What that means for a shared-environment kernel.** A distance kernel is non-zero
-for every pair, so it makes the likelihood's block the whole roster rather than
-one family. A roster carrying more than 200 censored records at the frequency
-being fitted is therefore outside this evidence. Staying inside it means
-truncating the kernel beyond a distance where `exp(-lambda d)` is negligible,
-which restores the block structure, and then showing that the truncation does not
-move the answer. It does not mean switching the integral, per ADR 0010.
+**What that means for a shared-environment kernel, stated carefully.** The bound
+is on **block size**: 200 censored records in one block. It is not a statement
+that a distance kernel puts a model over that bound.
+
+A distance kernel is non-zero for every pair arithmetically, so a block rule that
+tests entries against exact nought would put the whole roster in one block. That
+would be a poor rule rather than a consequence of the kernel. At 0.05 per
+kilometre the kernel is 0.0067 at 100 km and 0.000045 at 200 km, so for a cohort
+spread over a region most pairs carry no shared environment worth representing.
+Truncating where the kernel is numerically nothing costs nothing, leaves blocks
+the size of neighbourhoods, and keeps them far below 200.
+
+**The run above does not measure that case.** It places 480 people in a 30 km
+square, where the largest possible separation is about 42 km and the kernel is
+still 0.12, so every pair is materially correlated by construction. That is a
+deliberate worst case, and it is what makes the bound a bound: it says where the
+approximation breaks if a block really is built that large and that connected. It
+is not a prediction that any particular analysis will build one.
+
+So the question a caller has to answer is how large its blocks actually get, and
+that turns on the truncation and on how households cluster -- not on whether the
+kernel is a distance kernel.
 
 **The conditioning still earns most of it, as it did for the audiogram design.**
 Conditioning leaves a mean absolute correlation of 0.008 between the censored
