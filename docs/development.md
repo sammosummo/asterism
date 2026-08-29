@@ -162,6 +162,79 @@ censoring, smaller families, or a person whose audiogram is mostly unmeasurable
 all reduce how much is conditioned on and move back towards the regime where it
 is not safe. Run it again when the design changes.
 
+**The design did change.** The several-component censored model fits one
+frequency at a time, not seventeen, and carries a shared-environment kernel
+beside the genetic and person-level terms. That is "fewer frequencies" exactly:
+a censored threshold is conditioned on the other ear and on whoever in the
+family was measurable at that one frequency, rather than on a nearly complete
+audiogram. And a distance kernel is non-zero for every pair, which is why it is
+preferred to a categorical shared-environment indicator, so the likelihood's
+block stops being one family and becomes the whole roster.
+
+So the same ladder is climbed again under that design, with the rungs carried
+past 221 to 600 because the block is now the roster:
+
+```sh
+uv run --no-project python checks/sequential_against_ghk.py --design components
+```
+
+The reference, the yardstick and the conditional-versus-marginal contrast are
+the same ones described above; only the covariance being climbed is different.
+It is one script and one GHK implementation deliberately: a second ladder would
+be a second answer to the same question.
+
+What it found, on 29 August 2026. The run behind the numbers below is:
+
+```sh
+uv run --no-project python checks/sequential_against_ghk.py \
+  --design components --families 6 --replicates 8 --draws 400000
+```
+
+Six families, 480 people, 960 rows at 18 kHz, two thirds of ears censored, and a
+shared-environment kernel held at 0.05 per kilometre. **The conditional regime is
+qualified to 200 censored dimensions. 400 and 600 are out of reach.**
+
+| censored dimension | 5 | 20 | 50 | 100 | 200 | 400 | 600 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| error as a share of a heritability step | 0.000 | 0.002 | 0.050 | 0.114 | **0.225** | 0.566 | 0.530 |
+
+The reference resolves all of it: the error is 23 times the GHK standard error at
+200 and 9 times it at 600, so none of these rungs is a statement about
+simulation noise.
+
+**200 passes, but only just** -- 0.225 against an allowance of 0.25. It should be
+read as the edge of the qualified range and not as comfortable ground. The 600
+rung is weaker again for a separate reason: only three of eight replicates could
+supply 600 censored coordinates, so it rests on the heavily censored replicates
+rather than a fair sample of them. It fails either way.
+
+**The kernel's decay decides the answer, which is why it is a flag and not a
+constant.** An earlier run held it at 0.25 per kilometre. At that decay the median
+pair's kernel entry is 0.02: the kernel is non-zero everywhere and correlates
+almost nothing, the ladder is stressed by dimension alone, and 400 passes at 0.19.
+At 0.05 per kilometre the median entry is 0.47 and the same rung fails at 0.57.
+A kernel that is dense in support but inert in effect will qualify a dimension it
+has not tested, so `--decay` should be set to the strongest coupling the analysis
+intends to fit, not the weakest.
+
+**What that means for a shared-environment kernel.** A distance kernel is non-zero
+for every pair, so it makes the likelihood's block the whole roster rather than
+one family. A roster carrying more than 200 censored records at the frequency
+being fitted is therefore outside this evidence. Staying inside it means
+truncating the kernel beyond a distance where `exp(-lambda d)` is negligible,
+which restores the block structure, and then showing that the truncation does not
+move the answer. It does not mean switching the integral, per ADR 0010.
+
+**The conditioning still earns most of it, as it did for the audiogram design,**
+and the real kernel makes that starker. Conditioning leaves a mean absolute
+correlation of 0.008 between the censored residuals. The marginal rungs, where
+nothing is conditioned away and the correlation is 0.10, are worse at every
+dimension and reach eleven times a heritability step at 400.
+
+The run takes a few hours. Reduce `--replicates` and `--draws` for an exploratory
+pass, but quote the command with any number taken from it, because the recorded
+evidence did not use the defaults.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

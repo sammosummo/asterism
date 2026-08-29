@@ -84,8 +84,10 @@ Run with::
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -274,6 +276,257 @@ ERROR_SHARE_ALLOWED: float = 0.25
 # reporting it as a pass would be worse.
 STEP_FLOOR: float = 0.05
 """Set the minimum log-probability yardstick required for a decisive verdict."""
+
+# ---------------------------------------------------------------------------
+# The several-component single-trait design.
+#
+# The audiogram design above puts seventeen frequencies on each ear, so a
+# censored threshold is conditioned on a nearly complete audiogram and the
+# routine is handed an easy problem. This design is the one the several-
+# component censored model actually fits: **one frequency at a time**, two ears
+# per person, and a shared-environment kernel beside the genetic term.
+#
+# That is the change this file's own closing paragraph asks to be run again
+# for. Fewer frequencies means less conditioned away, and a distance kernel is
+# non-zero for every pair, so the likelihood's blocks stop being the pedigree's
+# and become the whole roster.
+# ---------------------------------------------------------------------------
+
+COMPONENT_FREQUENCY_INDEX: int = 16
+"""Selected 18 kHz, the most heavily censored frequency, for the single-trait design."""
+
+COMPONENT_SHARES: dict[str, float] = {
+    "genetic": 0.35,
+    "person": 0.25,
+    "household": 0.20,
+    "ear": 0.20,
+}
+"""Set the four variance shares of the several-component design."""
+
+HOUSEHOLD_DECAY_PER_KM: float = 0.05
+"""Held the shared-environment kernel's decay, which this model never estimates.
+At this decay and span the median pair's kernel entry is about 0.47, so the
+kernel genuinely correlates the roster. An earlier 0.25 left it at 0.02, which
+is dense in support but inert in effect: the ladder was then stressed by
+dimension alone and not by the shared environment at all."""
+
+HOUSEHOLD_SPAN_KM: float = 30.0
+"""Set the square within which simulated households are placed."""
+
+COMPONENT_FAMILIES: int = 6
+"""Independent families simulated, so the genetic term is block diagonal and only
+the shared-environment kernel joins them."""
+
+COMPONENT_DIMENSIONS: list[int] = [5, 20, 50, 100, 200, 400, 600]
+"""Extended the ladder past the audiogram design's 221, because a dense kernel
+makes the block the whole roster rather than one family."""
+
+
+def many_families(
+    generations: tuple[int, int, int], families: int
+) -> tuple[list[str], list[str], list[str]]:
+    """Several independent copies of the comparison pedigree.
+
+    Args:
+        generations: The three-generation family shape.
+        families: How many unrelated families to build.
+
+    Returns:
+        Identifiers, fathers and mothers across every family.
+    """
+    ids: list[str] = []
+    """Initialised identifiers across all families."""
+
+    fathers: list[str] = []
+    """Initialised father identifiers aligned with the roster."""
+
+    mothers: list[str] = []
+    """Initialised mother identifiers aligned with the roster."""
+
+    for family in range(families):
+        one, its_fathers, its_mothers = pedigree(generations)
+        """Built one family, which is then relabelled so families cannot collide."""
+
+        ids.extend(f"{family}_{name}" for name in one)
+        fathers.extend(f"{family}_{name}" if name else "" for name in its_fathers)
+        mothers.extend(f"{family}_{name}" if name else "" for name in its_mothers)
+    return ids, fathers, mothers
+
+
+def household_kernel(
+    people: int, rng: np.random.Generator, decay: float = HOUSEHOLD_DECAY_PER_KM
+) -> np.ndarray:
+    """A fixed-decay shared-environment kernel over simulated households.
+
+    The decay is held rather than estimated, which is what lets the kernel be
+    passed as an ordinary component: comparing several held decays is the
+    sensitivity analysis, and no range parameter is ever searched for.
+
+    Args:
+        people: Number of people in the roster.
+        rng: Source of the simulated household coordinates.
+        decay: The held decay in reciprocal kilometres.
+
+    Returns:
+        The kernel, people by people, with a unit diagonal.
+    """
+    coordinates: np.ndarray = rng.uniform(0.0, HOUSEHOLD_SPAN_KM, size=(people, 2))
+    """Placed each person's household in the simulated square."""
+
+    separation: np.ndarray = np.linalg.norm(
+        coordinates[:, None, :] - coordinates[None, :, :], axis=2
+    )
+    """Measured the distance in kilometres between every pair of households."""
+    return np.exp(-decay * separation)
+
+
+def component_covariance(
+    relationship: np.ndarray, household: np.ndarray, heritability: float
+) -> np.ndarray:
+    """The record-level covariance of the several-component single-trait design.
+
+    Rows run person then ear. Everything that belongs to the person is shared
+    by both ears, which is what the two-by-two matrix of ones says; only the
+    ear-specific term and the test-retest noise separate them.
+
+    Args:
+        relationship: The additive relationship matrix over people.
+        household: The fixed-decay shared-environment kernel over people.
+        heritability: The genetic share, the remainder of the step going to the
+            person-level term so the total variance is unchanged.
+
+    Returns:
+        The covariance over all records.
+    """
+    people: int = relationship.shape[0]
+    """Counted people in the roster."""
+
+    ones: np.ndarray = np.ones((2, 2))
+    """Constructed the both-ears sharing matrix for person-level components."""
+
+    eye2: np.ndarray = np.eye(2)
+    """Constructed the ear-specific identity."""
+
+    identity: np.ndarray = np.eye(people)
+    """Constructed the person identity for non-genetic person-level components."""
+
+    moved: float = COMPONENT_SHARES["genetic"] - heritability
+    """Calculated variance transferred between the genetic and person terms."""
+
+    person_share: float = COMPONENT_SHARES["person"] + moved
+    """Transferred displaced genetic variance to the person component."""
+
+    scale: float = SPREAD[COMPONENT_FREQUENCY_INDEX] ** 2
+    """Took the complete-data variance at the modelled frequency."""
+
+    built: np.ndarray = scale * (
+        heritability * np.kron(relationship, ones)
+        + person_share * np.kron(identity, ones)
+        + COMPONENT_SHARES["household"] * np.kron(household, ones)
+        + COMPONENT_SHARES["ear"] * np.kron(identity, eye2)
+    )
+    """Assembled the four components at their shares."""
+
+    return built + NUGGET_DB**2 * np.eye(people * 2)
+    """Added independent test-retest noise, as the audiogram design does."""
+
+
+def one_component_replicate(
+    relationship: np.ndarray,
+    rng: np.random.Generator,
+    dimensions: list[int],
+    draws: int,
+    decay: float,
+) -> tuple[dict[str, dict[int, dict[str, float]]], float]:
+    """Simulate one roster under the several-component design and climb the ladder.
+
+    The shared-environment kernel is drawn here rather than passed in, so each
+    replicate gets its own household geography. Holding one geography across
+    every replicate would make the kernel a fixed feature of the check instead
+    of something it averages over.
+
+    Args:
+        relationship: The additive relationship matrix over the roster.
+        rng: Source of the households, ages, limits and simulated values.
+        dimensions: The censored dimensions forming the rungs.
+        draws: Total GHK draws behind each reference probability.
+        decay: The held kernel decay in reciprocal kilometres.
+
+    Returns:
+        The assessed rungs by regime and dimension, and the censored share.
+    """
+    people: int = relationship.shape[0]
+    """Counted people in the simulated roster."""
+
+    rows: int = people * 2
+    """Calculated the person-by-ear response dimension: one frequency only."""
+
+    household: np.ndarray = household_kernel(people, rng, decay)
+    """Drew this replicate's household geography and its kernel."""
+
+    covariance: np.ndarray = component_covariance(
+        relationship, household, COMPONENT_SHARES["genetic"]
+    )
+    """Constructed the baseline covariance at the generating heritability."""
+
+    age: np.ndarray = rng.uniform(20.0, 85.0, size=people)
+    """Drew one adult age for every simulated person."""
+
+    base: np.ndarray = (
+        MEAN_AT_FIFTY[COMPONENT_FREQUENCY_INDEX]
+        + (age - 50.0) * AGE_SLOPE[COMPONENT_FREQUENCY_INDEX]
+    )
+    """Calculated each person's age-specific mean threshold at this frequency."""
+
+    mean: np.ndarray = np.repeat(base, 2)
+    """Repeated person means across ears in covariance row order."""
+
+    limit: np.ndarray = np.full(rows, LIMIT[COMPONENT_FREQUENCY_INDEX])
+    """Set the audiometer limit, one per ear at this frequency."""
+
+    alternate: np.ndarray = rng.random(rows) < 0.4
+    """Selected ears tested on the instrument with the lower maximum."""
+
+    limit[alternate] -= ALTERNATE_LIMIT_DROP
+    """Applied the lower limit to those ears, as the audiogram design does."""
+
+    factor: np.ndarray = lower_cholesky(covariance + 1e-8 * np.eye(rows))
+    """Factorised the roster covariance with a numerical diagonal guard."""
+
+    value: np.ndarray = mean + factor @ rng.standard_normal(rows)
+    """Simulated one complete latent set of thresholds."""
+
+    censored: np.ndarray = value >= limit
+    """Identified latent thresholds beyond their observation-specific limits."""
+
+    region_mean, conditional = conditional_region(
+        covariance, mean, value, censored, limit
+    )
+    """Constructed the censored region conditional on the measured thresholds."""
+
+    stepped: np.ndarray = component_covariance(
+        relationship, household, COMPONENT_SHARES["genetic"] - HERITABILITY_STEP
+    )
+    """Constructed the covariance after lowering heritability by one step."""
+
+    stepped_mean, stepped_conditional = conditional_region(
+        stepped, mean, value, censored, limit
+    )
+    """Constructed the matching conditional region under stepped heritability."""
+
+    realisation: Realisation = Realisation(
+        mean=mean,
+        limit=limit,
+        covariance=covariance,
+        stepped=stepped,
+        region_mean=region_mean,
+        conditional=conditional,
+        stepped_region_mean=stepped_mean,
+        stepped_conditional=stepped_conditional,
+        censored_share=float(censored.mean()),
+    )
+    """Gathered the simulated roster into the form the ladder climbs."""
+    return climb_ladder(realisation, dimensions, draws, rng), realisation.censored_share
 
 
 def lower_cholesky(matrix: np.ndarray) -> np.ndarray:
@@ -584,8 +837,22 @@ def assess(
     stepped_centre: np.ndarray,
     stepped_block: np.ndarray,
     rng: np.random.Generator,
+    draws: int = DRAWS,
 ) -> dict[str, float]:
-    """Compare the sequential answer with GHK on one region."""
+    """Compare the sequential answer with GHK on one region.
+
+    Args:
+        centre: The region centre, each coordinate relative to its own limit.
+        block: The region's covariance.
+        stepped_centre: The same centre under the stepped heritability.
+        stepped_block: The same covariance under the stepped heritability.
+        rng: Source of the GHK draws.
+        draws: Total GHK draws behind each reference probability.
+
+    Returns:
+        The error, its size against the reference's own noise and against the
+        heritability step, the ordering gap and the mean absolute correlation.
+    """
     dimension: int = centre.shape[0]
     """Counted censored coordinates in the assessed Gaussian region."""
 
@@ -609,11 +876,11 @@ def assess(
     )
     """Re-evaluated the identical region after the alternative coordinate order."""
 
-    reference, error = ghk_log_probability(centre, block, DRAWS, rng)
+    reference, error = ghk_log_probability(centre, block, draws, rng)
     """Estimated the region independently with GHK and retained its error bar."""
 
     stepped_reference, _ = ghk_log_probability(
-        stepped_centre, stepped_block, DRAWS, rng
+        stepped_centre, stepped_block, draws, rng
     )
     """Estimated the same region after the defined heritability change."""
 
@@ -643,9 +910,123 @@ def assess(
     }
 
 
+@dataclass(frozen=True)
+class Realisation:
+    """One simulated data set, ready for the ladder to be climbed on it.
+
+    Both designs produce one of these and then hand it to the same loop. The
+    two designs differ in how the covariance is built and nothing else, so the
+    climbing is written once: a second copy of it would be a second way for the
+    two ladders to disagree.
+    """
+
+    mean: np.ndarray
+    """The complete-data mean of every record."""
+
+    limit: np.ndarray
+    """Each record's own instrument limit."""
+
+    covariance: np.ndarray
+    """The record-level covariance at the generating heritability."""
+
+    stepped: np.ndarray
+    """The same covariance one heritability step lower."""
+
+    region_mean: np.ndarray
+    """The censored records' conditional mean, centred on their own limits."""
+
+    conditional: np.ndarray
+    """The censored records' conditional covariance."""
+
+    stepped_region_mean: np.ndarray
+    """The same conditional mean under the stepped covariance."""
+
+    stepped_conditional: np.ndarray
+    """The same conditional covariance under the step."""
+
+    censored_share: float
+    """The share of records that reached their limit."""
+
+
+def climb_ladder(
+    realisation: Realisation,
+    dimensions: list[int],
+    draws: int,
+    rng: np.random.Generator,
+) -> dict[str, dict[int, dict[str, float]]]:
+    """Assess one realisation at every rung, conditionally and marginally.
+
+    Args:
+        realisation: The simulated data set to climb.
+        dimensions: The censored dimensions forming the rungs.
+        draws: Total GHK draws behind each reference probability.
+        rng: Source of the coordinate selections and the GHK draws.
+
+    Returns:
+        The assessed rungs, by regime and censored dimension. A rung larger
+        than the realisation's censored count is absent rather than reported,
+        so the aggregation can see that it was never reached.
+    """
+    available: int = realisation.region_mean.shape[0]
+    """Counted censored coordinates available to populate the ladder."""
+
+    results: dict[str, dict[int, dict[str, float]]] = {
+        "conditional": {},
+        "marginal": {},
+    }
+    """Initialised assessed rungs for the modelled and adversarial regimes."""
+
+    for dimension in dimensions:
+        if dimension > available:
+            continue
+        chosen: np.ndarray = rng.choice(available, size=dimension, replace=False)
+        """Selected censored coordinates without replacement for the conditional rung."""
+
+        chosen.sort()
+        results["conditional"][dimension] = assess(
+            realisation.region_mean[chosen],
+            realisation.conditional[np.ix_(chosen, chosen)],
+            realisation.stepped_region_mean[chosen],
+            realisation.stepped_conditional[np.ix_(chosen, chosen)],
+            rng,
+            draws,
+        )
+        """Recorded conditional sequential-versus-GHK evidence at this dimension."""
+
+        # The adversarial rung: a contiguous block of rows with nothing
+        # conditioned away. Rows are ordered so that neighbouring rows belong
+        # to the same ear or the same person, which is where the correlations
+        # are highest. Scattering the coordinates across the roster instead
+        # would put almost every pair on different people, where the
+        # correlation is small and the approximation has nothing to struggle
+        # with.
+        first: int = int(rng.integers(0, realisation.mean.shape[0] - dimension))
+        """Selected the start of one contiguous high-correlation marginal block."""
+
+        stress: np.ndarray = np.arange(first, first + dimension)
+        """Constructed the contiguous coordinate block for the adversarial rung."""
+
+        centre: np.ndarray = realisation.mean[stress] - realisation.limit[stress]
+        """Centred the marginal block on its own limits."""
+
+        results["marginal"][dimension] = assess(
+            centre,
+            realisation.covariance[np.ix_(stress, stress)],
+            centre,
+            realisation.stepped[np.ix_(stress, stress)],
+            rng,
+            draws,
+        )
+        """Recorded marginal high-correlation evidence at this dimension."""
+    return results
+
+
 def one_replicate(
-    replicate: int, relationship: np.ndarray, rng: np.random.Generator
-) -> tuple[dict[int, dict[str, float]], float]:
+    relationship: np.ndarray,
+    rng: np.random.Generator,
+    dimensions: list[int],
+    draws: int,
+) -> tuple[dict[str, dict[int, dict[str, float]]], float]:
     """Simulate one family and assess conditional and marginal dimension ladders."""
     people: int = relationship.shape[0]
     """Counted people represented by the simulated family relationship matrix."""
@@ -716,83 +1097,124 @@ def one_replicate(
     )
     """Constructed the matching conditional region under stepped heritability."""
 
-    available: int = region_mean.shape[0]
-    """Counted censored coordinates available to populate the dimension ladder."""
-
-    results: dict[str, dict[int, dict[str, float]]] = {
-        "conditional": {},
-        "marginal": {},
-    }
-    """Initialised assessed rungs for the modelled and adversarial regimes."""
-
-    for dimension in DIMENSIONS:
-        if dimension > available:
-            continue
-        chosen: np.ndarray = rng.choice(available, size=dimension, replace=False)
-        """Selected censored coordinates without replacement for the conditional rung."""
-
-        chosen.sort()
-        results["conditional"][dimension] = assess(
-            region_mean[chosen],
-            conditional[np.ix_(chosen, chosen)],
-            stepped_mean[chosen],
-            stepped_conditional[np.ix_(chosen, chosen)],
-            rng,
-        )
-        """Recorded conditional sequential-versus-GHK evidence at this dimension."""
-
-        # The adversarial rung: a contiguous block of rows with nothing
-        # conditioned away. Rows run person, then ear, then frequency, so a
-        # contiguous block is one ear's whole audiogram and then the next
-        # ear's, which is where the correlations are 0.9 and above. Scattering
-        # the coordinates across eighty people instead would put almost every
-        # pair on different people, where the correlation is small and the
-        # approximation has nothing to struggle with.
-        first: int = int(rng.integers(0, mean.shape[0] - dimension))
-        """Selected the start of one contiguous high-correlation marginal block."""
-
-        stress: np.ndarray = np.arange(first, first + dimension)
-        """Constructed the contiguous coordinate block for the adversarial rung."""
-
-        results["marginal"][dimension] = assess(
-            mean[stress] - limit[stress],
-            covariance[np.ix_(stress, stress)],
-            mean[stress] - limit[stress],
-            stepped[np.ix_(stress, stress)],
-            rng,
-        )
-        """Recorded marginal high-correlation evidence at this dimension."""
-    return results, float(censored.mean())
+    realisation: Realisation = Realisation(
+        mean=mean,
+        limit=limit,
+        covariance=covariance,
+        stepped=stepped,
+        region_mean=region_mean,
+        conditional=conditional,
+        stepped_region_mean=stepped_mean,
+        stepped_conditional=stepped_conditional,
+        censored_share=float(censored.mean()),
+    )
+    """Gathered the simulated audiogram into the form the ladder climbs."""
+    return climb_ladder(realisation, dimensions, draws, rng), realisation.censored_share
 
 
 def main() -> int:
-    rng: np.random.Generator = np.random.default_rng(SEED)
-    """Created the deterministic generator shared across family replicates."""
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    """Created the parser for the two designs this ladder can climb."""
 
-    ids, fathers, mothers = pedigree(FAMILY_GENERATIONS)
-    """Constructed the realistic three-generation comparison pedigree."""
+    parser.add_argument(
+        "--design",
+        choices=["audiogram", "components"],
+        default="audiogram",
+        help="which covariance to climb: the repeated-measures audiogram, or the "
+        "single-frequency several-component model with a shared-environment kernel",
+    )
+    parser.add_argument(
+        "--replicates",
+        type=int,
+        default=REPLICATES,
+        help="independent simulated rosters",
+    )
+    parser.add_argument(
+        "--draws", type=int, default=DRAWS, help="GHK draws behind each reference"
+    )
+    parser.add_argument(
+        "--families",
+        type=int,
+        default=COMPONENT_FAMILIES,
+        help="unrelated families, for the components design only",
+    )
+    parser.add_argument(
+        "--decay",
+        type=float,
+        default=HOUSEHOLD_DECAY_PER_KM,
+        help="held kernel decay per kilometre, for the components design only; "
+        "a larger value weakens the shared environment",
+    )
+    parser.add_argument(
+        "--dimensions", type=int, nargs="+", default=None, help="the rungs to climb"
+    )
+    parser.add_argument(
+        "--no-write", action="store_true", help="do not write an evidence record"
+    )
+    arguments: argparse.Namespace = parser.parse_args()
+    """Read the requested design and its sampling effort."""
+
+    components: bool = arguments.design == "components"
+    """Recorded which design is being climbed, the two being different problems."""
+
+    rng: np.random.Generator = np.random.default_rng(SEED)
+    """Created the deterministic generator shared across replicates."""
+
+    if components:
+        ids, fathers, mothers = many_families(FAMILY_GENERATIONS, arguments.families)
+        """Built several unrelated families, so only the kernel joins them."""
+    else:
+        ids, fathers, mothers = pedigree(FAMILY_GENERATIONS)
+        """Built the single three-generation family the audiogram design uses."""
 
     relationship, _ = asterism.relationship_matrix(ids, fathers, mothers)
-    """Built the pedigree relationship matrix through Asterism's public interface."""
+    """Built the relationship matrix through Asterism's public interface."""
 
     people: int = relationship.shape[0]
-    """Counted people in the generated family."""
-    print(
-        f"family of {people} people, {len(FREQS)} frequencies, two ears "
-        f"-- {people * 2 * len(FREQS)} rows"
+    """Counted people in the generated roster."""
+
+    dimensions: list[int] = sorted(
+        arguments.dimensions or (COMPONENT_DIMENSIONS if components else DIMENSIONS)
     )
+    """Selected the ladder this design climbs, in order: a ladder read out of
+    order would report a qualified dimension with unclimbed rungs beneath it."""
+
+    if components:
+        print(
+            f"{arguments.families} families, {people} people, one frequency "
+            f"({FREQS[COMPONENT_FREQUENCY_INDEX]} Hz), two ears -- {people * 2} rows"
+        )
+        print(
+            "  the shared-environment kernel is non-zero for every pair, so the "
+            "likelihood's block is the whole roster and not one family"
+        )
+    else:
+        print(
+            f"family of {people} people, {len(FREQS)} frequencies, two ears "
+            f"-- {people * 2 * len(FREQS)} rows"
+        )
 
     gathered: dict[str, dict[int, list[dict[str, float]]]] = {
-        regime: {d: [] for d in DIMENSIONS} for regime in ("conditional", "marginal")
+        regime: {d: [] for d in dimensions} for regime in ("conditional", "marginal")
     }
     """Initialised replicate evidence by regime and censored dimension."""
 
     censored_shares: list[float] = []
     """Initialised observed censoring shares across simulated families."""
 
-    for replicate in range(REPLICATES):
-        results, share = one_replicate(replicate, relationship, rng)
-        """Simulated and assessed one full family audiogram replicate."""
+    for replicate in range(arguments.replicates):
+        if components:
+            results, share = one_component_replicate(
+                relationship, rng, dimensions, arguments.draws, arguments.decay
+            )
+            """Simulated and assessed one several-component replicate."""
+        else:
+            results, share = one_replicate(
+                relationship, rng, dimensions, arguments.draws
+            )
+            """Simulated and assessed one full-audiogram replicate."""
 
         censored_shares.append(share)
         for regime, rungs in results.items():
@@ -816,7 +1238,7 @@ def main() -> int:
             f"{'h2 step':>9} {'err/step':>9} {'order gap':>10} {'mean |r|':>9}"
         )
         print("-" * 76)
-        for dimension in DIMENSIONS:
+        for dimension in dimensions:
             rows: list[dict[str, float]] = gathered[regime][dimension]
             """Collected replicate-level evidence for the current regime and rung."""
 
@@ -896,15 +1318,73 @@ def main() -> int:
                 f"{summary['mean_absolute_correlation']:>9.3f}"
             )
 
+    qualified: int | None = None
+    """Held the largest rung the conditional regime cleared without a failure below it."""
+
+    for candidate in dimensions:
+        summary_here: dict[str, float] = report["conditional"].get(str(candidate), {})
+        """Took this rung's aggregated conditional evidence."""
+
+        if not summary_here.get("reached"):
+            break
+        """Stopped where no replicate could supply this many censored coordinates:
+        there is no evidence here or above it."""
+
+        if not summary_here.get("decidable"):
+            continue
+        """Skipped a rung whose heritability step fell below STEP_FLOOR. Such a rung
+        is explicitly not judged, so it is neither a pass nor a failure: it must not
+        advance the ladder, and it must not halt it either. Note that
+        `within_allowance` is true by construction for these, which is why it cannot
+        be read on its own."""
+
+        if summary_here.get("within_allowance"):
+            qualified = candidate
+            """Advanced the qualified dimension to this judged and cleared rung."""
+        else:
+            break
+        """Stopped at the first judged failure: past it nothing is qualified, whatever
+        a higher rung happens to report, because a ladder is only meaningful as far as
+        it is unbroken."""
+    """Stopped at the first rung that failed or was never reached: past it nothing
+    is qualified, whatever a higher rung happens to report, because the ladder is
+    only meaningful as far as it is unbroken."""
+
+    beyond: list[int] = [d for d in dimensions if qualified is None or d > qualified]
+    """Collected the rungs this run does not qualify, which is what a caller must avoid."""
+
+    design_facts: dict[str, object] = (
+        {
+            "frequencies": 1,
+            "rows": people * 2,
+            "families": arguments.families,
+            "component_shares": COMPONENT_SHARES,
+            "household_decay_per_km": arguments.decay,
+        }
+        if components
+        else {
+            "frequencies": len(FREQS),
+            "rows": people * 2 * len(FREQS),
+            "families": 1,
+        }
+    )
+    """Gathered every fact that depends on which design was climbed, chosen once
+    rather than at each field: a third design should be one edit here and not five
+    scattered through the record. The decay recorded is the one actually used, not
+    the module default, which the two need not agree on."""
+
     receipt: dict[str, object] = {
+        "largest_qualified_censored_dimension": qualified,
+        "censored_dimensions_not_qualified": beyond,
         "what": "the sequential region approximation against a GHK reference, "
         "up a ladder of censored dimensions, conditionally and marginally",
         "date": date.today().isoformat(),
+        "design": arguments.design,
         "people": people,
-        "frequencies": len(FREQS),
-        "rows": people * 2 * len(FREQS),
-        "replicates": REPLICATES,
-        "ghk_draws": DRAWS,
+        **design_facts,
+        "dimensions": dimensions,
+        "replicates": arguments.replicates,
+        "ghk_draws": arguments.draws,
         "seed": SEED,
         "heritability_step": HERITABILITY_STEP,
         "error_share_allowed": ERROR_SHARE_ALLOWED,
@@ -923,11 +1403,24 @@ def main() -> int:
     out: Path = (
         Path(__file__).resolve().parent.parent
         / "evidence"
-        / (f"sequential-against-ghk-{receipt['date']}.json")
+        / (f"sequential-against-ghk-{arguments.design}-{receipt['date']}.json")
     )
     """Selected the evidence path for the sequential-versus-GHK receipt."""
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
+    if not arguments.no_write:
+        out.write_text(json.dumps(receipt, indent=2) + "\n")
+        print(f"\nwritten to {out}")
+    print(
+        f"\nLargest qualified censored dimension ({arguments.design}): "
+        f"{qualified if qualified is not None else 'none of the rungs'}"
+    )
+    if beyond:
+        print(
+            f"  Not qualified at: {', '.join(str(d) for d in beyond)}. "
+            "A block larger than the qualified dimension is out of reach of this "
+            "evidence, and per ADR 0010 the model is cut to where it passes "
+            "rather than the integral being switched."
+        )
+
     if failures:
         print("\nFAILED:")
         for failure in failures:
@@ -939,10 +1432,22 @@ def main() -> int:
     marginal: dict[str, dict[str, float]] = report["marginal"]
     """Selected aggregated marginal evidence for the diagnostic contrast."""
 
-    top: str = str(DIMENSIONS[-1])
-    """Selected the largest assessed censored dimension."""
+    if qualified is None:
+        print(
+            "\nPASSED: no rung was both judged and failed, but none was judged and "
+            "cleared either, so this run qualifies no censored dimension."
+        )
+        return 0
+    """Returned early where there is no qualified rung to describe: every remaining
+    sentence below quotes one, and quoting a rung that does not exist would be
+    worse than saying so."""
 
-    ratio: float = marginal[top]["mean_absolute_error"] / max(
+    top: str = str(qualified)
+    """Selected the largest qualified censored dimension. Not the largest climbed:
+    quoting a rung above the qualified one would advertise a number this run
+    declined to stand behind."""
+
+    ratio: float = marginal.get(top, {}).get("mean_absolute_error", 0.0) / max(
         conditional[top]["mean_absolute_error"], 1e-12
     )
     """Compared marginal and conditional errors at the largest dimension."""
@@ -958,7 +1463,8 @@ def main() -> int:
         f"{conditional[top]['mean_absolute_correlation']:.3f}; on the same number "
         f"of correlated coordinates with nothing conditioned away the error is "
         f"{ratio:.0f} times larger, and the answer moves by "
-        f"{marginal[top]['mean_ordering_gap']:.2f} log units with the order the "
+        f"{marginal.get(top, {}).get('mean_ordering_gap', float('nan')):.2f} log "
+        f"units with the order the "
         f"coordinates happen to be given in."
     )
     print(
