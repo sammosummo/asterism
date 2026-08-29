@@ -1700,6 +1700,95 @@ mod tests {
         );
     }
 
+    /// The builder's output is fitted beside additive and person-level.
+    ///
+    /// Everything else here hand-builds its components, so nothing showed that
+    /// `grouping_matrix` produces something this model will actually take.
+    /// It does, and the same builder makes two of the three: the person-level
+    /// matrix by grouping on the listener, the household matrix by grouping on
+    /// the home.
+    ///
+    /// **The homes here deliberately hold people of different relatedness.**
+    /// Homes that are exactly sibling pairs make the household matrix
+    /// `2A - I` exactly, and then there is nothing to separate; putting an
+    /// unrelated adult in each home is what gives the household term something
+    /// of its own to explain.
+    #[test]
+    fn the_grouping_builder_fits_beside_additive_and_person_level() {
+        let people = 96;
+        let rows = people * 2;
+        let mut seed = 5150_u64;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((seed >> 11) as f64 / (1_u64 << 53) as f64) - 0.5
+        };
+
+        // Sibling pairs, and a home holding one sibling plus an unrelated adult.
+        let mut additive = DMatrix::<f64>::zeros(rows, rows);
+        for i in 0..rows {
+            for j in 0..rows {
+                let (a, b) = (i / 2, j / 2);
+                if a == b {
+                    additive[(i, j)] = 1.0;
+                } else if a / 2 == b / 2 {
+                    additive[(i, j)] = 0.5;
+                }
+            }
+        }
+        let listener: Vec<Option<String>> =
+            (0..rows).map(|row| Some(format!("L{}", row / 2))).collect();
+        let home: Vec<Option<String>> = (0..rows)
+            .map(|row| {
+                let person = row / 2;
+                // Pair person 0 with person 2, and 1 with 3: one sibling from
+                // each family, so a home holds two people who are not related.
+                Some(format!("H{}", (person / 4) * 2 + person % 2))
+            })
+            .collect();
+        let person = crate::relationship::grouping_matrix(&listener);
+        let household = crate::relationship::grouping_matrix(&home);
+        assert_ne!(
+            household,
+            additive.clone() * 2.0 - DMatrix::<f64>::identity(rows, rows),
+            "a home of exactly one relationship class would be 2A - I and \
+             separate from nothing"
+        );
+
+        let mut value = vec![0.0; rows];
+        for row in 0..rows {
+            value[row] = 10.0 + next() + next() + next();
+        }
+        let censoring = vec![Censoring::Measured; rows];
+        let limits = vec![0.0; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+
+        let model = TobitModel::build(
+            &[additive, person, household],
+            &value,
+            &censoring,
+            &limits,
+            &design,
+        )
+        .expect("the builder's matrices are covariances the model accepts");
+        assert_eq!(model.components(), 3);
+
+        let fit = model.fit().expect("a three-component fit is returned");
+        assert_eq!(fit.coefficients.len(), 3);
+        assert!(
+            fit.coefficients.iter().sum::<f64>() <= 1.0,
+            "the residual keeps a share: {:?}",
+            fit.coefficients
+        );
+        for index in 0..3 {
+            assert!(
+                model.coefficient_interval(index).is_ok(),
+                "component {index} has an interval"
+            );
+        }
+    }
+
     /// The mean-diagonal proportions are what a reader should compare.
     ///
     /// A coefficient is not comparable across matrices whose diagonals differ,

@@ -898,7 +898,14 @@ Parameters
 groups
     One entry per row, in the row order the fit will use. ``None`` or an
     empty string is a group nobody knows: that row shares with nobody and
-    keeps its diagonal. It is not the absence of a group — the person does
+    keeps its diagonal. **The compiled builder decides that, not this
+    wrapper.** Both used to, and they disagreed — Rust took an empty string
+    as a real shared group while this mapped it away — which nothing could
+    see, because only one side of the pair was ever tested. Mapping in one
+    place is what stops that.
+
+    A falsy value that is not a string is not treated as missing. ``"0"`` is
+    a group name like any other. It is not the absence of a group — the person does
     have a home, and what is missing is which — so their effect cannot be
     told apart from their residual and they inform the component only by
     not sharing.

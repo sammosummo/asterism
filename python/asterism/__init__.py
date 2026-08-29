@@ -180,7 +180,14 @@ def grouping_matrix(groups: list[str | None]) -> Any:
     groups
         One entry per row, in the row order the fit will use. ``None`` or an
         empty string is a group nobody knows: that row shares with nobody and
-        keeps its diagonal. It is not the absence of a group — the person does
+        keeps its diagonal. **The compiled builder decides that, not this
+        wrapper.** Both used to, and they disagreed — Rust took an empty string
+        as a real shared group while this mapped it away — which nothing could
+        see, because only one side of the pair was ever tested. Mapping in one
+        place is what stops that.
+
+        A falsy value that is not a string is not treated as missing. ``"0"`` is
+        a group name like any other. It is not the absence of a group — the person does
         have a home, and what is missing is which — so their effect cannot be
         told apart from their residual and they inform the component only by
         not sharing.
@@ -196,9 +203,7 @@ def grouping_matrix(groups: list[str | None]) -> Any:
     block beyond the groups that straddle two families. A kernel over distances
     would join every pair arithmetically, which is a different thing.
     """
-    prepared: list[str | None] = [group if group else None for group in groups]
-    """Treated an empty string as an unknown group, as the pedigree builder does."""
-    return _grouping(prepared)
+    return _grouping(list(groups))
 
 
 def relationship_matrix(

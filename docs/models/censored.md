@@ -150,22 +150,49 @@ A component is identified by resemblance the other components do not already
 explain, and which pairs of rows carry that information differs by component.
 It is worth knowing which, because it decides what a given sample can support.
 
-- **Additive against person-level.** Two records of one person resemble each
-  other through both, so a person's own rows say nothing about the split; only
-  the correlation between relatives carries the additive term alone. The
-  information therefore scales with **related pairs**, not with records, and
-  giving everybody a second record sharpens their sum while doing nothing for
-  the split. Measured on simulated sibling pairs at a true 0.40 and 0.30, the
-  estimates are unbiased at every size and their standard deviation falls as the
-  square root of the sample: 0.21 at 80 people, 0.11 at 400, 0.036 at 2400.
-- **Household against additive.** People who share a home are usually close
-  relatives, so a household term is separated from a genetic one by the pairs
-  who share a home **without** being closely related. In an extended-family
-  sample those can be few, and the precision of the household coefficient
-  follows their number rather than the sample's.
+**Additive against person-level: a matter of precision, and measured.** Two
+records of one person resemble each other through both, so a person's own rows
+say nothing about the split; only the correlation between relatives carries the
+additive term alone. The information therefore scales with **related pairs**,
+not with records, and giving everybody a second record sharpens their sum while
+doing nothing for the split.
 
-Neither is a failure of identification, and neither is settled by argument: fit
-the model and read the intervals, which is what they are for.
+Measured on simulated sibling pairs at a true 0.40 and 0.30, over **eight
+replicates per size** -- so the spreads below carry something like a quarter of
+their own value in uncertainty and should be read as an order, not a figure:
+
+| people | additive (sd) | person-level (sd) |
+| ---: | ---: | ---: |
+| 80 | 0.398 (0.21) | 0.279 (0.20) |
+| 400 | 0.404 (0.11) | 0.296 (0.11) |
+| 2400 | 0.370 (0.036) | 0.330 (0.036) |
+
+Unbiased at every size, with the spread falling as one over the square root of
+the sample. Issue 35 is the check that would measure this properly.
+
+**Household against additive: this one can fail outright, and not measured.**
+Where a home holds exactly one relationship class, the household matrix is a
+linear combination of the others and nothing can separate them. For homes that
+are exactly full-sibling pairs the identity is exact:
+
+$$
+\mathbf H = 2\mathbf A - \mathbf I.
+$$
+
+`ComponentModel` refuses such a set as `COMPONENTS_COVARIANCE_BASES_RANK_DEFICIENT`,
+which is the right answer: it is not a hard estimate but no estimate.
+
+What breaks the tie is homes holding people of **different** relatedness --
+spouses, an unrelated carer, a lodger -- so the separating information is the
+number of such pairs rather than the size of the sample. With unrelated parents
+present it fits: household 0.209 and additive 0.385 at 240 people, though with
+standard errors of 0.114 and 0.204 those are wide.
+
+**So the two bullets are not the same kind of statement**, and the difference
+matters more than either number. The first is measured and is about precision.
+The second is reasoned and is about whether the question has an answer at all in
+a given pedigree. Fit the model and read the intervals; where the components are
+collinear there will be nothing to read.
 
 ### Reporting several components
 
