@@ -5,19 +5,40 @@
 //! Nothing here is folded into `ComponentModel`, for decision 16's reasons:
 //! REML has no meaning once part of the likelihood is a probability rather than
 //! a density, and the fixed effects cannot be profiled out by least squares.
+//! That it now takes several components does not change this -- the two models
+//! share a shape, not a likelihood.
 //!
 //! # The model
 //!
-//! Every person carries a complete value
+//! Every record carries a complete value
 //!
 //! ```text
-//! y*_i = x_i' beta + g_i + e_i
+//! y*_i = x_i' beta + sum_c u_ci + e_i
 //! ```
 //!
-//! with `g ~ N(0, h2 sigma^2 A)` and `e ~ N(0, (1 - h2) sigma^2 I)`. Where the
-//! instrument could measure it, `y*_i` is seen exactly. Where it could not, all
-//! that is known is that the value lies beyond the limit that person's
-//! measurement reached.
+//! with `u_c ~ N(0, p_c sigma^2 K_c)` for each supplied component `K_c`, and
+//! `e ~ N(0, (1 - sum_c p_c) sigma^2 I)`. Where the instrument could measure
+//! it, `y*_i` is seen exactly. Where it could not, all that is known is that
+//! the value lies beyond the limit that measurement reached.
+//!
+//! **The residual is what the components leave.** It is never supplied and its
+//! coefficient is never estimated directly, which is what puts the others on a
+//! common scale rather than each needing one of its own. A set summing past one
+//! describes no covariance and is refused.
+//!
+//! Those coefficients are **proportions of the total variance exactly when
+//! every component carries a unit diagonal** -- true of additive kinship, of a
+//! person-level matrix and of a household kernel, and not true in general. See
+//! `TobitFit::coefficients`.
+//!
+//! **One component is the special case this began as.** With a single kinship
+//! matrix the first share is the heritability, the residual is `1 - h2`, and
+//! the arithmetic is what it always was -- the parameter vector has the same
+//! layout, so the profile still holds the heritability by pinning one bound.
+//!
+//! Several components is what an audiogram needs: two records per person want
+//! a person-level term beside the genetic one, or the resemblance between a
+//! person's own two ears is left with nowhere to go but the heritability.
 //!
 //! # What separates this from the liability model
 //!
@@ -68,7 +89,7 @@ use nalgebra::{Cholesky, DMatrix, DVector, SymmetricEigen};
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::Normal;
 
-use crate::blocks::family_blocks;
+use crate::blocks::union_blocks;
 use crate::interval::{self, Interval};
 use crate::liability::LiabilityModel;
 
@@ -122,6 +143,18 @@ pub struct TobitFit {
     pub censored_share: f64,
     /// Always `ml`. See the module note.
     pub estimator: &'static str,
+    /// Each component's **raw coefficient**, in the order the components were
+    /// given. The residual takes `1 - sum` and is not among these.
+    ///
+    /// **Coefficients, not proportions, and the difference is not pedantry.**
+    /// These are shares of the total variance exactly when every component
+    /// carries a unit diagonal, which additive kinship, a person-level matrix
+    /// and a household kernel all do. A component whose diagonal is not one --
+    /// a genomic relationship matrix, or a kernel that leaves somebody
+    /// unhoused at nought -- makes `total_variance` nobody's total variance
+    /// and `1 - sum` not the residual's share. `ComponentModel` reports the
+    /// mean-diagonal contribution for this reason; see CONTEXT.md.
+    pub coefficients: Vec<f64>,
     /// The largest family, because the region probability is exact to two
     /// people and approximate above it.
     pub largest_family: usize,
@@ -142,9 +175,9 @@ pub struct TobitTest {
 /// Compatibility name for the one shared interval record.
 pub type TobitInterval = Interval;
 
-/// One trait, one relationship matrix, per-observation censoring.
+/// One trait, any number of components, per-observation censoring.
 pub struct TobitModel {
-    relationship: DMatrix<f64>,
+    components: Vec<DMatrix<f64>>,
     design: DMatrix<f64>,
     value: Vec<f64>,
     censoring: Vec<Censoring>,
@@ -156,6 +189,17 @@ pub struct TobitModel {
 impl TobitModel {
     /// Validate and prepare.
     ///
+    /// `components` are the relationship matrices whose coefficients the fit
+    /// estimates -- additive kinship, a person-level matrix, a household kernel,
+    /// whatever the model carries. **One component is the special case this
+    /// model began as**, and passing one gives exactly what it always gave.
+    ///
+    /// A residual is always present and is never passed: it is what is left of
+    /// the variance once the components have taken their coefficients, which is
+    /// what puts those coefficients on a common scale. They are proportions of
+    /// the total only where every component has a unit diagonal -- see
+    /// `TobitFit::coefficients`.
+    ///
     /// `value` holds the measured value where `censoring` is `Measured`, and is
     /// ignored otherwise. `limit` holds the limit that observation reached, and
     /// is ignored where the value was measured.
@@ -164,7 +208,7 @@ impl TobitModel {
     ///
     /// Returns a stable code where the inputs do not describe a model.
     pub fn build(
-        relationship: &DMatrix<f64>,
+        components: &[DMatrix<f64>],
         value: &[f64],
         censoring: &[Censoring],
         limit: &[f64],
@@ -174,11 +218,26 @@ impl TobitModel {
         if rows == 0 {
             return Err("TOBIT_NO_ROWS");
         }
+        if components.is_empty() {
+            return Err("TOBIT_NO_COMPONENTS");
+        }
         if censoring.len() != rows || limit.len() != rows {
             return Err("TOBIT_INPUTS_DIFFERENT_LENGTHS");
         }
-        if relationship.nrows() != rows || relationship.ncols() != rows {
-            return Err("TOBIT_RELATIONSHIP_WRONG_SHAPE");
+        for component in components {
+            if component.nrows() != rows || component.ncols() != rows {
+                return Err("TOBIT_RELATIONSHIP_WRONG_SHAPE");
+            }
+            if !component.iter().all(|v| v.is_finite()) {
+                return Err("TOBIT_NOT_FINITE");
+            }
+            for i in 0..rows {
+                for j in 0..i {
+                    if (component[(i, j)] - component[(j, i)]).abs() > 1e-10 {
+                        return Err("TOBIT_RELATIONSHIP_NOT_SYMMETRIC");
+                    }
+                }
+            }
         }
         if design.nrows() != rows {
             return Err("TOBIT_DESIGN_WRONG_SHAPE");
@@ -186,15 +245,8 @@ impl TobitModel {
         if design.ncols() == 0 {
             return Err("TOBIT_DESIGN_HAS_NO_COLUMNS");
         }
-        if !relationship.iter().all(|v| v.is_finite()) || !design.iter().all(|v| v.is_finite()) {
+        if !design.iter().all(|v| v.is_finite()) {
             return Err("TOBIT_NOT_FINITE");
-        }
-        for i in 0..rows {
-            for j in 0..i {
-                if (relationship[(i, j)] - relationship[(j, i)]).abs() > 1e-10 {
-                    return Err("TOBIT_RELATIONSHIP_NOT_SYMMETRIC");
-                }
-            }
         }
         for index in 0..rows {
             match censoring[index] {
@@ -221,27 +273,33 @@ impl TobitModel {
             return Err("TOBIT_TOO_FEW_MEASURED_VALUES");
         }
         // **A relationship matrix is refused as mathematics, not as
-        // provenance.** Symmetry and the off-diagonal guard above do not make a
-        // matrix a covariance: one that is not positive semi-definite reaches
-        // the search, where it surfaces only as a fit that found no feasible
-        // point. Checking it here says what is wrong while the caller can still
-        // do something about it. Per block, because that is the only form the
-        // likelihood ever factorises.
-        let blocks = family_blocks(relationship);
-        for block in &blocks {
-            let size = block.len();
-            let sub = DMatrix::from_fn(size, size, |a, b| relationship[(block[a], block[b])]);
-            let smallest = SymmetricEigen::new(sub)
-                .eigenvalues
-                .iter()
-                .fold(f64::INFINITY, |worst, value| worst.min(*value));
-            if smallest < EIGENVALUE_FLOOR {
-                return Err("TOBIT_RELATIONSHIP_NOT_PSD");
+        // provenance.** Symmetry does not make a matrix a covariance: one that
+        // is not positive semi-definite reaches the search, where it surfaces
+        // only as a fit that found no feasible point. Checking it here says
+        // what is wrong while the caller can still do something about it.
+        //
+        // **Per component, over the union's blocks.** The likelihood factorises
+        // over the blocks the components make together, so that is the only
+        // decomposition it ever sees; and each component has to be a covariance
+        // in its own right, because the search may put all the variance on any
+        // one of them.
+        let blocks = union_blocks(components);
+        for component in components {
+            for block in &blocks {
+                let size = block.len();
+                let sub = DMatrix::from_fn(size, size, |a, b| component[(block[a], block[b])]);
+                let smallest = SymmetricEigen::new(sub)
+                    .eigenvalues
+                    .iter()
+                    .fold(f64::INFINITY, |worst, value| worst.min(*value));
+                if smallest < EIGENVALUE_FLOOR {
+                    return Err("TOBIT_RELATIONSHIP_NOT_PSD");
+                }
             }
         }
 
         Ok(Self {
-            relationship: relationship.clone(),
+            components: components.to_vec(),
             design: design.clone(),
             value: value.to_vec(),
             censoring: censoring.to_vec(),
@@ -249,6 +307,12 @@ impl TobitModel {
             blocks,
             rows,
         })
+    }
+
+    /// How many components the fit estimates, the residual not among them.
+    #[must_use]
+    pub fn components(&self) -> usize {
+        self.components.len()
     }
 
     /// The share of observations that hit a limit.
@@ -262,22 +326,40 @@ impl TobitModel {
         censored as f64 / self.rows as f64
     }
 
-    /// The log likelihood at one heritability, one variance and one set of
-    /// fixed effects.
+    /// The log likelihood at one set of coefficients, one total variance and
+    /// one set of fixed effects.
+    ///
+    /// `coefficients` carries one per component, in the order the
+    /// components were given. **They must each lie in `[0, 1]` and must sum to
+    /// no more than one**, because the residual takes what is left and a
+    /// negative residual describes no covariance.
     ///
     /// Returns `None` where the parameters do not describe a model, which the
     /// optimiser reads as a wall rather than a failure.
     #[must_use]
-    pub fn loglik(&self, heritability: f64, variance: f64, beta: &[f64]) -> Option<f64> {
-        if !(0.0..=1.0).contains(&heritability) || !(variance > 0.0) || !variance.is_finite() {
+    pub fn loglik(&self, coefficients: &[f64], variance: f64, beta: &[f64]) -> Option<f64> {
+        if coefficients.len() != self.components.len() {
+            return None;
+        }
+        if !coefficients.iter().all(|c| (0.0..=1.0).contains(c)) {
+            return None;
+        }
+        // The residual takes what the components leave, so a set of shares that
+        // sums past one describes no covariance and is refused rather than
+        // clamped. The optimiser reads `None` as a wall and turns away from it.
+        let residual_share = 1.0 - coefficients.iter().sum::<f64>();
+        if residual_share < 0.0 {
+            return None;
+        }
+        if !(variance > 0.0) || !variance.is_finite() {
             return None;
         }
         if beta.len() != self.design.ncols() || !beta.iter().all(|b| b.is_finite()) {
             return None;
         }
         let normal = Normal::new(0.0, 1.0).ok()?;
-        let coefficients = DVector::from_row_slice(beta);
-        let mean = &self.design * &coefficients;
+        let fixed = DVector::from_row_slice(beta);
+        let mean = &self.design * &fixed;
 
         let mut total = 0.0;
         for block in &self.blocks {
@@ -286,9 +368,12 @@ impl TobitModel {
             let mut covariance = DMatrix::<f64>::zeros(size, size);
             for (row, &i) in block.iter().enumerate() {
                 for (column, &j) in block.iter().enumerate() {
-                    let additive = heritability * self.relationship[(i, j)];
-                    let residual = if i == j { 1.0 - heritability } else { 0.0 };
-                    covariance[(row, column)] = variance * (additive + residual);
+                    let mut shared = 0.0;
+                    for (component, share) in self.components.iter().zip(coefficients) {
+                        shared += share * component[(i, j)];
+                    }
+                    let residual = if i == j { residual_share } else { 0.0 };
+                    covariance[(row, column)] = variance * (shared + residual);
                 }
             }
 
@@ -420,6 +505,16 @@ impl TobitModel {
     pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
         let free = self.fit()?;
         let null = self.fit_holding(Some(0.0))?;
+        // **The mixture rule was scored for one component and only one.**
+        // Holding the first share at nought while the others are free to rest
+        // on their own bounds is not the one-parameter-on-one-bound case the
+        // fifty-fifty mixture covers, so the p-value below would be read
+        // against the wrong reference. Refusing is what CONTEXT requires of an
+        // unscored verdict: an absent one means nobody has measured it yet.
+        // Interval coverage at several components is issue 38.
+        if self.components.len() != 1 {
+            return Err("TOBIT_TEST_NOT_SCORED_FOR_SEVERAL_COMPONENTS");
+        }
         crate::convergence::require(free.converged, "TOBIT_FIT_NOT_CONVERGED")?;
         crate::convergence::require(null.converged, "TOBIT_NULL_FIT_NOT_CONVERGED")?;
         let statistic = crate::deviance::deviance(free.loglik, null.loglik);
@@ -454,8 +549,17 @@ impl TobitModel {
             return Err("TOBIT_PROFILE_NOT_EVALUABLE");
         }
         // This family's coverage check scored the boundary rule through three
-        // quarters censoring, so it may fill the mixture verdict.
-        Ok(got.scored_by_mixture())
+        // quarters censoring, **at one component**, so it may fill the mixture
+        // verdict there and only there. With several components more than one
+        // share can rest on nought at once, which is not the case that check
+        // scored, so the interval is returned with its boundary verdict absent
+        // rather than filled in from a measurement of a different model. An
+        // absent verdict says nobody has measured it; a filled one says
+        // somebody has.
+        if self.components.len() == 1 {
+            return Ok(got.scored_by_mixture());
+        }
+        Ok(got)
     }
 
     /// Fit with the heritability held, or free where `held` is `None`.
@@ -470,7 +574,13 @@ impl TobitModel {
             return Err("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE");
         }
         let columns = self.design.ncols();
-        let count = columns + 2;
+        let parts = self.components.len();
+        // The shares first, then the log total variance, then the fixed
+        // effects. **The heritability stays at index nought**, which is what
+        // lets the profile hold it by pinning one box bound, exactly as it did
+        // when there was only ever one share. With one component this is the
+        // layout this model has always had, to the slot.
+        let count = parts + 1 + columns;
 
         // Starting values from the measured part alone. They are wrong -- that
         // is the whole point of the model -- but they are the right order of
@@ -486,15 +596,19 @@ impl TobitModel {
 
         let mut lower = vec![f64::NEG_INFINITY; count];
         let mut upper = vec![f64::INFINITY; count];
-        lower[0] = 0.0;
-        upper[0] = 1.0;
+        for share in 0..parts {
+            lower[share] = 0.0;
+            upper[share] = 1.0;
+        }
+        // The shares are boxed individually; that they must also sum within one
+        // is not a box and is refused by the likelihood instead.
         if let Some(value) = held {
             lower[0] = value;
             upper[0] = value;
         }
 
         let value_of = |theta: &[f64]| -> f64 {
-            self.loglik(theta[0], theta[1].exp(), &theta[2..])
+            self.loglik(&theta[..parts], theta[parts].exp(), &theta[parts + 1..])
                 .map_or(INFEASIBLE, |v| -v)
         };
         // The region probability has no derivative worth writing, so the
@@ -516,10 +630,17 @@ impl TobitModel {
                 .collect()
         };
 
-        // Three starts spread over the heritability, or one where it is held.
-        // A held fit pinned every start to the same value and then ran the same
-        // deterministic search three times over: the interval paid for that at
-        // each end of every bisection step.
+        // Three starts spread over the first coefficient, or one where it is
+        // held. A held fit pinned every start to the same value and then ran
+        // the same deterministic search three times over: the interval paid for
+        // that at each end of every bisection step.
+        //
+        // **That reasoning is exact at one component and approximate above it.**
+        // Holding the first coefficient no longer pins the whole share space --
+        // the others stay free -- so one start explores a simplex from a single
+        // point where three would have explored it from three. It is still one
+        // deterministic search per start, so three would still be three copies
+        // of one answer; what is lost is spread, not repetition.
         let starts: &[f64] = match held {
             Some(value) => &[value],
             None => &[0.05, 0.3, 0.6],
@@ -528,8 +649,19 @@ impl TobitModel {
         for &heritability in starts {
             let mut start = vec![0.0; count];
             start[0] = heritability;
-            start[1] = spread.ln();
-            start[2] = centre;
+            // The other coefficients start small and equal. The divisor counts
+            // the remaining components **and the residual**, so what is left
+            // after the first is split evenly among them and the residual keeps
+            // a share of its own. Starting them at their full share instead
+            // would begin on the face where the residual is nought, which is a
+            // corner of the feasible set rather than a point inside it, and a
+            // bounded search that starts in a corner has fewer directions to
+            // leave in than it looks.
+            for coefficient in start.iter_mut().take(parts).skip(1) {
+                *coefficient = (1.0 - heritability) / (parts as f64 + 1.0);
+            }
+            start[parts] = spread.ln();
+            start[parts + 1] = centre;
             let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
                 continue;
             };
@@ -621,8 +753,9 @@ impl TobitModel {
 
         Ok(TobitFit {
             heritability: theta[0],
-            total_variance: theta[1].exp(),
-            fixed_effects: theta[2..].to_vec(),
+            coefficients: theta[..parts].to_vec(),
+            total_variance: theta[parts].exp(),
+            fixed_effects: theta[parts + 1..].to_vec(),
             loglik: -objective,
             // The shared rule, at last. This family had been testing a raw
             // unscaled gradient against a hard-coded thousandth, which is a
@@ -671,7 +804,13 @@ mod tests {
         let limit = vec![2.0; people];
         let design = DMatrix::from_element(people, 1, 1.0);
 
-        match TobitModel::build(&relationship, &value, &censoring, &limit, &design) {
+        match TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        ) {
             Err(code) => assert_eq!(code, "TOBIT_RELATIONSHIP_NOT_PSD"),
             Ok(_) => panic!("a matrix with a negative eigenvalue was accepted as a covariance"),
         }
@@ -688,8 +827,14 @@ mod tests {
     fn holding_a_heritability_costs_one_search_and_lands_where_three_did() {
         let (relationship, value, censoring, limit, design) =
             simulate(40, 0.5, 1.0, 0.0, Some(0.75), 909);
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("the simulated matrix is a covariance");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("the simulated matrix is a covariance");
 
         let fit = model
             .fit_holding(Some(0.4))
@@ -737,11 +882,17 @@ mod tests {
         let limit = vec![2.0; people];
         let design = DMatrix::from_element(people, 1, 1.0);
 
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("a nought diagonal is not something build refuses");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("a nought diagonal is not something build refuses");
 
         assert!(
-            model.loglik(1.0, 1.0, &[0.0]).is_none(),
+            model.loglik(&[1.0], 1.0, &[0.0]).is_none(),
             "the covariance at a held heritability of one should not factorise"
         );
 
@@ -835,11 +986,17 @@ mod tests {
     fn with_nothing_censored_it_is_the_gaussian_likelihood() {
         let (relationship, value, censoring, limit, design) =
             simulate(60, 0.5, 2.0, 3.0, None, 20_260_818);
-        let model =
-            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("builds");
         let (heritability, variance, mean) = (0.4, 1.7, 2.5);
         let ours = model
-            .loglik(heritability, variance, &[mean])
+            .loglik(&[heritability], variance, &[mean])
             .expect("evaluates");
 
         // The same number, assembled directly, one family at a time.
@@ -906,8 +1063,14 @@ mod tests {
             "the fixture censored {censored} values, too few to test with"
         );
 
-        let model =
-            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("builds");
         let fit = model.fit().expect("fits");
         assert_eq!(fit.estimator, "ml");
 
@@ -921,7 +1084,7 @@ mod tests {
         let all_measured = vec![Censoring::Measured; substituted.len()];
         let no_limits = vec![f64::NAN; substituted.len()];
         let naive = TobitModel::build(
-            &relationship,
+            std::slice::from_ref(&relationship),
             &substituted,
             &all_measured,
             &no_limits,
@@ -958,8 +1121,14 @@ mod tests {
     fn the_profile_interval_reaches_where_the_likelihood_falls_away() {
         let (relationship, value, censoring, limit, design) =
             simulate(300, 0.5, 4.0, 10.0, Some(11.0), 20_260_818);
-        let model =
-            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("builds");
         let got = model.heritability_interval().expect("intervals");
         let estimate = got.estimate.expect("an interval has an estimate");
 
@@ -995,11 +1164,227 @@ mod tests {
     #[test]
     fn a_held_heritability_outside_the_range_is_refused() {
         let (relationship, value, censoring, limit, design) = simulate(40, 0.5, 1.0, 0.0, None, 3);
-        let model =
-            TobitModel::build(&relationship, &value, &censoring, &limit, &design).expect("builds");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("builds");
         assert_eq!(
             model.fit_holding(Some(1.5)).err(),
             Some("TOBIT_HELD_HERITABILITY_OUT_OF_RANGE")
+        );
+    }
+
+    /// Several components are recovered, not just accepted.
+    ///
+    /// Two records per person, a person-level component beside the additive
+    /// one, and a quarter of the values censored. The person-level share is
+    /// what makes both ears of one person resemble each other beyond their
+    /// kinship, and a fit that could not find it would be reporting a genetic
+    /// share that had quietly swallowed it.
+    #[test]
+    fn several_components_are_recovered_from_data_that_has_them() {
+        let people = 120;
+        let rows = people * 2;
+        let mut seed = 4242_u64;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((seed >> 11) as f64 / (1_u64 << 53) as f64) - 0.5
+        };
+
+        // Sibling pairs, each person contributing two records.
+        let mut additive = DMatrix::<f64>::zeros(rows, rows);
+        let mut person = DMatrix::<f64>::zeros(rows, rows);
+        for i in 0..rows {
+            for j in 0..rows {
+                let (a, b) = (i / 2, j / 2);
+                if a == b {
+                    person[(i, j)] = 1.0;
+                    additive[(i, j)] = 1.0;
+                } else if a / 2 == b / 2 {
+                    additive[(i, j)] = 0.5;
+                }
+            }
+        }
+
+        let (genetic_share, person_share, total): (f64, f64, f64) = (0.4, 0.3, 4.0);
+        let mut value = vec![0.0; rows];
+        for family in 0..(people / 2) {
+            let shared = next() + next() + next();
+            for member in 0..2 {
+                let who = family * 2 + member;
+                let own = next() + next() + next();
+                let genetic = 0.7 * shared + 0.71 * own;
+                let level = next() + next() + next();
+                for ear in 0..2 {
+                    let noise = next() + next() + next();
+                    value[who * 2 + ear] = 10.0
+                        + total.sqrt()
+                            * (genetic_share.sqrt() * genetic
+                                + person_share.sqrt() * level
+                                + (1.0 - genetic_share - person_share).sqrt() * noise);
+                }
+            }
+        }
+
+        let limit = {
+            let mut sorted = value.clone();
+            sorted.sort_by(f64::total_cmp);
+            sorted[(rows * 3) / 4]
+        };
+        let censoring: Vec<Censoring> = value
+            .iter()
+            .map(|v| {
+                if *v >= limit {
+                    Censoring::Above
+                } else {
+                    Censoring::Measured
+                }
+            })
+            .collect();
+        let limits = vec![limit; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+
+        let model = TobitModel::build(&[additive, person], &value, &censoring, &limits, &design)
+            .expect("two components over the same rows are a model");
+        assert_eq!(model.components(), 2);
+
+        let fit = model.fit().expect("a two-component fit converges here");
+        assert_eq!(fit.coefficients.len(), 2, "one share per component");
+        assert!(
+            fit.coefficients.iter().sum::<f64>() <= 1.0,
+            "the shares must leave the residual something: {:?}",
+            fit.coefficients
+        );
+        assert!(
+            fit.coefficients[1] > 0.05,
+            "the person-level share came back at {:.3}, so a real one was \
+             missed and its variance has gone somewhere else",
+            fit.coefficients[1]
+        );
+        assert_eq!(fit.estimator, "ml");
+    }
+
+    /// An unscored verdict is withheld, not filled in from another model.
+    ///
+    /// The boundary rule and the fifty-fifty mixture were scored by a coverage
+    /// simulation that ran at one component. With several, more than one
+    /// coefficient can rest on nought at once, which is not that case. So the
+    /// test refuses and the interval comes back with its boundary verdict
+    /// absent -- an absent verdict says nobody has measured it, and a filled
+    /// one would say somebody had.
+    #[test]
+    fn the_scored_verdicts_are_withheld_at_several_components() {
+        let (relationship, value, censoring, limit, design) =
+            simulate(40, 0.5, 1.0, 0.0, Some(0.5), 77);
+        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
+
+        let one = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("one component builds");
+        assert!(
+            one.heritability_test().is_ok(),
+            "the scored case must still be scored"
+        );
+        assert!(
+            one.heritability_interval()
+                .expect("an interval")
+                .contains_lower_bound
+                .is_some(),
+            "at one component the boundary verdict is filled in"
+        );
+
+        let several =
+            TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
+                .expect("two components build");
+        assert_eq!(
+            several.heritability_test().err(),
+            Some("TOBIT_TEST_NOT_SCORED_FOR_SEVERAL_COMPONENTS"),
+            "the mixture rule was never scored here, so no p-value is offered"
+        );
+        assert!(
+            several
+                .heritability_interval()
+                .expect("an interval is still computable")
+                .contains_lower_bound
+                .is_none(),
+            "the boundary verdict must be absent where nothing scored it"
+        );
+    }
+
+    /// Every component is refused as mathematics, not just the first.
+    ///
+    /// The search may put all the variance on any one of them, so each has to
+    /// be a covariance in its own right. Checking only the first would let a
+    /// second that is not one reach the search, where it surfaces as a fit that
+    /// found no feasible point rather than as the input error it is.
+    #[test]
+    fn a_second_component_that_is_not_a_covariance_is_refused() {
+        let rows = 4;
+        let good = DMatrix::<f64>::identity(rows, rows);
+        let mut bad = DMatrix::<f64>::identity(rows, rows);
+        // Symmetric, and not positive semi-definite.
+        bad[(0, 1)] = 2.0;
+        bad[(1, 0)] = 2.0;
+        let value = vec![1.0, 2.0, 3.0, 4.0];
+        let censoring = [Censoring::Measured; 4];
+        let limits = vec![0.0; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+        assert_eq!(
+            TobitModel::build(&[good, bad], &value, &censoring, &limits, &design).err(),
+            Some("TOBIT_RELATIONSHIP_NOT_PSD"),
+            "a second component that is not a covariance must be refused too"
+        );
+    }
+
+    /// The largest block is the union's, not any one component's.
+    ///
+    /// The likelihood factorises over the blocks the components make together.
+    /// Reporting one component's blocks would understate how many coordinates
+    /// the region probability was actually asked for, which is the number a
+    /// reader needs to tell whether a fit stayed inside what has been measured.
+    #[test]
+    fn the_largest_block_is_the_one_the_components_make_together() {
+        let rows = 4;
+        let first = DMatrix::<f64>::identity(rows, rows);
+        let mut second = DMatrix::<f64>::identity(rows, rows);
+        for i in 0..rows {
+            for j in 0..rows {
+                second[(i, j)] = if i == j { 1.0 } else { 0.5 };
+            }
+        }
+        let value = vec![1.0, 2.0, 3.0, 4.0];
+        let censoring = [Censoring::Measured; 4];
+        let limits = vec![0.0; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+
+        let alone = TobitModel::build(
+            std::slice::from_ref(&first),
+            &value,
+            &censoring,
+            &limits,
+            &design,
+        )
+        .expect("an identity is a covariance");
+        let fit = alone.fit().expect("converges");
+        assert_eq!(fit.largest_family, 1, "an identity leaves every row alone");
+
+        let together = TobitModel::build(&[first, second], &value, &censoring, &limits, &design)
+            .expect("both are covariances");
+        let fit = together.fit().expect("converges");
+        assert_eq!(
+            fit.largest_family, rows,
+            "the second component joins every row, so the block is all of them"
         );
     }
 
@@ -1029,10 +1414,16 @@ mod tests {
         let censoring = [Censoring::Measured; 4];
         let limit = [0.0; 4];
         let design = DMatrix::from_element(4, 1, 1.0);
-        let model = TobitModel::build(&relationship, &value, &censoring, &limit, &design)
-            .expect("a relationship of one is a covariance and must be accepted");
+        let model = TobitModel::build(
+            std::slice::from_ref(&relationship),
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("a relationship of one is a covariance and must be accepted");
         assert!(
-            model.loglik(0.4, 1.0, &[2.5]).is_some(),
+            model.loglik(&[0.4], 1.0, &[2.5]).is_some(),
             "the likelihood must evaluate where a person shares a record with themselves"
         );
     }
@@ -1047,7 +1438,14 @@ mod tests {
         let limit = vec![0.0; n];
         let value = vec![f64::NAN; n];
         assert_eq!(
-            TobitModel::build(&relationship, &value, &censoring, &limit, &design).err(),
+            TobitModel::build(
+                std::slice::from_ref(&relationship),
+                &value,
+                &censoring,
+                &limit,
+                &design
+            )
+            .err(),
             Some("TOBIT_TOO_FEW_MEASURED_VALUES")
         );
     }

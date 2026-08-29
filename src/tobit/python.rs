@@ -53,7 +53,7 @@ pub fn tobit_fit(
         .map(|c| censoring_from(*c))
         .collect::<PyResult<_>>()?;
 
-    let fit = TobitModel::build(&a, &value, &censoring, &limit, &x)
+    let fit = TobitModel::build(std::slice::from_ref(&a), &value, &censoring, &limit, &x)
         .map_err(PyValueError::new_err)?
         .fit()
         .map_err(PyValueError::new_err)?;
@@ -106,8 +106,8 @@ pub fn tobit_interval(
         .map(|c| censoring_from(*c))
         .collect::<PyResult<_>>()?;
 
-    let model =
-        TobitModel::build(&a, &value, &censoring, &limit, &x).map_err(PyValueError::new_err)?;
+    let model = TobitModel::build(std::slice::from_ref(&a), &value, &censoring, &limit, &x)
+        .map_err(PyValueError::new_err)?;
     let got = model
         .heritability_interval()
         .map_err(PyValueError::new_err)?;
@@ -150,7 +150,7 @@ pub fn tobit_test(
         .map(|c| censoring_from(*c))
         .collect::<PyResult<_>>()?;
 
-    let got = TobitModel::build(&a, &value, &censoring, &limit, &x)
+    let got = TobitModel::build(std::slice::from_ref(&a), &value, &censoring, &limit, &x)
         .map_err(PyValueError::new_err)?
         .heritability_test()
         .map_err(PyValueError::new_err)?;

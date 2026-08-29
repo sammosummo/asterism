@@ -57,14 +57,29 @@ observation-specific limit. Asterism fits
 $$
 \mathbf Y^\ast\sim N\left(
 \mathbf X\boldsymbol\beta,
-\sigma^2\{h^2\mathbf A+(1-h^2)\mathbf I_n\}
+\sigma^2\left\{\sum_c p_c\mathbf K_c+\Bigl(1-\sum_c p_c\Bigr)\mathbf I_n\right\}
 \right).
 $$
 
 Here $\mathbf A$ is the relationship matrix, $\mathbf I_n$ the identity,
-$\sigma^2>0$ the total variance of the complete measurement, and
-$h^2\in[0,1]$ its heritability; $\mathbf X$ and $\boldsymbol\beta$ retain their
-shared fixed-effect meanings.
+$\sigma^2>0$ the total variance of the complete measurement, and $p_c\in[0,1]$
+the coefficient of component $\mathbf K_c$; $\mathbf X$ and $\boldsymbol\beta$
+retain their shared fixed-effect meanings.
+
+**Any number of components may be supplied.** The residual takes
+$1-\sum_c p_c$ and is never passed, which is what puts the coefficients on a
+common scale; a set summing past one describes no covariance and is refused.
+They are proportions of $\sigma^2$ exactly where every $\mathbf K_c$ carries a
+unit diagonal, which additive kinship, a person-level matrix and a household
+kernel all do.
+
+**One component is the case this model began as.** With a single kinship matrix
+$\mathbf K_1=\mathbf A$, $p_1$ is $h^2$, the residual is $1-h^2$, and the fit is
+what it always was, to the last decimal.
+
+Two records per person want a person-level component beside the genetic one, or
+the resemblance between a person's own two ears has nowhere to go but the
+heritability.
 
 When $C_i=M$, $Y_i^\ast$ is observed exactly. When $C_i=U$, only
 $Y_i^\ast\geq a_i$ is known; when $C_i=L$, only $Y_i^\ast\leq a_i$ is known. The
@@ -102,6 +117,13 @@ precedent but is not the implemented algorithm.
 
 Testing $H_0:h^2=0$ and deciding whether an interval contains that boundary use
 the 50:50 mixture. At least two measured values are required to identify scale.
+
+**Both are offered at one component only.** The coverage simulation that scored
+the boundary rule ran there; with several components more than one coefficient
+can rest on nought at once, which is not the case it scored. So the test refuses
+and the interval is returned with its boundary verdict absent rather than filled
+in from a measurement of a different model. Scoring them at several components
+is issue 38.
 
 ### Public record mapping
 
