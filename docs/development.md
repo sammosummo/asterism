@@ -382,11 +382,15 @@ alternative goes straight into the statistic. At 0.52 there is little of it; at
 0.75, with blocks of three hundred censored coordinates, there is enough to
 double the rejection rate.
 
-**What that number is.** The asymptotic reference thinning out where the
-information does. At three quarters censored only 954 of the 3,818 rows are
-measured, and the additive component is identified only through relatives who
-are both measured, so the sample the test leans on is far smaller than the
-roster suggests.
+**What that number is not: a small sample.** Two copies of the pedigree side by
+side -- 3,818 people, 7,636 rows, same families, same censoring -- give 0.105
+with an exact interval of [0.066, 0.156]. Doubling the data moved nothing, and a
+finite-sample failure of an asymptotic reference would have shrunk. What is left
+is a systematic error: the sequential-truncation gap enters a likelihood-ratio
+statistic through the part that does not cancel between its two fits, and grows
+with the roster exactly as the statistic does. The boundary mass agrees --
+0.565 of null fits land on the bound at one component, where the mixture assumes
+half, against 0.310 here.
 
 **What it is not.** A fault in the harness: running the released one-component
 configuration through this same code, 200 replicates at the same censoring,

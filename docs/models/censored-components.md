@@ -156,11 +156,30 @@ fit.
 nominal 0.05.** It holds at 0.052 censored. Point estimates and intervals held
 at both shares.
 
-What that is: the asymptotic reference thinning out where the information does.
-At three quarters censored, 954 of 3,818 rows are measured, and the additive
-component is identified only through relatives who are both measured — so the
-sample the test leans on is far smaller than the roster suggests, and the
-50:50 mixture is an asymptotic result.
+**It is not a small-sample effect.** The obvious explanation is that the
+asymptotic reference thins out where the information does — at three quarters
+censored only 954 of 3,818 rows are measured. That explanation was tested and
+refuted: running the same null on two copies of the pedigree side by side,
+3,818 people and 7,636 rows, gives 0.105 with an exact interval of
+[0.066, 0.156]. Doubling the data left the level exactly where it was. A
+finite-sample failure of an asymptotic reference shrinks when the sample grows;
+this does not.
+
+What is left is a systematic error rather than a random one. The likelihood
+Asterism maximises reaches the censored region probability by sequential
+truncation, and the independent full fit measures the resulting gap at about
+0.07 log units on tiny blocks. A likelihood-ratio statistic is a difference of
+two fits made under different constraints, so any part of that error that does
+not cancel between them goes straight into the statistic — and it grows with
+the roster exactly as the statistic does, which is why more data does not wash
+it out. The observed boundary mass says the same thing from another side: the
+mixture assumes half the null fits land on the bound, and 0.565 of them do at
+one component, against 0.310 here.
+
+This is a hypothesis with one refuted rival, not a settled cause. Testing it
+means computing the same statistic from a likelihood that integrates the region
+instead of approximating it, which is only possible where the censored blocks
+are small enough to integrate.
 
 What it is not: a fault in the test, and not a reason to withhold the quantity.
 Running the released one-component configuration through this same harness, 200

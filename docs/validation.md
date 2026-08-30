@@ -433,13 +433,20 @@ Estimates and intervals held at both. A follow-up of 64 null replicates
 reproduced the rate with no second component at nought in any of them, so the
 50:50 mixture was the right reference and was applied.
 
-The level thins out where the information does: at three quarters censored only
-954 of 3,818 rows are measured, and the additive component is identified only
-through relatives who are both measured. Running the released one-component
-configuration through the same harness, 200 replicates at the same censoring,
-gives 0.035 with an exact interval of [0.014, 0.071] containing the nominal, and
-puts 56.5 per cent of estimates on the boundary where the mixture says half.
-That is what says the harness is sound and the difference is the design. Both levels
+**Not a small-sample effect.** Two copies of the pedigree side by side, 3,818
+people and 7,636 rows, give 0.105 with an exact interval of [0.066, 0.156]:
+doubling the data left the level where it was, where a finite-sample failure of
+an asymptotic reference would have shrunk. The remaining explanation is a
+systematic error, most likely the sequential-truncation gap the independent full
+fit measures, which enters a likelihood-ratio statistic through the part that
+does not cancel between the two fits and grows with the roster as the statistic
+does.
+
+The harness is not the cause. Running the released one-component configuration
+through it, 200 replicates at the same censoring, gives 0.035 with an exact
+interval of [0.014, 0.071] containing the nominal, and puts 56.5 per cent of
+estimates on the boundary where the mixture says half; here that mass is
+0.310. Both levels
 are recorded in `release.toml` under `measured_levels`, beside the quantity
 rather than in place of it.
 
