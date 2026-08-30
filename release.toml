@@ -663,13 +663,41 @@ entry_points = [
   "asterism.CensoredComponentModel.interval",
   "asterism.CensoredComponentModel.test",
 ]
+# What the checks actually measured, and nothing else. Every component's
+# proportion was covered by `censored_components_coverage`, and the point
+# estimates agreed with an independent fit to 6.3e-03 at half censored.
 supported_quantities = [
   "coefficients",
   "mean_diagonal_proportions",
   "coefficient_interval",
   "mean_diagonal_proportion_interval",
-  "test",
 ]
+# **The boundary test is not among them, and that is a measurement.**
+# `censored_components_target_design` found it rejecting a true null 0.100 of
+# the time at three quarters censored against a nominal 0.05, with an exact
+# interval of [0.062, 0.150] that excludes the level. It held at 0.055 at 0.52
+# censored. A quantity qualified at one censoring level and not at the next is
+# not a supported quantity, so it is listed here instead of there.
+unqualified_quantities = [
+  { quantity = "test", measured = "type-I error 0.100 at censoring 0.75 against a nominal 0.05; 0.055 at 0.52", evidence = "evidence/censored-components-target-design-2026-08-30.json" },
+]
+# These describe the fit rather than reporting a component. They are returned
+# and are worth reading; none of them is a result.
+descriptive_quantities = [
+  "loglik",
+  "total_variance",
+  "fixed_effects",
+  "converged",
+  "scaled_gradient",
+  "censored_share",
+  "largest_family",
+]
+# An interval end that lands on a component's bound carries no Self-Liang
+# verdict at several components -- `contains_lower_bound` and
+# `contains_upper_bound` stay absent on purpose, because more than one share can
+# rest on nought at once and nobody has measured the mixture there. See
+# docs/adr/0022-the-censored-model-generalises-in-place.md.
+boundary_verdict_withheld = true
 # Only the checks that exist. A pass rule must name a script that is really
 # there, so the remaining three arrive with the checks that write them rather
 # than as names pointing at nothing.

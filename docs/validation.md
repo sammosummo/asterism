@@ -23,6 +23,7 @@ fit, or a failed profile point counts as a miss rather than leaving the sample.
 - [Two traits](#two-traits)
 - [Binary traits](#binary-traits)
 - [Censored traits](#censored-traits)
+- [Censored traits, several components](#censored-traits-several-components)
 - [Mixed pairs](#mixed-pairs)
 - [Gene by environment, measured](#gene-by-environment-measured)
 - [Gene by environment, binary](#gene-by-environment-binary)
@@ -355,6 +356,103 @@ upper limit for coverage falls below 0.95.
 
 The release campaign requests 200 replicates in each of four cells. Those 800
 attempts have not run.
+
+## Censored traits, several components
+
+**Not qualified.** `release.toml` marks `one_trait_censored_components`
+`planned_for_0_2` and `run_analysis` refuses it. What follows is what has been
+measured, not a release claim. The model, its equations and its interface are in
+[the model page](models/censored-components.md); the decision to generalise the
+censored model in place rather than duplicate it is
+[ADR 0022](adr/0022-the-censored-model-generalises-in-place.md).
+
+### Agreement
+
+| Compared against | Estimator | Design | Worst difference | Label |
+| --- | --- | --- | --- | --- |
+| An independent dense censored likelihood optimised by SciPy | ML | 20 sibling pairs, 2 records each, a quarter censored | 1.4e-3 on the mean-diagonal proportions, 7.0e-2 on the log-likelihood | Reproducible |
+| The same, half censored | ML | as above | 6.3e-3 on the proportions, 5.8e-2 on the log-likelihood | Reproducible |
+
+The reference shares no likelihood, parameterisation, starting values or
+optimiser, and reaches the censored region probability by integrating it where
+Asterism reaches it by sequential truncation. **The log-likelihood difference is
+that approximation** and not a disagreement about the answer: scoring Asterism's
+own fit through the independent likelihood shows the independent optimum is the
+better point wherever the two differ, by about 1e-3, which is what a difference
+of 6e-3 in a proportion costs on a surface this flat.
+
+### Interval coverage
+
+2,400 people in villages of six, two records each, 0.52 censored, 300
+replicates per cell, an interval on **every** structured component. Twelve cells,
+all covering their truth within a band drawn simultaneously across them.
+
+| additive / person / household / residual | additive | person | household |
+| --- | ---: | ---: | ---: |
+| 0.00 / 0.35 / 0.25 / 0.40 | range, see below | 0.9933 | 0.9700 |
+| 0.20 / 0.30 / 0.20 / 0.30 | 0.9600 | 0.9867 | 0.9667 |
+| 0.35 / 0.25 / 0.20 / 0.20 | 0.9800 | 0.9867 | 0.9700 |
+| 0.60 / 0.15 / 0.10 / 0.15 | 0.9667 | 0.9667 | 0.9567 |
+
+**Nominal 0.975, not 0.95**, and it is a lower-end statement: a component
+proportion of one leaves a person's own records perfectly correlated, so the
+covariance is singular, the profile cannot be evaluated at the upper bound and
+the interval covers that end rather than placing it on evidence never gathered.
+A two-sided 95 per cent interval puts 0.025 in each tail; closing the upper one
+off hands that back.
+
+**The band is simultaneous across the twelve cells.** Drawn at 95 per cent for
+each separately, at least one is excluded by chance 46 per cent of the time, so
+a per-cell rule would fail about every other run of a model with nothing wrong
+with it. The first run of this check demonstrated it, failing on a cell that
+over-covered by 0.001.
+
+In the cell whose additive truth is nought, 11 of 300 intervals shut the truth
+out and 289 were left undecided, so that cell's coverage is at most 0.963 —
+which the band cannot separate from nominal. It is a range rather than a number
+because containment splits in two at a bound: an end above nought excludes the
+truth whatever rule applies, while an end on nought is the Self–Liang question,
+and that verdict is deliberately withheld at several components.
+
+### Target design
+
+1,909 people, 202 relationship components with the largest at 180, six
+fixed-effect columns, two records each, families cut into households of three.
+800 attempts, 800 measured, no refusal and no failed fit. Largest censored block
+310, against the 600 the region ladder has climbed.
+
+| scenario | censored | rate | exact interval | nominal | |
+| --- | ---: | ---: | :---: | ---: | :--- |
+| null | 0.52 | 0.055 | [0.028, 0.096] | 0.05 | held |
+| null | 0.75 | 0.100 | [0.062, 0.150] | 0.05 | **failed** |
+| heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
+| heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
+
+**The boundary test is not qualified at three quarters censored.** A follow-up
+of 64 null replicates reproduced the rate with no second component at nought in
+any of them, so the 50:50 mixture was the right reference and was applied.
+Estimates and intervals held at both shares.
+
+### Component separation
+
+Sweeping sibling pairs against records per person, with truths of 0.4 additive
+and 0.3 person-level, the two are recovered separately and each spread falls as
+the design grows. The cost is that splitting them is four to five times less
+precise than their sum, so a design sized on the total variance is not sized on
+the split.
+
+### How replicates are scored
+
+Every requested replicate stays in its cell's denominator. The target-design
+campaign permits no failed fit of any kind. The coverage campaign permits no
+refusal, and a cell fails when its simultaneous exact interval excludes the
+nominal in either direction.
+
+### Pending
+
+The boundary test at three quarters censored, which failed and has not been
+re-measured after any change. Cross-platform agreement for this analysis has a
+probe and declared tolerances but no comparison has been run.
 
 ## Mixed pairs
 
