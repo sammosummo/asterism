@@ -70,6 +70,37 @@ tag and saved wheels.
   briefly refused there, which would have stopped the coverage check that
   scores it from ever running. The interval's boundary verdict is still filled
   at one component only, that being where it was scored.
+- **A censored trait with several variance components is declared as an
+  analysis, and it is not supported yet.** `one_trait_censored_components`
+  carries `support = "planned_for_0_2"`, so `run_analysis` refuses it; the entry
+  exists so its checks have somewhere to be declared as they are written rather
+  than being written and then remembered. Four are written. The components
+  separate: sweeping sibling pairs against records per person, an additive and a
+  person-level component are each recovered, at the cost of the split being four
+  to five times less precisely known than their sum. The fit agrees with an
+  independent censored likelihood optimised by SciPy to 1.4e-03 on the
+  proportions at a quarter censored and 6.3e-03 at a half, and the wider gap in
+  the log-likelihood is the sequential-truncation approximation, measured rather
+  than assumed. Every component's interval covers its truth. At the target
+  design -- 1,909 people, largest family 180, two records each, households of
+  three -- eight hundred attempts produced eight hundred measurements with no
+  failed fit.
+
+  Three things about it are worth knowing before use. The upper end of a
+  component proportion cannot be reached when a person contributes more than one
+  record, because a proportion of one leaves that person's records perfectly
+  correlated and the covariance singular; the interval covers that end, so what
+  it states is a lower bound and its nominal coverage is 0.975. The boundary
+  test's level was measured rather than inherited: 0.055 against a nominal 0.05
+  with half the rows censored, 0.100 with three quarters, which is the
+  asymptotic reference thinning out as the measured sample does. And the largest
+  censored region qualified against a GHK reference is 600 rows in one block,
+  which is the largest rung climbed rather than a limit that was found; the
+  target design reached 310. [ADR
+  0022](docs/adr/0022-the-censored-model-generalises-in-place.md) records why
+  the censored model took several components in place rather than through a
+  second model beside it, and that ADR 0001 decision 16 stands.
+
 - **Breaking, an analysis is renamed.** `one_trait_tobit_audiogram` is now
   `one_trait_censored`. Having "audiogram" in the identifier implied the model
   applies only to audiograms; nothing in a censored variance-components model is

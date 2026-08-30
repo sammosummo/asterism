@@ -396,6 +396,7 @@ def main() -> int:
         record.write_text(
             json.dumps(
                 {
+                    "participant_free": True,
                     "families": arguments.families,
                     "records_per_person": arguments.records,
                     "truths": {

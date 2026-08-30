@@ -342,6 +342,7 @@ def main() -> int:
             )
 
     receipt: dict[str, Any] = {
+        "participant_free": True,
         "what": (
             "whether an additive component and a person-level one can be told "
             "apart, swept over records per person and related pairs"

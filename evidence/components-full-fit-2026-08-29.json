@@ -1,4 +1,5 @@
 {
+  "participant_free": true,
   "families": 20,
   "records_per_person": 2,
   "truths": {
