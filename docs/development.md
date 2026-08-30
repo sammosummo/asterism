@@ -243,6 +243,33 @@ The run takes a few hours. Reduce `--replicates` and `--draws` for an explorator
 pass, but quote the command with any number taken from it, because the recorded
 evidence did not use the defaults.
 
+Whether an additive component and a person-level one can be told apart. Both are
+one within a person, so what separates them is that additive kinship is also
+non-zero between relatives: the information comes from **related pairs** rather
+than from records, and a person's second record sharpens their sum while saying
+nothing about the split. This sweeps the design and reports where a pedigree is
+enough:
+
+```sh
+uv run --no-project python checks/component_separation.py
+```
+
+**Its pass rule is consistency, not unbiasedness**, and that is deliberate.
+Maximum likelihood variance components are biased in finite samples -- it is
+what REML exists to remedy, and this model cannot use REML because a censored
+observation has no residual to project. Measured at two records each: the
+additive share is 0.358 against a truth of 0.40 over thirty sibling pairs and
+0.398 over two hundred and forty, while the person-level share falls from 0.327
+to 0.303 against 0.30. The smaller component absorbs what the design cannot
+attribute to the larger one, and both find their truths as relatives accumulate.
+
+The other number it reports is **how much less precisely each component is known
+than their sum**, which runs at four to five times across realistic designs. The
+correlation between the two estimates is reported too but is not the verdict: it
+goes to minus one as a design grows, because the sum becomes certain while the
+split stays open, so it describes the shape of the uncertainty and not whether
+a design can answer the question.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

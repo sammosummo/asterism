@@ -167,6 +167,23 @@ absolute = { "fit.heritability" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik
 relative = { "fit.heritability" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
+analysis_id = "one_trait_censored_components"
+measured = true
+numeric_fields = [
+  "fit.coefficients[0]",
+  "fit.mean_diagonal_proportions[0]",
+  "fit.total_variance",
+  "fit.loglik",
+  "interval.estimate",
+  "interval.lower",
+  "interval.upper",
+  "test.statistic",
+  "test.p_value",
+]
+absolute = { "fit.coefficients[0]" = 1e-9, "fit.mean_diagonal_proportions[0]" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "interval.estimate" = 1e-9, "interval.lower" = 1e-9, "interval.upper" = 1e-9, "test.statistic" = 1e-9, "test.p_value" = 1e-9 }
+relative = { "fit.coefficients[0]" = 1e-6, "fit.mean_diagonal_proportions[0]" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "interval.estimate" = 1e-6, "interval.lower" = 1e-6, "interval.upper" = 1e-6, "test.statistic" = 1e-6, "test.p_value" = 1e-6 }
+
+[[cross_platform_agreement.model_tolerances]]
 analysis_id = "mixed_binary_censored_genetic_correlation"
 measured = true
 numeric_fields = [
@@ -633,3 +650,38 @@ timeout_seconds = 86400
 status = "ready"
 design_facts = { participant_free = true, sample_size = { min = 800, max = 800 }, largest_family = { max = 2 }, trait_type = ["mixed_pairings_with_continuous"], components = ["additive_relationship", "residual"], censoring_share = { min = 0.0, max = 0.25 } }
 
+[[analyses]]
+id = "one_trait_censored_components"
+# **Not supported yet, and saying so is the point.** `run_analysis` refuses an
+# analysis whose support is not `supported_in_0_1`, which is what should happen
+# until its qualification is complete. The entry exists so its checks have
+# somewhere to be declared as they are written, rather than being written and
+# then remembered.
+support = "planned_for_0_2"
+entry_points = [
+  "asterism.CensoredComponentModel.fit",
+  "asterism.CensoredComponentModel.interval",
+  "asterism.CensoredComponentModel.test",
+]
+supported_quantities = [
+  "coefficients",
+  "mean_diagonal_proportions",
+  "coefficient_interval",
+  "mean_diagonal_proportion_interval",
+  "test",
+]
+# Only the checks that exist. A pass rule must name a script that is really
+# there, so the remaining three arrive with the checks that write them rather
+# than as names pointing at nothing.
+required_checks = [
+  "component_separation",
+]
+pass_rules_configured = true
+
+[[analyses.pass_rules]]
+id = "component_separation"
+command = ["checks/component_separation.py", "--no-write"]
+expected_exit_code = 0
+timeout_seconds = 43200
+status = "ready"
+design_facts = { participant_free = true, sample_size = { min = 120, max = 1440 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2, 3], sibling_pairs = [30, 60, 120, 240], replicates_per_cell = 200, censoring_share = { min = 0.4, max = 0.4 }, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, rule = "consistency_not_unbiasedness", bias_allowed_at_largest_design = 0.03 }

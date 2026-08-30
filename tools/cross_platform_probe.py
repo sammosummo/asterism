@@ -96,6 +96,17 @@ NUMERIC_FIELDS_BY_ANALYSIS: dict[str, tuple[str, ...]] = {
         "test.statistic",
         "test.p_value",
     ),
+    "one_trait_censored_components": (
+        "fit.coefficients[0]",
+        "fit.mean_diagonal_proportions[0]",
+        "fit.total_variance",
+        "fit.loglik",
+        "interval.estimate",
+        "interval.lower",
+        "interval.upper",
+        "test.statistic",
+        "test.p_value",
+    ),
     "mixed_binary_censored_genetic_correlation": (
         "fit.genetic_correlation",
         "fit.heritability[0]",
@@ -689,6 +700,68 @@ def probe_tobit(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, floa
     }
 
 
+def probe_censored_components(
+    problem: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, float]]:
+    """Exercise the several-component censored model through public functions.
+
+    The second component groups four people, which is two sibling pairs, rather
+    than one. A grouping that is exactly a family would be the pedigree itself
+    on this roster, and the two coefficients would not separate.
+
+    Args:
+        problem: Deterministic participant-free fixture.
+
+    Returns:
+        Public fit, interval and test records with selected numeric fields.
+    """
+    people: int = 2 * PAIRS
+    """Read the fixed synthetic roster size."""
+
+    grouping: np.ndarray = asterism.grouping_matrix(
+        [str(person // 4) for person in range(people)]
+    )
+    """Built a second component from groups of two sibling pairs."""
+
+    model: Any = asterism.CensoredComponentModel(
+        [problem["relationship"], grouping], problem["design"]
+    )
+    """Prepared the censored model with two structured components."""
+
+    fit: dict[str, Any] = model.fit(
+        problem["censored_values"], problem["censoring"], problem["limits"]
+    )
+    """Fitted both coefficients under right censoring."""
+
+    interval: dict[str, Any] = model.interval(
+        problem["censored_values"],
+        problem["censoring"],
+        problem["limits"],
+        component=0,
+    )
+    """Profiled the first component's mean-diagonal proportion."""
+
+    test: dict[str, Any] = model.test(
+        problem["censored_values"],
+        problem["censoring"],
+        problem["limits"],
+        component=1,
+    )
+    """Tested the grouping component against its boundary null."""
+
+    return {"fit": fit, "interval": interval, "test": test}, {
+        "fit.coefficients[0]": fit["coefficients"][0],
+        "fit.mean_diagonal_proportions[0]": fit["mean_diagonal_proportions"][0],
+        "fit.total_variance": fit["total_variance"],
+        "fit.loglik": fit["loglik"],
+        "interval.estimate": interval["estimate"],
+        "interval.lower": interval["lower"],
+        "interval.upper": interval["upper"],
+        "test.statistic": test["statistic"],
+        "test.p_value": test["p_value"],
+    }
+
+
 def mixed_traits(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the censored-hearing and continuous trait pairing 0.1 supports.
 
@@ -827,6 +900,7 @@ def run_all_probes() -> list[dict[str, Any]]:
         ("binary_liability_heritability", probe_liability),
         ("one_trait_censored", probe_tobit),
         ("mixed_binary_censored_genetic_correlation", probe_mixed_bivariate),
+        ("one_trait_censored_components", probe_censored_components),
     )
     """Mapped the exact manifest inventory to independently testable public probes."""
 
@@ -926,8 +1000,9 @@ def run_probe(wheel_path: Path) -> dict[str, Any]:
         "binary_liability_heritability",
         "one_trait_censored",
         "mixed_binary_censored_genetic_correlation",
+        "one_trait_censored_components",
     ]
-    """Fixed the probe implementation to the exact accepted 0.1 analysis inventory."""
+    """Fixed the probe implementation to the exact accepted analysis inventory."""
 
     if manifest_ids != expected_ids:
         raise ValueError("PROBE_MANIFEST_ANALYSES_DO_NOT_MATCH_IMPLEMENTATION")

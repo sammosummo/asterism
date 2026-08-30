@@ -11,6 +11,7 @@ and its interface.
 | Two traits | [two-traits.md](two-traits.md) |
 | Binary traits | [binary.md](binary.md) |
 | Censored traits | [censored.md](censored.md) |
+| Censored traits, several components | [censored-components.md](censored-components.md) |
 | Mixed pairs | [mixed.md](mixed.md) |
 | Gene by environment, measured | [gxe-measured.md](gxe-measured.md) |
 | Gene by environment, binary | [gxe-binary.md](gxe-binary.md) |

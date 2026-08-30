@@ -34,6 +34,11 @@ SLUGS: dict[str, str] = {
     "discrete_gene_by_environment": "gxe-binary",
     "binary_liability_heritability": "binary",
     "one_trait_censored": "censored",
+    # Its own page rather than sharing the censored one. Two analyses writing
+    # to a single page makes its content depend on which was written last, and
+    # the generator then disagrees with itself about whether the page is
+    # current.
+    "one_trait_censored_components": "censored-components",
     "mixed_binary_censored_genetic_correlation": "mixed",
 }
 """Named the page each analysis writes to."""
