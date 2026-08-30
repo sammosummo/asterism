@@ -382,15 +382,21 @@ alternative goes straight into the statistic. At 0.52 there is little of it; at
 0.75, with blocks of three hundred censored coordinates, there is enough to
 double the rejection rate.
 
-**What that number is not: a small sample.** Two copies of the pedigree side by
-side -- 3,818 people, 7,636 rows, same families, same censoring -- give 0.105
-with an exact interval of [0.066, 0.156]. Doubling the data moved nothing, and a
-finite-sample failure of an asymptotic reference would have shrunk. What is left
-is a systematic error: the sequential-truncation gap enters a likelihood-ratio
-statistic through the part that does not cancel between its two fits, and grows
-with the roster exactly as the statistic does. The boundary mass agrees --
-0.565 of null fits land on the bound at one component, where the mixture assumes
-half, against 0.310 here.
+**Three explanations tested, two refuted.** Doubling the roster to 3,818 people
+leaves the level at 0.105, so it is not a small sample. At a design whose
+censored blocks are small enough to integrate exactly, the level is 0.060 with
+the region integrated and 0.065 with it approximated -- both containing nominal,
+and the approximation conservative rather than inflating, giving a statistic of
+0.338 against 0.475. Sweeping family size from 4 to 128 at a fixed roster of
+1,920 people moves the level not at all: 0.085, 0.090, 0.100, 0.050, 0.050,
+0.060 against censored blocks from 8 rows to 227.
+
+**What is measured** is the share of null fits landing exactly on the bound. The
+50:50 mixture is the right reference only if that share is a half. It is 0.565
+in the calibrated one-component configuration, 0.310 at the target design, and
+0.24 to 0.40 across the sweep. Self-Liang's half-and-half assumes interior,
+uncorrelated nuisance components, and the additive and person-level components
+here correlate at about -0.98.
 
 **What it is not.** A fault in the harness: running the released one-component
 configuration through this same code, 200 replicates at the same censoring,

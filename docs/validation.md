@@ -433,14 +433,19 @@ Estimates and intervals held at both. A follow-up of 64 null replicates
 reproduced the rate with no second component at nought in any of them, so the
 50:50 mixture was the right reference and was applied.
 
-**Not a small-sample effect.** Two copies of the pedigree side by side, 3,818
-people and 7,636 rows, give 0.105 with an exact interval of [0.066, 0.156]:
-doubling the data left the level where it was, where a finite-sample failure of
-an asymptotic reference would have shrunk. The remaining explanation is a
-systematic error, most likely the sequential-truncation gap the independent full
-fit measures, which enters a likelihood-ratio statistic through the part that
-does not cancel between the two fits and grows with the roster as the statistic
-does.
+**Three explanations tested; two refuted.** Doubling the roster to 3,818 people
+gives 0.105, so it is not a small sample. At a design whose blocks are small
+enough to integrate exactly, the level is 0.060 with the region integrated and
+0.065 with it approximated, both containing nominal — and the approximation is
+conservative there, making the statistic 0.338 against 0.475. Sweeping family
+size from 4 to 128 at a fixed roster moves the level not at all.
+
+What is measured is the boundary mass. The 50:50 mixture is right only if half
+the null fits land on the bound. That share is 0.565 in the calibrated
+one-component configuration, 0.310 at this target design, and 0.24 to 0.40
+across the family-size sweep. Self–Liang's half-and-half assumes interior,
+uncorrelated nuisance components; here the additive and person-level components
+correlate at about −0.98.
 
 The harness is not the cause. Running the released one-component configuration
 through it, 200 replicates at the same censoring, gives 0.035 with an exact

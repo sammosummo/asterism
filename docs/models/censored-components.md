@@ -156,41 +156,40 @@ fit.
 nominal 0.05.** It holds at 0.052 censored. Point estimates and intervals held
 at both shares.
 
-**It is not a small-sample effect.** The obvious explanation is that the
-asymptotic reference thins out where the information does — at three quarters
-censored only 954 of 3,818 rows are measured. That explanation was tested and
-refuted: running the same null on two copies of the pedigree side by side,
-3,818 people and 7,636 rows, gives 0.105 with an exact interval of
-[0.066, 0.156]. Doubling the data left the level exactly where it was. A
-finite-sample failure of an asymptotic reference shrinks when the sample grows;
-this does not.
+**Three explanations were tested. Two are refuted and the third is measured.**
 
-What is left is a systematic error rather than a random one. The likelihood
-Asterism maximises reaches the censored region probability by sequential
-truncation, and the independent full fit measures the resulting gap at about
-0.07 log units on tiny blocks. A likelihood-ratio statistic is a difference of
-two fits made under different constraints, so any part of that error that does
-not cancel between them goes straight into the statistic — and it grows with
-the roster exactly as the statistic does, which is why more data does not wash
-it out. The observed boundary mass says the same thing from another side: the
-mixture assumes half the null fits land on the bound, and 0.565 of them do at
-one component, against 0.310 here.
+*Not a small sample.* Two copies of the pedigree side by side — 3,818 people,
+7,636 rows — give 0.105 with an exact interval of [0.066, 0.156]. Doubling the
+data moved nothing, where a finite-sample failure of an asymptotic reference
+would have shrunk.
 
-This is a hypothesis with one refuted rival, not a settled cause. Testing it
-means computing the same statistic from a likelihood that integrates the region
-instead of approximating it, which is only possible where the censored blocks
-are small enough to integrate.
+*Not the approximated region.* At a design whose censored blocks are small
+enough to integrate exactly — 100 families of four, blocks of eight rows, three
+components, the same three quarters censored — the level is 0.075 from
+Asterism's own test, 0.065 from its statistic, and 0.060 from the same statistic
+recomputed with the region **integrated** rather than approximated. All three
+contain the nominal. The approximation error does fail to cancel between the two
+fits, by 0.069 log units, but it makes the statistic *smaller*: 0.338 against
+0.475. It is conservative here, so it cannot be what inflates the level.
 
-What it is not: a fault in the test, and not a reason to withhold the quantity.
-Running the released one-component configuration through this same harness, 200
-replicates at the same censoring, gives 0.035 with an exact interval of
-[0.014, 0.071] that contains the nominal, and puts 56.5 per cent of estimates
-exactly on the boundary where the mixture says half. At several components with
-two records that boundary mass is much smaller, which is where the difference
-sits. Nor is it the mixture being
-applied where it should not be — a follow-up of 64 null replicates reproduced
-the rate with no second component at nought in any of them, so the reference
-was the right one.
+*Not the size of the censored block.* Holding the roster at 1,920 people and
+sweeping family size from 4 to 128 — censored blocks from 8 rows to 227 — the
+level does not trend: 0.085, 0.090, 0.100, 0.050, 0.050, 0.060.
+
+*What is measured.* The share of null fits whose estimate lands exactly on the
+bound. The 50:50 mixture is the right reference only if that share is a half. It
+is 0.565 in the released one-component configuration, which is calibrated. It is
+0.24 to 0.40 across every several-component cell above, and 0.310 at the target
+design. Self–Liang's half-and-half holds for one variance component at a bound
+with interior, uncorrelated nuisance components; the additive and person-level
+components here are correlated at about −0.98, which is what
+[`checks/component_separation.py`](../../checks/component_separation.py)
+measures from the other side. A boundary mass that is not a half makes a p-value
+computed as though it were a half too small.
+
+This is the surviving explanation, not a proven one. What would settle it is a
+reference that assumes nothing about the mass — fit under the null, simulate
+from that fit, and read the p-value from the statistic's own distribution.
 
 Read a p-value here knowing its level at your censoring, which is what
 `measured_levels` in `release.toml` records. [ADR
