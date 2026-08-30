@@ -679,11 +679,14 @@ supported_quantities = [
 # quarters censored. That is one design at one censoring level. ADR 0020 settled
 # that no design range gates a result, and striking a quantity off on the
 # strength of one cell is that same move under another name. What the number
-# says is that the 50:50 mixture is the wrong reference here. That mixture is
-# right only if half the null fits land on the bound; the measured share is 0.31
-# at this design against 0.565 where the test is calibrated. It is not a small
-# sample and not the approximated region, both of which were tested and ruled
-# out. Worth knowing before reading a p-value there.
+# says is that the statistic and its reference do not agree here. What is
+# measured is the share of null fits landing on the bound, which a 50:50 mixture
+# needs to be a half: it is 0.31 at this design against 0.565 where the test is
+# calibrated. Whether that is the mixture being wrong or the fit not reaching a
+# bound it should reach is NOT settled -- the two have different fixes and the
+# experiment that separates them has not been run. What is ruled out is a small
+# sample and the approximated region, both tested. Worth knowing before reading
+# a p-value there.
 measured_levels = [
   { quantity = "test", design = "target", censoring = 0.52, level = 0.05, measured = 0.055, exact_interval = [0.028, 0.096] },
   { quantity = "test", design = "target", censoring = 0.75, level = 0.05, measured = 0.100, exact_interval = [0.062, 0.150] },
