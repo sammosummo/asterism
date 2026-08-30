@@ -675,6 +675,7 @@ supported_quantities = [
 # than as names pointing at nothing.
 required_checks = [
   "component_separation",
+  "censored_components_against_independent_full_fit",
 ]
 pass_rules_configured = true
 
@@ -685,3 +686,16 @@ expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
 design_facts = { participant_free = true, sample_size = { min = 120, max = 1440 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2, 3], sibling_pairs = [30, 60, 120, 240], replicates_per_cell = 200, censoring_share = { min = 0.4, max = 0.4 }, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, rule = "consistency_not_unbiasedness", bias_allowed_at_largest_design = 0.03 }
+
+[[analyses.pass_rules]]
+id = "censored_components_against_independent_full_fit"
+command = ["checks/censored_components_against_independent_full_fit.py", "--no-write"]
+expected_exit_code = 0
+timeout_seconds = 7200
+status = "ready"
+# Two tolerances because the two quantities disagree for different reasons. The
+# proportions are what the science reads and they agree to parts in ten
+# thousand. The log likelihoods are not expected to agree that closely:
+# Asterism reaches the censored region probability by sequential truncation and
+# the reference integrates it, so the gap between them is that approximation.
+design_facts = { participant_free = true, sample_size = { min = 80, max = 80 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2], sibling_pairs = [20], replicates_per_share = 12, censoring_share = { min = 0.25, max = 0.5 }, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, proportion_tolerance = 0.01, loglik_tolerance = 0.15 }

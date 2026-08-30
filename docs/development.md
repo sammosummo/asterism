@@ -270,6 +270,47 @@ goes to minus one as a design grows, because the sum becomes certain while the
 split stays open, so it describes the shape of the uncertainty and not whether
 a design can answer the question.
 
+The same model against something that is not itself. SciPy optimises a censored
+likelihood assembled separately from its definition, sharing no likelihood,
+parameterisation, starting values or optimiser with Asterism:
+
+```sh
+uv run --no-project python checks/censored_components_against_independent_full_fit.py
+```
+
+That independent likelihood lives in `checks/censored_full_fit_reference.py`;
+the helper is not itself a scientific pass command. It reaches the censored
+region probability by integrating it -- `log_ndtr` for one censored row, SciPy's
+Genz implementation for more -- where Asterism reaches it by sequential
+truncation.
+
+**Two tolerances, because the two quantities disagree for different reasons**,
+and both are declared in `release.toml` beside the pass rule rather than left in
+the script. The mean-diagonal proportions are what the science reads. The log
+likelihoods agree less closely, and are not expected to: the gap between them
+**is** the sequential-truncation approximation, measured here rather than
+assumed.
+
+Measured on 29 August 2026, twenty sibling pairs at two records each, twelve
+replicates at a quarter censored and twelve at a half: the proportions agree to
+1.4e-03 at the lighter censoring and 6.3e-03 at the heavier, and the log
+likelihoods to about 0.07 throughout.
+
+**The check also says which side the disagreement comes from**, which is the
+part worth reading. It scores Asterism's own answer through the independent
+likelihood and compares that with the independent optimum. Wherever the two
+disagree the independent optimum wins, so SciPy is not merely stopping short of
+what Asterism found -- it reaches a better point, and what separates them is the
+approximation moving the optimum. It wins by very little, around 1e-03 in log
+units, and where the two agree the comparison can go a millionth the other way,
+which is two numbers tying rather than a verdict. The reason it is so close is
+that the likelihood is nearly flat along the split between the two components.
+That flatness is the same thing
+[`checks/component_separation.py`](../checks/component_separation.py) measures
+from the other side, where it shows up as the split being four to five times
+less precisely known than the sum: a surface that flat turns a small error in
+the likelihood into a comparatively large move in the proportions.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

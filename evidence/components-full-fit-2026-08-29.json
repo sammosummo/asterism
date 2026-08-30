@@ -1,0 +1,29 @@
+{
+  "families": 20,
+  "records_per_person": 2,
+  "truths": {
+    "additive": 0.4,
+    "person": 0.3,
+    "residual": 0.3
+  },
+  "proportion_tolerance": 0.01,
+  "loglik_tolerance": 0.15,
+  "cells": [
+    {
+      "censoring_share": 0.25,
+      "replicates": 12,
+      "worst_proportion_gap": 0.0013974544711219394,
+      "worst_loglik_gap": 0.06961316921105265,
+      "worst_censored_rows_in_a_family": 4,
+      "least_independent_advantage": -9.615548179908728e-07
+    },
+    {
+      "censoring_share": 0.5,
+      "replicates": 12,
+      "worst_proportion_gap": 0.006281477359073473,
+      "worst_loglik_gap": 0.058008980199971916,
+      "worst_censored_rows_in_a_family": 4,
+      "least_independent_advantage": 5.61345311353989e-05
+    }
+  ]
+}

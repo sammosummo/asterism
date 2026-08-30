@@ -191,8 +191,6 @@ def one_replicate(families: int, records: int, seed: int) -> tuple[float, float]
     )
     """Built the model with the two components under test."""
 
-    """Built the model with the two components under test."""
-
     try:
         fit: dict[str, Any] = model.fit(value, censoring, np.full(rows, ceiling))
         """Fitted this replicate."""
