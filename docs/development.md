@@ -382,10 +382,22 @@ alternative goes straight into the statistic. At 0.52 there is little of it; at
 0.75, with blocks of three hundred censored coordinates, there is enough to
 double the rejection rate.
 
-**This is a result, not a defect in the check.** It says the several-component
-censored model may not carry a boundary test at three quarters censored, which
-is where the highest extended-high-frequency audiogram thresholds sit. Nothing
-here bears on the point estimates or the intervals, both of which held.
+**What that number is.** The asymptotic reference thinning out where the
+information does. At three quarters censored only 954 of the 3,818 rows are
+measured, and the additive component is identified only through relatives who
+are both measured, so the sample the test leans on is far smaller than the
+roster suggests.
+
+**What it is not.** A fault in the harness: running the released one-component
+configuration through this same code, 200 replicates at the same censoring,
+gives 0.035 with an exact interval of [0.014, 0.071] containing the nominal, and
+puts 56.5 per cent of estimates on the boundary where the mixture says half. At
+several components with two records that boundary mass is much smaller. Nor a reason to
+withhold the quantity -- [ADR 0020](adr/0020-no-design-range-gates-a-result.md)
+settled that no design range gates a result, so the level is recorded beside the
+test in `release.toml` under `measured_levels` and the cell is left failing
+rather than the quantity struck off. Nothing here bears on the point estimates
+or the intervals, both of which held.
 
 Coverage of the interval at the full component set, with an interval taken for
 **every** structured component rather than only the first:

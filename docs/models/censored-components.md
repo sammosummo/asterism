@@ -26,11 +26,11 @@ The components are an ordinary list, so the one-component case is this model
 with a list of length one, not a separate model. Each frequency is fitted on its
 own; nothing here combines them.
 
-**`test` is shown above but is not a supported quantity**, and `release.toml`
-lists it under `unqualified_quantities` rather than beside the others. It is
-mis-calibrated at three quarters censored; see [At the design it will be used
-on](#at-the-design-it-will-be-used-on). The coefficients, the proportions and
-their intervals are supported.
+`test` is a supported quantity, and its measured level is recorded beside it in
+`release.toml` rather than left to be assumed: 0.055 against a nominal 0.05 at
+half the rows censored, and 0.100 at three quarters. See [At the design it will
+be used on](#at-the-design-it-will-be-used-on) for what that second number is
+and is not.
 
 ## The model
 
@@ -152,12 +152,32 @@ fit.
 | heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
 | heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
 
-**The boundary test is not qualified at three quarters censored.** It rejects a
-true null twice as often as it should there, and the exact interval excludes the
-level rather than sitting near it. It is not the mixture being applied where it
-should not be: a follow-up of 64 null replicates reproduced the rate with no
-second component at nought in any of them. Point estimates and intervals held at
-both shares. **Do not read a p-value from this model at that censoring level.**
+**The boundary test's level is 0.100 at three quarters censored, against a
+nominal 0.05.** It holds at 0.052 censored. Point estimates and intervals held
+at both shares.
+
+What that is: the asymptotic reference thinning out where the information does.
+At three quarters censored, 954 of 3,818 rows are measured, and the additive
+component is identified only through relatives who are both measured — so the
+sample the test leans on is far smaller than the roster suggests, and the
+50:50 mixture is an asymptotic result.
+
+What it is not: a fault in the test, and not a reason to withhold the quantity.
+Running the released one-component configuration through this same harness, 200
+replicates at the same censoring, gives 0.035 with an exact interval of
+[0.014, 0.071] that contains the nominal, and puts 56.5 per cent of estimates
+exactly on the boundary where the mixture says half. At several components with
+two records that boundary mass is much smaller, which is where the difference
+sits. Nor is it the mixture being
+applied where it should not be — a follow-up of 64 null replicates reproduced
+the rate with no second component at nought in any of them, so the reference
+was the right one.
+
+Read a p-value here knowing its level at your censoring, which is what
+`measured_levels` in `release.toml` records. [ADR
+0020](../adr/0020-no-design-range-gates-a-result.md) settled that no design
+range gates a result; a measured level is a fact to report beside the number,
+not a gate in front of it.
 
 The check is
 [`checks/censored_components_target_design.py`](../../checks/censored_components_target_design.py).

@@ -428,10 +428,20 @@ fixed-effect columns, two records each, families cut into households of three.
 | heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
 | heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
 
-**The boundary test is not qualified at three quarters censored.** A follow-up
-of 64 null replicates reproduced the rate with no second component at nought in
-any of them, so the 50:50 mixture was the right reference and was applied.
-Estimates and intervals held at both shares.
+**The test's level is 0.100 at three quarters censored and 0.055 at half.**
+Estimates and intervals held at both. A follow-up of 64 null replicates
+reproduced the rate with no second component at nought in any of them, so the
+50:50 mixture was the right reference and was applied.
+
+The level thins out where the information does: at three quarters censored only
+954 of 3,818 rows are measured, and the additive component is identified only
+through relatives who are both measured. Running the released one-component
+configuration through the same harness, 200 replicates at the same censoring,
+gives 0.035 with an exact interval of [0.014, 0.071] containing the nominal, and
+puts 56.5 per cent of estimates on the boundary where the mixture says half.
+That is what says the harness is sound and the difference is the design. Both levels
+are recorded in `release.toml` under `measured_levels`, beside the quantity
+rather than in place of it.
 
 ### Component separation
 
@@ -450,8 +460,9 @@ nominal in either direction.
 
 ### Pending
 
-The boundary test at three quarters censored, which failed and has not been
-re-measured after any change. Cross-platform agreement for this analysis has a
+Whether the test's level at three quarters censored can be brought to nominal,
+by a better reference than the asymptotic mixture or by more information. It has
+not been attempted. Cross-platform agreement for this analysis has a
 probe and declared tolerances but no comparison has been run.
 
 ## Mixed pairs

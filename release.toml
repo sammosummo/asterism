@@ -663,23 +663,27 @@ entry_points = [
   "asterism.CensoredComponentModel.interval",
   "asterism.CensoredComponentModel.test",
 ]
-# What the checks actually measured, and nothing else. Every component's
-# proportion was covered by `censored_components_coverage`, and the point
-# estimates agreed with an independent fit to 6.3e-03 at half censored.
+# What the checks measured. Every component's proportion was covered by
+# `censored_components_coverage`, and the point estimates agreed with an
+# independent fit to 6.3e-03 at half censored.
 supported_quantities = [
   "coefficients",
   "mean_diagonal_proportions",
   "coefficient_interval",
   "mean_diagonal_proportion_interval",
+  "test",
 ]
-# **The boundary test is not among them, and that is a measurement.**
-# `censored_components_target_design` found it rejecting a true null 0.100 of
-# the time at three quarters censored against a nominal 0.05, with an exact
-# interval of [0.062, 0.150] that excludes the level. It held at 0.055 at 0.52
-# censored. A quantity qualified at one censoring level and not at the next is
-# not a supported quantity, so it is listed here instead of there.
-unqualified_quantities = [
-  { quantity = "test", measured = "type-I error 0.100 at censoring 0.75 against a nominal 0.05; 0.055 at 0.52", evidence = "evidence/censored-components-target-design-2026-08-30.json" },
+# The boundary test's measured level, recorded as a fact and not as a verdict on
+# the quantity. At the target design it held at 0.055 against a nominal 0.05
+# with half the rows censored, and rejected 0.100 of the time with three
+# quarters censored. That is one design at one censoring level. ADR 0020 settled
+# that no design range gates a result, and striking a quantity off on the
+# strength of one cell is that same move under another name. What the number
+# says is that the asymptotic reference thins out where the information does,
+# which is worth knowing before reading a p-value there.
+measured_levels = [
+  { quantity = "test", design = "target", censoring = 0.52, level = 0.05, measured = 0.055, exact_interval = [0.028, 0.096] },
+  { quantity = "test", design = "target", censoring = 0.75, level = 0.05, measured = 0.100, exact_interval = [0.062, 0.150] },
 ]
 # These describe the fit rather than reporting a component. They are returned
 # and are worth reading; none of them is a result.

@@ -252,11 +252,18 @@ def one(job: tuple[str, float, int]) -> dict[str, Any]:
     censored_count: int = round(share * rows)
     """Selected the exact attainable censoring count."""
 
-    ceiling: float = float(np.sort(complete)[rows - censored_count - 1])
-    """Put the limit just below the smallest value that will be censored."""
+    ceiling: float = float(np.sort(complete)[rows - censored_count])
+    """Put the limit at the smallest value the instrument fails to measure."""
 
-    censoring: npt.NDArray[np.int64] = (complete > ceiling).astype(np.int64)
-    """Marked 1 above the limit, 0 where measured."""
+    censoring: npt.NDArray[np.int64] = (complete >= ceiling).astype(np.int64)
+    """Marked 1 at or above the limit, 0 where measured.
+
+    At or above, not above. Taking the limit as the largest measured value and
+    censoring strictly above it leaves one row measured at exactly its own
+    limit, which is a row the instrument both did and did not read. Every other
+    check in this directory censors at or above a limit taken from the
+    distribution, and this now does too.
+    """
 
     value: npt.NDArray[np.float64] = np.where(censoring == 0, complete, np.nan)
     """Kept measured values; censored ones are never read."""

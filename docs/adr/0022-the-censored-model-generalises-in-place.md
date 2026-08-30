@@ -64,9 +64,12 @@ alternative was two copies of the region routine, and it is paid for by re-runni
 the six censored pass rules whenever that path changes; they were re-run for this
 work and did not move.
 
-**The boundary test is not qualified at heavy censoring.** The target-design
-campaign found the test rejecting a true null 0.100 of the time at three
-quarters censored against a nominal 0.05, while holding at 0.055 at 0.52. Point
-estimates and intervals held at both. This is a property of the several-component
-model that the one-component model's evidence does not cover, and it is recorded
-rather than assumed away.
+**The boundary test's level has to be measured per design rather than inherited.**
+The target-design campaign found it holding at 0.055 with half the rows censored
+and rejecting 0.100 of the time with three quarters censored, against a nominal
+0.05; estimates and intervals held at both. The one-component model's evidence
+does not cover this, because at one component the whole of the information goes
+to the component being tested. That is recorded as a measured level beside the
+quantity, not as grounds for withholding it: [ADR
+0020](0020-no-design-range-gates-a-result.md) settled that no design range gates
+a result.
