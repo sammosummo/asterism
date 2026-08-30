@@ -847,23 +847,41 @@ impl TobitModel {
                 .collect()
         };
 
-        // Three starts spread over the first coefficient, or one where it is
-        // held. A held fit pinned every start to the same value and then ran
-        // the same deterministic search three times over: the interval paid for
-        // that at each end of every bisection step.
+        // **Both sides of a likelihood-ratio test get the same search.** The
+        // free fit spreads its starts over the first coefficient. A held fit
+        // cannot, because that coefficient is pinned, so it spreads them over
+        // the coefficients that are left.
         //
-        // **That reasoning is exact at one component and approximate above it.**
-        // Holding the first coefficient no longer pins the whole share space --
-        // the others stay free -- so one start explores a simplex from a single
-        // point where three would have explored it from three. It is still one
-        // deterministic search per start, so three would still be three copies
-        // of one answer; what is lost is spread, not repetition.
-        let starts: &[f64] = match held {
-            Some(value) => &[value],
+        // One start was right while there was one component: holding the first
+        // coefficient pinned the whole share space, and three starts would have
+        // been three copies of one deterministic search, which the interval
+        // would have paid for at each end of every bisection step.
+        //
+        // Above one component it pins only the first, and one start against the
+        // free fit's three does not cost precision -- it buys a bias. A
+        // statistic is the difference of the two searches, so searching one
+        // side harder makes that side win more often, every statistic comes out
+        // a little too large, and the boundary test rejected a true null 0.100
+        // of the time against a nominal 0.05. The one-component and bivariate
+        // models never showed it because neither leaves a share space to
+        // search once the tested coefficient is held.
+        let single = parts == 1;
+        let firsts: &[f64] = match held {
+            Some(value) if single => &[value],
+            Some(value) => &[value, value, value],
             None => &[0.05, 0.3, 0.6],
         };
+        // What each start claims of the even split below. A held fit varies
+        // this because it cannot vary the first coefficient; a free fit varies
+        // the first coefficient and leaves the split alone, as it always has.
+        let spreads: &[f64] = if held.is_some() && !single {
+            &[0.6, 1.0, 1.5]
+        } else {
+            &[1.0, 1.0, 1.0]
+        };
         let mut best: Option<(f64, Vec<f64>)> = None;
-        for &heritability in starts {
+        for (attempt, &heritability) in firsts.iter().enumerate() {
+            let claim = spreads[attempt.min(spreads.len() - 1)];
             let mut start = vec![0.0; count];
             start[0] = heritability;
             // Each later coordinate takes an even split of what is left,
@@ -871,7 +889,7 @@ impl TobitModel {
             // inside the simplex rather than on the face where the residual is
             // nought. These are stick-breaking coordinates, not coefficients.
             for (index, coordinate) in start.iter_mut().enumerate().take(parts).skip(1) {
-                *coordinate = 1.0 / (parts - index + 1) as f64;
+                *coordinate = (claim / (parts - index + 1) as f64).clamp(1e-6, 1.0 - 1e-6);
             }
             start[parts] = spread.ln();
             start[parts + 1] = centre;
