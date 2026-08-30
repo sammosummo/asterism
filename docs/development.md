@@ -387,6 +387,59 @@ censored model may not carry a boundary test at three quarters censored, which
 is where the highest extended-high-frequency audiogram thresholds sit. Nothing
 here bears on the point estimates or the intervals, both of which held.
 
+Coverage of the interval at the full component set, with an interval taken for
+**every** structured component rather than only the first:
+
+```sh
+uv run --no-project python checks/censored_components_coverage.py \
+  --replicates 300 --workers 12 --no-write
+```
+
+The design is 2,400 people in villages of six -- three sibling pairs to a
+village -- each contributing two records, at 0.52 censored. **Households have to
+cross families here.** A household that is exactly a sibling pair makes twice
+the kinship the identity plus the within-pair pattern and the household matrix
+the identity plus that same pattern, so the residual is their exact combination
+and nothing separates additive from household. Each home therefore takes one
+person from each of two different families, which identifies the three at Gram
+rank four while keeping the likelihood's blocks to a village of twelve rows.
+
+Its nominal is 0.975 for the reason given above: the upper end of a component
+proportion cannot be reached when a person contributes more than one record, so
+what is being scored is the lower end.
+
+**A truth sitting exactly on a bound is reported as a range rather than a
+number**, because containment splits in two there. An interval whose lower end
+is above nought shuts a truth of nought out whatever rule is applied, and those
+are misses. An interval whose end is on nought is the Self-Liang question, and
+`src/tobit.rs` deliberately leaves that verdict absent at several components --
+more than one share can rest on nought at once, which is not the case the
+one-component coverage rule scored, and an absent verdict says nobody has
+measured it. Those are left undecided. The range is the most and the least
+coverage the cell could have, and the cell still fails if even the most falls
+short of nominal. What has been measured about that same mixture reference at
+several components is the null half of the target-design campaign above: it held
+at 0.52 censored and failed at 0.75.
+
+**The band is simultaneous, and that is the difference between a rule and a
+coin toss.** The campaign makes twelve statements at once, one per component per
+cell. Drawn at 95 per cent for each of them separately, at least one is excluded
+by chance 46 per cent of the time -- so a per-cell rule would fail about every
+other run of a model with nothing wrong with it, which is a rule that teaches
+its reader to ignore it. The rate is therefore split across the cells, so the
+campaign as a whole raises a false alarm five times in a hundred. The first run
+of this check made exactly the error the correction exists for: eleven cells
+held, one over-covered at 0.9933, and its per-cell band excluded the nominal by
+0.001.
+
+**What it found, on 30 August 2026.** Every scoreable cell covered its truth
+within the simultaneous band, at all three components and all four truth sets;
+the lowest was the household component at 0.9567 and the highest the
+person-level at 0.9933, against a nominal 0.975. In the cell whose additive
+truth is nought, 11 of 300 intervals shut it out and 289 were left undecided, so
+that cell's coverage is at most 0.963 -- which the band cannot separate from
+nominal, and which no rule about the undecided ones would change.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

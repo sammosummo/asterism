@@ -677,6 +677,7 @@ required_checks = [
   "component_separation",
   "censored_components_against_independent_full_fit",
   "censored_components_target_design",
+  "censored_components_coverage",
 ]
 pass_rules_configured = true
 
@@ -716,3 +717,28 @@ status = "ready"
 # `["additive_relationship", "residual"]`, so a record that did not name them
 # would be indistinguishable from the two-component one it exists to go beyond.
 design_facts = { participant_free = true, sample_size = { min = 3818, max = 3818 }, people = 1909, records_per_person = 2, largest_family = { max = 180 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "household", "residual"], household_size = 3, relationship_components = 202, fixed_effect_columns = 6, censoring_share = { min = 0.52, max = 0.75 }, scenarios = ["null", "heritable"], heritable_shares = { additive = 0.35, person = 0.25, household = 0.20, residual = 0.20 }, null_shares = { additive = 0.0, person = 0.3846, household = 0.3077, residual = 0.3077 }, true_variance = 4.0, replicates_per_scenario_per_censoring_share = 200, attempted_replicates = 800, maximum_failed_replicates = 0, nominal_level = 0.05, nominal_coverage = 0.975, coverage_is_lower_end_only = true, monte_carlo_confidence = 0.95, required_test_rule = "mixture_50_50", ladder_qualified_dimension = 600, fixture_sha256 = "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e", synthetic_structure_matching = true, participant_structure_reconstructed = false }
+
+[[analyses.pass_rules]]
+id = "censored_components_coverage"
+command = [
+  "checks/censored_components_coverage.py",
+  "--replicates", "300",
+  "--workers", "12",
+  "--no-write",
+]
+expected_exit_code = 0
+timeout_seconds = 21600
+status = "ready"
+# `nominal_coverage` is 0.975 rather than 0.95 and that is not a loosened rule.
+# A component proportion of one leaves a person's own records perfectly
+# correlated, so the covariance is singular, the profile cannot be evaluated at
+# the upper bound and the interval covers that end rather than placing it on
+# evidence never gathered. A two-sided 95 per cent interval puts 0.025 in each
+# tail; closing the upper one off hands that back, which makes 0.975 what the
+# lower end can be held to.
+#
+# The band is simultaneous across the twelve cells rather than drawn at 95 per
+# cent for each. Twelve independent bands are excluded by chance somewhere 46
+# per cent of the time, so a per-cell rule would fail about every other run of a
+# model with nothing wrong with it.
+design_facts = { participant_free = true, sample_size = { min = 4800, max = 4800 }, people = 2400, records_per_person = 2, largest_family = { max = 2 }, largest_block_people = 6, households_cross_families = true, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "household", "residual"], intervals_per_replicate = 3, censoring_share = { min = 0.52, max = 0.52 }, true_additive_shares = [0.0, 0.2, 0.35, 0.6], true_variance = 4.0, replicates_per_cell = 300, nominal_coverage = 0.975, coverage_is_lower_end_only = true, family_wise_false_alarm_rate = 0.05, cells_sharing_the_band = 12, boundary_cell_reported_as_range = true, maximum_refusals = 0 }
