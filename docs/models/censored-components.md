@@ -187,16 +187,24 @@ components here are correlated at about −0.98, which is what
 measures from the other side. A boundary mass that is not a half makes a p-value
 computed as though it were a half too small.
 
-**This is not settled, and the honest statement is narrower than the paragraph
-above.** A boundary mass that is not a half is a measurement. Two readings of it
-remain, and they have different fixes. Either the mixture is the wrong reference
-here — but Self–Liang's half-and-half does tolerate correlated nuisance
-components so long as they are interior, and these are — or the fit is not
-reaching a bound it should reach, which would be a numerical fault rather than a
-statistical one. Separating them means fitting the same data with an optimiser
-on a likelihood that integrates the region, and comparing which of the two lands
-on the bound. That was attempted and abandoned: each such fit is an optimisation
-whose every step costs seconds, and the run needed about six hours.
+*Not the optimiser stopping short.* The three-component model nests the
+two-component one, so a free fit can never score worse than the null fit unless
+the search failed. Across 200 null replicates at the target design that happened
+once, by 0.009 log units. Of the 126 replicates whose estimate came back
+positive, every one bought real likelihood; none was a positive number sitting
+at no gain. So the boundary mass is a property of the surface being fitted and
+not a numerical fault.
+
+**What remains is the reference, and it is not settled.** A 50:50 mixture is
+right when one variance component sits at a bound and the rest are interior,
+which is the situation here — so a measured mass of 0.37 says one of the
+conditions behind that result does not hold at this design. The likeliest
+candidate is the information for the tested component going nearly singular
+under heavy censoring, since the additive matrix differs from the person-level
+one only between relatives, and at three quarters censored few pairs of
+relatives are both measured. That is a hypothesis. It has not been tested, and
+the previous three hypotheses in this section were each refuted by the
+measurement that followed them.
 
 What would settle the level regardless of which reading is right is a reference
 that assumes nothing about the mass — fit under the null, simulate from that

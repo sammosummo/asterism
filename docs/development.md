@@ -391,12 +391,20 @@ and the approximation conservative rather than inflating, giving a statistic of
 1,920 people moves the level not at all: 0.085, 0.090, 0.100, 0.050, 0.050,
 0.060 against censored blocks from 8 rows to 227.
 
+**Not the optimiser.** The three-component model nests the two-component one, so
+a free fit scoring worse than the null fit means the search failed. Over 200
+null replicates that happened once, by 0.009 log units, and every one of the 126
+positive estimates bought real likelihood.
+
 **What is measured** is the share of null fits landing exactly on the bound. The
 50:50 mixture is the right reference only if that share is a half. It is 0.565
-in the calibrated one-component configuration, 0.310 at the target design, and
-0.24 to 0.40 across the sweep. Self-Liang's half-and-half assumes interior,
-uncorrelated nuisance components, and the additive and person-level components
-here correlate at about -0.98.
+in the calibrated one-component configuration, 0.37 at the target design, and
+0.24 to 0.40 across the sweep. Why it is not a half is not established: the
+likeliest candidate is the information for the tested component going nearly
+singular under heavy censoring, because the additive matrix differs from the
+person-level one only between relatives and few relative pairs are both measured
+at three quarters censored. That is untested, and three earlier hypotheses here
+were each refuted by the next measurement.
 
 **What it is not.** A fault in the harness: running the released one-component
 configuration through this same code, 200 replicates at the same censoring,
