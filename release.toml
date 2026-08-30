@@ -676,6 +676,7 @@ supported_quantities = [
 required_checks = [
   "component_separation",
   "censored_components_against_independent_full_fit",
+  "censored_components_target_design",
 ]
 pass_rules_configured = true
 
@@ -699,3 +700,19 @@ status = "ready"
 # Asterism reaches the censored region probability by sequential truncation and
 # the reference integrates it, so the gap between them is that approximation.
 design_facts = { participant_free = true, sample_size = { min = 80, max = 80 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2], sibling_pairs = [20], replicates_per_share = 12, censoring_share = { min = 0.25, max = 0.5 }, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, proportion_tolerance = 0.01, loglik_tolerance = 0.15 }
+
+[[analyses.pass_rules]]
+id = "censored_components_target_design"
+command = [
+  "checks/censored_components_target_design.py",
+  "--replicates", "200",
+  "--workers", "8",
+  "--no-write",
+]
+expected_exit_code = 0
+timeout_seconds = 43200
+status = "ready"
+# The components are named here on purpose. Every other censored rule declares
+# `["additive_relationship", "residual"]`, so a record that did not name them
+# would be indistinguishable from the two-component one it exists to go beyond.
+design_facts = { participant_free = true, sample_size = { min = 3818, max = 3818 }, people = 1909, records_per_person = 2, largest_family = { max = 180 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "household", "residual"], household_size = 3, relationship_components = 202, fixed_effect_columns = 6, censoring_share = { min = 0.52, max = 0.75 }, scenarios = ["null", "heritable"], heritable_shares = { additive = 0.35, person = 0.25, household = 0.20, residual = 0.20 }, null_shares = { additive = 0.0, person = 0.3846, household = 0.3077, residual = 0.3077 }, true_variance = 4.0, replicates_per_scenario_per_censoring_share = 200, attempted_replicates = 800, maximum_failed_replicates = 0, nominal_level = 0.05, nominal_coverage = 0.975, coverage_is_lower_end_only = true, monte_carlo_confidence = 0.95, required_test_rule = "mixture_50_50", ladder_qualified_dimension = 600, fixture_sha256 = "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e", synthetic_structure_matching = true, participant_structure_reconstructed = false }

@@ -311,6 +311,82 @@ from the other side, where it shows up as the split being four to five times
 less precisely known than the sum: a surface that flat turns a small error in
 the likelihood into a comparatively large move in the proportions.
 
+The same model at the design it will actually be used on. The censored rule
+that exists, `tobit_target_design`, qualifies one structured component and a
+residual, and so does every other censored rule, so nothing had been measured
+beyond two components at a hundred-and-eighty-person family:
+
+```sh
+uv run --no-project python checks/censored_components_target_design.py \
+  --replicates 200 --workers 8 --no-write
+```
+
+It reuses the reviewed aggregate the censored rule already uses -- 1,909
+analysed people, 202 relationship components with the largest at 180, six
+fixed-effect columns -- and makes two changes. Each person contributes **two
+records**, which is what wants a person-level component, and each family is cut
+into **households of three**, giving a shared-environment kernel beside the
+genetic one. Both are the construction the region ladder climbs, so the ladder's
+verdict applies to this design and not to a different one. The largest censored
+block the campaign produced was 294, against the 600 that ladder has climbed.
+
+**Why the person-level component is not optional.** On one replicate of this
+design, fitting the additive component alone put the genetic share at 0.81
+against a generating truth of 0.35. Adding the person-level component brought it
+to 0.40 and adding the household to 0.34. With two records per person and
+nowhere else for their resemblance to go, it goes into the heritability.
+
+**The upper end of a component's interval cannot be reached here, and the
+nominal coverage is 0.975 rather than 0.95 because of it.** A proportion of one
+puts every other component and the residual at nought, leaving the additive
+matrix alone; spread over records that matrix gives a person's own records a
+correlation of exactly one, so it is singular. The profile cannot be evaluated
+there, and `src/interval.rs` covers an end it could not evaluate rather than
+placing it on evidence never gathered. So the upper end is the bound every time
+-- measured at one, two and three components alike, so it is the repeated
+records and not the component count. A two-sided 95 per cent interval puts 0.025
+in each tail; closing the upper one off hands that back, which makes 0.975 what
+the lower end can be scored against. The one profile failure this produces is
+recorded and not counted as a failed fit, because nothing went wrong in it. A
+failure anywhere else in the bracket is counted.
+
+**What it found, on 30 August 2026, and it did not pass.** Eight hundred
+attempts, eight hundred measured, no refusal and no failed fit. The largest
+censored block was 310, against the 600 the ladder has climbed, so every region
+probability was inside the evidence.
+
+| scenario | censored | rate | exact interval | nominal | |
+| --- | ---: | ---: | :---: | ---: | :--- |
+| null | 0.52 | 0.055 | [0.028, 0.096] | 0.05 | held |
+| null | 0.75 | **0.100** | [0.062, 0.150] | 0.05 | **failed** |
+| heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
+| heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
+
+**The boundary test rejects a true null twice as often as it should at three
+quarters censored.** The interval is sound at both shares and the test is sound
+at 0.52; it is the test at 0.75 that fails, and the exact interval excludes the
+nominal level rather than merely sitting near it.
+
+It is not the mixture's one-boundary assumption being broken. A follow-up of 64
+null replicates at 0.75 reproduced the rate and found `nuisance_at_bound` false
+in every one of them: no second component had gone to nought, so the 50:50
+mixture was the right reference and was applied. The p-values are simply too
+small.
+
+The likeliest cause is the one the full-fit comparison measured from the other
+side. A likelihood-ratio statistic is a difference of two fits made under
+different constraints, and Asterism reaches the censored region probability by
+an approximation whose error depends on where in the parameter space it is
+evaluated. An error that does not cancel between the null fit and the
+alternative goes straight into the statistic. At 0.52 there is little of it; at
+0.75, with blocks of three hundred censored coordinates, there is enough to
+double the rejection rate.
+
+**This is a result, not a defect in the check.** It says the several-component
+censored model may not carry a boundary test at three quarters censored, which
+is where the highest extended-high-frequency audiogram thresholds sit. Nothing
+here bears on the point estimates or the intervals, both of which held.
+
 Against a published table rather than another package. This one needs no
 outside software, only the Dryad deposit, and takes about an hour:
 

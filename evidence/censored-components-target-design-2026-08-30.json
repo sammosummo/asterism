@@ -1,0 +1,84 @@
+{
+ "attempted": 800,
+ "cells": [
+  {
+   "attempted": 200,
+   "censoring_share": 0.52,
+   "exact_interval": [
+    0.027772254552006534,
+    0.09627764443391285
+   ],
+   "measured": 200,
+   "nominal": 0.05,
+   "rate": 0.055,
+   "scenario": "null"
+  },
+  {
+   "attempted": 200,
+   "censoring_share": 0.75,
+   "exact_interval": [
+    0.06215936625406609,
+    0.15021278786775577
+   ],
+   "measured": 200,
+   "nominal": 0.05,
+   "rate": 0.1,
+   "scenario": "null"
+  },
+  {
+   "attempted": 200,
+   "censoring_share": 0.52,
+   "exact_interval": [
+    0.9567917180822874,
+    0.9968958923784464
+   ],
+   "measured": 200,
+   "nominal": 0.975,
+   "rate": 0.985,
+   "scenario": "heritable"
+  },
+  {
+   "attempted": 200,
+   "censoring_share": 0.75,
+   "exact_interval": [
+    0.9227080317739839,
+    0.9825751910055194
+   ],
+   "measured": 200,
+   "nominal": 0.975,
+   "rate": 0.96,
+   "scenario": "heritable"
+  }
+ ],
+ "check": "censored_components_target_design",
+ "components": [
+  "additive_relationship",
+  "person_level",
+  "household",
+  "residual"
+ ],
+ "failed": 0,
+ "fixture_sha256": "93e74ad688784dd70f5080a8969f22a07bee4ca6d8f3fb8e2a7fea7b9e70607e",
+ "heritable_shares": [
+  0.35,
+  0.25,
+  0.2,
+  0.2
+ ],
+ "household_size": 3,
+ "intervals_limited_at_unreachable_bound": 400,
+ "ladder_qualified_dimension": 600,
+ "largest_censored_block": 310,
+ "largest_family": 180,
+ "null_shares": [
+  0.0,
+  0.3846,
+  0.3077,
+  0.3077
+ ],
+ "participant_free": true,
+ "passed": false,
+ "people": 1909,
+ "records_per_person": 2,
+ "rows": 3818
+}
