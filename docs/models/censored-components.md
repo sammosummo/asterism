@@ -57,6 +57,19 @@ project onto the null space of the design, so the REML correction is not
 available here. A heritability from this model must not be placed beside a REML
 one as though the two were the same quantity.
 
+**The components decide the blocks, so dropping one changes the likelihood by
+more than the component it dropped.** The likelihood factorises over blocks of
+the covariance, and those blocks are computed from the components you submit.
+Take the additive matrix out of `[additive, person, household]` and nothing
+links relatives any more, so the remaining pair factorises over households where
+the three factorised over families. The region probability is reached per block
+by sequential truncation, so a coarser or finer partition carries a different
+approximation: fitting `[person, household]` and fitting
+`[additive, person, household]` with the additive coefficient held at nought are
+the same model on paper and differed here by 0.05 log units. Neither is wrong.
+They are the same likelihood approximated over different blocks, and the
+difference is not a sign that either search failed.
+
 Identification is a property of the submitted components on the fitted roster,
 not of their names. Two components that are linearly dependent there cannot be
 told apart however they are labelled: a household that is exactly a sibling pair
