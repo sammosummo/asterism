@@ -208,6 +208,24 @@ positive, every one bought real likelihood; none was a positive number sitting
 at no gain. So the boundary mass is a property of the surface being fitted and
 not a numerical fault.
 
+*It follows the records, not the components.* Two components and three were run
+at the same design with fresh seeds: the two-component model gave 0.110 and the
+three-component one 0.065, so the number of components is not what decides it.
+The boundary mass does decide, and it separates on how many records a person
+contributes:
+
+| configuration | records | on the bound |
+| --- | ---: | ---: |
+| one component | 1 | 0.565 |
+| additive and household | 1 | above a half |
+| additive and person-level | 2 | 0.315 |
+| additive, person-level and household | 2 | 0.370, 0.415 |
+
+One record and the mass is the half the mixture needs. Two and it is a third,
+whatever the components are. **That is why the one-trait and two-trait censored
+models never showed this**: both put one row per person, and this is the first
+model here that puts two.
+
 **What remains is the reference, and it is not settled.** A 50:50 mixture is
 right when one variance component sits at a bound and the rest are interior,
 which is the situation here — so a measured mass of 0.37 says one of the
