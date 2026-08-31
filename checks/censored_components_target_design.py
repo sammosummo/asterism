@@ -81,6 +81,22 @@ TESTED: int = 0
 LEVEL: float = 0.05
 """Boundary-test type-I-error level."""
 
+BOUND: float = 1e-10
+"""Below this a coefficient is resting on its bound rather than near it."""
+
+EXPECTED_BOUND_SHARE: float = 0.5
+"""Share of null fits the 50:50 mixture expects to rest on the bound.
+
+**This is the reference's own assumption, written down so it can be measured.**
+The mixture that turns the statistic into a p-value is half a point mass at
+nought and half a chi-squared on one degree of freedom, and the half is the
+share of null fits whose estimate lands exactly on the bound. Where the measured
+share is not a half the reference does not describe the statistic, whatever the
+p-values happen to look like in one run. It is reported beside the level because
+it is the steadier of the two: a level moves several points between seed sets at
+two hundred replicates, and this does not.
+"""
+
 NOMINAL_COVERAGE: float = 0.975
 """Nominal coverage of the interval at this design, and it is not 0.95.
 
@@ -291,10 +307,15 @@ def one(job: tuple[str, float, int]) -> dict[str, Any]:
             test: dict[str, Any] = model.test(value, censoring, limit, TESTED)
             """Tested the genetic component against having no variance at all."""
 
+            fit: dict[str, Any] = model.fit(value, censoring, limit)
+            """Fitted it freely as well, to see where the estimate landed."""
+
             result.update(
                 p_value=float(test["p_value"]),
                 test_rule=str(test["rule"]),
                 rejected=bool(test["p_value"] < LEVEL),
+                nuisance_at_bound=bool(test.get("nuisance_at_bound")),
+                on_bound=bool(float(fit["coefficients"][TESTED]) <= BOUND),
             )
         else:
             interval: dict[str, Any] = model.interval(
@@ -395,9 +416,9 @@ def main() -> int:
     print()
     print(
         f"{'scenario':>10} {'censored':>9} {'attempts':>9} {'measured':>9} "
-        f"{'rate':>8} {'exact interval':>22} {'nominal':>8}"
+        f"{'rate':>8} {'exact interval':>22} {'nominal':>8} {'on bound':>11}"
     )
-    print("-" * 82)
+    print("-" * 94)
     for scenario in ("null", "heritable"):
         for share in CENSORING_SHARES:
             cell: list[dict[str, Any]] = [
@@ -422,6 +443,13 @@ def main() -> int:
             hits: int = sum(1 for row in usable if row.get(key))
             """Counted them."""
 
+            bound_share: float | None = (
+                sum(1 for row in usable if row.get("on_bound")) / len(usable)
+                if scenario == "null"
+                else None
+            )
+            """Measured the share of null fits resting on the bound, or nothing."""
+
             low, high = clopper_pearson(hits, len(usable))
             """Quantified Monte Carlo uncertainty around the rate."""
 
@@ -429,6 +457,7 @@ def main() -> int:
                 f"{scenario:>10} {share:>9.2f} {len(cell):>9d} {len(usable):>9d} "
                 f"{hits / len(usable):>8.4f} "
                 f"{f'[{low:.4f}, {high:.4f}]':>22} {nominal:>8.2f}"
+                f"{'' if bound_share is None else f'{bound_share:>12.3f}'}"
             )
             cells.append(
                 {
@@ -439,8 +468,27 @@ def main() -> int:
                     "rate": hits / len(usable),
                     "exact_interval": [low, high],
                     "nominal": nominal,
+                    "share_on_bound": bound_share,
+                    "share_on_bound_expected": (
+                        EXPECTED_BOUND_SHARE if scenario == "null" else None
+                    ),
                 }
             )
+            if bound_share is not None:
+                resting: int = sum(1 for row in usable if row.get("on_bound"))
+                """Counted the null fits resting on the bound."""
+
+                bound_low, bound_high = clopper_pearson(resting, len(usable))
+                """Put an exact interval around that share."""
+
+                if not bound_low <= EXPECTED_BOUND_SHARE <= bound_high:
+                    failures.append(
+                        f"{scenario} at {share:.2f}: {bound_share:.3f} of null fits "
+                        f"rest on the bound, whose exact interval "
+                        f"[{bound_low:.4f}, {bound_high:.4f}] excludes the "
+                        f"{EXPECTED_BOUND_SHARE} the 50:50 mixture assumes, so the "
+                        "reference does not describe the statistic here"
+                    )
             if not low <= nominal <= high:
                 failures.append(
                     f"{scenario} at {share:.2f}: {hits / len(usable):.4f} against a "

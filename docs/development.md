@@ -401,6 +401,14 @@ one, and those two differ only between relatives -- so at three quarters
 censored, where few relative pairs are both measured, the component under test
 is nearly a copy of one that is not.
 
+**The campaign now measures the reference's own assumption.** A 50:50 mixture is
+half a point mass at nought and half a chi-squared on one degree of freedom, and
+that half *is* the share of null fits whose estimate rests on the bound. The null
+cells report it beside the level and fail on it, because it is the steadier of
+the two: a level moves several points between seed sets at two hundred
+replicates and this does not. A share that is not a half says the reference does
+not describe the statistic, whatever one run's p-values happen to look like.
+
 **Not the optimiser.** The three-component model nests the two-component one, so
 a free fit scoring worse than the null fit means the search failed. Over 200
 null replicates that happened once, by 0.009 log units, and every one of the 126
