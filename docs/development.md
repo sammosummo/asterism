@@ -391,6 +391,16 @@ and the approximation conservative rather than inflating, giving a statistic of
 1,920 people moves the level not at all: 0.085, 0.090, 0.100, 0.050, 0.050,
 0.060 against censored blocks from 8 rows to 227.
 
+**It is the person-level component beside the additive one.** The released
+one-trait censored model, given a relationship spread over two records per
+person, holds at 0.045 with 0.530 on the bound, so repeated records are not the
+cause and the released analysis is unaffected. Component count is not the cause
+either: two components gave 0.110 and three gave 0.065 at the same design. What
+every failing configuration has is a person-level matrix beside the additive
+one, and those two differ only between relatives -- so at three quarters
+censored, where few relative pairs are both measured, the component under test
+is nearly a copy of one that is not.
+
 **Not the optimiser.** The three-component model nests the two-component one, so
 a free fit scoring worse than the null fit means the search failed. Over 200
 null replicates that happened once, by 0.009 log units, and every one of the 126

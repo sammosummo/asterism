@@ -433,7 +433,18 @@ Estimates and intervals held at both. A follow-up of 64 null replicates
 reproduced the rate with no second component at nought in any of them, so the
 50:50 mixture was the right reference and was applied.
 
-**Three explanations tested; two refuted.** Doubling the roster to 3,818 people
+**It is the person-level component, and the released model is not affected.**
+The released one-trait censored model given a relationship spread over two
+records holds at 0.045 with 0.530 of null fits on the bound, so repeated records
+are not the cause. Component count is not either: two components gave 0.110 and
+three gave 0.065 at the same design. Every failing configuration carries a
+person-level component beside the additive one, and every passing one does not.
+The two matrices differ only between relatives, so at three quarters censored,
+where few relative pairs are both measured, the tested component is nearly a
+copy of a nuisance one and the information for the tested direction goes nearly
+singular. A household kernel keeps its own shape and does not do this.
+
+**Three further explanations tested; all refuted.** Doubling the roster to 3,818 people
 gives 0.105, so it is not a small sample. At a design whose blocks are small
 enough to integrate exactly, the level is 0.060 with the region integrated and
 0.065 with it approximated, both containing nominal — and the approximation is

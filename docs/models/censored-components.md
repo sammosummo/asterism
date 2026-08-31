@@ -208,23 +208,29 @@ positive, every one bought real likelihood; none was a positive number sitting
 at no gain. So the boundary mass is a property of the surface being fitted and
 not a numerical fault.
 
-*It follows the records, not the components.* Two components and three were run
-at the same design with fresh seeds: the two-component model gave 0.110 and the
-three-component one 0.065, so the number of components is not what decides it.
-The boundary mass does decide, and it separates on how many records a person
-contributes:
+*It follows the person-level component.* Component count is not what decides
+it: two components and three, at the same design with fresh seeds, gave 0.110
+and 0.065. Records per person are not what decides it either — the released
+one-component model, given a relationship spread over two records, holds at
+0.045 with 0.530 on the bound. What every failing configuration has and every
+passing one lacks is a **person-level component beside the additive one**:
 
-| configuration | records | on the bound |
-| --- | ---: | ---: |
-| one component | 1 | 0.565 |
-| additive and household | 1 | above a half |
-| additive and person-level | 2 | 0.315 |
-| additive, person-level and household | 2 | 0.370, 0.415 |
+| model | records | on the bound | level |
+| --- | ---: | ---: | ---: |
+| additive | 1 | 0.555 | 0.050 |
+| additive | 2 | 0.530 | 0.045 |
+| additive, household | 1 | above a half | 0.078 |
+| additive, person-level | 2 | 0.315 | 0.110 |
+| additive, person-level, household | 2 | 0.370, 0.415 | 0.100, 0.065 |
 
-One record and the mass is the half the mixture needs. Two and it is a third,
-whatever the components are. **That is why the one-trait and two-trait censored
-models never showed this**: both put one row per person, and this is the first
-model here that puts two.
+The person-level matrix is one within a person and nought between. The additive
+matrix spread over records is one within a person and a half between siblings.
+**They differ only between relatives.** At three quarters censored few pairs of
+relatives are both measured, so the component being tested is nearly a copy of a
+component that is not, and the information for the tested direction goes nearly
+singular. A household kernel does not do this, because it is nought between
+homes and so keeps its own shape; that is why the additive-and-household model
+holds.
 
 **What remains is the reference, and it is not settled.** A 50:50 mixture is
 right when one variance component sits at a bound and the rest are interior,
