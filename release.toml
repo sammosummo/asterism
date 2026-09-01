@@ -347,7 +347,7 @@ design_facts = { participant_free = true, sample_size = { min = 160, max = 160 }
 
 [[analyses.pass_rules]]
 id = "components_target_design"
-command = ["checks/components_target_design.py"]
+command = ["checks/components_target_design.py", "--no-write"]
 expected_exit_code = 0
 timeout_seconds = 86400
 status = "ready"

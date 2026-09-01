@@ -24,11 +24,10 @@ were pinned exactly at first, and exact pinning cannot survive two platforms.
 ADR 0012 settles that Mac and Linux agree exactly on outcome status, refusal
 codes, boundary states and field presence, and agree on numbers within written
 tolerances rather than bit for bit. Pinning a number to its last digit is a
-promise the second platform never made: measured on the same commit, the
-spatial upper end differs between them in its last two digits and the
-gene-by-environment lower end in its last four, while every other endpoint here
-agrees bit for bit. That is the arithmetic underneath differing, not the recipe.
-See ``TOLERANCE`` below for what the number is and why.
+promise the second platform never made: measured on the same commit, two
+endpoints differ while every other endpoint here agrees bit for bit. That is
+the arithmetic underneath differing, not the recipe. See the tolerances below
+for the measured bounds and why the spatial upper end has its own one.
 """
 
 from __future__ import annotations
@@ -126,33 +125,41 @@ def design() -> npt.NDArray[np.float64]:
     return np.ones((2 * PAIRS, 1))
 
 
-TOLERANCE: float = 1e-11
-"""How far an endpoint may move before this file calls it a change.
+DEFAULT_TOLERANCE: float = 1e-11
+"""How far an ordinary endpoint may move before this file calls it a change.
 
-Two numbers bracket the choice. Below it is the arithmetic: the widest
-disagreement measured between Mac and Linux on one commit is about five parts
-in ten million million, on the gene-by-environment lower end, and the spatial
-upper end differs by about one part in a thousand million million. Above it is
-the recipe: ADR 0011's shared bracketing stops at ``1e-9``, so a real change to
-how an interval is built moves an endpoint by about that much or more, as the
-pinned prepared upper end moved when the tolerances were unified.
+This retains the cross-platform bound measured for every endpoint except the
+spatial upper end. It remains a hundred times below ADR 0011's ``1e-9`` shared
+bracketing tolerance, where a change to the interval recipe begins to move an
+endpoint.
+"""
 
-A millionth of a millionth sits roughly twenty times above the widest platform
-difference and a hundred times below the smallest change worth reporting, so it
-separates the two without needing to know which platform is running. It is not
-a licence to absorb a moved endpoint: anything this catches still has to be
-explained rather than re-pinned.
+SPATIAL_UPPER_TOLERANCE: float = 3e-10
+"""Measured tolerance for the spatial upper endpoint alone.
+
+The measured Mac arm64 wheel returns ``0.8196161051309041`` while the matching
+Linux x86-64 wheel reproducibly returns ``0.8196161053610744`` on Python 3.13 and
+3.14 across two Medusa nodes, a difference of ``2.302e-10``. Three parts in ten
+billion covers that measured arithmetic with narrow headroom while remaining
+more than three times below a recipe-scale ``1e-9`` move. The stricter default
+continues to protect every other endpoint.
 """
 
 
-def same(got: float, pinned: float, what: str) -> None:
-    """Close, to a stated tolerance, rather than exact. See ``TOLERANCE``."""
+def same(
+    got: float,
+    pinned: float,
+    what: str,
+    *,
+    tolerance: float = DEFAULT_TOLERANCE,
+) -> None:
+    """Close, to a stated tolerance, rather than exact."""
     moved: float = abs(got - pinned) / max(abs(pinned), 1.0)
     """Measured the move relative to the pinned value, or absolutely near nought."""
 
-    assert moved <= TOLERANCE, (
+    assert moved <= tolerance, (
         f"{what} moved from {pinned!r} to {got!r}, by {moved:.3e} relative, "
-        f"which is more than the {TOLERANCE:.0e} two platforms are allowed to "
+        f"which is more than the {tolerance:.0e} two platforms are allowed to "
         "differ by. That may be intended -- unifying the bracketing tolerances "
         "is expected to move endpoints -- but it has to be explained rather "
         "than absorbed."
@@ -290,7 +297,35 @@ def test_spatial_interval(design: npt.NDArray[np.float64]) -> None:
     # 1e-4 times the estimate. Total-covariance-scale profile coordinates keep
     # every held fit converged while those additional halvings are evaluated.
     assert got["profile_failures"] == 0
-    same(got["upper"], 0.8196161051309041, "spatial upper")
+    same(
+        got["upper"],
+        0.8196161051309041,
+        "spatial upper",
+        tolerance=SPATIAL_UPPER_TOLERANCE,
+    )
+
+
+def test_spatial_tolerance_still_rejects_a_recipe_scale_move() -> None:
+    """Separate measured platform arithmetic from a ``1e-9`` endpoint move."""
+    pinned: float = 0.8196161051309041
+    """Retained the Mac arm64 reference used by the public spatial fixture."""
+
+    linux: float = 0.8196161053610744
+    """Retained the reproducible Linux x86-64 result from the final wheel."""
+
+    same(
+        linux,
+        pinned,
+        "measured spatial upper",
+        tolerance=SPATIAL_UPPER_TOLERANCE,
+    )
+    with pytest.raises(AssertionError):
+        same(
+            pinned + 1e-9,
+            pinned,
+            "recipe-scale spatial upper",
+            tolerance=SPATIAL_UPPER_TOLERANCE,
+        )
 
 
 def test_gxe_interval(

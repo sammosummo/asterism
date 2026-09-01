@@ -65,3 +65,8 @@ def test_the_manifest_version_has_the_right_changelog_and_release_page() -> None
 
     assert f"## {version}" in changelog, f"CHANGELOG.md has no {version} entry"
     assert f"# Asterism {version}" in release_notes
+    assert f"- `asterism-{version}-cp313-abi3-macosx_11_0_arm64.whl`" in release_notes
+    assert (
+        f"- `asterism-{version}-cp313-abi3-manylinux_2_17_x86_64."
+        "manylinux2014_x86_64.whl`"
+    ) in release_notes

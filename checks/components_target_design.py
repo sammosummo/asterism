@@ -27,9 +27,11 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -202,8 +204,20 @@ def one(
     }
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Read whether the standalone check should retain dated evidence."""
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
+    """Built a small explicit interface while preserving ordinary writes."""
+
+    parser.add_argument("--no-write", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Score the several-component model at its intended design."""
+    arguments: argparse.Namespace = parse_arguments(argv)
+    """Selected ordinary evidence retention or release-run isolation."""
+
     relationship, household, largest_component = target_matrices()
     """Built the structure-matched matrices once for every replicate."""
 
@@ -278,9 +292,10 @@ def main() -> int:
     )
     """Named the dated evidence file."""
 
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
-    print(f"\nwritten to {out}")
+    if not arguments.no_write:
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
+        print(f"\nwritten to {out}")
     print("PASSED" if passed else "FAILED")
     return 0 if passed else 1
 

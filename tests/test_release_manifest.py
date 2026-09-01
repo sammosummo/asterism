@@ -165,6 +165,30 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     assert scientific_inventory_errors(manifest, ROOT) == []
 
 
+def test_scientific_gate_does_not_write_dated_component_evidence() -> None:
+    """Keep the fixed release checkout clean until final verification."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the exact command inventory used by the scientific runner."""
+
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "several_covariance_components"
+    )
+    """Selected the supported several-component analysis."""
+
+    rule: dict[str, Any] = next(
+        item
+        for item in analysis["pass_rules"]
+        if item["id"] == "components_target_design"
+    )
+    """Selected the one command that historically wrote dated evidence."""
+
+    assert rule["command"] == ["checks/components_target_design.py", "--no-write"]
+
+
 def test_release_inventory_is_complete_but_not_its_own_run_evidence() -> None:
     """Keep executable inventory distinct from measured passing run evidence."""
     manifest: dict[str, Any] = tomllib.loads(
