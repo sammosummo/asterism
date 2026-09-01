@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tomllib
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,6 +42,18 @@ def sha256(path: Path) -> str:
         The lowercase hexadecimal digest.
     """
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_test_wheel(path: Path, extension_bytes: bytes) -> None:
+    """Write a minimal wheel archive with one Asterism native module.
+
+    Args:
+        path: Wheel path to create.
+        extension_bytes: Exact native-module payload to retain in the archive.
+    """
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("asterism/_core.abi3.so", extension_bytes)
+    """Created the one archive member needed for native-byte binding tests."""
 
 
 def configured_manifest(check_name: str = "smoke") -> str:
@@ -202,6 +215,7 @@ def passing_medusa_smoke(
     cargo_lock_text: str,
     uv_lock_text: str,
     wheel_sha256: str,
+    extension_sha256: str,
 ) -> dict[str, Any]:
     """Return a clean Medusa result bound to one final manylinux wheel."""
     manifest: dict[str, Any] = tomllib.loads(manifest_text)
@@ -227,6 +241,7 @@ def passing_medusa_smoke(
         "glibc_version": "2.28",
         "python_version": "3.13.14",
         "wheel_sha256": wheel_sha256,
+        "extension_sha256": extension_sha256,
         "converged": True,
         "people": 360,
         "largest_family": 6,
@@ -243,6 +258,7 @@ def passing_medusa_smoke(
         (("glibc_version",), "glibc does not match"),
         (("converged",), "did not converge"),
         (("wheel_sha256",), "wheel SHA-256 does not match"),
+        (("extension_sha256",), "extension SHA-256 does not match"),
         (("build_identity", "version"), "build identity does not match"),
         (("build_identity", "release"), "build identity does not match"),
         (("build_identity", "source_commit"), "build identity does not match"),
@@ -271,8 +287,15 @@ def test_medusa_smoke_rejects_stale_runtime_fit_and_build_identity(
     wheel_sha256: str = "b" * 64
     """Named the exact portable artifact digest accepted by the validator."""
 
+    extension_sha256: str = "c" * 64
+    """Named the exact archived native-member digest accepted by the validator."""
+
     record: dict[str, Any] = passing_medusa_smoke(
-        manifest_text, cargo_lock_text, uv_lock_text, wheel_sha256
+        manifest_text,
+        cargo_lock_text,
+        uv_lock_text,
+        wheel_sha256,
+        extension_sha256,
     )
     """Built one valid external result before changing exactly one claim."""
 
@@ -303,6 +326,7 @@ def test_medusa_smoke_rejects_stale_runtime_fit_and_build_identity(
         uv_lock_text=uv_lock_text,
         source_commit="a" * 40,
         linux_wheel_sha256=wheel_sha256,
+        linux_extension_sha256=extension_sha256,
     )
     """Validated the external result against independently selected inputs."""
 
@@ -310,16 +334,25 @@ def test_medusa_smoke_rejects_stale_runtime_fit_and_build_identity(
 
 
 @pytest.mark.parametrize(
-    ("payload", "expected"),
-    [(None, "Medusa smoke does not exist"), ("{", "Medusa smoke is unreadable")],
+    ("payload", "wheel_extension_bytes", "expected"),
+    [
+        (None, b"linux extension bytes", "Medusa smoke does not exist"),
+        ("{", b"linux extension bytes", "Medusa smoke is unreadable"),
+        (
+            "valid",
+            None,
+            "selected manylinux wheel is not a readable wheel archive",
+        ),
+    ],
 )
-def test_runner_refuses_missing_or_malformed_external_medusa_smoke(
+def test_runner_refuses_unverifiable_external_medusa_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     payload: str | None,
+    wheel_extension_bytes: bytes | None,
     expected: str,
 ) -> None:
-    """Refuse before creating evidence when the external JSON cannot be inspected."""
+    """Refuse unreadable evidence and a false manylinux wheel archive."""
     root: Path = tmp_path / "checkout"
     """Located a minimal checkout fixture for release preflight."""
 
@@ -346,7 +379,13 @@ def test_runner_refuses_missing_or_malformed_external_medusa_smoke(
     wheel_path: Path = tmp_path / "asterism-0.1.0-cp313-abi3-manylinux.whl"
     """Named the sole portable artifact selected for external qualification."""
 
-    wheel_path.write_bytes(b"fixed wheel bytes")
+    if wheel_extension_bytes is None:
+        wheel_path.write_bytes(b"arbitrary wheel bytes")
+        """Modelled a false wheel selected only by its filename and suffix."""
+    else:
+        write_test_wheel(wheel_path, wheel_extension_bytes)
+        """Created an inspectable wheel with the parameterised native payload."""
+
     agreement: dict[str, Any] = passing_agreement(manifest_text)
     """Built a valid cross-platform record before binding its artifact digest."""
 
@@ -363,13 +402,28 @@ def test_runner_refuses_missing_or_malformed_external_medusa_smoke(
     medusa_path: Path = tmp_path / "medusa-smoke.json"
     """Located the deliberately missing or malformed Medusa input."""
 
-    if payload is not None:
+    if payload == "valid":
+        medusa_record: dict[str, Any] = passing_medusa_smoke(
+            manifest_text,
+            lock_texts["Cargo.lock"],
+            lock_texts["uv.lock"],
+            sha256(wheel_path),
+            (
+                hashlib.sha256(wheel_extension_bytes).hexdigest()
+                if wheel_extension_bytes is not None
+                else "0" * 64
+            ),
+        )
+        """Bound a valid smoke to the inspectable Linux wheel member."""
+
+        medusa_path.write_text(json.dumps(medusa_record), encoding="utf-8")
+    elif payload is not None:
         medusa_path.write_text(payload, encoding="utf-8")
     core_path: Path = tmp_path / "site-packages" / "asterism" / "_core.so"
     """Located a stand-in installed extension outside the checkout fixture."""
 
     core_path.parent.mkdir(parents=True)
-    core_path.write_bytes(b"fixed extension bytes")
+    core_path.write_bytes(b"local extension bytes")
     core: Any = SimpleNamespace(
         __file__=str(core_path),
         __release_manifest__=manifest_text,
@@ -379,7 +433,7 @@ def test_runner_refuses_missing_or_malformed_external_medusa_smoke(
         __source_dirty__=False,
         __version__="0.1.0",
     )
-    """Represented the matching installed wheel without importing the checkout."""
+    """Represented the separately installed local wheel outside the checkout."""
 
     output_directory: Path = tmp_path / "release-evidence"
     """Named the directory preflight must leave absent after rejection."""
@@ -557,8 +611,11 @@ index = {
     wheel_path: Path = tmp_path / "asterism-0.1.0-cp313-abi3-manylinux.whl"
     """Selected the immutable artifact to bind into release evidence."""
 
-    wheel_path.write_bytes(b"fixed wheel bytes")
-    """Created the immutable wheel whose hash must bind the evidence."""
+    linux_extension_bytes: bytes = b"linux extension bytes"
+    """Fixed the native payload extracted from the selected manylinux wheel."""
+
+    write_test_wheel(wheel_path, linux_extension_bytes)
+    """Created an inspectable wheel whose exact bytes bind the evidence."""
 
     agreement: dict[str, Any] = passing_agreement(manifest_text)
     """Created a real complete comparison record for the same fixed build."""
@@ -578,6 +635,7 @@ index = {
         lock_texts["Cargo.lock"],
         lock_texts["uv.lock"],
         sha256(wheel_path),
+        hashlib.sha256(linux_extension_bytes).hexdigest(),
     )
     """Created a converged target-host result from the same final Linux wheel."""
 
@@ -590,11 +648,14 @@ index = {
     """Persisted exact external bytes without placing them in the checkout."""
 
     core_path: Path = tmp_path / "site-packages" / "asterism" / "_core.so"
-    """Selected an installed extension path outside the mutable checkout."""
+    """Selected the locally imported extension outside the checkout."""
 
     core_path.parent.mkdir(parents=True)
-    core_path.write_bytes(b"fixed extension bytes")
-    """Created the installed extension binary whose digest identifies the build."""
+    local_extension_bytes: bytes = b"local extension bytes"
+    """Fixed platform-specific bytes deliberately different from the Linux member."""
+
+    core_path.write_bytes(local_extension_bytes)
+    """Created the local extension binary whose own digest identifies the build."""
 
     core: Any = SimpleNamespace(
         __file__=str(core_path),
@@ -659,6 +720,11 @@ index = {
     """Located the exact target-host record copied into release evidence."""
 
     assert saved["medusa_smoke"]["sha256"] == sha256(copied_medusa_smoke)
+    assert (
+        medusa_smoke["extension_sha256"]
+        == hashlib.sha256(linux_extension_bytes).hexdigest()
+    )
+    assert medusa_smoke["extension_sha256"] != sha256(core_path)
 
     tampered: dict[str, Any] = deepcopy(agreement)
     """Copied a complete record before changing one claimed numerical threshold."""
@@ -710,6 +776,53 @@ index = {
         == []
     )
     """Required the independent verifier to accept the complete durable record."""
+
+    wrong_medusa_extension: dict[str, Any] = deepcopy(medusa_smoke)
+    """Copied the smoke before detaching only its native-module commitment."""
+
+    wrong_medusa_extension["extension_sha256"] = "0" * 64
+    """Claimed executable bytes different from the selected wheel member."""
+
+    wrong_medusa_extension_path: Path = output_directory / "wrong-medusa-extension.json"
+    """Selected a retained record whose own outer digest remains self-consistent."""
+
+    wrong_medusa_extension_path.write_text(
+        json.dumps(wrong_medusa_extension, indent=2) + "\n", encoding="utf-8"
+    )
+    """Persisted the altered record so the verifier must inspect its claim."""
+
+    wrong_medusa_extension_evidence: dict[str, Any] = deepcopy(saved)
+    """Copied valid evidence before rebinding it to the altered smoke bytes."""
+
+    wrong_medusa_extension_evidence["medusa_smoke"] = {
+        "path": wrong_medusa_extension_path.name,
+        "sha256": sha256(wrong_medusa_extension_path),
+        "record": wrong_medusa_extension,
+    }
+    """Kept path, outer digest and embedded record mutually consistent."""
+
+    wrong_medusa_extension_evidence_path: Path = (
+        output_directory / "wrong-medusa-extension-evidence.json"
+    )
+    """Selected an independent evidence document for final verification."""
+
+    wrong_medusa_extension_evidence_path.write_text(
+        json.dumps(wrong_medusa_extension_evidence, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    """Persisted the self-consistent evidence carrying the false native digest."""
+
+    wrong_extension_errors: list[str] = release_evidence_errors(
+        evidence_path=wrong_medusa_extension_evidence_path,
+        wheel_paths=[wheel_path],
+        root=root,
+        core=core,
+    )
+    """Forced the final checker to recompute the selected wheel member itself."""
+
+    assert "extension SHA-256 does not match selected Linux wheel" in "\n".join(
+        wrong_extension_errors
+    )
 
     wrong_output: dict[str, Any] = deepcopy(saved)
     """Copied valid evidence before detaching the command from its indexed output."""
@@ -854,8 +967,8 @@ index = {
     )
     """Revalidated copied contents rather than trusting their embedded aggregate."""
 
-    wheel_path.write_bytes(b"different wheel bytes")
-    """Changed the saved artifact after evidence production to model a stale wheel."""
+    write_test_wheel(wheel_path, b"different linux extension bytes")
+    """Replaced the artifact with a valid wheel carrying a different Linux member."""
 
     verification_errors: list[str] = release_evidence_errors(
         evidence_path=output_directory / "evidence.json",
@@ -866,6 +979,9 @@ index = {
     """Rechecked the produced record against the artifact bytes selected for release."""
 
     assert "wheel SHA-256 set does not match" in "\n".join(verification_errors)
+    assert "extension SHA-256 does not match selected Linux wheel" in "\n".join(
+        verification_errors
+    )
 
 
 def test_runner_refuses_a_required_check_without_one_machine_rule(

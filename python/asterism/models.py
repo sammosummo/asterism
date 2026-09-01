@@ -2258,9 +2258,10 @@ class CensoredComponentModel:
         substream derived from ``seed`` and its coordinate, so the inner fits
         can run in parallel without thread scheduling changing the answer. The
         seed and Monte Carlo standard error are returned with the result.
-        Availability is not scientific qualification: the completed outer
-        target-design campaign failed its zero-refusal rule after eleven inner
-        fits failed in the 75% null cell, so it did not qualify a finite-sample
+        Availability is not scientific qualification: eleven outer bootstrap
+        requests in the completed target-design campaign's 75% null cell each
+        encountered at least one inner-fit failure. The campaign therefore
+        failed its zero-refusal rule and did not qualify a finite-sample
         bootstrap p-value. An observed nuisance component or residual on its
         bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``.
         """

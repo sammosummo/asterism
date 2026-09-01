@@ -172,7 +172,7 @@ pub struct TobitFit {
     /// **Absent where a component's mean diagonal is not positive and finite.**
     /// An identified positive-semidefinite basis has a positive finite mean
     /// diagonal, so an accepted several-component model supplies it. The option
-    /// remains for the one-component compatibility seam, which still accepts a
+    /// remains for the one-component compatibility path, which still accepts a
     /// nought basis as the historical ordinary-Tobit path did.
     pub mean_diagonal_contributions: Option<Vec<f64>>,
     /// The contributions summed. Equal to `total_variance` where every
@@ -719,8 +719,8 @@ impl TobitModel {
     /// counted instead, and reported, and the interval widens over them.
     ///
     /// Read `censored_share` beside the result. The released numerical path is
-    /// unchanged, but recovery and coverage under a fixed-instrument generator
-    /// await corrected simulation runs.
+    /// unchanged; retained fixed-instrument records dated 31 August 2026
+    /// measure its recovery and interval coverage.
     ///
     /// # Errors
     ///
@@ -730,8 +730,9 @@ impl TobitModel {
     /// The null sits on the parameter's bound, so the retained analytic
     /// reference is the Self-Liang 50:50 mixture of chi-square on nought and
     /// one degrees of freedom rather than a plain chi-square. The public route
-    /// returns it only for the released one-component compatibility case; its
-    /// corrected fixed-instrument finite-sample campaign is pending.
+    /// returns it only for the released one-component compatibility case. The
+    /// retained fixed-instrument target record dated 31 August 2026 measures
+    /// that case at expected censoring shares 0.52 and 0.75.
     ///
     /// The statistic and the p-value both come from `deviance`, which honours
     /// the point mass at nought: two searches that land on the same likelihood
@@ -791,8 +792,9 @@ impl TobitModel {
     /// components are set beside each other.
     ///
     /// **The boundary verdict is filled only at one component** for released
-    /// API compatibility; its corrected fixed-instrument coverage run is
-    /// pending. With several components the verdict remains absent.
+    /// API compatibility. The retained fixed-instrument coverage record dated
+    /// 31 August 2026 measures that case. With several components the verdict
+    /// remains absent.
     ///
     /// # Errors
     ///
@@ -1047,8 +1049,8 @@ impl TobitModel {
         if got.estimate.is_none() {
             return Err("TOBIT_PROFILE_NOT_EVALUABLE");
         }
-        // Retain the released one-component mixture verdict while its corrected
-        // fixed-instrument coverage campaign is pending. With several
+        // Retain the released one-component mixture verdict measured by the
+        // fixed-instrument coverage record dated 31 August 2026. With several
         // components more than one share can rest on nought at once, so the
         // interval is returned with its boundary verdict absent.
         if self.components.len() == 1 {
@@ -1370,7 +1372,7 @@ mod tests {
     /// The residual identity is implicit, so supplying it as another component
     /// is just as unidentified as supplying the same structured basis twice.
     /// The historical one-component identity remains an explicit compatibility
-    /// seam for the ordinary-Tobit likelihood reference; it does not license
+    /// path for the ordinary-Tobit likelihood reference; it does not license
     /// an unidentified several-component test or bootstrap.
     #[test]
     fn several_component_covariance_bases_must_be_identified() {
@@ -1417,7 +1419,7 @@ mod tests {
                 &design,
             )
             .is_ok(),
-            "the released one-component ordinary-Tobit compatibility seam changed"
+            "the released one-component ordinary-Tobit compatibility behaviour changed"
         );
     }
 
@@ -1922,7 +1924,7 @@ mod tests {
         // down.** The correlation between relatives separates the additive and
         // person-level terms; a person's own two records mainly identify their
         // sum. A single small generated draw is therefore a poor regression
-        // oracle for the split. The corrected fixed-instrument recovery
+        // check for the split. The corrected fixed-instrument recovery
         // campaign, not this unit test, must quantify separation and bias.
         let together: f64 = fit.coefficients.iter().sum();
         assert!(

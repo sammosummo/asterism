@@ -277,7 +277,7 @@ def test_command_output_and_scientific_jobs_are_worker_count_invariant(
 ) -> None:
     """Keep seeds, complete coordinates, decisions, and report independent of workers."""
     module: ModuleType = separation_module()
-    """Loaded the complete command seam."""
+    """Loaded the complete command interface."""
 
     calls: list[tuple[int, list[Any]]] = []
     """Recorded both requested schedules and their scientific jobs."""

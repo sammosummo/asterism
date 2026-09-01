@@ -1,6 +1,7 @@
 """Public contract tests for Asterism release metadata."""
 
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -11,6 +12,7 @@ from typing import Any, cast
 
 from asterism import _core
 
+from tools import check_release as release_checker
 from tools.check_release import (
     conditional_quantity_errors,
     fixed_build_errors,
@@ -204,6 +206,9 @@ def test_censored_component_target_failure_is_a_narrow_known_limitation() -> Non
     assert analysis["support"] == "supported_in_0_2"
     assert "asymptotic_test" in analysis["supported_quantities"]
     assert "bootstrap_test" not in analysis["supported_quantities"]
+    assert {measurement["quantity"] for measurement in analysis["measured_levels"]} == {
+        "asymptotic_test"
+    }
     assert "censored_components_target_design" not in analysis["required_checks"]
     assert [rule["id"] for rule in analysis["pass_rules"]] == analysis[
         "required_checks"
@@ -219,7 +224,7 @@ def test_censored_component_target_failure_is_a_narrow_known_limitation() -> Non
         "consequence": "withhold_p_value_without_design_specific_simulated_null",
         "evidence": ("evidence/censored-components-target-limitation-2026-09-01.json"),
         "evidence_sha256": (
-            "d7adf259ac9220045bf9c206bd3e49b7ad441614ccfaf036a020fc1804b49578"
+            "14c839c82abb2e65f52988abd811bfa6a2a347efd2c7b43bc3c0c64a05d1128c"
         ),
     }
 
@@ -229,6 +234,30 @@ def test_censored_component_target_failure_is_a_narrow_known_limitation() -> Non
     """Read the participant-free retained failure record named by the contract."""
 
     assert record["outcome"] == "known_limitation"
+    producer: dict[str, Any] = record["producer"]
+    """Selected the exact historical build and its preserved source identity."""
+
+    assert producer["source_commit"] == "bd3e09ed0b4985533574f5621489915d3ba2f156"
+    assert producer["cargo_lock_sha256"] == (
+        "20a2ce42b4f208347f0f7296c02345cf6b920149e78d48f50c7e57891e27d3c9"
+    )
+    assert producer["uv_lock_sha256"] == (
+        "0bcb42d0252c592488b4df9c9f9c467474d1b518835c21a374e959efd28d6f37"
+    )
+    assert producer["source_bundle_sha256"] == (
+        "237e5f007cf0ca9fc85815dc1c4ecc12bc0da01c1d66bab7686a46aab0e960fd"
+    )
+    assert producer["preserved_source_ref"] == (
+        "refs/evidence/censored-components-target-bd3e09e"
+    )
+    assert producer["comparison_to_candidate"] == {
+        "source_commit": "162341f12f9029d946770887bf85c0956ca0cbd3",
+        "unchanged_paths": ["src/tobit.rs", "Cargo.lock", "uv.lock"],
+        "target_script_difference": (
+            "The reported LRT atom aggregation uses the retained in_lrt_atom "
+            "field instead of exact-zero test-statistic equality."
+        ),
+    }
     assert record["decision"]["universal_censoring_threshold"] is None
     assert record["decision"]["fit_and_intervals_affected"] is False
     failed: dict[str, Any] = next(
@@ -242,7 +271,42 @@ def test_censored_component_target_failure_is_a_narrow_known_limitation() -> Non
     assert failed["rejection_rate"] == 0.095
     assert failed["one_sided_lower_95"] == 0.06310551496161299
     assert failed["passed"] is False
+    assert release_checker.measured_level_errors(analysis) == []
     assert known_limitation_errors(analysis, ROOT) == []
+
+
+def test_bootstrap_limitation_counts_outer_requests_not_inner_failures() -> None:
+    """Do not turn eleven failed requests into a count of failed inner fits."""
+    surfaces: tuple[Path, ...] = (
+        ROOT / "release.toml",
+        ROOT / "python/asterism/models.py",
+        ROOT / "docs/api-reference.md",
+        ROOT / "docs/statistical-methods.md",
+        ROOT / "docs/development.md",
+    )
+    """Named every public surface that explains the retained bootstrap failure."""
+
+    inaccurate: re.Pattern[str] = re.compile(
+        r"eleven\s+inner(?:-fit)?(?:\s+fits?)?\s+fail", re.IGNORECASE
+    )
+    """Matched claims that eleven is a known count of failed inner fits."""
+
+    for path in surfaces:
+        assert inaccurate.search(path.read_text(encoding="utf-8")) is None, path
+
+
+def test_measured_levels_reject_an_undeclared_quantity() -> None:
+    """Keep measurements inside the analysis's supported quantity inventory."""
+    malformed: dict[str, Any] = {
+        "id": "example",
+        "supported_quantities": ["estimate"],
+        "measured_levels": [{"quantity": "test", "measured": 0.05}],
+    }
+    """Named a measurement that its analysis never promises to return."""
+
+    assert release_checker.measured_level_errors(malformed) == [
+        "release.toml: example measured level 0 names an unsupported quantity"
+    ]
 
 
 def test_known_limitation_metadata_fails_closed() -> None:
@@ -324,8 +388,8 @@ def test_mixed_bivariate_coverage_rule_records_completed_fixed_threshold_run() -
     assert rule["design_facts"]["observation_thresholds_fixed_before_outcomes"] is True
 
 
-def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None:
-    """Keep two installed-wheel matrices distinct from an actual result comparison."""
+def test_cross_platform_agreement_covers_every_supported_analysis() -> None:
+    """Retain measured tolerances for every supported installed-wheel probe."""
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
@@ -336,7 +400,7 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
     )
     """Selected the separately gated Mac/Linux comparison contract."""
 
-    assert agreement["configured"] is False
+    assert agreement["configured"] is True
     assert agreement["probe_runner"] == "tools/cross_platform_probe.py"
     assert agreement["runner"] == "tools/compare_cross_platform.py"
     assert agreement["exact_comparisons"] == [
@@ -346,33 +410,17 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
         "field_presence",
     ]
     tolerances: list[dict[str, object]] = agreement["model_tolerances"]  # type: ignore[assignment]
-    """Read complete numeric-field inventories without pretending thresholds exist."""
+    """Read the complete measured numeric-field inventories."""
 
     assert {tolerance["analysis_id"] for tolerance in tolerances} == {
         analysis["id"]
         for analysis in manifest["analyses"]  # type: ignore[union-attr]
     }
-    unmeasured: list[dict[str, object]] = [
-        tolerance for tolerance in tolerances if tolerance["measured"] is False
-    ]
-    """Collected analyses whose cross-platform tolerances remain unmeasured."""
-
-    assert [tolerance["analysis_id"] for tolerance in unmeasured] == [
-        "one_trait_censored_components"
-    ]
-    assert all(
-        tolerance["measured"] is True
-        for tolerance in tolerances
-        if tolerance not in unmeasured
-    )
+    assert all(tolerance["measured"] is True for tolerance in tolerances)
     assert all(tolerance["numeric_fields"] for tolerance in tolerances)
     assert all(
-        (
-            set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
-            and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
-        )
-        if tolerance["measured"] is True
-        else "absolute" not in tolerance and "relative" not in tolerance
+        set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
+        and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
         for tolerance in tolerances
     )
 

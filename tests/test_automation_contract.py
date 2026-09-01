@@ -6,7 +6,10 @@ import json
 import subprocess
 import sys
 import tomllib
+import zipfile
 from pathlib import Path
+
+from asterism import _core
 
 ROOT: Path = Path(__file__).resolve().parents[1]
 """Located the repository root containing hosted automation."""
@@ -160,8 +163,12 @@ def test_medusa_smoke_command_binds_the_saved_wheel_bytes(tmp_path: Path) -> Non
     wheel: Path = tmp_path / "asterism-final-manylinux.whl"
     """Named the stand-in saved wheel passed to the public smoke command."""
 
-    wheel.write_bytes(b"final portable wheel fixture")
-    """Created immutable stand-in bytes for the command's artifact commitment."""
+    extension_bytes: bytes = Path(str(_core.__file__)).read_bytes()
+    """Read the installed native module that the smoke command will import."""
+
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("asterism/_core.abi3.so", extension_bytes)
+    """Created a real wheel archive carrying the exact imported native bytes."""
 
     completed: subprocess.CompletedProcess[str] = subprocess.run(
         [
@@ -182,6 +189,64 @@ def test_medusa_smoke_command_binds_the_saved_wheel_bytes(tmp_path: Path) -> Non
     """Parsed the public JSON result for its exact artifact commitment."""
 
     assert record["wheel_sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
+    assert record["extension_sha256"] == hashlib.sha256(extension_bytes).hexdigest()
+
+
+def test_medusa_smoke_command_rejects_a_different_wheel_extension(
+    tmp_path: Path,
+) -> None:
+    """Do not let an installed extension attest to a different wheel's bytes."""
+    wheel: Path = tmp_path / "asterism-different-manylinux.whl"
+    """Named a syntactically valid wheel with a different native payload."""
+
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("asterism/_core.abi3.so", b"different extension bytes")
+    """Created a wheel whose native member cannot be the imported extension."""
+
+    completed: subprocess.CompletedProcess[str] = subprocess.run(
+        [
+            sys.executable,
+            "tools/medusa_wheel_smoke.py",
+            "--wheel",
+            str(wheel),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    """Ran the public smoke against the intentionally mismatched artifact."""
+
+    assert completed.returncode != 0
+    assert completed.stdout == ""
+    assert "native module does not match the imported extension" in completed.stderr
+
+
+def test_medusa_smoke_command_rejects_arbitrary_wheel_bytes(tmp_path: Path) -> None:
+    """A `.whl` suffix alone is not evidence of an inspectable wheel archive."""
+    wheel: Path = tmp_path / "asterism-not-an-archive-manylinux.whl"
+    """Named the arbitrary bytes using the suffix accepted by the old smoke."""
+
+    wheel.write_bytes(b"arbitrary bytes")
+    """Modelled an input that cannot carry a native wheel member at all."""
+
+    completed: subprocess.CompletedProcess[str] = subprocess.run(
+        [
+            sys.executable,
+            "tools/medusa_wheel_smoke.py",
+            "--wheel",
+            str(wheel),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    """Ran the public smoke against a false wheel selected by its suffix only."""
+
+    assert completed.returncode != 0
+    assert completed.stdout == ""
+    assert "readable wheel archive" in completed.stderr
 
 
 def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:

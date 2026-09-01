@@ -13,9 +13,10 @@ import signal
 import subprocess
 import sys
 import tomllib
+import zipfile
 from contextlib import suppress
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
 
@@ -458,6 +459,7 @@ def medusa_smoke_record_errors(
     uv_lock_text: str,
     source_commit: str,
     linux_wheel_sha256: str,
+    linux_extension_sha256: str,
 ) -> list[str]:
     """Return failures in one external final-wheel Medusa smoke record.
 
@@ -469,6 +471,7 @@ def medusa_smoke_record_errors(
         uv_lock_text: Exact Python dependency lock embedded in the wheel.
         source_commit: Source commit embedded in the selected wheel.
         linux_wheel_sha256: Exact manylinux wheel exercised on Medusa.
+        linux_extension_sha256: Native member independently read from that wheel.
 
     Returns:
         Human-readable failures, or an empty list for one exact converged smoke.
@@ -500,7 +503,11 @@ def medusa_smoke_record_errors(
         errors.append("Medusa smoke fit did not converge")
     if record.get("wheel_sha256") != linux_wheel_sha256:
         errors.append("Medusa smoke wheel SHA-256 does not match selected Linux wheel")
-    """Bound the fit to the declared host and exact portable artifact."""
+    if record.get("extension_sha256") != linux_extension_sha256:
+        errors.append(
+            "Medusa smoke extension SHA-256 does not match selected Linux wheel"
+        )
+    """Bound the fit to the declared host, archive and exact native member."""
 
     expected_build: dict[str, Any] = {
         "version": manifest.get("version"),
@@ -521,6 +528,46 @@ def medusa_smoke_record_errors(
     if record.get("build_identity") != expected_build:
         errors.append("Medusa smoke build identity does not match selected release")
     return errors
+
+
+def wheel_extension_sha256(wheel_path: Path) -> str:
+    """Hash the sole Asterism native-module member in a manylinux wheel.
+
+    Args:
+        wheel_path: Exact saved portable wheel selected for release.
+
+    Returns:
+        SHA-256 of the uncompressed native-module member bytes.
+
+    Raises:
+        ReleaseConfigurationError: If the wheel or native-member set is invalid.
+    """
+    try:
+        with zipfile.ZipFile(wheel_path) as archive:
+            native_members: list[zipfile.ZipInfo] = [
+                member
+                for member in archive.infolist()
+                if not member.is_dir()
+                and PurePosixPath(member.filename).parent == PurePosixPath("asterism")
+                and PurePosixPath(member.filename).name.startswith("_core.")
+                and PurePosixPath(member.filename).suffix in {".pyd", ".so"}
+            ]
+            """Selected only compiled `_core` members at the package root."""
+
+            if len(native_members) != 1:
+                raise ReleaseConfigurationError(
+                    "selected manylinux wheel must contain exactly one Asterism "
+                    "native module"
+                )
+            extension_bytes: bytes = archive.read(native_members[0])
+            """Read the sole archived member, including its integrity check."""
+    except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+        raise ReleaseConfigurationError(
+            f"selected manylinux wheel is not a readable wheel archive: {error}"
+        ) from error
+    """Rejected false wheel files, encrypted payloads and corrupt member bytes."""
+
+    return hashlib.sha256(extension_bytes).hexdigest()
 
 
 def file_identity(path: Path) -> dict[str, str]:
@@ -1025,13 +1072,21 @@ def run_scientific_release(
     linux_wheel_sha256: str = ""
     """Reserved the sole portable artifact identity after validating its inventory."""
 
+    linux_extension_sha256: str = ""
+    """Reserved the native-member identity independently read from that artifact."""
+
     if len(linux_wheels) != 1:
         errors.append("release requires exactly one manylinux wheel for Medusa smoke")
-    else:
+    elif linux_wheels[0].is_file():
         linux_wheel_sha256 = hashlib.sha256(linux_wheels[0].read_bytes()).hexdigest()
         """Hashed the sole portable artifact for exact external-result binding."""
 
-    """Refused an ambiguous host attestation before reading its claimed digest."""
+        try:
+            linux_extension_sha256 = wheel_extension_sha256(linux_wheels[0])
+            """Independently read the selected wheel's sole native-module member."""
+        except ReleaseConfigurationError as error:
+            errors.append(str(error))
+    """Refused an ambiguous or unreadable Linux artifact before trusting its claims."""
 
     agreement_bytes: bytes = b""
     """Reserved exact comparison bytes only after its path is validated."""
@@ -1090,6 +1145,7 @@ def run_scientific_release(
                     uv_lock_text=uv_lock_text,
                     source_commit=str(source_commit),
                     linux_wheel_sha256=linux_wheel_sha256,
+                    linux_extension_sha256=linux_extension_sha256,
                 )
             )
     """Bound one converged target-host fit to the exact final portable wheel."""

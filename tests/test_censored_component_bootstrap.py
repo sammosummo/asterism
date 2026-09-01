@@ -86,7 +86,7 @@ def test_several_component_test_reports_an_asymptotic_reference() -> None:
     """Built the identified several-component public problem."""
 
     result: dict[str, object] = model.test(value, censoring, limit, component=0)
-    """Tested an interior several-component problem through the public seam."""
+    """Tested an interior several-component problem through the public method."""
 
     raw_statistic: float = 2.0 * (
         float(result["alternative_loglik"]) - float(result["null_loglik"])

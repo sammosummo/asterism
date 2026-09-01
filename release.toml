@@ -46,7 +46,7 @@ evidence = []
 blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every pass rule is measured, then retain one complete standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
-configured = false
+configured = true
 probe_runner = "tools/cross_platform_probe.py"
 runner = "tools/compare_cross_platform.py"
 exact_comparisons = [
@@ -168,7 +168,7 @@ relative = { "fit.heritability" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "one_trait_censored_components"
-measured = false
+measured = true
 numeric_fields = [
   "fit.coefficients[0]",
   "fit.mean_diagonal_proportions[0]",
@@ -183,6 +183,8 @@ numeric_fields = [
   "asymptotic_test.statistic",
   "asymptotic_test.p_value",
 ]
+absolute = { "fit.coefficients[0]" = 1e-9, "fit.mean_diagonal_proportions[0]" = 1e-9, "fit.total_variance" = 1e-9, "fit.loglik" = 1e-9, "coefficient_interval.estimate" = 1e-9, "coefficient_interval.lower" = 1e-9, "coefficient_interval.upper" = 1e-9, "mean_diagonal_proportion_interval.estimate" = 1e-9, "mean_diagonal_proportion_interval.lower" = 1e-9, "mean_diagonal_proportion_interval.upper" = 1e-9, "asymptotic_test.statistic" = 1e-9, "asymptotic_test.p_value" = 1e-9 }
+relative = { "fit.coefficients[0]" = 1e-6, "fit.mean_diagonal_proportions[0]" = 1e-6, "fit.total_variance" = 1e-6, "fit.loglik" = 1e-6, "coefficient_interval.estimate" = 1e-6, "coefficient_interval.lower" = 1e-6, "coefficient_interval.upper" = 1e-6, "mean_diagonal_proportion_interval.estimate" = 1e-6, "mean_diagonal_proportion_interval.lower" = 1e-6, "mean_diagonal_proportion_interval.upper" = 1e-6, "asymptotic_test.statistic" = 1e-6, "asymptotic_test.p_value" = 1e-6 }
 
 [[cross_platform_agreement.model_tolerances]]
 analysis_id = "mixed_binary_censored_genetic_correlation"
@@ -674,16 +676,16 @@ supported_quantities = [
 # The fixed-instrument 75% target failure is retained separately as an exact
 # known limitation rather than turned into a design-range gate.
 measured_levels = [
-  { quantity = "analytic_test", rule = "asymptotic_mixture_50_50", qualified = false, design = "retired_outcome_dependent_exact_count_harness", target_design_evidence = false, censoring = 0.52, level = 0.05, measured = 0.055, exact_interval = [0.028, 0.096] },
-  { quantity = "analytic_test", rule = "asymptotic_mixture_50_50", qualified = false, design = "retired_outcome_dependent_exact_count_harness", target_design_evidence = false, censoring = 0.75, level = 0.05, measured = 0.100, exact_interval = [0.062, 0.150] },
-  { quantity = "analytic_test", rule = "asymptotic_mixture_50_50", design = "fixed_instrument_1909_people_four_components", expected_censoring_share = 0.52, level = 0.05, measured = 0.055, one_sided_lower_95 = 0.031146858789654504, passed_declared_level_rule = true },
-  { quantity = "analytic_test", rule = "asymptotic_mixture_50_50", design = "fixed_instrument_1909_people_four_components", expected_censoring_share = 0.75, level = 0.05, measured = 0.095, one_sided_lower_95 = 0.06310551496161299, passed_declared_level_rule = false },
+  { quantity = "asymptotic_test", rule = "asymptotic_mixture_50_50", qualified = false, design = "retired_outcome_dependent_exact_count_harness", target_design_evidence = false, censoring = 0.52, level = 0.05, measured = 0.055, exact_interval = [0.028, 0.096] },
+  { quantity = "asymptotic_test", rule = "asymptotic_mixture_50_50", qualified = false, design = "retired_outcome_dependent_exact_count_harness", target_design_evidence = false, censoring = 0.75, level = 0.05, measured = 0.100, exact_interval = [0.062, 0.150] },
+  { quantity = "asymptotic_test", rule = "asymptotic_mixture_50_50", design = "fixed_instrument_1909_people_four_components", expected_censoring_share = 0.52, level = 0.05, measured = 0.055, one_sided_lower_95 = 0.031146858789654504, passed_declared_level_rule = true },
+  { quantity = "asymptotic_test", rule = "asymptotic_mixture_50_50", design = "fixed_instrument_1909_people_four_components", expected_censoring_share = 0.75, level = 0.05, measured = 0.095, one_sided_lower_95 = 0.06310551496161299, passed_declared_level_rule = false },
 ]
 known_limitations = [
-  { code = "ASYMPTOTIC_TEST_NOT_CALIBRATED_FOR_FIXED_TARGET_75", quantity = "asymptotic_test", scope = "fixed_instrument_1909_people_four_components_75_percent", consequence = "withhold_p_value_without_design_specific_simulated_null", evidence = "evidence/censored-components-target-limitation-2026-09-01.json", evidence_sha256 = "d7adf259ac9220045bf9c206bd3e49b7ad441614ccfaf036a020fc1804b49578" },
+  { code = "ASYMPTOTIC_TEST_NOT_CALIBRATED_FOR_FIXED_TARGET_75", quantity = "asymptotic_test", scope = "fixed_instrument_1909_people_four_components_75_percent", consequence = "withhold_p_value_without_design_specific_simulated_null", evidence = "evidence/censored-components-target-limitation-2026-09-01.json", evidence_sha256 = "14c839c82abb2e65f52988abd811bfa6a2a347efd2c7b43bc3c0c64a05d1128c" },
 ]
 experimental_methods = [
-  { entry_point = "asterism.CensoredComponentModel.bootstrap", qualified = false, reason = "The 200-by-999 target calibration failed its zero-refusal rule after eleven inner-fit failures in the 75% null cell." },
+  { entry_point = "asterism.CensoredComponentModel.bootstrap", qualified = false, reason = "The 200-by-999 target calibration failed its zero-refusal rule because eleven outer bootstrap requests in the 75% null cell each encountered at least one inner-fit failure." },
 ]
 # These describe the fit rather than reporting a component. They are returned
 # and are worth reading; none of them is a result.

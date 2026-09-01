@@ -1454,7 +1454,7 @@ def test_main_defaults_to_asymptotic_and_rejects_bootstrap_options_there(
 ) -> None:
     """Make the ordinary command analytic and keep inner options mode-specific."""
     module: ModuleType = target_module()
-    """Loaded the public command parser and orchestration seam."""
+    """Loaded the public command parser and orchestration interface."""
 
     monkeypatch.setattr(
         sys,
@@ -1581,7 +1581,7 @@ def test_main_rejects_explicit_outer_by_inner_bootstrap_oversubscription(
 ) -> None:
     """Keep an explicit inner allocation within the scheduler-visible CPU total."""
     module: ModuleType = target_module()
-    """Loaded the public bootstrap allocation seam."""
+    """Loaded the public bootstrap allocation interface."""
 
     monkeypatch.setattr(module, "allocated_cpu_count", lambda: 128)
     monkeypatch.setattr(
@@ -2032,7 +2032,7 @@ def test_null_worker_path_uses_the_ordinary_asymptotic_test(
             *,
             component: int,
         ) -> dict[str, object]:
-            """Check what `one` sends through the public analytic seam."""
+            """Check what `one` sends to the public analytic method."""
             assert np.isfinite(value).all()
             assert not censoring.any()
             assert np.array_equal(limit, np.full(4, 2.0))
@@ -2114,7 +2114,7 @@ def test_null_worker_records_the_public_operational_atom(
     """Substituted a complete small worker state."""
 
     result: dict[str, object] = module.one(("null", 0.52, 3))
-    """Ran the failed result shape through the production worker seam."""
+    """Ran the failed result shape through the production worker."""
 
     assert result["test_statistic"] == 8.549250196665525e-11
     assert result["p_value"] == 1.0
@@ -2143,7 +2143,7 @@ def test_null_worker_path_pins_the_complete_bootstrap_contract(
             replicates: int,
             seed: int,
         ) -> dict[str, object]:
-            """Check what `one` sends through the real public method seam."""
+            """Check what `one` sends to the real public method."""
             assert np.isfinite(value).all()
             assert not censoring.any()
             assert np.array_equal(limit, np.full(4, 2.0))

@@ -295,8 +295,9 @@ component-recovery and interval-coverage checks pass. The analytic test remains
 available with the explicit `asymptotic_mixture_50_50` label when nuisance
 variances are interior. The exact 1,909-person, four-component target at 75%
 expected censoring is a known exception whose p-value requires a design-specific
-simulated null. The optional bootstrap target failed its zero-refusal rule after
-eleven inner-fit failures and remains experimental. None of this creates a
+simulated null. The optional bootstrap target failed its zero-refusal rule
+because eleven outer bootstrap requests in the 75% null cell each encountered
+at least one inner-fit failure. It remains experimental. None of this creates a
 universal censoring threshold.
 
 Two further matters remain open as science rather than process. General

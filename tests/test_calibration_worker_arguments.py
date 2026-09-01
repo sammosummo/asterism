@@ -152,7 +152,7 @@ def test_no_write_suppresses_only_the_dated_evidence_file(
     """Keep the complete scientific report while omitting its dated JSON write."""
 
     def run_jobs(jobs: list[Any], workers: int) -> list[dict[str, object]]:
-        """Supply complete fitted rows at the command's public orchestration seam."""
+        """Supply complete fitted rows through the command's public interface."""
         assert workers == 1
         return successful_rows(campaign, jobs)
 

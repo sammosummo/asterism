@@ -21,9 +21,18 @@
   },
   "producer": {
     "source_commit": "bd3e09ed0b4985533574f5621489915d3ba2f156",
+    "cargo_lock_sha256": "20a2ce42b4f208347f0f7296c02345cf6b920149e78d48f50c7e57891e27d3c9",
+    "uv_lock_sha256": "0bcb42d0252c592488b4df9c9f9c467474d1b518835c21a374e959efd28d6f37",
     "release_manifest_sha256": "774daf3eea000da314125b75c7f8d569b1ed519798aab1e136b23803ed63258e",
     "wheel_sha256": "243f9d9e714db62e6d88a1137027ccb940619fd90c5230304c44866c8b75f199",
     "extension_sha256": "b31dfe19d7f4d65bfd97d7ddcab684ad8b50de427a3947180b5a4a8e261b1bc0",
+    "source_bundle_sha256": "237e5f007cf0ca9fc85815dc1c4ecc12bc0da01c1d66bab7686a46aab0e960fd",
+    "preserved_source_ref": "refs/evidence/censored-components-target-bd3e09e",
+    "comparison_to_candidate": {
+      "source_commit": "162341f12f9029d946770887bf85c0956ca0cbd3",
+      "unchanged_paths": ["src/tobit.rs", "Cargo.lock", "uv.lock"],
+      "target_script_difference": "The reported LRT atom aggregation uses the retained in_lrt_atom field instead of exact-zero test-statistic equality."
+    },
     "slurm_array": 7346901,
     "shards": 10
   },

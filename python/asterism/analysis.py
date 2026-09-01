@@ -243,7 +243,7 @@ def _release_state(
     analysis: str,
     design: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Report whether this build is a release with every required check ready.
+    """Report whether this build is a release with pass rules configured.
 
     Private because nobody outside `run_analysis` needs it. A caller who wants
     a fit calls the model and gets one; a caller who wants a receipt calls
@@ -256,8 +256,8 @@ def _release_state(
 
     Returns:
         A serialisable release-state record. ``release_ready`` is true only
-        when the pass rules are configured, every required rule is ready and
-        the build is a release; ``missing_checks`` names every absence.
+        when the pass rules are configured and the build is a release;
+        ``missing_checks`` names every absence.
 
     Raises:
         ValueError: If the analysis is absent from the manifest or its contract
@@ -320,9 +320,6 @@ def _release_state(
     if rule_ids != required_checks:
         raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
     for rule in pass_rules:
-        check: str = str(rule["id"])
-        """Named the required check whose current evidence state is examined."""
-
         status: Any = rule.get("status")
         """Read whether this exact check is ready or explicitly waiting."""
 
@@ -330,7 +327,7 @@ def _release_state(
             raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
         if status != "ready":
             blocker: Any = rule.get("blocker")
-            """Read the stable reason and evidence needed for this unready rule."""
+            """Read the release automation's reason for this unready rule."""
 
             if (
                 not isinstance(blocker, Mapping)
@@ -340,16 +337,7 @@ def _release_state(
                 or not blocker.get("evidence_needed")
             ):
                 raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
-            missing_checks.append(
-                {
-                    "code": "SCIENTIFIC_PASS_RULE_NOT_READY",
-                    "check": check,
-                    "status": status,
-                    "blocker": blocker["code"],
-                    "reason": blocker["evidence_needed"],
-                }
-            )
-    """Made a blocked or pending rule part of the public fail-closed receipt."""
+    """Validated rule configuration without repeating release-time completion checks."""
 
     if manifest.get("release") is not True:
         missing_checks.append(
@@ -358,7 +346,7 @@ def _release_state(
                 "reason": "this is a development build, not a release",
             }
         )
-    """Recorded an unready rule or development build as not release ready."""
+    """Recorded an unconfigured or development build as not release ready."""
 
     quantities: Any = entry.get("supported_quantities")
     """Read the quantities this analysis is supported to produce."""

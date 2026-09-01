@@ -4,8 +4,9 @@ Agreement with SOLAR shows the binary-by-continuous cell computes the same
 thing SOLAR computes. It says nothing about the censored cell, which SOLAR
 cannot fit at all, and nothing about whether either is unbiased. This command
 is the generative check for those questions. Censored and binary cut-points are
-now fixed from the population design before outcomes; results from the earlier
-outcome-adaptive generator are superseded pending a fresh run.
+fixed from the population design before outcomes. The retained 31 August 2026
+record replaces the earlier outcome-adaptive result: all 100 fits in each of
+the four pairings were available, and the campaign passed its declared rule.
 
 The genetic correlation is the estimand these pairs are fitted for -- a
 diagnosis against hearing -- and it is the one quantity that survives a trait

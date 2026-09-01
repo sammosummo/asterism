@@ -9,8 +9,9 @@ reported had never been measured at all.
 
 This command measures it, and measures the test beside it, because the two
 answer the same question and one run gives both. Censored and binary cut-points
-are now fixed from population design facts before outcomes. Earlier retained
-rates from outcome-adaptive cut-points are superseded pending a fresh run.
+are fixed from population design facts before outcomes. The retained 31 August
+2026 record replaces the earlier outcome-adaptive rates: all twelve 300-fit
+cells completed without refusals and passed their declared coverage rules.
 
 The rules are the coverage check's rules elsewhere in this package:
 

@@ -31,8 +31,9 @@
 //! endpoint sitting on its bound belongs to the interval is not answerable by
 //! reading the code; `CONTEXT.md` is blunt about it -- the coverage check is
 //! what chooses an interval recipe. `prepared` has current qualification.
-//! `tobit` historically populated the verdict, but its fixed-instrument
-//! coverage remeasurement is pending; the other families leave it absent.
+//! `tobit` populates the verdict for the released one-component rule, measured
+//! by the retained fixed-instrument coverage record dated 31 August 2026; the
+//! other families leave it absent.
 //!
 //! # What a family hands over
 //!
@@ -170,9 +171,10 @@ impl Interval {
 
     /// Retain the published Self-Liang boundary verdict for a limited end.
     ///
-    /// This remains the one-component censored compatibility record while its
-    /// corrected fixed-instrument finite-sample coverage campaign is pending.
-    /// Families without that compatibility surface leave these fields absent.
+    /// This remains the one-component censored compatibility record. Its
+    /// boundary behaviour was measured by the retained fixed-instrument
+    /// coverage record dated 31 August 2026. Families without that
+    /// compatibility surface leave these fields absent.
     ///
     /// An end that is not limited is interior, so the question does not arise
     /// and the field stays absent. An end limited because the bound could not

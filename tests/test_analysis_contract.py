@@ -136,17 +136,32 @@ def install_blocked_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_core, "__release_manifest__", BLOCKED_RELEASE_MANIFEST)
     monkeypatch.setattr(_core, "__release_manifest_sha256__", manifest_sha256)
     monkeypatch.setattr(_core, "__source_dirty__", False)
-    """Created an internally consistent build that must still fail preflight."""
+    """Created a consistent build whose scientific status remains visible."""
 
 
-def test_a_blocked_required_rule_prevents_release_ready_receipts(
+def test_a_blocked_required_rule_does_not_gate_runtime_receipts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Never turn configured-but-unmeasured evidence into release readiness."""
+    """Leave scientific completion to release automation once rules exist."""
     install_blocked_release_contract(monkeypatch)
-    """Substituted the release-shaped contract with one absent campaign."""
+    """Substituted a release-shaped contract with one absent campaign."""
 
-    state: dict[str, Any] = release_state(
+    fitted: bool = False
+    """Recorded whether runtime readiness allowed the numerical callback."""
+
+    def fit() -> dict[str, Any]:
+        nonlocal fitted
+        # asterism-style: allow unannotated-local -- nonlocal test probe rebinding
+        fitted = True
+        """Recorded that the configured release reached its numerical fit."""
+        return {
+            "converged": True,
+            "h2": 0.5,
+            "interval": {"lower": 0.3, "upper": 0.7, "profile_failures": 0},
+            "test": {"p_value": 0.01},
+        }
+
+    receipt: dict[str, Any] = asterism.run_analysis(
         "one_trait_gaussian_heritability",
         {
             "sample_size": 350,
@@ -154,19 +169,89 @@ def test_a_blocked_required_rule_prevents_release_ready_receipts(
             "trait_type": "continuous",
             "components": "additive_relationship",
         },
+        fit,
+        model={"estimator": "reml"},
+        provenance={
+            "wheel_sha256": "a" * 64,
+            "dependency_lock_sha256": "b" * 64,
+            "consumer_commit": "c" * 40,
+            "input_commitments": {},
+        },
+        subject_order=["s1", "s2"],
     )
-    """Asked the receipt preflight to evaluate the blocked analysis."""
+    """Ran through the public receipt interface carrying an unready rule status."""
 
-    assert state["release_ready"] is False
-    assert state["missing_checks"] == [
-        {
-            "code": "SCIENTIFIC_PASS_RULE_NOT_READY",
-            "check": "coverage",
-            "status": "blocked",
-            "blocker": "coverage_unmeasured",
-            "reason": "Run and retain the coverage campaign.",
-        }
-    ]
+    assert fitted is True
+    assert receipt["outcome"] == "fitted"
+    assert receipt["release_state"]["release_ready"] is True
+    assert receipt["release_state"]["missing_checks"] == []
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected_missing"),
+    [
+        (
+            RELEASE_MANIFEST.replace(
+                "scientific_pass_rules_configured = true",
+                "scientific_pass_rules_configured = false",
+                1,
+            ),
+            {
+                "code": "SCIENTIFIC_PASS_RULES_NOT_CONFIGURED",
+                "reason": "machine-readable pass rules are incomplete",
+            },
+        ),
+        (
+            DEVELOPMENT_MANIFEST,
+            {
+                "code": "BUILD_NOT_RELEASED",
+                "reason": "this is a development build, not a release",
+            },
+        ),
+    ],
+)
+def test_runtime_receipts_keep_the_two_approved_release_gates(
+    monkeypatch: pytest.MonkeyPatch,
+    manifest: str,
+    expected_missing: dict[str, str],
+) -> None:
+    """Refuse only an unconfigured contract or a non-release build before fitting."""
+    manifest_sha256: str = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+    """Committed to the exact synthetic contract installed for this case."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", manifest)
+    monkeypatch.setattr(_core, "__release_manifest_sha256__", manifest_sha256)
+    monkeypatch.setattr(_core, "__source_dirty__", False)
+    """Installed one internally consistent runtime-release contract."""
+
+    fitted: bool = False
+    """Recorded whether an approved readiness gate stopped numerical work."""
+
+    def fit() -> dict[str, Any]:
+        nonlocal fitted
+        # asterism-style: allow unannotated-local -- nonlocal test probe rebinding
+        fitted = True
+        """Recorded an unexpected fit after an approved readiness failure."""
+        return {"converged": True}
+
+    receipt: dict[str, Any] = asterism.run_analysis(
+        "one_trait_gaussian_heritability",
+        {"sample_size": 350, "trait_type": "continuous"},
+        fit,
+        model={"estimator": "reml"},
+        provenance={
+            "wheel_sha256": "a" * 64,
+            "dependency_lock_sha256": "b" * 64,
+            "consumer_commit": "c" * 40,
+            "input_commitments": {},
+        },
+        subject_order=["s1", "s2"],
+    )
+    """Asked the public receipt interface to enforce its two readiness gates."""
+
+    assert fitted is False
+    assert receipt["outcome"] == "refused"
+    assert receipt["release_state"]["missing_checks"] == [expected_missing]
 
 
 def test_an_analysis_introduced_in_0_2_is_active_in_a_0_2_release(

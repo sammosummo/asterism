@@ -13,10 +13,12 @@ import argparse
 import hashlib
 import json
 import platform
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 
 import asterism
 import numpy as np
+from asterism import _core
 
 parser: argparse.ArgumentParser = argparse.ArgumentParser(
     description="Run the participant-free smoke for one installed manylinux wheel."
@@ -30,6 +32,50 @@ arguments: argparse.Namespace = parser.parse_args()
 if not arguments.wheel.is_file() or arguments.wheel.suffix != ".whl":
     parser.error("--wheel must name the installed saved wheel")
 """Refused a missing or non-wheel artifact before fitting anything."""
+
+extension_path: Path = Path(str(_core.__file__)).resolve()
+"""Located the installed native module imported by this exact interpreter."""
+
+if not extension_path.is_file():
+    parser.error("the imported installed extension does not exist")
+extension_bytes: bytes = extension_path.read_bytes()
+"""Read the native bytes that will execute the synthetic fit below."""
+
+try:
+    with zipfile.ZipFile(arguments.wheel) as archive:
+        native_members: list[zipfile.ZipInfo] = []
+        """Collected only native-module members at Asterism's package root."""
+
+        for member in archive.infolist():
+            member_path: PurePosixPath = PurePosixPath(member.filename)
+            """Interpreted one wheel member using the archive's POSIX paths."""
+
+            if (
+                not member.is_dir()
+                and member_path.parent == PurePosixPath("asterism")
+                and member_path.name.startswith("_core.")
+                and member_path.suffix in {".pyd", ".so"}
+            ):
+                native_members.append(member)
+        """Selected compiled `_core` members without accepting arbitrary payloads."""
+
+        if len(native_members) != 1:
+            parser.error("--wheel must contain exactly one Asterism native module")
+        wheel_extension_bytes: bytes = archive.read(native_members[0])
+        """Read the sole archived native member, including its integrity check."""
+except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+    parser.error(f"--wheel must be a readable wheel archive: {error}")
+"""Required an inspectable archive and one unambiguous installed module candidate."""
+
+extension_sha256: str = hashlib.sha256(extension_bytes).hexdigest()
+"""Identified the imported native module that will perform the fit."""
+
+wheel_extension_sha256: str = hashlib.sha256(wheel_extension_bytes).hexdigest()
+"""Identified the independently read native member in the selected wheel."""
+
+if wheel_extension_sha256 != extension_sha256:
+    parser.error("--wheel native module does not match the imported extension")
+"""Proved that the selected archive supplied the exact executable bytes in use."""
 
 rng: np.random.Generator = np.random.default_rng(20260824)
 """Fixed the generator so the smoke is reproducible from its seed alone."""
@@ -87,6 +133,7 @@ record: dict[str, object] = {
     "asterism_version": asterism.__version__,
     "build_identity": asterism.build_identity(),
     "wheel_sha256": hashlib.sha256(arguments.wheel.read_bytes()).hexdigest(),
+    "extension_sha256": extension_sha256,
     "people": int(people),
     "largest_family": int(per_family),
     "converged": bool(fit["converged"]),

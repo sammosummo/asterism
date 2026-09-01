@@ -11,8 +11,9 @@ import re
 import subprocess
 import sys
 import tomllib
+import zipfile
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
 
@@ -53,6 +54,46 @@ def sha256(path: Path) -> str:
         The lowercase hexadecimal digest.
     """
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def wheel_extension_sha256(wheel_path: Path) -> str:
+    """Hash the sole Asterism native-module member in a saved wheel.
+
+    Args:
+        wheel_path: Exact manylinux wheel selected for final verification.
+
+    Returns:
+        SHA-256 of the uncompressed native-module member bytes.
+
+    Raises:
+        ValueError: If the wheel or native-member set cannot be verified.
+    """
+    try:
+        with zipfile.ZipFile(wheel_path) as archive:
+            native_members: list[zipfile.ZipInfo] = [
+                member
+                for member in archive.infolist()
+                if not member.is_dir()
+                and PurePosixPath(member.filename).parent == PurePosixPath("asterism")
+                and PurePosixPath(member.filename).name.startswith("_core.")
+                and PurePosixPath(member.filename).suffix in {".pyd", ".so"}
+            ]
+            """Selected only compiled `_core` members at the package root."""
+
+            if len(native_members) != 1:
+                raise ValueError(
+                    "selected manylinux wheel must contain exactly one Asterism "
+                    "native module"
+                )
+            extension_bytes: bytes = archive.read(native_members[0])
+            """Read the sole archived member, including its integrity check."""
+    except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+        raise ValueError(
+            f"selected manylinux wheel is not a readable wheel archive: {error}"
+        ) from error
+    """Rejected false wheel files, encrypted payloads and corrupt member bytes."""
+
+    return hashlib.sha256(extension_bytes).hexdigest()
 
 
 def fit_record_failures(
@@ -221,6 +262,42 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
             f"release.toml: {identifier} quantity sets must partition supported_quantities"
         )
     """Required unambiguous selection and exact, non-overlapping inventory coverage."""
+
+    return errors
+
+
+def measured_level_errors(analysis: dict[str, Any]) -> list[str]:
+    """Return measurements that do not name a supported analysis quantity."""
+    raw_levels: object = analysis.get("measured_levels", [])
+    """Read the optional empirical measurements retained beside this analysis."""
+
+    identifier: str = str(analysis.get("id", "<missing>"))
+    """Named the owning analysis in every actionable validation error."""
+
+    if not isinstance(raw_levels, list):
+        return [f"release.toml: {identifier} measured_levels must be tables"]
+    quantities: object = analysis.get("supported_quantities", [])
+    """Read the quantity inventory that measurements are allowed to describe."""
+
+    supported: set[str] = (
+        {str(quantity) for quantity in quantities}
+        if isinstance(quantities, list)
+        else set()
+    )
+    """Normalised the declared quantity inventory for membership checks."""
+
+    errors: list[str] = []
+    """Collected every malformed or unsupported measurement independently."""
+
+    for index, measurement in enumerate(raw_levels):
+        label: str = f"release.toml: {identifier} measured level {index}"
+        """Located one retained measurement precisely in the manifest."""
+
+        if not isinstance(measurement, dict):
+            errors.append(f"{label} must be a table")
+        elif measurement.get("quantity") not in supported:
+            errors.append(f"{label} names an unsupported quantity")
+    """Required every retained measurement to narrow a quantity the analysis owns."""
 
     return errors
 
@@ -562,7 +639,7 @@ def release_evidence_errors(
         """Required the evidence build identity to carry all three commitments."""
 
         extension_path: Path = Path(str(getattr(core, "__file__", ""))).resolve()
-        """Located the extension binary whose hash identifies the tested build."""
+        """Located the imported extension whose hash identifies the local build."""
 
         if not extension_path.is_file():
             errors.append(f"installed extension does not exist: {extension_path}")
@@ -1187,29 +1264,46 @@ def release_evidence_errors(
                 "release evidence Medusa smoke record does not match its file"
             )
 
-        linux_wheel_hashes: list[str] = [
-            digest
+        linux_wheels: list[tuple[Path, str]] = [
+            (Path(path), digest)
             for path, digest in expected_wheels.items()
             if "manylinux" in Path(path).name
         ]
         """Selected the sole portable artifact from the saved release wheel set."""
 
-        if len(linux_wheel_hashes) != 1:
+        if len(linux_wheels) != 1:
             errors.append(
                 "release evidence needs exactly one manylinux wheel for Medusa smoke"
             )
-        elif release_manifest:
-            errors.extend(
-                sibling("run_scientific_release").medusa_smoke_record_errors(
-                    record=embedded_medusa_record,
-                    manifest=release_manifest,
-                    manifest_text=(root / "release.toml").read_text(encoding="utf-8"),
-                    cargo_lock_text=(root / "Cargo.lock").read_text(encoding="utf-8"),
-                    uv_lock_text=(root / "uv.lock").read_text(encoding="utf-8"),
-                    source_commit=str(getattr(core, "__source_commit__", "")),
-                    linux_wheel_sha256=linux_wheel_hashes[0],
+        else:
+            linux_wheel_path, linux_wheel_sha256 = linux_wheels[0]
+            """Located both the selected artifact bytes and their outer identity."""
+
+            linux_extension_sha256: str = ""
+            """Reserved the independently extracted native-member identity."""
+
+            try:
+                linux_extension_sha256 = wheel_extension_sha256(linux_wheel_path)
+                """Read and hashed the selected wheel member during final checking."""
+            except ValueError as error:
+                errors.append(f"release evidence {error}")
+            if release_manifest:
+                errors.extend(
+                    sibling("run_scientific_release").medusa_smoke_record_errors(
+                        record=embedded_medusa_record,
+                        manifest=release_manifest,
+                        manifest_text=(root / "release.toml").read_text(
+                            encoding="utf-8"
+                        ),
+                        cargo_lock_text=(root / "Cargo.lock").read_text(
+                            encoding="utf-8"
+                        ),
+                        uv_lock_text=(root / "uv.lock").read_text(encoding="utf-8"),
+                        source_commit=str(getattr(core, "__source_commit__", "")),
+                        linux_wheel_sha256=linux_wheel_sha256,
+                        linux_extension_sha256=linux_extension_sha256,
+                    )
                 )
-            )
     """Revalidated host, fit, build and exact-wheel claims from retained bytes."""
 
     return errors
@@ -1465,6 +1559,7 @@ def main() -> int:
         if not analysis.get("required_checks"):
             errors.append(f"release.toml: {identifier} has no required_checks")
         errors.extend(conditional_quantity_errors(analysis))
+        errors.extend(measured_level_errors(analysis))
         errors.extend(known_limitation_errors(analysis, root))
     """Required every supported claim to name its public and evidentiary seams."""
 

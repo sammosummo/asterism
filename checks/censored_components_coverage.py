@@ -48,8 +48,10 @@ Run with:
 
     uv run --no-project python checks/censored_components_coverage.py
 
-The command now fixes each instrument limit from the population design before
-drawing outcomes. Its corrected full run is pending.
+The command fixes each instrument limit from the population design before
+drawing outcomes. The retained 31 August 2026 record contains 300 replicates in
+each of twelve cells with no refusals. All eleven scoreable interior cells
+passed their declared exact rule; the boundary cell remains a reported range.
 """
 
 from __future__ import annotations
