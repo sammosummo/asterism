@@ -334,14 +334,36 @@ def test_medusa_smoke_rejects_stale_runtime_fit_and_build_identity(
 
 
 @pytest.mark.parametrize(
-    ("payload", "wheel_extension_bytes", "expected"),
+    (
+        "payload",
+        "wheel_extension_bytes",
+        "installed_extension_bytes",
+        "expected",
+    ),
     [
-        (None, b"linux extension bytes", "Medusa smoke does not exist"),
-        ("{", b"linux extension bytes", "Medusa smoke is unreadable"),
+        (
+            None,
+            b"linux extension bytes",
+            b"linux extension bytes",
+            "Medusa smoke does not exist",
+        ),
+        (
+            "{",
+            b"linux extension bytes",
+            b"linux extension bytes",
+            "Medusa smoke is unreadable",
+        ),
         (
             "valid",
             None,
+            b"local extension bytes",
             "selected manylinux wheel is not a readable wheel archive",
+        ),
+        (
+            "valid",
+            b"linux extension bytes",
+            b"different installed extension bytes",
+            "installed extension does not match the selected manylinux wheel",
         ),
     ],
 )
@@ -350,9 +372,10 @@ def test_runner_refuses_unverifiable_external_medusa_inputs(
     monkeypatch: pytest.MonkeyPatch,
     payload: str | None,
     wheel_extension_bytes: bytes | None,
+    installed_extension_bytes: bytes,
     expected: str,
 ) -> None:
-    """Refuse unreadable evidence and a false manylinux wheel archive."""
+    """Refuse unreadable evidence, wheels and mismatched installed builds."""
     root: Path = tmp_path / "checkout"
     """Located a minimal checkout fixture for release preflight."""
 
@@ -423,7 +446,7 @@ def test_runner_refuses_unverifiable_external_medusa_inputs(
     """Located a stand-in installed extension outside the checkout fixture."""
 
     core_path.parent.mkdir(parents=True)
-    core_path.write_bytes(b"local extension bytes")
+    core_path.write_bytes(installed_extension_bytes)
     core: Any = SimpleNamespace(
         __file__=str(core_path),
         __release_manifest__=manifest_text,
@@ -651,8 +674,8 @@ index = {
     """Selected the locally imported extension outside the checkout."""
 
     core_path.parent.mkdir(parents=True)
-    local_extension_bytes: bytes = b"local extension bytes"
-    """Fixed platform-specific bytes deliberately different from the Linux member."""
+    local_extension_bytes: bytes = linux_extension_bytes
+    """Installed the exact native payload selected from the Linux wheel."""
 
     core_path.write_bytes(local_extension_bytes)
     """Created the local extension binary whose own digest identifies the build."""
@@ -724,7 +747,7 @@ index = {
         medusa_smoke["extension_sha256"]
         == hashlib.sha256(linux_extension_bytes).hexdigest()
     )
-    assert medusa_smoke["extension_sha256"] != sha256(core_path)
+    assert medusa_smoke["extension_sha256"] == sha256(core_path)
 
     tampered: dict[str, Any] = deepcopy(agreement)
     """Copied a complete record before changing one claimed numerical threshold."""
@@ -980,6 +1003,9 @@ index = {
 
     assert "wheel SHA-256 set does not match" in "\n".join(verification_errors)
     assert "extension SHA-256 does not match selected Linux wheel" in "\n".join(
+        verification_errors
+    )
+    assert "tested extension does not match the selected manylinux wheel" in "\n".join(
         verification_errors
     )
 

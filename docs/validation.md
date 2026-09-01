@@ -92,10 +92,11 @@ anti-conservative only when its two-sided upper limit falls below 0.940. A cell
 whose lower limit exceeds 0.960 passes and is labelled conservative;
 at truths 0.05 and 0.07 the label is `historically_conservative`.
 
-### Pending
+### Release condition
 
 `release.toml` reserves 8,000 replicates per truth, 96,000 fits per design.
-Neither 8,000-replicate command has yet run against a fixed release artifact.
+Publication is refused unless both commands complete against the exact fixed
+release artifacts and their results satisfy the predeclared rules.
 
 ## Several covariance components
 
@@ -277,10 +278,11 @@ corresponding upper limit falls below 0.95. Numerical and profile failures fail
 the check separately, so neither calculation can hide a missing result by
 changing its denominator.
 
-### Pending
+### Release condition
 
-The release command fixes 200 replicates per scenario. That 400-attempt
-campaign has not run.
+The release command fixes 200 replicates per scenario. Publication is refused
+unless all 400 attempts complete against the exact fixed release artifacts and
+their results satisfy the predeclared rules.
 
 ## Censored traits
 
@@ -539,7 +541,7 @@ level cell fails only when its one-sided exact lower confidence bound is above
 one-sided exact upper bound is below nominal. The coverage campaign permits no
 refusal.
 
-### Known test limitation and remaining release work
+### Known test limitation and release condition
 
 The corrected fixed-instrument component-separation and interval-coverage
 campaigns pass.
@@ -558,9 +560,10 @@ failed because the predeclared rule permits no failed attempt. It published no
 qualifying evidence, so the bootstrap remains experimental. This finding does
 not create a censoring cutoff for another design. The development candidate's
 four-platform probe was bit-for-bit identical for every new
-censored-component quantity; the exact final wheels must repeat that
-comparison. The independent dense-likelihood comparison above remains the
-numerical reference for the sequential region approximation.
+censored-component quantity. Publication reruns that comparison from the exact
+final wheels and retains its per-target decisions. The independent
+dense-likelihood comparison above remains the numerical reference for the
+sequential region approximation.
 
 ## Mixed pairs
 
@@ -697,10 +700,11 @@ non-singleton component, and combines with synthetic sex in the full-rank
 six-column design `1, z, z², s, zs, z²s`. Quantities are judged at
 z = -1, 0 and 1 only.
 
-### Pending
+### Release condition
 
-The release rule is pinned at 500 replicates per surface and has not run. The
-figures above are the completed 100-per-surface reduced run.
+The release rule is pinned at 500 replicates per surface. Publication is
+refused unless the full result satisfies its predeclared rules; the figures
+above are the completed 100-per-surface reduced run.
 
 ## Gene by environment, binary
 
@@ -768,16 +772,14 @@ correlation test rejected 0.990 and the equal-variance test stayed at level
 (0.062); where only the genetic scale differs, the equal-variance test rejected
 0.998 and the correlation test stayed at level (0.042).
 
-### Pending
+### Release condition
 
-Neither full campaign has run in this development environment. The
+Publication requires both full campaigns to complete from the exact fixed
+release artifacts and satisfy their predeclared rules. An earlier
 one-replicate-per-truth smoke at n = 600 completed all three attempts in 3.99
 seconds with no refusals, nonconvergence, interval refusals or profile
-failures, covering all three generating correlations; that is a route check.
-The pinned 400-by-three and 500-by-four campaigns were refused by the sandbox
-before worker creation, so none of their 1,200 and 2,000 attempts ran. Both
-commands stay fixed in `release.toml`, and the measured and configured flags
-stay false.
+failures, covering all three generating correlations; that was a route check,
+not qualifying evidence. Both full commands stay fixed in `release.toml`.
 
 ## Convergence and polishing
 

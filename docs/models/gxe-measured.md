@@ -112,8 +112,9 @@ genetic scale may change. The exponential null $\lambda=0$ uses the 50:50
 mixture. The interaction null fixes both genetic shape coordinates and uses
 $\tfrac12\chi^2_1+\tfrac12\chi^2_2$. For random regression, the null is on a
 curved rank-deficient covariance cone; Asterism retains this reference as a
-deliberately conservative rule pending target-design calibration, not as a
-universal consequence of Self and Liang.
+deliberately conservative rule and subjects it to the target-design
+calibration fixed in `release.toml`; it is not a universal consequence of Self
+and Liang.
 
 ### Public record mapping
 

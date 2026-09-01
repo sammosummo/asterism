@@ -1033,8 +1033,19 @@ def run_scientific_release(
     core_path: Path = Path(str(getattr(core, "__file__", ""))).resolve()
     """Located the extension binary imported by this exact interpreter."""
 
+    installed_extension_sha256: str = ""
+    """Reserved the imported native-module identity for wheel binding."""
+
     if not core_path.is_file():
         errors.append(f"installed extension does not exist: {core_path}")
+    else:
+        try:
+            installed_extension_sha256 = hashlib.sha256(
+                core_path.read_bytes()
+            ).hexdigest()
+            """Hashed the exact native module that will execute every simulation."""
+        except OSError as error:
+            errors.append(f"installed extension is unreadable: {error}")
     try:
         core_path.relative_to(root)
     except ValueError:
@@ -1087,6 +1098,17 @@ def run_scientific_release(
         except ReleaseConfigurationError as error:
             errors.append(str(error))
     """Refused an ambiguous or unreadable Linux artifact before trusting its claims."""
+
+    if (
+        installed_extension_sha256
+        and linux_extension_sha256
+        and installed_extension_sha256 != linux_extension_sha256
+    ):
+        errors.append(
+            "installed extension does not match the selected manylinux wheel "
+            "native module"
+        )
+    """Bound every scientific command to the exact portable artifact for publication."""
 
     agreement_bytes: bytes = b""
     """Reserved exact comparison bytes only after its path is validated."""

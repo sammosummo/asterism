@@ -166,14 +166,16 @@ tag and saved wheels.
   same saved artefacts that publication consumes.
 - Statistical-method documentation covers every supported analysis with
   equations and primary references. All scientific rules have executable
-  commands; the exact final-wheel release run remains outstanding.
+  commands, and publication requires the exact final wheels to complete them
+  and retain their evidence.
 - Several-component fitting now refuses linearly dependent covariance bases,
   including an identity matrix confounded with the implicit residual; its
   one-component boundary test uses the identified analytic residual-only null.
 - The installed-wheel matrix runs independently on Mac and Linux. On the
   0.2 candidate, all twelve new censored-component quantities were bit-for-bit
-  identical on macOS arm64 and Linux x86-64 under Python 3.13 and 3.14; the
-  final release wheels must repeat that comparison.
+  identical on macOS arm64 and Linux x86-64 under Python 3.13 and 3.14.
+  Publication requires the final wheels to reproduce that comparison and
+  retain its per-target decisions.
 
 ## 0.1.1 (2026-08-26)
 

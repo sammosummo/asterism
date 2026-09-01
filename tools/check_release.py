@@ -1287,6 +1287,17 @@ def release_evidence_errors(
                 """Read and hashed the selected wheel member during final checking."""
             except ValueError as error:
                 errors.append(f"release evidence {error}")
+            if (
+                linux_extension_sha256
+                and isinstance(build, dict)
+                and build.get("extension_sha256") != linux_extension_sha256
+            ):
+                errors.append(
+                    "release evidence tested extension does not match the selected "
+                    "manylinux wheel native module"
+                )
+            """Independently bound the scientific binary to the published artifact."""
+
             if release_manifest:
                 errors.extend(
                     sibling("run_scientific_release").medusa_smoke_record_errors(

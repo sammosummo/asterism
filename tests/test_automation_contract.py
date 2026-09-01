@@ -28,12 +28,17 @@ def test_quality_workflow_runs_every_ordinary_gate() -> None:
         "ruff format --check",
         "ruff check",
         "tools/check_python_style.py",
+        "tools/build_api_reference.py --check",
+        "tools/build_model_pages.py --check",
         "tools/check_release.py --metadata",
     )
     """Named every ordinary gate fixed by the accepted release contract."""
 
     for command in required_commands:
         assert command in workflow
+
+    assert "uv run ruff format --check python tests checks tools examples" in workflow
+    assert "uv run ruff check python tests checks tools examples" in workflow
 
 
 def test_wheel_workflow_builds_and_tests_the_promised_artifacts() -> None:

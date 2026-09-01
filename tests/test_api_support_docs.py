@@ -70,3 +70,41 @@ def test_the_manifest_version_has_the_right_changelog_and_release_page() -> None
         f"- `asterism-{version}-cp313-abi3-manylinux_2_17_x86_64."
         "manylinux2014_x86_64.whl`"
     ) in release_notes
+
+
+def test_fixed_release_docs_do_not_expire_when_final_evidence_completes() -> None:
+    """Keep tagged release prose true before and after the final campaigns."""
+    manifest: dict[str, object] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative release state before applying this fixed-source rule."""
+
+    if manifest.get("release") is not True:
+        return
+    """Allowed development notes to describe unfinished work before source freeze."""
+
+    published_docs: str = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in (
+            "CHANGELOG.md",
+            "docs/validation.md",
+            "docs/models/gxe-measured.md",
+        )
+    )
+    """Combined the release-facing records that survive unchanged in the tag."""
+
+    stale_claims: tuple[str, ...] = (
+        "final-wheel release run remains outstanding",
+        "final release wheels must repeat that comparison",
+        "has yet run against a fixed release artifact",
+        "campaign has not run",
+        "release rule is pinned at 500 replicates per surface and has not run",
+        "Neither full campaign has run in this development environment",
+        "exact final wheels must repeat that comparison",
+        "remaining release work",
+        "pending target-design calibration",
+    )
+    """Named time-relative claims invalidated by completing the release process."""
+
+    for claim in stale_claims:
+        assert claim not in published_docs
