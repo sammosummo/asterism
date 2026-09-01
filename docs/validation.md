@@ -501,14 +501,22 @@ asymptotic test.
 
 ### Component separation
 
-The fixed-instrument sweep completed 200 replicates in each of eight cells:
-two or three records per person and 30, 60, 120 or 240 sibling pairs. Every
-cell fitted all 200 replicates and passed. At 240 pairs, the mean additive and
-person-level shares were 0.3984 and 0.3028 with two records, and 0.3858 and
-0.3132 with three, against truths 0.4 and 0.3. The estimates remain strongly
-negatively correlated, but their precision and separation improve as the
-design grows. The complete sweep is
-`evidence/component-separation-2026-08-31.json`.
+The corrected release-design sweep fixed two records per person, the paper's
+six-column fixed-effect design, 30 or 60 sibling pairs, and expected censoring
+shares 0.52 or 0.75 before drawing outcomes. It requested 200 replicates in
+each of four cells. There were 799 available fits: the 75%-censored,
+30-family cell retained one unavailable fit as 199 rather than silently
+changing its requested count.
+
+At 60 families the mean additive and person-level shares were 0.3759 and
+0.2996 at 52% expected censoring, and 0.3675 and 0.2936 at 75%, against truths
+0.4 and 0.3. Both cells passed the predeclared rule that their bias must be no
+larger than 0.03 plus twice the run's Monte Carlo error. Their split costs were
+3.55 and 3.05 times the precision of the combined component: the sum is known
+more precisely than its allocation between additive and person-level effects.
+The complete result is
+`evidence/component-separation-2026-09-01.json`. The broader 31 August sweep
+remains useful context, but is not the release-design receipt.
 
 ### Several-component interval coverage
 
@@ -534,7 +542,8 @@ refusal.
 
 ### Known test limitation and remaining release work
 
-The fixed-instrument component-separation and interval-coverage campaigns pass.
+The corrected fixed-instrument component-separation and interval-coverage
+campaigns pass.
 The target-design campaign completed and identified one exact limitation: the
 analytic p-value for the 1,909-person, four-component target at 75% expected
 censoring is not reportable without a design-specific simulated null tied to
@@ -548,10 +557,11 @@ available; at 75%, eleven attempts reported
 of 0.055 at both shares, and coverage of 0.980 and 0.960, but the no-write merge
 failed because the predeclared rule permits no failed attempt. It published no
 qualifying evidence, so the bootstrap remains experimental. This finding does
-not create a censoring cutoff for another design. Cross-platform fit and
-interval agreement remains to be measured. The independent dense-likelihood
-comparison above remains the numerical reference for the sequential region
-approximation.
+not create a censoring cutoff for another design. The development candidate's
+four-platform probe was bit-for-bit identical for every new
+censored-component quantity; the exact final wheels must repeat that
+comparison. The independent dense-likelihood comparison above remains the
+numerical reference for the sequential region approximation.
 
 ## Mixed pairs
 

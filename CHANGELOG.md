@@ -162,20 +162,19 @@ tag and saved wheels.
 - Pinned interval endpoints are compared within a written tolerance rather than
   to the last digit, which is what ADR 0012 already required of two platforms.
 
-- The release contract, support limits and pass rules are being made
-  machine-readable.
-- The codebase-quality, installed-wheel and fail-closed release workflows are
-  being established.
-- Statistical-method documentation now covers every planned 0.1 analysis with
+- The release contract, support limits and pass rules are machine-readable.
+- Code-quality, installed-wheel and fail-closed release workflows exercise the
+  same saved artefacts that publication consumes.
+- Statistical-method documentation covers every supported analysis with
   equations and primary references. All scientific rules have executable
-  commands; their exact fixed-wheel campaigns remain
-  in progress.
+  commands; the exact final-wheel release run remains outstanding.
 - Several-component fitting now refuses linearly dependent covariance bases,
   including an identity matrix confounded with the implicit residual; its
   one-component boundary test uses the identified analytic residual-only null.
-- The installed-wheel matrix runs independently on Mac and Linux; the separate
-  cross-platform status/field comparison and model-specific numerical
-  tolerances remain deliberately unconfigured release blockers.
+- The installed-wheel matrix runs independently on Mac and Linux. On the
+  0.2 candidate, all twelve new censored-component quantities were bit-for-bit
+  identical on macOS arm64 and Linux x86-64 under Python 3.13 and 3.14; the
+  final release wheels must repeat that comparison.
 
 ## 0.1.1 (2026-08-26)
 

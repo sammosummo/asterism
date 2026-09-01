@@ -1,0 +1,130 @@
+{
+  "participant_free": true,
+  "what": "whether an additive component and a person-level one can be told apart, swept over records per person and related pairs",
+  "date": "2026-09-01",
+  "producer": {
+    "source_commit": "162341f12f9029d946770887bf85c0956ca0cbd3",
+    "source_dirty": false,
+    "version": "0.2.0.dev0",
+    "cargo_lock_sha256": "20a2ce42b4f208347f0f7296c02345cf6b920149e78d48f50c7e57891e27d3c9",
+    "uv_lock_sha256": "0bcb42d0252c592488b4df9c9f9c467474d1b518835c21a374e959efd28d6f37",
+    "release_manifest_sha256": "c48afc350af1816a1cff78033d0b0ee5f401a1c4fead6c9f2c03050c7435f7ca",
+    "source_archive_sha256": "d6f9276bdc1fe3de689b70e584ad3511898b2a4a2986933c120dbfcf4333b376",
+    "wheel_sha256": "b471a1639f345dec86ce35bfe8b7a8b384e2b848f1f718688a46af2c81bcdd6d",
+    "extension_sha256": "330c51e07f4d898011931b0965553a3bb26369060d4ea8ccd6fd94c7265d7b76",
+    "slurm_job": 7347095,
+    "raw_receipt_sha256": "dc78bae36bed73088067f81430ffc3ba5ef31ccf457e1a41ae6c65156364987f"
+  },
+  "truths": {
+    "additive": 0.4,
+    "person": 0.3,
+    "residual": 0.3
+  },
+  "censoring_share": [
+    0.52,
+    0.75
+  ],
+  "instrument_limit": [
+    -0.050153583464732095,
+    -0.6744897501960819
+  ],
+  "replicates_per_cell": 200,
+  "split_cost_threshold": 3.0,
+  "cells": {
+    "share=0.52/records=2/families=30": {
+      "records_per_person": 2,
+      "families": 30,
+      "censoring_share": 0.52,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.3750074998897275,
+        "sd": 0.2558751922505467,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.2819861381883153,
+        "sd": 0.25023507010334184,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9169326308826014,
+      "sd_of_their_sum": 0.10329202908449506,
+      "split_costs_this_many_times_the_precision": 2.4772017213567894,
+      "additive_bias": -0.024992500110272542,
+      "additive_bias_resolvable_beyond": 0.06618621671555462,
+      "person_bias": -0.018013861811684684,
+      "person_bias_resolvable_beyond": 0.06538858299215282
+    },
+    "share=0.52/records=2/families=60": {
+      "records_per_person": 2,
+      "families": 60,
+      "censoring_share": 0.52,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.3758824929271146,
+        "sd": 0.22881934193622883,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.2995503512907348,
+        "sd": 0.22634788158814378,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9600574938497042,
+      "sd_of_their_sum": 0.06437060237014589,
+      "split_costs_this_many_times_the_precision": 3.5547180469193775,
+      "additive_bias": -0.024117507072885402,
+      "additive_bias_resolvable_beyond": 0.062359941669950146,
+      "person_bias": -0.0004496487092651713,
+      "person_bias_resolvable_beyond": 0.062010424395637226
+    },
+    "share=0.75/records=2/families=30": {
+      "records_per_person": 2,
+      "families": 30,
+      "censoring_share": 0.75,
+      "replicates_fitted": 199,
+      "additive": {
+        "mean": 0.3520817884444697,
+        "sd": 0.27407486578353474,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.2714607695522105,
+        "sd": 0.25957085140428715,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.863935747605644,
+      "sd_of_their_sum": 0.13989314023118307,
+      "split_costs_this_many_times_the_precision": 1.9591730182810043,
+      "additive_bias": -0.04791821155553033,
+      "additive_bias_resolvable_beyond": 0.06885730422382601,
+      "person_bias": -0.0285392304477895,
+      "person_bias_resolvable_beyond": 0.06680097958570215
+    },
+    "share=0.75/records=2/families=60": {
+      "records_per_person": 2,
+      "families": 60,
+      "censoring_share": 0.75,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.36751183213410343,
+        "sd": 0.2552480120003611,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.2935906585477624,
+        "sd": 0.25909749076946825,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9455627077193846,
+      "sd_of_their_sum": 0.08494199941963353,
+      "split_costs_this_many_times_the_precision": 3.0502871670051643,
+      "additive_bias": -0.03248816786589659,
+      "additive_bias_resolvable_beyond": 0.06609752003396813,
+      "person_bias": -0.0064093414522375936,
+      "person_bias_resolvable_beyond": 0.06664191854230198
+    }
+  },
+  "passed": true,
+  "failures": [],
+  "note": "A design that does not separate the two is reported and not failed. The pass rule is that the estimator is correct where the components are identified; where they are not, that is a fact about the design."
+}

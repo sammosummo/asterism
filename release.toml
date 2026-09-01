@@ -720,7 +720,7 @@ command = ["checks/component_separation.py", "--replicates", "200", "--families"
 expected_exit_code = 0
 timeout_seconds = 43200
 status = "ready"
-design_facts = { participant_free = true, measured = true, sample_size = { min = 120, max = 240 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2], sibling_pairs = [30, 60], fixed_effect_columns = 6, replicates_per_cell = 200, expected_censoring_share = [0.52, 0.75], censoring_limits_fixed_before_outcomes = true, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, rule = "consistency_not_unbiasedness", bias_allowed_at_largest_design = 0.03 }
+design_facts = { participant_free = true, measured = true, sample_size = { min = 120, max = 240 }, largest_family = { max = 2 }, trait_type = ["right_censored_continuous"], components = ["additive_relationship", "person_level", "residual"], records_per_person = [2], sibling_pairs = [30, 60], fixed_effect_columns = 6, replicates_per_cell = 200, expected_censoring_share = [0.52, 0.75], censoring_limits_fixed_before_outcomes = true, truths = { additive = 0.4, person = 0.3, residual = 0.3 }, rule = "consistency_not_unbiasedness", bias_allowed_at_largest_design = 0.03, evidence = "evidence/component-separation-2026-09-01.json", evidence_sha256 = "060c6f16cc274a094e788e42082a5cf2389762f6dcb13272b7a6706fc4ff542e", requested_fits = 800, completed_fits = 799 }
 
 [[analyses.pass_rules]]
 id = "censored_components_against_independent_full_fit"

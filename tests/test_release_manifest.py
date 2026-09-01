@@ -361,6 +361,55 @@ def test_known_limitation_rejects_a_stale_evidence_digest() -> None:
     )
 
 
+def test_component_separation_rule_is_bound_to_the_corrected_campaign() -> None:
+    """Tie the measured design facts to the retained four-cell receipt."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "one_trait_censored_components"
+    )
+    rule: dict[str, Any] = next(
+        item for item in analysis["pass_rules"] if item["id"] == "component_separation"
+    )
+    facts: dict[str, Any] = rule["design_facts"]
+
+    evidence_path: Path = ROOT / facts["evidence"]
+    assert facts["measured"] is True
+    assert facts["requested_fits"] == 800
+    assert facts["completed_fits"] == 799
+    assert facts["evidence_sha256"] == release_checker.sha256(evidence_path)
+
+    record: dict[str, Any] = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert record["passed"] is True
+    assert record["failures"] == []
+    assert record["replicates_per_cell"] == 200
+    assert record["censoring_share"] == [0.52, 0.75]
+    assert record["producer"]["source_commit"] == (
+        "162341f12f9029d946770887bf85c0956ca0cbd3"
+    )
+    assert record["producer"]["source_dirty"] is False
+    assert record["producer"]["slurm_job"] == 7347095
+    assert record["producer"]["raw_receipt_sha256"] == (
+        "dc78bae36bed73088067f81430ffc3ba5ef31ccf457e1a41ae6c65156364987f"
+    )
+    assert set(record["cells"]) == {
+        "share=0.52/records=2/families=30",
+        "share=0.52/records=2/families=60",
+        "share=0.75/records=2/families=30",
+        "share=0.75/records=2/families=60",
+    }
+    assert sorted(
+        cell["replicates_fitted"] for cell in record["cells"].values()
+    ) == [199, 200, 200, 200]
+    for name, cell in record["cells"].items():
+        if name.endswith("families=60"):
+            assert abs(cell["additive_bias"]) <= cell["additive_bias_resolvable_beyond"]
+            assert abs(cell["person_bias"]) <= cell["person_bias_resolvable_beyond"]
+
+
 def test_mixed_bivariate_coverage_rule_records_completed_fixed_threshold_run() -> None:
     """Keep the corrected mixed-pair coverage result visible in the manifest."""
     manifest: dict[str, Any] = tomllib.loads(

@@ -103,18 +103,21 @@ duplicates the residual already added by the model.
 
 An additive genetic component and a person-level component are both 1 within a
 person and differ only through relatives, so whether they can be told apart is a
-property of the design rather than of the code. The fixed-instrument campaign
-completed 200 replicates in each of eight cells: two or three records per person
-and 30, 60, 120 or 240 sibling pairs. Every cell fitted. At 240 pairs:
+property of the design rather than of the code. The corrected release-design
+campaign used two records per person, six fixed-effect columns, 30 or 60 sibling
+pairs, and expected censoring shares 0.52 or 0.75. It requested 200 replicates
+in each cell; 799 of 800 fits were available.
 
-| records | mean additive | mean person-level | truths |
-| ---: | ---: | ---: | :--- |
-| 2 | 0.3984 | 0.3028 | 0.4, 0.3 |
-| 3 | 0.3858 | 0.3132 | 0.4, 0.3 |
+| expected censored | families | mean additive | mean person-level | split cost |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.52 | 60 | 0.3759 | 0.2996 | 3.55 |
+| 0.75 | 60 | 0.3675 | 0.2936 | 3.05 |
 
-Both largest-design cells passed the predeclared 0.03 bias rule. The two
-estimates remain strongly negatively correlated, but their precision and
-separation improve as the design grows.
+Both largest-design cells passed the predeclared 0.03-plus-Monte-Carlo-error
+bias rule against truths 0.4 and 0.3. The split costs show that the combined
+component is known more precisely than how it is divided between additive and
+person-level effects. The retained receipt is
+[`component-separation-2026-09-01.json`](../../evidence/component-separation-2026-09-01.json).
 
 The check is [`checks/component_separation.py`](../../checks/component_separation.py).
 

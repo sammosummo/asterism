@@ -8,7 +8,10 @@ second record sharpens their sum and says nothing about the split.
 That makes the question one about the design, and this command is the retained
 way to measure where a design is enough. It now fixes the censoring limit from
 the population design before drawing outcomes. Results from its earlier
-outcome-adaptive generator are superseded pending a fresh run.
+outcome-adaptive generator are superseded. The corrected release-design run of
+1 September 2026 passed its declared rule across 30 and 60 sibling pairs at
+52% and 75% expected censoring; its receipt retains 799 available fits from
+800 requested.
 
 **The question is how many, not whether.** A person-level component is only ever
 added because a person contributes more than one record -- two ears, two
@@ -33,7 +36,7 @@ largest one swept. Its numerical verdict must come from the corrected run, not
 from the superseded exact-count campaign.
 
 How precisely a given pedigree separates the two is a fact about that pedigree,
-and the eventual table is the answer to it rather than a verdict on it.
+and the reported table is the answer to it rather than a verdict on it.
 
 Run with:
 

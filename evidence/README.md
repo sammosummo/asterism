@@ -19,7 +19,8 @@ fixed before outcomes are observed.
 This erratum applies to the historical Tobit calibration, coverage and
 target-design evidence; `tobit-against-mcmcglmm-2026-08-18.json`;
 `censored-pass-rules-rerun-2026-08-29.json`; both
-`component-separation-*.json` files;
+`component-separation-2026-08-29.json` and
+`component-separation-2026-08-30.json`;
 `components-full-fit-2026-08-29.json`;
 `censored-components-coverage-2026-08-30.json`;
 `censored-components-target-design-2026-08-30.json`; and the historical
@@ -37,7 +38,7 @@ their exact designs rather than creating a censoring threshold. The
 constrained-null parametric bootstrap remains experimental; no JSON in this
 directory qualifies it as a general finite-sample release procedure.
 
-## Fixed-instrument censored reruns, 31 August 2026
+## Fixed-instrument censored reruns, 31 August and 1 September 2026
 
 `tobit-calibration-2026-08-31.json` contains 200 replicates at each expected
 censoring share 0, 0.10, 0.25, 0.50 and 0.75. Mean h² stayed between 0.4935 and
@@ -60,6 +61,16 @@ each of eight cells spanning two or three records per person and 30 to 240
 sibling pairs. Every cell completed and passed. It records the strong negative
 correlation between additive and person-level estimates and their improving
 precision as the design grows.
+
+`component-separation-2026-09-01.json` is the corrected release-design
+measurement: two records per person, six fixed-effect columns, 30 or 60 sibling
+pairs, and expected censoring shares 0.52 or 0.75. It requested 200 fits in each
+of four cells; 799 of 800 were available, with the unavailable fit retained as
+199 rather than removed from the record. Both 60-family cells passed the
+predeclared bias rule. Their additive/person-level means were 0.3759/0.2996 at
+52% and 0.3675/0.2936 at 75%, against truths 0.4/0.3. The split cost was 3.55
+and 3.05 times the precision of the combined component, so separating the two
+components—not estimating their sum—is the limiting feature of those designs.
 
 `mixed-bivariate-calibration-2026-08-31.json` contains 100 fixed-threshold fits
 for each of the continuous, binary, censored and censored-pair designs. Mean
