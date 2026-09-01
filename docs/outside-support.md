@@ -35,12 +35,12 @@ the fixed covariance matrices. When their mean diagonals are positive,
 decomposition. Component-index intervals profile the raw coefficient
 proportion and identify that quantity explicitly in their result.
 
-Prediction methods remain public but are outside 0.1 scientific support.
+Prediction methods remain public but are outside 0.2 scientific support.
 
 
 ### The model
 
-The model below is public and its checks are kept, but 0.1 makes no
+The model below is public and its checks are kept, but 0.2 makes no
 scientific claim about it. The method is recorded here so a later release
 can pick it up unchanged.
 
@@ -94,7 +94,7 @@ justified by [Phipson and Smyth
 
 The free fit may profile $\lambda$ or numerically integrate it over the
 implemented grid. The same choice is used for the observed and simulated
-statistics. Range is descriptive in 0.1. Weak joint identification of variance
+statistics. Range is descriptive in 0.2. Weak joint identification of variance
 and range under fixed-domain asymptotics is established for Matérn models by
 [Zhang (2004)](references.bib#zhang2004); the exponential kernel is the
 Matérn-$1/2$ case. The theorem motivates caution but does not diagnose any one
@@ -110,7 +110,7 @@ submitted layout.
 `range_treatment` fields. Its variance decomposition, `decay_per_km`, and
 `half_distance_km` are descriptive in the spatial-presence analysis. Raw
 coefficient proportions and spatial intervals are diagnostic, and are not part
-of the 0.1 support set.
+of the 0.2 support set.
 
 ### Assumptions, measured limitations, and unmet gates
 

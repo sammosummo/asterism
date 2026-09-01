@@ -229,7 +229,7 @@ def test_release_manifest_defers_the_spatial_presence_analysis() -> None:
     manifest: dict[str, Any] = tomllib.loads(
         (Path(__file__).parents[1] / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the authoritative development release contract."""
+    """Parsed the authoritative release contract."""
 
     analysis_ids: list[str] = [str(entry["id"]) for entry in manifest["analyses"]]
     """Collected every analysis 0.1 makes a scientific claim about."""

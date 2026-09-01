@@ -38,7 +38,7 @@ def ready_r_rules() -> tuple[tuple[str, str], ...]:
     manifest: dict[str, Any] = tomllib.loads(
         (root / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the current development release contract."""
+    """Parsed the current release contract."""
 
     statuses: dict[str, str] = {
         rule["id"]: rule["status"]

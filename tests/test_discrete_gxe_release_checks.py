@@ -504,7 +504,7 @@ def test_manifest_pins_all_three_executable_discrete_gxe_rules() -> None:
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the authoritative development release inventory."""
+    """Parsed the authoritative release inventory."""
 
     analysis: dict[str, object] = next(
         selected

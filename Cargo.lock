@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "asterism"
-version = "0.2.0-dev.0"
+version = "0.2.0"
 dependencies = [
  "faer",
  "lbfgsb-rs-pure",

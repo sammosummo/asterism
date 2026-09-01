@@ -498,7 +498,7 @@ def test_release_manifest_pins_the_deferred_full_target_campaign() -> None:
     manifest: dict[str, Any] = tomllib.loads(
         (Path(__file__).parents[1] / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the authoritative development release contract."""
+    """Parsed the authoritative release contract."""
 
     analysis: dict[str, Any] = next(
         selected

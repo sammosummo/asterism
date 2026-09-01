@@ -2,9 +2,9 @@
 
 Analysis id `mixed_binary_censored_genetic_correlation`. Runnable example in [`examples/`](../../examples/).
 
-The published 0.1.1 wheel declared the mixed pairings below supported. In the
-current development checkout, the corrected fixed-threshold recovery and
-coverage checks pass for continuous, binary, censored and censored-pair cells.
+The 0.2.0 release preserves the mixed pairings supported in 0.1.1. Its
+corrected fixed-threshold recovery and coverage checks pass for continuous,
+binary, censored and censored-pair cells.
 The retained SOLAR comparison for binary with continuous remains a numerical
 comparison of the shared estimand, not evidence for a censored pairing.
 
@@ -65,12 +65,12 @@ replacement has been run specifically for that correlation-one calibration;
 the completed corrected campaigns instead measure recovery, interval coverage
 and the interior test against nought.
 
-The published 0.1.1 support set includes the pairings that contain a continuous
+The 0.2.0 support set includes the pairings that contain a continuous
 trait — continuous with continuous, binary with continuous, and censored with
 continuous — along with censored with censored. The binary-with-censored pair
-is deferred: it stays public, but 0.1 makes no scientific claim about it. In the
-development checkout, corrected fixed-threshold recovery and coverage are
-measured passes for every thresholded or censored simulation cell. The separate
+is deferred: it stays public, but 0.2 makes no scientific claim about it.
+Corrected fixed-threshold recovery and coverage are measured passes for every
+thresholded or censored simulation cell. The separate
 correlation-one boundary measurement above remains historical.
 
 ## The model
@@ -149,7 +149,7 @@ uses the even mixture instead.
 Per-trait `heritability`, `total_variance`, `residual_correlation`,
 `fixed_effects`, `largest_family`, and `kinds` are descriptive for the supported
 binary/right-censored analysis. Other public trait-kind combinations are not
-0.1-supported analyses.
+0.2-supported analyses.
 
 ### Assumptions and limits
 

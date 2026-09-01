@@ -4,7 +4,7 @@ This file records user-visible Asterism changes. A planned entry is not a
 release claim; released entries acquire a date and correspond to an immutable
 tag and saved wheels.
 
-## Unreleased
+## 0.2.0 (2026-09-01)
 
 - **The two-person normal probability is one accurate integral, and a
   relationship of one is accepted.** The package carried two implementations of
@@ -64,13 +64,13 @@ tag and saved wheels.
   the proportion's does not move. Where every component carries a unit diagonal
   the two are the same interval.
 - **The published 0.1.1 censored interface and numerical path remain
-  unchanged, and the corrected development checks now pass.** Earlier recovery,
+  unchanged, and the corrected 0.2 checks pass.** Earlier recovery,
   coverage and target-design generators chose their censoring limits from each
   realised response. Their records remain historical. The replacement
   fixed-instrument MCMCglmm comparison, recovery, coverage and target checks all
   pass, including null rejection of 0.040 and 0.045 at 52% and 75% expected
-  censoring. The changed checkout still needs its final clean-wheel release run;
-  these measurements do not alter the immutable 0.1.1 artefacts.
+  censoring. The 0.2 release repeats every configured check from its clean saved
+  wheels; none of these measurements alters the immutable 0.1.1 artefacts.
 - **`grouping_matrix` builds a component from what rows share.** One where two
   rows share a group, nought where they do not, one on the diagonal. Pass
   household identifiers and it is a household matrix; pass the person each row
@@ -91,10 +91,9 @@ tag and saved wheels.
   available for a design-specific Monte Carlo reference. The interval's boundary verdict is still filled at
   one component only, that being the only case for which the compatibility
   field exists.
-- **A censored trait with several variance components is in the current 0.2
-  scope.** `one_trait_censored_components` supports fitting, intervals and the
-  explicitly labelled asymptotic test; this unreleased development entry is not
-  itself a release claim. The
+- **A censored trait with several variance components is supported in 0.2.**
+  `one_trait_censored_components` supports fitting, intervals and the explicitly
+  labelled asymptotic test. The
   independent censored-likelihood comparison remains a conditional numerical
   comparison: on its retained fixtures, the fitted proportions agree to
   1.4e-03 at an expected quarter censored and 2.9e-03 at an expected half,

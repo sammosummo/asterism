@@ -6,11 +6,19 @@ Two important things to note before using Asterism in your own research. First, 
 
 ## Installation
 
-Wheels are published for macOS on Apple silicon and for Linux on x86-64, and carry a compiled binary, so nothing is built on your machine and no Rust toolchain is needed. Python 3.13 or 3.14. The only runtime dependency is NumPy. Install in the usual way:
+Wheels are published on the [GitHub release page](https://github.com/sammosummo/asterism/releases/tag/v0.2.0) for macOS on Apple silicon and for Linux on x86-64. They carry a compiled binary, so nothing is built on your machine and no Rust toolchain is needed. Python 3.13 or 3.14. The only runtime dependency is NumPy. Download the wheel for your platform, then install that exact file:
 
 ```sh
-pip install asterism
+# macOS on Apple silicon
+python -m pip install ./asterism-0.2.0-cp313-abi3-macosx_11_0_arm64.whl
+
+# Linux on x86-64
+python -m pip install ./asterism-0.2.0-cp313-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
+
+Do not install the distribution named `asterism` from PyPI: that name belongs
+to an unrelated project. The import from Asterism's release wheel is still
+`import asterism`.
 
 To work on Asterism itself, see [development.md](docs/development.md).
 
@@ -63,18 +71,17 @@ Every capability has a complete runnable program behind it in [`examples/`](exam
 
 ## Capabilities
 
-The published 0.1.1 wheel declared eight supported models. The current
-development checkout preserves those interfaces, but it is not a replacement
-qualified release. The corrected fixed-instrument one-component censored and
-mixed-pair checks now pass. The current 0.2 scope for the several-component
-censored model includes fitting, intervals and an explicitly labelled asymptotic
-test; the bootstrap remains experimental. The analytic p-value failed on the
+The 0.2.0 release preserves the eight 0.1.1 analyses and adds the
+several-component censored model: fitting, intervals and an explicitly labelled
+asymptotic test are supported, while the bootstrap remains experimental. The
+corrected fixed-instrument one-component censored and mixed-pair checks pass.
+The several-component analytic p-value failed on the
 exact 1,909-person, four-component target at 75% expected censoring and must not
 be reported for that analysis without a design-specific simulated null. That is
 not a universal censoring threshold, and it does not affect fitting, intervals
-or the released one-component test. The exact published and development statuses
-are listed in [api-support.md](docs/api-support.md), alongside public objects
-outside the 0.1 scientific support set (see
+or the released one-component test. The exact published statuses are listed in
+[api-support.md](docs/api-support.md), alongside public objects outside the 0.2
+scientific support set (see
 [outside-support.md](docs/outside-support.md)).
 
 | Capability                    | Runnable example                              |
@@ -84,6 +91,7 @@ outside the 0.1 scientific support set (see
 | Two traits                    | [`bivariate.py`](examples/bivariate.py)       |
 | Binary traits                 | [`liability.py`](examples/liability.py)       |
 | Censored traits               | [`censored.py`](examples/censored.py)         |
+| Censored traits, components   | [`censored_components.py`](examples/censored_components.py) |
 | Mixed pairs                   | [`mixed.py`](examples/mixed.py)               |
 | Gene by environment, measured | [`gxe.py`](examples/gxe.py)                   |
 | Gene by environment, binary   | [`discrete_gxe.py`](examples/discrete_gxe.py) |

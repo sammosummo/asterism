@@ -377,15 +377,14 @@ than alters, the superseded outcome-adaptive records above.
 
 ## Censored traits, several components
 
-**Current 0.2 scope, not a released artefact.** Fitting, intervals and the
-explicitly asymptotic test are in scope. What follows records what has been
-measured rather than claiming that the development checkout is a release. The
+**Supported in 0.2.0.** Fitting, intervals and the explicitly asymptotic test
+are release-supported. What follows records what has been measured. The
 model, its equations and its interface are in [the model
 page](models/censored-components.md); the decision to generalise the censored
 model in place rather than duplicate it is
 [ADR 0022](adr/0022-the-censored-model-generalises-in-place.md).
 
-The development API permits fitting and intervals. Its analytic `.test` route
+The release API permits fitting and intervals. Its analytic `.test` route
 uses the explicitly labelled `asymptotic_mixture_50_50` reference and refuses
 when an untested nuisance variance is on its bound. A constrained-null
 parametric bootstrap is implemented as `.bootstrap`, but remains experimental

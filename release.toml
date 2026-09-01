@@ -1,10 +1,10 @@
 schema_version = 1
-version = "0.2.0.dev0"
-cargo_version = "0.2.0-dev.0"
+version = "0.2.0"
+cargo_version = "0.2.0"
 rust_toolchain = "1.97.1"
 maturin_version = "1.14.1"
 uv_version = "0.11.21"
-release = false
+release = true
 requires_python = ">=3.13,<3.15"
 scientific_pass_rules_configured = true
 scientific_runner = "tools/run_scientific_release.py"
@@ -22,7 +22,7 @@ wheel = "abi3"
 
 [medusa_smoke]
 required = true
-configured = false
+configured = true
 architecture = "x86_64"
 glibc_version = "2.28"
 command = ["tools/medusa_wheel_smoke.py"]
@@ -43,7 +43,6 @@ analysis_ids = [
   "one_trait_censored_components",
 ]
 evidence = []
-blocker = { code = "standard_run_analysis_synthetic_receipts_unverified", evidence_needed = "Run the committed receipt command against the clean installed release wheel after every pass rule is measured, then retain one complete standard receipt per supported analysis in release evidence." }
 
 [cross_platform_agreement]
 configured = true

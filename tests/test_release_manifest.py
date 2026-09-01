@@ -34,7 +34,7 @@ def test_built_extension_embeds_the_authoritative_release_manifest() -> None:
 
 
 def test_release_metadata_agrees_with_the_authoritative_manifest() -> None:
-    """Require every public version surface to carry one development identity."""
+    """Require every public version surface to carry one release identity."""
     completed: subprocess.CompletedProcess[str] = subprocess.run(
         [sys.executable, "tools/check_release.py", "--metadata"],
         cwd=ROOT,
@@ -143,7 +143,7 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the development manifest without promoting its readiness flags."""
+    """Parsed the release manifest without treating configuration as run evidence."""
 
     required: list[tuple[str, str]] = [
         (analysis["id"], check)
@@ -165,15 +165,15 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     assert scientific_inventory_errors(manifest, ROOT) == []
 
 
-def test_inventory_does_not_claim_scientific_readiness() -> None:
-    """Keep executable inventory distinct from measured passing release evidence."""
+def test_release_inventory_is_complete_but_not_its_own_run_evidence() -> None:
+    """Keep executable inventory distinct from measured passing run evidence."""
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
     """Read every global and per-analysis readiness switch."""
 
     assert manifest["scientific_pass_rules_configured"] is True
-    assert manifest["release"] is False
+    assert manifest["release"] is True
     assert all(
         analysis["pass_rules_configured"] is True for analysis in manifest["analyses"]
     )
@@ -182,11 +182,10 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
         for analysis in manifest["analyses"]
         for rule in analysis["pass_rules"]
     }
-    """Confirmed that missing evidence remains visible inside the inventory."""
+    """Collected command readiness without treating it as run evidence."""
 
-    assert statuses <= {"ready", "blocked", "external_fixture_pending"}
-    assert "ready" in statuses
-    """Accepted evidence-progress transitions without changing readiness switches."""
+    assert statuses == {"ready"}
+    """Required every command to be runnable while leaving its result external."""
 
 
 def test_censored_component_target_failure_is_a_narrow_known_limitation() -> None:
@@ -366,23 +365,34 @@ def test_component_separation_rule_is_bound_to_the_corrected_campaign() -> None:
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
+    """Read the authoritative rule and its immutable evidence binding."""
+
     analysis: dict[str, Any] = next(
         item
         for item in manifest["analyses"]
         if item["id"] == "one_trait_censored_components"
     )
+    """Selected the several-component censored support record."""
+
     rule: dict[str, Any] = next(
         item for item in analysis["pass_rules"] if item["id"] == "component_separation"
     )
+    """Selected the exact corrected component-separation rule."""
+
     facts: dict[str, Any] = rule["design_facts"]
+    """Read the predeclared design and retained campaign counts."""
 
     evidence_path: Path = ROOT / facts["evidence"]
+    """Resolved the repository evidence path committed by the manifest."""
+
     assert facts["measured"] is True
     assert facts["requested_fits"] == 800
     assert facts["completed_fits"] == 799
     assert facts["evidence_sha256"] == release_checker.sha256(evidence_path)
 
     record: dict[str, Any] = json.loads(evidence_path.read_text(encoding="utf-8"))
+    """Parsed the hashed result only after its byte identity matched."""
+
     assert record["passed"] is True
     assert record["failures"] == []
     assert record["replicates_per_cell"] == 200
@@ -401,9 +411,12 @@ def test_component_separation_rule_is_bound_to_the_corrected_campaign() -> None:
         "share=0.75/records=2/families=30",
         "share=0.75/records=2/families=60",
     }
-    assert sorted(
-        cell["replicates_fitted"] for cell in record["cells"].values()
-    ) == [199, 200, 200, 200]
+    assert sorted(cell["replicates_fitted"] for cell in record["cells"].values()) == [
+        199,
+        200,
+        200,
+        200,
+    ]
     for name, cell in record["cells"].items():
         if name.endswith("families=60"):
             assert abs(cell["additive_bias"]) <= cell["additive_bias_resolvable_beyond"]
@@ -442,7 +455,7 @@ def test_cross_platform_agreement_covers_every_supported_analysis() -> None:
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Read the authoritative development contract."""
+    """Read the authoritative release contract."""
 
     agreement: dict[str, object] = cast(
         dict[str, object], manifest["cross_platform_agreement"]
@@ -474,19 +487,19 @@ def test_cross_platform_agreement_covers_every_supported_analysis() -> None:
     )
 
 
-def test_medusa_smoke_waits_for_external_final_wheel_evidence() -> None:
-    """Keep stale development smoke outside the authoritative release contract."""
+def test_medusa_smoke_requires_external_final_wheel_evidence() -> None:
+    """Enable final-wheel smoke without pointing at stale repository evidence."""
     manifest: dict[str, Any] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Read the current development manifest without consulting old evidence."""
+    """Read the final manifest without consulting old evidence."""
 
     smoke: dict[str, Any] = manifest["medusa_smoke"]
     """Selected the target-host requirement independently of its future result."""
 
     assert smoke == {
         "required": True,
-        "configured": False,
+        "configured": True,
         "architecture": "x86_64",
         "glibc_version": "2.28",
         "command": ["tools/medusa_wheel_smoke.py"],

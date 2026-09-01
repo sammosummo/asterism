@@ -822,7 +822,7 @@ def test_manifest_binds_one_exact_measured_target_design_rule() -> None:
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the authoritative development release contract."""
+    """Parsed the authoritative release contract."""
 
     analyses: list[dict[str, object]] = manifest["analyses"]
     """Selected the supported scientific analysis inventory."""

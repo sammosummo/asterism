@@ -23,7 +23,7 @@ def test_manifest_binds_the_measured_component_coverage_rule() -> None:
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
-    """Parsed the authoritative development release contract."""
+    """Parsed the authoritative release contract."""
 
     analysis: dict[str, object] = next(
         candidate

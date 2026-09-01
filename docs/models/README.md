@@ -1,14 +1,14 @@
 # The models
 
-One page per model in the public development manifest, each carrying how to use
+One page per model in the public release manifest, each carrying how to use
 it, the equations behind it, a truthful summary of what has been measured, and
 its interface. Inclusion here is not itself a support claim: the
-several-component censored model is in the current 0.2 scope for fitting,
-intervals and an explicitly asymptotic test. Its analytic p-value must not be
+several-component censored model is supported in 0.2 for fitting, intervals and
+an explicitly asymptotic test. Its analytic p-value must not be
 reported for the exact failed 1,909-person, four-component target at 75%
 expected censoring without a design-specific simulated null; this is not a
 universal censoring threshold. The bootstrap remains experimental. Published
-0.1.1 support and current development status are kept separate in
+versioned support and public-but-unsupported objects are kept separate in
 [api-support.md](../api-support.md).
 
 | Model | Page |

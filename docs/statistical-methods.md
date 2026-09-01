@@ -26,12 +26,11 @@ Before a release is made, each supported analysis must meet three conditions:
    values, a converged free fit, converged constrained fits for inference, and
    no failed profile evaluation.
 
-The current `release.toml` identifies the checkout as the unreleased
-`0.2.0.dev0` development line. The corrected one-component censored and
-mixed-pair checks pass. The several-component censored fit, intervals and
-explicitly asymptotic test are in 0.2 scope; the exact failed 75%-expected-
-censoring target is retained as a narrow known limitation rather than a global
-release gate, and the optional bootstrap remains experimental.
+The `0.2.0` release includes the corrected one-component censored and
+mixed-pair checks. The several-component censored fit, intervals and explicitly
+asymptotic test are supported; the exact failed 75%-expected-censoring target is
+retained as a narrow known limitation rather than a global release gate, and
+the optional bootstrap remains experimental.
 The figures in the [validation record](validation.md) provide broader
 scientific context; the release manifest and its recorded evidence remain the
 authority for a particular artefact.
@@ -288,9 +287,9 @@ time and memory budgets, withdrawn by
 design range, withdrawn by
 [ADR 0020](adr/0020-no-design-range-gates-a-result.md).
 
-Several-component censored support remains part of the development checkout,
-with its 0.2 scope now fixed. Its independent dense-likelihood comparison
-measures the sequential region approximation, and its fixed-instrument
+Several-component censored support is part of the 0.2 release. Its independent
+dense-likelihood comparison measures the sequential region approximation, and
+its fixed-instrument
 component-recovery and interval-coverage checks pass. The analytic test remains
 available with the explicit `asymptotic_mixture_50_50` label when nuisance
 variances are interior. The exact 1,909-person, four-component target at 75%

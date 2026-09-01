@@ -87,8 +87,10 @@ Done on 26 August 2026, in this order:
 The copyright question this record left open is settled: Sam holds it, and
 `LICENSE` needed no change.
 
-Still open: the name `asterism` was unclaimed on PyPI when 0.1.1 was prepared,
-and nothing reserves a name there without an upload.
+Resolved before 0.2: the distribution name `asterism` was later taken on PyPI
+by unrelated software. Asterism therefore publishes checksummed wheels on its
+GitHub release page; choosing a distinct PyPI distribution name is a separate
+future decision. The installed import remains `asterism`.
 
 ## One question this record does not settle
 

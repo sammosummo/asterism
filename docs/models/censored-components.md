@@ -2,9 +2,9 @@
 
 Analysis id `one_trait_censored_components`. Runnable example in [`examples/`](../../examples/).
 
-**Current 0.2 scope, not a released artefact.** Fitting, intervals and the
-explicitly asymptotic test are in scope; the constrained-null bootstrap remains
-experimental. The analytic p-value must not be reported for the exact failed
+**Supported in 0.2.0.** Fitting, intervals and the explicitly asymptotic test
+are release-supported; the constrained-null bootstrap remains experimental.
+The analytic p-value must not be reported for the exact failed
 1,909-person, four-component fixed-instrument target at 75% expected censoring
 without a design-specific simulated null. This is not a universal censoring
 threshold, and fit, interval and the released one-component test are unaffected.

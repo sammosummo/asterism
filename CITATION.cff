@@ -20,7 +20,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-0260-0865"
 repository-code: "https://github.com/sammosummo/asterism"
 license: MIT
-version: 0.1.1
+version: 0.2.0
 # The concept DOI, which always resolves to the newest version. Each paper
 # cites the version DOI of the release it actually ran: 10.5281/zenodo.22116963
 # for 0.1.1, 10.5281/zenodo.22113715 for 0.1.0.
