@@ -265,6 +265,63 @@ def fit_tobit_receipt(problem: dict[str, Any], commitment: str) -> dict[str, Any
     return record
 
 
+def fit_censored_component_receipt(
+    problem: dict[str, Any], commitment: str
+) -> dict[str, Any]:
+    """Fit censored components with both intervals and the asymptotic test."""
+    people: int = 2 * PAIRS
+    """Read the fixed synthetic roster size."""
+
+    grouping: np.ndarray = asterism.grouping_matrix(
+        [str(person // 4) for person in range(people)]
+    )
+    """Built a second component from groups of two sibling pairs."""
+
+    model: asterism.CensoredComponentModel = asterism.CensoredComponentModel(
+        [problem["relationship"], grouping],
+        problem["design"],
+        subject_order_sha256=commitment,
+    )
+    """Prepared two separable structured components plus the residual."""
+
+    arguments: tuple[Any, ...] = (
+        problem["censored_values"],
+        problem["censoring"],
+        problem["limits"],
+    )
+    """Collected the censored inputs shared by every public operation."""
+
+    record: dict[str, Any] = model.fit(*arguments)
+    """Estimated both structured components by maximum likelihood."""
+
+    record["coefficient_interval"] = model.interval(
+        *arguments, component=0, quantity="coefficient"
+    )
+    """Attached the first component's raw-coefficient profile interval."""
+
+    record["mean_diagonal_proportion_interval"] = model.interval(
+        *arguments, component=0, quantity="mean_diagonal_proportion"
+    )
+    """Attached the scale-invariant interval for the same component."""
+
+    asymptotic_test: dict[str, Any] = model.test(*arguments, component=1)
+    """Tested the grouping component while its nuisance terms were interior."""
+
+    if (
+        asymptotic_test.get("rule") != "asymptotic_mixture_50_50"
+        or asymptotic_test.get("nuisance_at_bound") is not False
+    ):
+        raise SyntheticReceiptError(
+            "SYNTHETIC_RECEIPT_CENSORED_COMPONENT_TEST_CONTRACT_MISMATCH"
+        )
+    """Refused to turn an inapplicable asymptotic reference into a receipt."""
+
+    record["asymptotic_test"] = asymptotic_test
+    """Named the approximation explicitly in the supported fit record."""
+
+    return record
+
+
 def fit_mixed_bivariate_receipt(
     problem: dict[str, Any], commitment: str
 ) -> dict[str, Any]:
@@ -430,6 +487,22 @@ def receipt_jobs(problem: dict[str, Any], commitment: str) -> list[ReceiptJob]:
             },
             partial(fit_mixed_bivariate_receipt, problem, commitment),
         ),
+        ReceiptJob(
+            "one_trait_censored_components",
+            {
+                **common,
+                "trait_type": "right_censored_continuous",
+                "components": "relationship_matrices",
+                "censoring_share": censoring_share,
+            },
+            {
+                "estimator": "ml",
+                "censoring": "right",
+                "component_reporting": "mean_diagonal",
+                "test_reference": "asymptotic_mixture_50_50",
+            },
+            partial(fit_censored_component_receipt, problem, commitment),
+        ),
     ]
 
 
@@ -514,7 +587,7 @@ def write_synthetic_analysis_receipts(
     manifest_ids: list[str] = [
         str(analysis["id"])
         for analysis in manifest.get("analyses", [])
-        if isinstance(analysis, dict) and analysis.get("support") == "supported_in_0_1"
+        if isinstance(analysis, dict)
     ]
     """Read the complete ordered supported-analysis inventory from the wheel."""
 

@@ -2,8 +2,10 @@
 
 Agreement with SOLAR shows the binary-by-continuous cell computes the same
 thing SOLAR computes. It says nothing about the censored cell, which SOLAR
-cannot fit at all, and nothing about whether either is unbiased. Both are
-measured here instead, on many data sets drawn from a known truth.
+cannot fit at all, and nothing about whether either is unbiased. This command
+is the generative check for those questions. Censored and binary cut-points are
+now fixed from the population design before outcomes; results from the earlier
+outcome-adaptive generator are superseded pending a fresh run.
 
 The genetic correlation is the estimand these pairs are fitted for -- a
 diagnosis against hearing -- and it is the one quantity that survives a trait
@@ -30,15 +32,23 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
 
 import asterism
 import numpy as np
+
+try:
+    from checks.censoring_design import right_censoring_limit
+except ModuleNotFoundError:
+    from censoring_design import right_censoring_limit
+"""Imported the fixed-threshold solver in module and direct-command modes."""
 
 PAIRS: int = 400
 """Fixed the number of sibling pairs in every simulated data set."""
@@ -172,8 +182,12 @@ def one(job: tuple[str, int]) -> dict[str, object]:
     """Constructed the intercept-only fixed-effect design."""
 
     if pairing == "censored_pair":
-        second_cut: float = float(np.quantile(latent[1], 1.0 - CENSORED_SHARE))
-        """Located the second trait's own upper-censoring limit."""
+        second_cut: float = right_censoring_limit(
+            0.0,
+            SECOND_VARIANCE,
+            CENSORED_SHARE,
+        )
+        """Fixed the second trait's instrument before drawing outcomes."""
 
         second_censored: np.ndarray = latent[1] >= second_cut
         """Marked the second trait's observations at or above its limit."""
@@ -203,8 +217,8 @@ def one(job: tuple[str, int]) -> dict[str, object]:
         }
         """Represented the uncensored continuous first trait."""
     elif pairing == "binary":
-        cut: float = float(np.quantile(latent[0], 1.0 - PREVALENCE))
-        """Located the latent threshold giving the fixed binary prevalence."""
+        cut: float = right_censoring_limit(0.0, 1.0, PREVALENCE)
+        """Fixed the latent threshold from the generating prevalence."""
 
         first = {
             "kind": "binary",
@@ -214,8 +228,8 @@ def one(job: tuple[str, int]) -> dict[str, object]:
         }
         """Encoded the first trait as binary threshold outcomes."""
     else:
-        cut = float(np.quantile(latent[0], 1.0 - CENSORED_SHARE))
-        """Located the upper-censoring limit giving the fixed censored share."""
+        cut = right_censoring_limit(0.0, 1.0, CENSORED_SHARE)
+        """Fixed the upper-censoring limit before drawing outcomes."""
 
         censored: np.ndarray = latent[0] >= cut
         """Marked latent observations at or above the censoring limit."""
@@ -270,24 +284,66 @@ def summarise(values: list[float]) -> tuple[float, float]:
     return float(array.mean()), float(array.std(ddof=1) / np.sqrt(array.size))
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Read the campaign size and process allocation.
+
+    Args:
+        argv: Optional argument vector excluding the executable name.
+
+    Returns:
+        Positive replicate and worker counts, defaulting to the historical
+        environment-selected values when omitted.
+    """
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
+    """Built an explicit interface while preserving no-argument behaviour."""
+
+    parser.add_argument("--replicates", type=int, default=REPLICATES)
+    parser.add_argument("--workers", type=int, default=WORKERS)
+    parser.add_argument("--no-write", action="store_true")
+    arguments: argparse.Namespace = parser.parse_args(argv)
+    """Read explicit release values or the existing exploratory defaults."""
+
+    if arguments.replicates < 1 or arguments.workers < 1:
+        parser.error("--replicates and --workers must be positive")
+    return arguments
+
+
+def run_jobs(jobs: list[tuple[str, int]], workers: int) -> list[dict[str, object]]:
+    """Run one deterministic job grid with the requested process count.
+
+    Args:
+        jobs: Exact pairing and replicate coordinates.
+        workers: Process count selected by the command line.
+
+    Returns:
+        One retained result for every requested coordinate.
+    """
+    rows: list[dict[str, object]] = []
+    """Collected results without changing deterministic job ordering."""
+
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for got in pool.map(one, jobs, chunksize=2):
+            rows.append(got)
+    return rows
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Run all pairing calibrations and write their dated evidence record."""
-    print(f"{PAIRS} sibling pairs, {REPLICATES} replicates per pairing.")
+    arguments: argparse.Namespace = parse_arguments(argv)
+    """Selected the exact simulation count and process allocation."""
+
+    print(f"{PAIRS} sibling pairs, {arguments.replicates} replicates per pairing.")
     print(
         f"True RhoG {GENETIC_CORRELATION}, RhoE {RESIDUAL_CORRELATION}, "
         f"h2 {HERITABILITY}.\n"
     )
     jobs: list[tuple[str, int]] = [
-        (pairing, r) for pairing in PAIRINGS for r in range(REPLICATES)
+        (pairing, r) for pairing in PAIRINGS for r in range(arguments.replicates)
     ]
     """Enumerated every pairing and replicate exactly once."""
 
-    rows: list[dict[str, object]] = []
-    """Initialised the collection of per-replicate fit records."""
-
-    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
-        for got in pool.map(one, jobs, chunksize=2):
-            rows.append(got)
+    rows: list[dict[str, object]] = run_jobs(jobs, arguments.workers)
+    """Ran every requested replicate under the explicit process allocation."""
 
     print(
         f"{'first trait':<12} | {'available':>10} | {'RhoG (se)':>18} | "
@@ -347,7 +403,7 @@ def main() -> int:
         "what": "recovery of the genetic correlation across trait kinds",
         "date": date.today().isoformat(),
         "pairs": PAIRS,
-        "replicates": REPLICATES,
+        "replicates": arguments.replicates,
         "truth": {
             "genetic_correlation": GENETIC_CORRELATION,
             "residual_correlation": RESIDUAL_CORRELATION,
@@ -369,8 +425,9 @@ def main() -> int:
     )
     """Selected the repository evidence path using the receipt date."""
 
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
+    if not arguments.no_write:
+        out.write_text(json.dumps(receipt, indent=2) + "\n")
+        print(f"\nwritten to {out}")
     if failures:
         print("\nFAILED:")
         for failure in failures:

@@ -31,8 +31,9 @@ Run it with the package's own environment::
     .venv/bin/python checks/against_red_deer.py
     .venv/bin/python checks/against_red_deer.py --trait lbs --scale log
 
-The data are not in the repository. Point RED_DEER_DATA at the deposit, or
-leave it unset and let the script find `staging/data/rum-red-deer` by walking up.
+The data are not in the repository. Point ``RED_DEER_DATA`` at the unpacked
+Dryad deposit before running the check. There is deliberately no workspace
+fallback: external scientific data must be bound explicitly.
 """
 
 from __future__ import annotations
@@ -53,23 +54,19 @@ import numpy as np
 def data_directory() -> Path:
     """Where the Dryad deposit was unpacked."""
     named: str | None = os.environ.get("RED_DEER_DATA")
-    """Read an explicit deposit location from the environment when supplied."""
+    """Read the required external-data binding from the environment."""
 
-    if named:
-        return Path(named).expanduser().resolve()
-    here: Path = Path(__file__).resolve()
-    """Resolved this check so its ancestors could be searched for staged data."""
+    if not named:
+        raise SystemExit(
+            "Set RED_DEER_DATA to the unpacked Dryad doi:10.5061/dryad.jf04r362 "
+            "deposit before running this check."
+        )
+    directory: Path = Path(named).expanduser().resolve()
+    """Resolved the explicit binding without guessing a workspace location."""
 
-    for parent in here.parents:
-        candidate: Path = parent / "staging" / "data" / "rum-red-deer"
-        """Constructed the conventional red-deer deposit path at this ancestor."""
-
-        if candidate.is_dir():
-            return candidate
-    raise SystemExit(
-        "The red deer deposit was not found. Unpack Dryad doi:10.5061/dryad.jf04r362 "
-        "into staging/data/rum-red-deer, or set RED_DEER_DATA."
-    )
+    if not directory.is_dir():
+        raise SystemExit("RED_DEER_DATA must name an existing directory.")
+    return directory
 
 
 def read_table(path: Path) -> list[dict[str, str]]:

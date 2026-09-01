@@ -10,6 +10,8 @@ ones were replaced by the limit. It is maximum likelihood, never REML.
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import asterism
 import numpy as np
 
@@ -24,8 +26,8 @@ people: int = len(order)
 complete: np.ndarray = trait(relationship, heritability=0.5, seed=11)
 """Drew the trait as it would be if nothing stopped the measurement."""
 
-ceiling: float = float(np.quantile(complete, 0.5))
-"""Put the instrument's ceiling at the median, censoring half the sample."""
+ceiling: float = NormalDist().inv_cdf(0.5)
+"""Fixed the instrument at the generating population median before the draw."""
 
 censoring: np.ndarray = (complete >= ceiling).astype(np.int64)
 """Marked 1 where the value is at or above the limit, 0 where measured."""

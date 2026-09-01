@@ -139,8 +139,9 @@ One censored trait with any number of variance components.
 
 Shaped like :class:`ComponentModel`, and the same relation between the two
 holds as between an ordinary and a censored heritability: the residual is
-added for you and is never passed, so the coefficients are shares of the
-total and the residual takes what they leave.
+added for you and is never passed. Raw coefficients are shares of the total
+only when every component has a unit mean diagonal; use
+``mean_diagonal_proportions`` for the scale-invariant comparison otherwise.
 
 **One component is the case this began as.** With a single kinship matrix
 the first coefficient is the heritability and the fit is what
@@ -167,6 +168,31 @@ x
 subject_order_sha256
     Optional lowercase SHA-256 from ``subject_order_commitment`` for the
     exact fitted row order. It is echoed on every record.
+
+#### `CensoredComponentModel.bootstrap(self, value: 'Any', censoring: 'Any', limit: 'Any', direction: 'Any', component: 'int', replicates: 'int', seed: 'int') -> 'dict[str, Any]'`
+
+Parametrically bootstrap the null for one component.
+
+The tested coefficient is held at nought, the remaining covariance and
+fixed effects are fitted under that null, and each simulated response
+is refitted on both sides of the same likelihood-ratio test.
+
+``limit`` and ``direction`` describe the instrument for **every** row,
+including rows measured in the observed response. ``direction`` is 1
+for right censoring and 2 for left censoring. A new latent draw can cross
+any row's limit, so a missing measured-row limit or a zero direction is
+refused rather than inferred from the observed censoring pattern.
+
+The p-value adds one to the exceedance count and the denominator. Every
+requested replicate must complete. Each replicate has a deterministic
+substream derived from ``seed`` and its coordinate, so the inner fits
+can run in parallel without thread scheduling changing the answer. The
+seed and Monte Carlo standard error are returned with the result.
+Availability is not scientific qualification: the completed outer
+target-design campaign failed its zero-refusal rule after eleven inner
+fits failed in the 75% null cell, so it did not qualify a finite-sample
+bootstrap p-value. An observed nuisance component or residual on its
+bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``.
 
 #### `CensoredComponentModel.fit(self, value: 'Any', censoring: 'Any', limit: 'Any') -> 'dict[str, Any]'`
 
@@ -203,8 +229,9 @@ describes the same model and leaves it alone. ``"coefficient"`` gives
 the interval on the raw coefficient, which that rescaling moves.
 
 ``contains_lower_bound`` and ``contains_upper_bound`` are absent at
-several components. The coverage simulation that scored the boundary
-rule ran at one, and an absent verdict means nobody has measured it.
+several components. No valid fixed-instrument campaign has qualified a
+boundary-containment rule there, so an absent verdict means nobody has
+measured it.
 
 #### `CensoredComponentModel.test(self, value: 'Any', censoring: 'Any', limit: 'Any', component: 'int') -> 'dict[str, Any]'`
 
@@ -213,10 +240,21 @@ Test that one component's coefficient is nought.
 A proportion is nought exactly when its coefficient is, so this answers
 both questions.
 
-``nuisance_at_bound`` says whether another component or the residual
-also rested on nought. Where it is true, ``rule`` is not the reference
-the p-value should be read against: the fifty-fifty mixture answers for
-one parameter on one bound with the rest inside.
+With one component this is the released ``mixture_50_50`` calculation,
+on its unchanged numerical path. With several components the requested
+component is tested after moving it to the held search coordinate, and
+``rule`` is ``"asymptotic_mixture_50_50"``. That reference assumes
+every nuisance component and the residual are interior; the method
+refuses as ``TOBIT_COMPONENT_TEST_NUISANCE_AT_BOUND`` otherwise.
+
+The several-component reference is explicitly asymptotic rather than a
+finite-sample guarantee. Its p-value must not be reported for the exact
+failed 1,909-person, four-component target at 75% expected censoring
+without a design-specific simulated null. This does not create a
+universal censoring threshold. :meth:`bootstrap` supplies a simulated
+constrained-null reference, but its target calibration failed the
+zero-refusal rule and it remains experimental. Fit, interval and the
+released one-component test are unaffected.
 
 ### `ComponentModel`
 
@@ -1006,6 +1044,20 @@ It joins only rows that share a group, so it cannot enlarge a likelihood
 block beyond the groups that straddle two families. A kernel over distances
 would join every pair arithmetically, which is a different thing.
 
+### `installed_extension_sha256() -> 'str'`
+
+Return the SHA-256 of the native module loaded by this process.
+
+This is a provenance helper rather than part of a fit record. It follows
+the imported module's own specification, so another extension-shaped file
+beside it cannot be mistaken for the binary that actually ran.
+
+Returns:
+    Lowercase hexadecimal SHA-256 of the loaded native module.
+
+Raises:
+    RuntimeError: If the loaded module has no readable filesystem origin.
+
 ### `kinship_classes(ids: 'list[str]', father: 'list[str | None]', mother: 'list[str | None]', sex: 'list[str | None]', keep: 'list[str] | None' = None) -> 'dict[str, Any]'`
 
 Split the relationship matrix by the kind of parent–offspring tie.
@@ -1242,19 +1294,20 @@ converge. Each one widened the interval rather than narrowing it, which is
 the safe direction, but a large count means the interval rests on fewer
 points than its width suggests.
 
-Read ``censored_share`` beside the answer. On simulated data the model
-recovers the truth to three quarters censored; on real extended
-high-frequency thresholds it degrades past about half, where too little of
-the upper tail is left to estimate a variance from.
+Read ``censored_share`` beside the answer. The released numerical path is
+unchanged, and the corrected fixed-instrument coverage campaign passes at
+the intended 52% and 75% expected censoring shares.
 
 ### `tobit_test(relationship: 'Any', value: 'Any', censoring: 'Any', limit: 'Any', design: 'Any') -> 'dict[str, Any]'`
 
 Test the censored heritability against nought.
 
 The null holds the heritability at nought, which is its own bound, so the
-reference is the Self-Liang 50:50 mixture of chi-square on nought and one
-degrees of freedom rather than a plain chi-square. ``rule`` says which was
-used, as data rather than as a promise.
+analytic reference is the Self-Liang 50:50 mixture of chi-square on nought
+and one degrees of freedom rather than a plain chi-square. ``rule`` says
+which was used, as data rather than as a promise. Its corrected
+fixed-instrument target check passes at the intended 52% and 75% expected
+censoring shares.
 
 ### `weighted_chi2_upper_tail(q: 'float', weights: 'Any') -> 'dict[str, Any]'`
 

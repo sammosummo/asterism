@@ -31,22 +31,46 @@ tag and saved wheels.
   several components**, shaped like `ComponentModel`: the components and the
   design at construction, the censored data at each call. `fit` reports each
   coefficient and the mean-diagonal proportions; `interval` gives the proportion
-  by default and the coefficient on request; `test` carries `nuisance_at_bound`.
-  With one component it is bit-identical to `tobit_fit`. There is deliberately
-  no `heritability` key: it would be the first component's coefficient whatever
+  by default and the coefficient on request. At several components `test`
+  explicitly reports the asymptotic Self–Liang reference as
+  `asymptotic_mixture_50_50` and refuses if another variance rests on its bound.
+  `bootstrap` can instead simulate the complete constrained-null reference and
+  report an add-one Monte Carlo p-value, but remains experimental rather than a
+  0.2 release claim. Its independent inner datasets now use deterministic
+  coordinate-derived streams and refit in parallel, removing the serial
+  per-outer-replicate ceiling without making the answer thread-dependent.
+  Several-component builds now refuse covariance bases that cannot identify
+  separate coefficients, including an explicit identity that duplicates the
+  residual. Bootstrap nuisance boundaries are judged from scale-invariant
+  mean-diagonal proportions, so changing a matrix's units does not change the
+  refusal. The fixed-instrument analytic campaign failed on the exact
+  1,909-person, four-component target at 75% expected censoring, so its analytic
+  p-value must not be reported for that analysis without a design-specific
+  simulated null. This is not a universal censoring threshold and does not
+  withdraw the generally available, explicitly asymptotic test. The optional
+  999-draw bootstrap target also completed but failed because eleven outer
+  attempts could not complete every inner fit, so the bootstrap remains
+  experimental. With one component the fit remains bit-identical to
+  `tobit_fit`, and its corrected fixed-instrument
+  recovery, coverage and target checks pass. There is deliberately no
+  `heritability` key: it would be the first component's coefficient whatever
   that component is, and it moves under a rescaling that the heritability does
   not.
-- **`mean_diagonal_interval(index)` gives the interval to report** when
+- **`interval(..., quantity="mean_diagonal_proportion")` gives the interval to
+  report** when
   components are compared, beside the coefficient interval that is not
   comparable across matrices whose diagonals differ. Rescaling a component's
   matrix by four describes the same model and moves its coefficient interval;
   the proportion's does not move. Where every component carries a unit diagonal
   the two are the same interval.
-- **The released censored analysis was re-measured after the integral changed**,
-  and all six of its pass rules hold. `censReg` agrees to 9.6e-09 relative, all
-  three points sit inside `MCMCglmm`'s posterior intervals, coverage holds at
-  both censoring shares, and the target-design campaign ran 800 replicates at
-  1,909 people with zero failed fits of a permitted zero.
+- **The published 0.1.1 censored interface and numerical path remain
+  unchanged, and the corrected development checks now pass.** Earlier recovery,
+  coverage and target-design generators chose their censoring limits from each
+  realised response. Their records remain historical. The replacement
+  fixed-instrument MCMCglmm comparison, recovery, coverage and target checks all
+  pass, including null rejection of 0.040 and 0.045 at 52% and 75% expected
+  censoring. The changed checkout still needs its final clean-wheel release run;
+  these measurements do not alter the immutable 0.1.1 artefacts.
 - **`grouping_matrix` builds a component from what rows share.** One where two
   rows share a group, nought where they do not, one on the diagonal. Pass
   household identifiers and it is a household matrix; pass the person each row
@@ -56,50 +80,60 @@ tag and saved wheels.
   nobody and keeps its diagonal, so its effect cannot be told apart from its
   residual.
 - **Every component of a censored fit can be reported, not only adjusted for.**
-  `coefficient_interval(index)` and `coefficient_test(index)` profile and test
-  any component, and the fit record carries `mean_diagonal_contributions`,
-  `mean_diagonal_total` and `mean_diagonal_proportions` on the same footing
-  `ComponentModel` reports them -- which is the quantity to compare components
-  by, a raw coefficient not being comparable across matrices whose diagonals
-  differ. The three are absent, rather than NaN, where a component's mean
-  diagonal is not positive and finite.
-- **The censored test is offered at several components rather than refused**,
-  and carries `nuisance_at_bound`: true where another coefficient or the
-  residual also rested on nought in the null fit, which is when the 50:50
-  mixture is not the reference its p-value should be read against. It was
-  briefly refused there, which would have stopped the coverage check that
-  scores it from ever running. The interval's boundary verdict is still filled
-  at one component only, that being where it was scored.
-- **A censored trait with several variance components is declared as an
-  analysis, and it is not supported yet.** `one_trait_censored_components`
-  carries `support = "planned_for_0_2"`, so `run_analysis` refuses it; the entry
-  exists so its checks have somewhere to be declared as they are written rather
-  than being written and then remembered. Four are written. The components
-  separate: sweeping sibling pairs against records per person, an additive and a
-  person-level component are each recovered, at the cost of the split being four
-  to five times less precisely known than their sum. The fit agrees with an
-  independent censored likelihood optimised by SciPy to 1.4e-03 on the
-  proportions at a quarter censored and 6.3e-03 at a half, and the wider gap in
-  the log-likelihood is the sequential-truncation approximation, measured rather
-  than assumed. Every component's interval covers its truth. At the target
-  design -- 1,909 people, largest family 180, two records each, households of
-  three -- eight hundred attempts produced eight hundred measurements with no
-  failed fit.
+  `interval(..., component=index)` profiles any component, and the fit record
+  carries `mean_diagonal_proportions` beside the raw coefficients -- the former
+  is the quantity to compare across matrices whose diagonals differ. It is
+  absent, rather than NaN, where a component's mean diagonal is not positive
+  and finite. A several-component analytic p-value is labelled asymptotic,
+  rather than described as finite-sample exact, and refused when a nuisance
+  variance is on a bound. Target measurements record known limitations without
+  creating a censoring threshold. The optional experimental bootstrap remains
+  available for a design-specific Monte Carlo reference. The interval's boundary verdict is still filled at
+  one component only, that being the only case for which the compatibility
+  field exists.
+- **A censored trait with several variance components is in the current 0.2
+  scope.** `one_trait_censored_components` supports fitting, intervals and the
+  explicitly labelled asymptotic test; this unreleased development entry is not
+  itself a release claim. The
+  independent censored-likelihood comparison remains a conditional numerical
+  comparison: on its retained fixtures, the fitted proportions agree to
+  1.4e-03 at an expected quarter censored and 2.9e-03 at an expected half,
+  with limits fixed before outcomes were drawn, while the wider
+  log-likelihood difference measures the sequential-truncation approximation.
+  The historical component-recovery, interval-coverage and target-design
+  campaigns used outcome-dependent censoring limits and are retired as
+  qualification evidence. Their fixed-instrument replacements have now run:
+  component recovery and interval coverage pass. The analytic p-value is a
+  known failure on the exact 1,909-person, four-component target at 75% expected
+  censoring and requires a design-specific simulated null there. The optional
+  exhaustive-bootstrap target failed its declared rule, so the bootstrap remains
+  experimental. This is not a universal censoring threshold.
 
   Three things about it are worth knowing before use. The upper end of a
   component proportion cannot be reached when a person contributes more than one
   record, because a proportion of one leaves that person's records perfectly
   correlated and the covariance singular; the interval covers that end, so what
-  it states is a lower bound and its nominal coverage is 0.975. The boundary
-  test's level was measured rather than inherited: 0.055 against a nominal 0.05
-  with half the rows censored, 0.100 with three quarters, which is the
-  asymptotic reference thinning out as the measured sample does. And the largest
-  censored region qualified against a GHK reference is 600 rows in one block,
-  which is the largest rung climbed rather than a limit that was found; the
-  target design reached 310. [ADR
+  it states is a lower bound and its nominal coverage target is 0.975. The
+  historical analytic rejection rates of 0.055 and 0.100 came from the retired
+  generator and do not qualify a reference distribution; the empirical share
+  of likelihood-ratio statistics on the bound is diagnostic, not a pass rule.
+  The largest censored region compared with a GHK reference remains 600 rows in
+  one block, which is the largest rung climbed rather than a limit that was
+  found. [ADR
   0022](docs/adr/0022-the-censored-model-generalises-in-place.md) records why
   the censored model took several components in place rather than through a
   second model beside it, and that ADR 0001 decision 16 stands.
+
+- **Commit `e4bd51f` was an investigation-era search change, not part of the
+  original 0.1.1 code and neither the cause nor the fix.** It gave a held
+  several-component fit three starting points instead of one. Against its
+  parent on the same 40 affected target seeds, bound membership was 12/40 in
+  both versions, the operational p-value-one atom was 12/40 in both, and
+  rejections were 7/40 in both. Coefficients and alternative log likelihoods
+  were bit-identical; the largest null-log-likelihood change was 1.847e-09 and
+  the largest p-value change 5.7e-10. Exact zero statistics changed from 3 to 6
+  without changing the operational atom. One-component fits are untouched by
+  construction. The change is retained as search hygiene only.
 
 - **Breaking, an analysis is renamed.** `one_trait_tobit_audiogram` is now
   `one_trait_censored`. Having "audiogram" in the identifier implied the model

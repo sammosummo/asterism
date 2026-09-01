@@ -1,0 +1,192 @@
+{
+  "what": "coverage of the mixed bivariate genetic-correlation interval",
+  "date": "2026-08-31",
+  "pairs": 400,
+  "replicates": 300,
+  "nominal": 0.95,
+  "alpha": 0.05,
+  "heritability": [
+    0.5,
+    0.5
+  ],
+  "residual_correlation": 0.15,
+  "second_variance": 3.0,
+  "prevalence": 0.3,
+  "censored_share": 0.25,
+  "truths": [
+    0.0,
+    0.4,
+    0.7
+  ],
+  "cells": {
+    "pairing=continuous rho_g=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 285,
+      "coverage": 0.95,
+      "clopper_pearson": [
+        0.9188726428292358,
+        0.9717487980315036
+      ],
+      "mean_width": 0.6422543201178476,
+      "within_nominal": true,
+      "rejection_rate": 0.05,
+      "judged": 300
+    },
+    "pairing=continuous rho_g=0.4": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 287,
+      "coverage": 0.9566666666666667,
+      "clopper_pearson": [
+        0.9270385357797178,
+        0.9767281589953176
+      ],
+      "mean_width": 0.5699841869963181,
+      "within_nominal": true,
+      "rejection_rate": 0.78,
+      "judged": 300
+    },
+    "pairing=continuous rho_g=0.7": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 287,
+      "coverage": 0.9566666666666667,
+      "clopper_pearson": [
+        0.9270385357797178,
+        0.9767281589953176
+      ],
+      "mean_width": 0.4453776106220988,
+      "within_nominal": true,
+      "rejection_rate": 0.9966666666666667,
+      "judged": 300
+    },
+    "pairing=binary rho_g=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 279,
+      "coverage": 0.93,
+      "clopper_pearson": [
+        0.8949860004499501,
+        0.9561496552445705
+      ],
+      "mean_width": 1.001760018938597,
+      "within_nominal": true,
+      "rejection_rate": 0.07,
+      "judged": 300
+    },
+    "pairing=binary rho_g=0.4": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 286,
+      "coverage": 0.9533333333333334,
+      "clopper_pearson": [
+        0.9229401618936413,
+        0.974255350532769
+      ],
+      "mean_width": 0.8970806378056732,
+      "within_nominal": true,
+      "rejection_rate": 0.53,
+      "judged": 300
+    },
+    "pairing=binary rho_g=0.7": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 285,
+      "coverage": 0.95,
+      "clopper_pearson": [
+        0.9188726428292358,
+        0.9717487980315036
+      ],
+      "mean_width": 0.6046826314339676,
+      "within_nominal": true,
+      "rejection_rate": 0.95,
+      "judged": 300
+    },
+    "pairing=censored rho_g=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 284,
+      "coverage": 0.9466666666666667,
+      "clopper_pearson": [
+        0.9148332350904858,
+        0.9692116802265219
+      ],
+      "mean_width": 0.6398936663407474,
+      "within_nominal": true,
+      "rejection_rate": 0.05333333333333334,
+      "judged": 300
+    },
+    "pairing=censored rho_g=0.4": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 281,
+      "coverage": 0.9366666666666666,
+      "clopper_pearson": [
+        0.9028618033928799,
+        0.961441980171624
+      ],
+      "mean_width": 0.6085948697435328,
+      "within_nominal": true,
+      "rejection_rate": 0.6866666666666666,
+      "judged": 300
+    },
+    "pairing=censored rho_g=0.7": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 284,
+      "coverage": 0.9466666666666667,
+      "clopper_pearson": [
+        0.9148332350904858,
+        0.9692116802265219
+      ],
+      "mean_width": 0.4589273217203847,
+      "within_nominal": true,
+      "rejection_rate": 0.9933333333333333,
+      "judged": 300
+    },
+    "pairing=censored_pair rho_g=0.0": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 284,
+      "coverage": 0.9466666666666667,
+      "clopper_pearson": [
+        0.9148332350904858,
+        0.9692116802265219
+      ],
+      "mean_width": 0.7001371409891827,
+      "within_nominal": true,
+      "rejection_rate": 0.05333333333333334,
+      "judged": 300
+    },
+    "pairing=censored_pair rho_g=0.4": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 283,
+      "coverage": 0.9433333333333334,
+      "clopper_pearson": [
+        0.910819595565837,
+        0.9666466884833154
+      ],
+      "mean_width": 0.6018665960708832,
+      "within_nominal": true,
+      "rejection_rate": 0.6933333333333334,
+      "judged": 300
+    },
+    "pairing=censored_pair rho_g=0.7": {
+      "replicates": 300,
+      "refused": 0,
+      "covered": 285,
+      "coverage": 0.95,
+      "clopper_pearson": [
+        0.9188726428292358,
+        0.9717487980315036
+      ],
+      "mean_width": 0.4759938122414574,
+      "within_nominal": true,
+      "rejection_rate": 0.9933333333333333,
+      "judged": 300
+    }
+  },
+  "passed": true
+}

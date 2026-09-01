@@ -9,6 +9,8 @@ the REML heritabilities the rest of this package reports.
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import asterism
 import numpy as np
 
@@ -26,8 +28,8 @@ liability: np.ndarray = trait(relationship, heritability=0.5, seed=17)
 prevalence: float = 0.2
 """Chose a disease one person in five has."""
 
-threshold: float = float(np.quantile(liability, 1.0 - prevalence))
-"""Placed the threshold so the prevalence comes out as chosen."""
+threshold: float = NormalDist().inv_cdf(1.0 - prevalence)
+"""Fixed the threshold from the generating population prevalence."""
 
 status: np.ndarray = (liability >= threshold).astype(np.int64)
 """Recorded who is a case. The liability itself is never observed again."""

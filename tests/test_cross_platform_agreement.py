@@ -395,6 +395,35 @@ def test_probe_source_uses_only_the_public_asterism_interface() -> None:
     assert imported_asterism
 
 
+def test_censored_component_probe_covers_both_intervals_and_asymptotic_test() -> None:
+    """The ninth probe retained every supported censored-component quantity."""
+    from tools.cross_platform_probe import (
+        probe_censored_components,
+        synthetic_problem,
+    )
+
+    result, numeric_fields = probe_censored_components(synthetic_problem())
+    """Ran the deterministic public fit, profiles and analytic test."""
+
+    assert set(result) == {
+        "fit",
+        "coefficient_interval",
+        "mean_diagonal_proportion_interval",
+        "asymptotic_test",
+    }
+    assert result["coefficient_interval"]["quantity"] == "coefficient"
+    assert (
+        result["mean_diagonal_proportion_interval"]["quantity"]
+        == "mean_diagonal_proportion"
+    )
+    assert result["asymptotic_test"]["rule"] == "asymptotic_mixture_50_50"
+    assert result["asymptotic_test"]["nuisance_at_bound"] is False
+    assert (
+        tuple(numeric_fields)
+        == NUMERIC_FIELDS_BY_ANALYSIS["one_trait_censored_components"]
+    )
+
+
 def test_probe_numeric_fields_equal_the_prewritten_manifest_inventory() -> None:
     """Prevent probe edits from silently changing which numbers tolerances cover."""
     manifest: dict[str, Any] = tomllib.loads(

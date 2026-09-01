@@ -1,5 +1,6 @@
 """Public contract tests for Asterism release metadata."""
 
+import json
 import subprocess
 import sys
 import tomllib
@@ -13,6 +14,8 @@ from asterism import _core
 from tools.check_release import (
     conditional_quantity_errors,
     fixed_build_errors,
+    known_limitation_errors,
+    medusa_smoke_configuration_errors,
 )
 from tools.run_scientific_release import scientific_inventory_errors
 
@@ -154,7 +157,7 @@ def test_scientific_gate_inventory_covers_every_required_check_once() -> None:
     ]
     """Expanded the exact executable or fail-closed command inventory."""
 
-    assert len(required) == 33
+    assert len(required) == 32
     assert configured == required
     assert len(configured) == len(set(configured))
     assert scientific_inventory_errors(manifest, ROOT) == []
@@ -168,6 +171,7 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     """Read every global and per-analysis readiness switch."""
 
     assert manifest["scientific_pass_rules_configured"] is True
+    assert manifest["release"] is False
     assert all(
         analysis["pass_rules_configured"] is True for analysis in manifest["analyses"]
     )
@@ -183,6 +187,143 @@ def test_inventory_does_not_claim_scientific_readiness() -> None:
     """Accepted evidence-progress transitions without changing readiness switches."""
 
 
+def test_censored_component_target_failure_is_a_narrow_known_limitation() -> None:
+    """Keep one failed target visible without turning it into a global gate."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative scientific command inventory."""
+
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "one_trait_censored_components"
+    )
+    """Selected the several-component censored analysis."""
+
+    assert analysis["support"] == "supported_in_0_2"
+    assert "asymptotic_test" in analysis["supported_quantities"]
+    assert "bootstrap_test" not in analysis["supported_quantities"]
+    assert "censored_components_target_design" not in analysis["required_checks"]
+    assert [rule["id"] for rule in analysis["pass_rules"]] == analysis[
+        "required_checks"
+    ]
+
+    limitation: dict[str, Any] = analysis["known_limitations"][0]
+    """Selected the exact negative result retained beside the support claim."""
+
+    assert limitation == {
+        "code": "ASYMPTOTIC_TEST_NOT_CALIBRATED_FOR_FIXED_TARGET_75",
+        "quantity": "asymptotic_test",
+        "scope": "fixed_instrument_1909_people_four_components_75_percent",
+        "consequence": "withhold_p_value_without_design_specific_simulated_null",
+        "evidence": ("evidence/censored-components-target-limitation-2026-09-01.json"),
+        "evidence_sha256": (
+            "d7adf259ac9220045bf9c206bd3e49b7ad441614ccfaf036a020fc1804b49578"
+        ),
+    }
+
+    record: dict[str, Any] = json.loads(
+        (ROOT / limitation["evidence"]).read_text(encoding="utf-8")
+    )
+    """Read the participant-free retained failure record named by the contract."""
+
+    assert record["outcome"] == "known_limitation"
+    assert record["decision"]["universal_censoring_threshold"] is None
+    assert record["decision"]["fit_and_intervals_affected"] is False
+    failed: dict[str, Any] = next(
+        cell
+        for cell in record["cells"]
+        if cell["scenario"] == "null" and cell["expected_censoring_share"] == 0.75
+    )
+    """Selected the exact failed target cell rather than a censoring range."""
+    assert failed["attempts"] == 200
+    assert failed["rejections"] == 19
+    assert failed["rejection_rate"] == 0.095
+    assert failed["one_sided_lower_95"] == 0.06310551496161299
+    assert failed["passed"] is False
+    assert known_limitation_errors(analysis, ROOT) == []
+
+
+def test_known_limitation_metadata_fails_closed() -> None:
+    """Require a retained limitation to name real evidence and a known quantity."""
+    malformed: dict[str, Any] = {
+        "id": "example",
+        "supported_quantities": ["estimate"],
+        "known_limitations": [
+            {
+                "code": "lowercase code",
+                "quantity": "missing_quantity",
+                "scope": "target",
+                "consequence": "withhold",
+                "evidence": "evidence/absent.json",
+                "evidence_sha256": "0" * 64,
+            }
+        ],
+    }
+    """Built a limitation that violates code, quantity and evidence rules."""
+
+    errors: list[str] = known_limitation_errors(malformed, ROOT)
+    """Collected every independent failure from the malformed record."""
+
+    assert any("stable uppercase code" in error for error in errors)
+    assert any("unsupported quantity" in error for error in errors)
+    assert any("evidence does not exist" in error for error in errors)
+
+
+def test_known_limitation_rejects_a_stale_evidence_digest() -> None:
+    """Bind negative evidence as tightly as a passing scientific record."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative limitation and its current digest."""
+
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "one_trait_censored_components"
+    )
+    """Selected the several-component censored support record."""
+
+    stale: dict[str, Any] = deepcopy(analysis)
+    """Copied the record so the authoritative manifest remains unchanged."""
+
+    stale["known_limitations"][0]["evidence_sha256"] = "0" * 64
+    """Introduced one deliberately stale immutable evidence commitment."""
+
+    assert any(
+        "evidence SHA-256 does not match" in error
+        for error in known_limitation_errors(stale, ROOT)
+    )
+
+
+def test_mixed_bivariate_coverage_rule_records_completed_fixed_threshold_run() -> None:
+    """Keep the corrected mixed-pair coverage result visible in the manifest."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative scientific command inventory."""
+
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "mixed_binary_censored_genetic_correlation"
+    )
+    """Selected the already-supported mixed-pair analysis."""
+
+    rule: dict[str, Any] = next(
+        item
+        for item in analysis["pass_rules"]
+        if item["id"] == "mixed_bivariate_coverage"
+    )
+    """Selected its corrected fixed-threshold coverage gate."""
+
+    assert rule["status"] == "ready"
+    assert "blocker" not in rule
+    assert rule["design_facts"]["measured"] is True
+    assert rule["design_facts"]["observation_thresholds_fixed_before_outcomes"] is True
+
+
 def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None:
     """Keep two installed-wheel matrices distinct from an actual result comparison."""
     manifest: dict[str, object] = tomllib.loads(
@@ -195,7 +336,7 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
     )
     """Selected the separately gated Mac/Linux comparison contract."""
 
-    assert agreement["configured"] is True
+    assert agreement["configured"] is False
     assert agreement["probe_runner"] == "tools/cross_platform_probe.py"
     assert agreement["runner"] == "tools/compare_cross_platform.py"
     assert agreement["exact_comparisons"] == [
@@ -211,12 +352,64 @@ def test_cross_platform_agreement_is_explicitly_unmeasured_not_implied() -> None
         analysis["id"]
         for analysis in manifest["analyses"]  # type: ignore[union-attr]
     }
-    assert all(tolerance["measured"] is True for tolerance in tolerances)
+    unmeasured: list[dict[str, object]] = [
+        tolerance for tolerance in tolerances if tolerance["measured"] is False
+    ]
+    """Collected analyses whose cross-platform tolerances remain unmeasured."""
+
+    assert [tolerance["analysis_id"] for tolerance in unmeasured] == [
+        "one_trait_censored_components"
+    ]
+    assert all(
+        tolerance["measured"] is True
+        for tolerance in tolerances
+        if tolerance not in unmeasured
+    )
     assert all(tolerance["numeric_fields"] for tolerance in tolerances)
     assert all(
-        set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
-        and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
+        (
+            set(tolerance["absolute"]) == set(tolerance["numeric_fields"])
+            and set(tolerance["relative"]) == set(tolerance["numeric_fields"])
+        )
+        if tolerance["measured"] is True
+        else "absolute" not in tolerance and "relative" not in tolerance
         for tolerance in tolerances
+    )
+
+
+def test_medusa_smoke_waits_for_external_final_wheel_evidence() -> None:
+    """Keep stale development smoke outside the authoritative release contract."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the current development manifest without consulting old evidence."""
+
+    smoke: dict[str, Any] = manifest["medusa_smoke"]
+    """Selected the target-host requirement independently of its future result."""
+
+    assert smoke == {
+        "required": True,
+        "configured": False,
+        "architecture": "x86_64",
+        "glibc_version": "2.28",
+        "command": ["tools/medusa_wheel_smoke.py"],
+    }
+
+
+def test_medusa_release_configuration_never_points_at_repository_evidence() -> None:
+    """A final release requires an external input, not a committed JSON pointer."""
+    configured: dict[str, Any] = {
+        "required": True,
+        "configured": True,
+        "architecture": "x86_64",
+        "glibc_version": "2.28",
+        "command": ["tools/medusa_wheel_smoke.py"],
+    }
+    """Represented the manifest state after exact final-wheel smoke exists externally."""
+
+    assert medusa_smoke_configuration_errors(configured) == []
+    assert "unverified" in "\n".join(
+        medusa_smoke_configuration_errors({**configured, "configured": False})
     )
 
 

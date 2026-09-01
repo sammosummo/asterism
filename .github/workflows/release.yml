@@ -7,8 +7,18 @@ name: Private release
 # minutes are paid for.
 on:
   workflow_dispatch:
+    inputs:
+      wheels_run_id:
+        description: Successful Installed wheels workflow run for this exact commit
+        required: true
+        type: string
+      medusa_smoke_base64:
+        description: Base64-encoded JSON from the exact final manylinux wheel on Medusa
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -25,50 +35,68 @@ jobs:
         name: Detect a deliberate release version
         run: python tools/check_release.py --requested >> "$GITHUB_OUTPUT"
 
-  wheels:
-    needs: detect
-    if: needs.detect.outputs.requested == 'true'
-    uses: ./.github/workflows/wheels.yml
-
   release:
-    needs: [detect, wheels]
+    needs: detect
     if: needs.detect.outputs.requested == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Verify the selected installed-wheel run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WHEELS_RUN_ID: ${{ inputs.wheels_run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$WHEELS_RUN_ID" > "$RUNNER_TEMP/wheels-run.json"
+          test "$(jq -r ".conclusion" "$RUNNER_TEMP/wheels-run.json")" = "success"
+          test "$(jq -r ".head_repository.full_name" "$RUNNER_TEMP/wheels-run.json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r ".head_sha" "$RUNNER_TEMP/wheels-run.json")" = "$GITHUB_SHA"
+          test "$(jq -r ".head_branch" "$RUNNER_TEMP/wheels-run.json")" = "$GITHUB_REF_NAME"
+          test "$(jq -r ".path" "$RUNNER_TEMP/wheels-run.json")" = ".github/workflows/wheels.yml"
       - uses: actions/download-artifact@v4
         with:
           pattern: asterism-wheel-*
           path: dist
           merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.wheels_run_id }}
       - uses: actions/download-artifact@v4
         with:
           name: asterism-cross-platform-agreement
           path: cross-platform-agreement
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.wheels_run_id }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.21"
+      - name: Materialise the external Medusa smoke result
+        env:
+          MEDUSA_SMOKE_BASE64: ${{ inputs.medusa_smoke_base64 }}
+        run: >-
+          python -c 'import base64, os; from pathlib import Path;
+          Path(os.environ["RUNNER_TEMP"], "asterism-medusa-smoke.json").write_bytes(
+          base64.b64decode(os.environ["MEDUSA_SMOKE_BASE64"], validate=True))'
       - name: Install the saved Linux wheel for release checks
         run: |
-          uv venv --python 3.13 .release-venv
+          uv venv --python 3.13 "$RUNNER_TEMP/asterism-release-venv"
           uv export --frozen --all-groups --no-emit-project --output-file .release-requirements.txt
-          uv pip install --python .release-venv/bin/python --requirements .release-requirements.txt
-          uv pip install --python .release-venv/bin/python --no-deps dist/*manylinux*.whl
+          uv pip install --python "$RUNNER_TEMP/asterism-release-venv/bin/python" --requirements .release-requirements.txt
+          uv pip install --python "$RUNNER_TEMP/asterism-release-venv/bin/python" --no-deps dist/*manylinux*.whl
       - name: Run the configured scientific release checks
         run: >-
-          .release-venv/bin/python tools/run_scientific_release.py
+          "$RUNNER_TEMP/asterism-release-venv/bin/python" tools/run_scientific_release.py
           --manifest release.toml
           --output release-evidence
           --cross-platform-agreement cross-platform-agreement/agreement.json
+          --medusa-smoke "$RUNNER_TEMP/asterism-medusa-smoke.json"
           --wheel dist/*.whl
       - name: Refuse stale build identity or incomplete release evidence
         run: >-
-          .release-venv/bin/python tools/check_release.py --release
+          "$RUNNER_TEMP/asterism-release-venv/bin/python" tools/check_release.py --release
           --evidence release-evidence/evidence.json
           --wheel dist/*.whl
       - name: Package evidence and create artifact checksums

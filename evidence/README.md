@@ -7,6 +7,98 @@ Nothing here is a status, a gate or a certificate. A file in this directory says
 what was measured, on what, when, and with which seed. It says nothing about
 whether anything is approved.
 
+## Erratum: outcome-adaptive censoring limits
+
+**Added on 31 August 2026.** Several simulation generators selected a censoring
+limit from each realised response in order to force an exact censoring count.
+That is not the fixed-instrument design the checks were meant to assess. The
+affected JSON remains immutable evidence of the runs that occurred, but it does
+not establish estimation, interval coverage, or test calibration for a limit
+fixed before outcomes are observed.
+
+This erratum applies to the historical Tobit calibration, coverage and
+target-design evidence; `tobit-against-mcmcglmm-2026-08-18.json`;
+`censored-pass-rules-rerun-2026-08-29.json`; both
+`component-separation-*.json` files;
+`components-full-fit-2026-08-29.json`;
+`censored-components-coverage-2026-08-30.json`;
+`censored-components-target-design-2026-08-30.json`; and the historical
+`mixed-bivariate-calibration-*` and `mixed-bivariate-coverage-*` files dated
+before 31 August 2026. A target-design result included in a release bundle is
+affected even where there is no separate JSON file in this directory.
+
+The measured share of null likelihood-ratio statistics on the bound remains a
+useful diagnostic, but it is not a gate requiring a finite-sample half mass.
+The one-component numerical path used by the released model is unchanged; its
+affected evidence was replaced by the fixed-limit records dated 31 August 2026.
+For several censored components, the release candidate exposes an explicitly
+labelled asymptotic 50:50 test. Its finite-sample rejection measurements describe
+their exact designs rather than creating a censoring threshold. The
+constrained-null parametric bootstrap remains experimental; no JSON in this
+directory qualifies it as a general finite-sample release procedure.
+
+## Fixed-instrument censored reruns, 31 August 2026
+
+`tobit-calibration-2026-08-31.json` contains 200 replicates at each expected
+censoring share 0, 0.10, 0.25, 0.50 and 0.75. Mean h² stayed between 0.4935 and
+0.4996 against truth 0.5, with no failed fit. At three quarters censored the
+limit-substitution estimate was 0.3106.
+
+`tobit-coverage-2026-08-31.json` contains 1,000 intervals in each of six cells:
+h² = 0, 0.3 and 0.5 at expected censoring shares 0.52 and 0.75. Coverage ranged
+from 0.945 to 0.959, every exact interval contained nominal 0.95, and there were
+no refusals.
+
+`tobit-target-design-2026-08-31.json` contains all 800 requested attempts at
+the 1,909-person structural target. Null rejection rates were 0.040 and 0.045,
+and h² = 0.5 coverage was 0.940 and 0.930, at expected censoring shares 0.52 and
+0.75 respectively. All four cells pass their predeclared one-sided exact rules
+with no failed attempt.
+
+`component-separation-2026-08-31.json` contains 200 fixed-instrument fits in
+each of eight cells spanning two or three records per person and 30 to 240
+sibling pairs. Every cell completed and passed. It records the strong negative
+correlation between additive and person-level estimates and their improving
+precision as the design grows.
+
+`mixed-bivariate-calibration-2026-08-31.json` contains 100 fixed-threshold fits
+for each of the continuous, binary, censored and censored-pair designs. Mean
+genetic correlations were 0.3790, 0.3833, 0.3753 and 0.3803 against truth 0.4;
+all cells passed with no failed fit.
+
+`mixed-bivariate-coverage-2026-08-31.json` contains 300 fixed-threshold fits in
+each of twelve pairing-by-correlation cells. There were no refusals. Coverage
+ranged from 0.930 to 0.957, every exact interval contained nominal 0.95, and
+the four zero-correlation rejection rates were 0.050, 0.070, 0.053 and 0.053.
+
+`censored-components-coverage-2026-08-31.json` contains 300 fixed-instrument
+replicates in each of twelve component-by-truth cells at 52% expected
+censoring. There were no refusals. Coverage in the eleven interior cells ranged
+from 0.9533 to 0.9933, and every simultaneous exact interval contained the
+predeclared nominal 0.975. The lower-bound cell reports eleven intervals that
+excluded nought and 289 deliberately undecided boundary verdicts; its exact
+range did not establish undercoverage under the frozen rule.
+
+## `components-full-fit-fixed-instrument-2026-08-31.json`
+
+The corrected conditional numerical comparison for the several-component
+censored fit. Unlike the historical 29 August record, its common instrument
+limit is fixed from the generating mean and variance before each outcome is
+drawn. Across twelve replicates at each of expected censoring shares 0.25 and
+0.50, the largest mean-diagonal proportion differences were 1.4e-03 and
+2.9e-03; the largest log-likelihood differences were 6.9e-02 and 5.5e-02.
+Every cell passed its predeclared 0.01 and 0.15 tolerances.
+
+This establishes conditional numerical agreement for those fixed problems. It
+does not establish recovery, interval coverage, test calibration or the
+constrained-null bootstrap. The separate fixed-instrument recovery and interval
+campaigns now pass. The analytic campaign failed on the exact 1,909-person,
+four-component target at 75% expected censoring, so its analytic p-value must not
+be reported for that analysis without a design-specific simulated null. That
+does not create a universal censoring threshold or affect fit and interval
+evidence. The optional bootstrap target failed its declared rule and wrote no
+qualifying evidence JSON; the bootstrap remains experimental.
+
 ## `bivariate-against-r-2026-08-11.json`
 
 The compiled Rust two-trait optimiser against R's `regress`: REML, sixty

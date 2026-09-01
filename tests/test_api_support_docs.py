@@ -34,21 +34,29 @@ def test_models_module_exports_every_public_wrapper_it_defines() -> None:
     assert set(model_api.__all__) == public_definitions
 
 
-def test_the_release_has_a_changelog_entry_and_a_release_page() -> None:
-    """Require both versioned documents to cover the manifest's version.
+def test_the_manifest_version_has_the_right_changelog_and_release_page() -> None:
+    """Require release notes for releases and Unreleased notes for development.
 
-    This used to assert the changelog said "planned" and the release page said
-    "Not released", which made it a test of when it was written. It now checks
-    that whatever version `release.toml` carries is described in both places,
-    which is what the documents are for.
+    A development identity must not manufacture a versioned release page. A
+    fixed release must have both the matching changelog heading and page.
     """
-    version: str = tomllib.loads((ROOT / "release.toml").read_text(encoding="utf-8"))[
-        "version"
-    ]
-    """Read the version both documents must describe."""
+    manifest: dict[str, object] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative version and release-state pair."""
+
+    version: str = str(manifest["version"])
+    """Selected the public version rendered into every built artifact."""
 
     changelog: str = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     """Read the package-wide change history."""
+
+    if manifest.get("release") is not True:
+        assert "dev" in version
+        assert "## Unreleased" in changelog
+        assert not (ROOT / f"docs/release-notes/{version}.md").exists()
+        return
+    """Kept mutable development work in the one Unreleased section."""
 
     release_notes: str = (ROOT / f"docs/release-notes/{version}.md").read_text(
         encoding="utf-8"

@@ -1,10 +1,11 @@
 """Does the censored model's interval contain the truth 95 times in 100?
 
 An interval that has never been counted is a claim rather than a result. This
-simulates data sets whose heritability is known, fits the profile interval to
-each, and counts how often it contains the truth -- across censoring rates,
-because the whole question is how far the model can be pushed before the upper
-tail stops supporting a variance.
+simulates data sets whose heritability is known, fixes the instrument limit from
+the population design before drawing each outcome, fits the profile interval,
+and counts how often it contains the truth across expected censoring rates.
+Earlier retained outputs selected limits from realised responses and do not
+qualify fixed-instrument coverage.
 
 Three rules make the number mean something, and they are the coverage check's
 rules elsewhere in this package for the same reasons:
@@ -17,11 +18,9 @@ rules elsewhere in this package for the same reasons:
    Self-Liang mixture**, which is ADR 0004's recipe, and not by the end having
    landed on the bound. The record carries the verdict as
    ``contains_lower_bound`` and ``contains_upper_bound``, and this reads it.
-   Correcting the earlier version of this check, which counted an end on nought
-   as containment: that is the obvious rule and it is the wrong one. ADR 0004
-   measured what it costs -- 0.977 against a nominal 0.95 at a true
-   heritability of nought, where the mixture gives 0.953 -- and this check
-   reported 0.980, 0.977 and 0.983 in exactly those cells while passing them.
+   Counting an end on nought as containment is not the same rule. The corrected
+   fixed-instrument campaign must establish the behaviour of this convention;
+   historical rates from the outcome-adaptive generator are not qualification.
 3. **A cell passes when the Clopper-Pearson interval on its coverage overlaps
    the nominal 0.95**, which is a statement about this many replicates rather
    than about the number looking close by eye. **Every cell is two-sided,
@@ -48,6 +47,12 @@ from typing import Any
 import asterism
 import numpy as np
 from scipy.stats import beta
+
+try:
+    from checks.censoring_design import right_censoring_limit
+except ModuleNotFoundError:
+    from censoring_design import right_censoring_limit
+"""Imported the fixed-instrument solver in module and direct-command modes."""
 
 PAIRS: int = 300
 """Number of independent sibling pairs in every coverage replicate."""
@@ -115,8 +120,8 @@ def draw(
 
     if rate <= 0.0:
         return relationship, complete, np.zeros(people, dtype=bool), 0.0
-    limit: float = float(np.quantile(complete, 1.0 - rate))
-    """Selected the realized quantile yielding the configured censoring share."""
+    limit: float = right_censoring_limit(TRUE_MEAN, TRUE_VARIANCE, rate)
+    """Solved the expected marginal share without reading this outcome."""
 
     return relationship, complete, complete >= limit, limit
 
@@ -128,6 +133,14 @@ def one(job: tuple[float, float, int]) -> dict[str, Any]:
 
     relationship, complete, censored, limit = draw(heritability, rate, replicate)
     """Generated one complete response and its observed censoring mask."""
+
+    accounting: dict[str, Any] = {
+        "heritability": heritability,
+        "rate": rate,
+        "instrument_limit": limit,
+        "achieved_censoring_share": float(censored.mean()),
+    }
+    """Recorded the fixed instrument and its random realised share."""
 
     people: int = complete.size
     """Counted observations supplied to the public interval function."""
@@ -143,13 +156,11 @@ def one(job: tuple[float, float, int]) -> dict[str, Any]:
         """Profiled the interval through the documented public API."""
     except ValueError as refusal:
         return {
-            "heritability": heritability,
-            "rate": rate,
+            **accounting,
             "refusal": str(refusal).replace("TOBIT_", ""),
         }
     return {
-        "heritability": heritability,
-        "rate": rate,
+        **accounting,
         "covered": covers(got, heritability),
         "width": got["upper"] - got["lower"],
         "lower_limited": got["lower_limited"],
@@ -314,6 +325,11 @@ def main() -> int:
                 "coverage": hits / len(here),
                 "clopper_pearson": [low, high],
                 "mean_width": float(width),
+                "instrument_limit": float(here[0]["instrument_limit"]),
+                "achieved_censoring_share_range": [
+                    min(float(row["achieved_censoring_share"]) for row in here),
+                    max(float(row["achieved_censoring_share"]) for row in here),
+                ],
                 "within_nominal": ok,
                 "at_boundary": at_boundary,
             }

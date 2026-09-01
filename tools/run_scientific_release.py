@@ -9,9 +9,11 @@ import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import tomllib
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -20,9 +22,91 @@ from typing import Any
 IDENTIFIER_PATTERN: re.Pattern[str] = re.compile(r"[a-z][a-z0-9_]*")
 """Restricted evidence identifiers to stable, path-safe names."""
 
+TERMINATION_GRACE_SECONDS: float = 5.0
+"""Allowed a cooperative process group to stop before forcible termination."""
+
+MAX_RULE_TIMEOUT_SECONDS: int = 7 * 24 * 60 * 60
+"""Allowed one measured week for an explicitly bounded scientific campaign."""
+
 
 class ReleaseConfigurationError(ValueError):
     """Report a release configuration that cannot be executed safely."""
+
+
+def run_bounded_command(
+    *,
+    argv: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    """Run one command in an isolated process group within a time bound.
+
+    Args:
+        argv: Shell-free command and argument vector.
+        cwd: Fixed checkout used as the command's working directory.
+        timeout_seconds: Prewritten maximum execution time in seconds.
+        env: Exact environment exposed to the command.
+
+    Returns:
+        The completed command with its captured ordinary and diagnostic output.
+
+    Raises:
+        ReleaseConfigurationError: If process-group isolation is unavailable.
+        subprocess.TimeoutExpired: After the entire process group has stopped.
+    """
+    if os.name != "posix":
+        raise ReleaseConfigurationError(
+            "scientific command isolation requires POSIX process groups"
+        )
+    """Failed closed where the release runner cannot terminate a complete tree."""
+
+    process: subprocess.Popen[str] = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    """Made the command the leader of a new session and process group."""
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        """Collected complete streams after ordinary command completion."""
+    except subprocess.TimeoutExpired as error:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        """Asked every surviving member of the isolated process group to stop."""
+
+        cooperative_shutdown: bool = True
+        """Tracked whether every inherited output handle closed during the grace."""
+
+        try:
+            stdout, stderr = process.communicate(timeout=TERMINATION_GRACE_SECONDS)
+            """Collected streams after cooperative group termination."""
+        except subprocess.TimeoutExpired:
+            cooperative_shutdown = False
+            """Recorded that at least one process retained an inherited stream."""
+
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        """Forcibly stopped any group member which survived cooperative shutdown."""
+
+        if not cooperative_shutdown:
+            stdout, stderr = process.communicate()
+            """Reaped the direct child and drained streams after forcible shutdown."""
+
+        raise subprocess.TimeoutExpired(
+            error.cmd,
+            error.timeout,
+            output=stdout,
+            stderr=stderr,
+        ) from None
+    """Converted a timeout only after its complete spawned process group was gone."""
+
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
 def fixed_input_errors(
@@ -365,6 +449,80 @@ def agreement_record_errors(
     return errors
 
 
+def medusa_smoke_record_errors(
+    *,
+    record: object,
+    manifest: dict[str, Any],
+    manifest_text: str,
+    cargo_lock_text: str,
+    uv_lock_text: str,
+    source_commit: str,
+    linux_wheel_sha256: str,
+) -> list[str]:
+    """Return failures in one external final-wheel Medusa smoke record.
+
+    Args:
+        record: Parsed participant-free JSON produced on Medusa.
+        manifest: Final release contract embedded in the selected wheel.
+        manifest_text: Exact manifest bytes used to build that wheel.
+        cargo_lock_text: Exact Rust dependency lock embedded in the wheel.
+        uv_lock_text: Exact Python dependency lock embedded in the wheel.
+        source_commit: Source commit embedded in the selected wheel.
+        linux_wheel_sha256: Exact manylinux wheel exercised on Medusa.
+
+    Returns:
+        Human-readable failures, or an empty list for one exact converged smoke.
+    """
+    errors: list[str] = []
+    """Collected independent host, fit, artifact and build mismatches."""
+
+    configuration: object = manifest.get("medusa_smoke")
+    """Read the target-host requirement without any repository evidence pointer."""
+
+    if not isinstance(configuration, dict):
+        return ["Medusa smoke configuration is missing"]
+    if configuration.get("required") is not True:
+        errors.append("Medusa smoke is not required")
+    if configuration.get("configured") is not True:
+        errors.append("Medusa smoke is not configured")
+    if not isinstance(record, dict):
+        errors.append("Medusa smoke record must be a JSON object")
+        return errors
+    """Required an explicit final-release opt-in and an inspectable record."""
+
+    if record.get("asterism_version") != manifest.get("version"):
+        errors.append("Medusa smoke version does not match release.toml")
+    if record.get("machine") != configuration.get("architecture"):
+        errors.append("Medusa smoke architecture does not match release.toml")
+    if record.get("glibc_version") != configuration.get("glibc_version"):
+        errors.append("Medusa smoke glibc does not match release.toml")
+    if record.get("converged") is not True:
+        errors.append("Medusa smoke fit did not converge")
+    if record.get("wheel_sha256") != linux_wheel_sha256:
+        errors.append("Medusa smoke wheel SHA-256 does not match selected Linux wheel")
+    """Bound the fit to the declared host and exact portable artifact."""
+
+    expected_build: dict[str, Any] = {
+        "version": manifest.get("version"),
+        "cargo_version": manifest.get("cargo_version"),
+        "source_commit": source_commit,
+        "source_dirty": False,
+        "release": manifest.get("release"),
+        "release_manifest_sha256": hashlib.sha256(
+            manifest_text.encode("utf-8")
+        ).hexdigest(),
+        "cargo_lock_sha256": hashlib.sha256(
+            cargo_lock_text.encode("utf-8")
+        ).hexdigest(),
+        "uv_lock_sha256": hashlib.sha256(uv_lock_text.encode("utf-8")).hexdigest(),
+    }
+    """Reconstructed the complete public build identity from selected inputs."""
+
+    if record.get("build_identity") != expected_build:
+        errors.append("Medusa smoke build identity does not match selected release")
+    return errors
+
+
 def file_identity(path: Path) -> dict[str, str]:
     """Return the path and SHA-256 identity of one immutable file.
 
@@ -488,9 +646,12 @@ def scientific_inventory_errors(manifest: dict[str, Any], root: Path) -> list[st
             if (
                 not isinstance(timeout, int)
                 or isinstance(timeout, bool)
-                or not 1 <= timeout <= 604_800
+                or not 1 <= timeout <= MAX_RULE_TIMEOUT_SECONDS
             ):
-                errors.append(f"{label}: timeout_seconds must be between 1 and 604800")
+                errors.append(
+                    f"{label}: timeout_seconds must be between 1 and "
+                    f"{MAX_RULE_TIMEOUT_SECONDS}"
+                )
             status: object = rule.get("status")
             """Distinguished runnable rules from explicit evidence deficits."""
 
@@ -677,10 +838,11 @@ def configured_rules(
             if (
                 not isinstance(timeout_seconds, int)
                 or isinstance(timeout_seconds, bool)
-                or not 1 <= timeout_seconds <= 604_800
+                or not 1 <= timeout_seconds <= MAX_RULE_TIMEOUT_SECONDS
             ):
                 errors.append(
-                    f"{identifier}/{rule_id}: timeout_seconds must be between 1 and 604800"
+                    f"{identifier}/{rule_id}: timeout_seconds must be between 1 and "
+                    f"{MAX_RULE_TIMEOUT_SECONDS}"
                 )
             if rule.get("status") != "ready":
                 blocker: object = rule.get("blocker")
@@ -759,6 +921,7 @@ def run_scientific_release(
     output_directory: Path,
     wheel_paths: list[Path],
     cross_platform_agreement_path: Path,
+    medusa_smoke_path: Path,
     core: ModuleType | Any,
 ) -> dict[str, Any]:
     """Execute all scientific rules and write fixed-build release evidence.
@@ -768,6 +931,7 @@ def run_scientific_release(
         output_directory: New directory for evidence and exact command logs.
         wheel_paths: Built wheels whose bytes the evidence must identify.
         cross_platform_agreement_path: Actual four-target result comparison record.
+        medusa_smoke_path: External Medusa result from the final manylinux wheel.
         core: Installed extension module exposing immutable build metadata.
 
     Returns:
@@ -853,6 +1017,22 @@ def run_scientific_release(
     }
     """Collected exact saved-wheel identities for comparison-record validation."""
 
+    linux_wheels: list[Path] = [
+        path for path in resolved_wheels if "manylinux" in path.name
+    ]
+    """Selected the portable artifact the external Medusa host must exercise."""
+
+    linux_wheel_sha256: str = ""
+    """Reserved the sole portable artifact identity after validating its inventory."""
+
+    if len(linux_wheels) != 1:
+        errors.append("release requires exactly one manylinux wheel for Medusa smoke")
+    else:
+        linux_wheel_sha256 = hashlib.sha256(linux_wheels[0].read_bytes()).hexdigest()
+        """Hashed the sole portable artifact for exact external-result binding."""
+
+    """Refused an ambiguous host attestation before reading its claimed digest."""
+
     agreement_bytes: bytes = b""
     """Reserved exact comparison bytes only after its path is validated."""
 
@@ -883,6 +1063,37 @@ def run_scientific_release(
             )
     """Bound actual per-field Mac/Linux decisions to this fixed wheel set."""
 
+    medusa_smoke_bytes: bytes = b""
+    """Reserved exact external bytes only after their path is validated."""
+
+    medusa_smoke_record: object = None
+    """Reserved the parsed target-host result copied into durable evidence."""
+
+    if not medusa_smoke_path.is_file():
+        errors.append(f"Medusa smoke does not exist: {medusa_smoke_path}")
+    else:
+        medusa_smoke_bytes = medusa_smoke_path.read_bytes()
+        """Read the external result without normalising its byte identity."""
+
+        try:
+            medusa_smoke_record = json.loads(medusa_smoke_bytes)
+            """Parsed the target-host facts rather than trusting an aggregate flag."""
+        except json.JSONDecodeError as error:
+            errors.append(f"Medusa smoke is unreadable: {error}")
+        else:
+            errors.extend(
+                medusa_smoke_record_errors(
+                    record=medusa_smoke_record,
+                    manifest=manifest,
+                    manifest_text=manifest_text,
+                    cargo_lock_text=cargo_lock_text,
+                    uv_lock_text=uv_lock_text,
+                    source_commit=str(source_commit),
+                    linux_wheel_sha256=linux_wheel_sha256,
+                )
+            )
+    """Bound one converged target-host fit to the exact final portable wheel."""
+
     for lock_name in ("Cargo.lock", "uv.lock"):
         if not (root / lock_name).is_file():
             errors.append(f"required lock file does not exist: {lock_name}")
@@ -905,6 +1116,12 @@ def run_scientific_release(
 
     copied_agreement_path.write_bytes(agreement_bytes)
     """Preserved exact comparison bytes beside scientific command logs."""
+
+    copied_medusa_smoke_path: Path = output_directory / "medusa-smoke.json"
+    """Selected the durable in-evidence copy of the external target-host result."""
+
+    copied_medusa_smoke_path.write_bytes(medusa_smoke_bytes)
+    """Preserved exact Medusa bytes beside the other release evidence."""
 
     commands: list[dict[str, Any]] = []
     """Accumulated exact argument, status and output identities for every rule."""
@@ -939,13 +1156,10 @@ def run_scientific_release(
         """Recorded when the scientific command began in UTC."""
 
         try:
-            completed: subprocess.CompletedProcess[str] = subprocess.run(
-                argv,
+            completed: subprocess.CompletedProcess[str] = run_bounded_command(
+                argv=argv,
                 cwd=root,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=int(rule["timeout_seconds"]),
+                timeout_seconds=int(rule["timeout_seconds"]),
                 env=command_environment,
             )
             """Executed the configured Python script without shell interpretation."""
@@ -1032,13 +1246,10 @@ def run_scientific_release(
     """Recorded when end-to-end standard receipt production began."""
 
     try:
-        synthetic_completed: subprocess.CompletedProcess[str] = subprocess.run(
-            synthetic_argv,
+        synthetic_completed: subprocess.CompletedProcess[str] = run_bounded_command(
+            argv=synthetic_argv,
             cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=int(synthetic_configuration["timeout_seconds"]),
+            timeout_seconds=int(synthetic_configuration["timeout_seconds"]),
             env=command_environment,
         )
         """Executed the committed receipt command without shell interpretation."""
@@ -1194,6 +1405,11 @@ def run_scientific_release(
             "sha256": file_identity(copied_agreement_path)["sha256"],
             "record": agreement_record,
         },
+        "medusa_smoke": {
+            "path": str(copied_medusa_smoke_path.relative_to(output_directory)),
+            "sha256": file_identity(copied_medusa_smoke_path)["sha256"],
+            "record": medusa_smoke_record,
+        },
     }
     """Bound build, contract, dependencies, artifacts and scientific outcomes together."""
 
@@ -1216,6 +1432,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cross-platform-agreement", type=Path, required=True)
+    parser.add_argument("--medusa-smoke", type=Path, required=True)
     parser.add_argument("--wheel", type=Path, nargs="+", required=True)
     arguments: argparse.Namespace = parser.parse_args()
     """Parsed the authoritative manifest, evidence location and built artifacts."""
@@ -1229,6 +1446,7 @@ def main() -> int:
             output_directory=arguments.output,
             wheel_paths=arguments.wheel,
             cross_platform_agreement_path=arguments.cross_platform_agreement,
+            medusa_smoke_path=arguments.medusa_smoke,
             core=core,
         )
         """Executed all configured rules and wrote evidence even for scientific failures."""

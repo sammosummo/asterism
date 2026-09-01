@@ -87,7 +87,10 @@
 //! heritability must not be placed beside a REML one as though the two were
 //! the same number.
 
+use std::sync::Arc;
+
 use nalgebra::{Cholesky, DMatrix, DVector, SymmetricEigen};
+use rayon::prelude::*;
 use rcompat_lbfgsb::{Bounds, OptimControl, optim_lbfgsb_with_gradient};
 use statrs::distribution::Normal;
 
@@ -167,12 +170,10 @@ pub struct TobitFit {
     /// diagonals and this exists beside it.
     ///
     /// **Absent where a component's mean diagonal is not positive and finite.**
-    /// The proportion is undefined there, and `build` does not refuse such a
-    /// matrix: a kernel leaving somebody at nought throughout is a covariance
-    /// and fits perfectly well. So the fit is returned and this is left out,
-    /// which is ADR 0016's rule -- undefined is absent, not nought and not a
-    /// NaN. `ComponentModel` refuses instead, because there the caller asked
-    /// for the proportion and for nothing else.
+    /// An identified positive-semidefinite basis has a positive finite mean
+    /// diagonal, so an accepted several-component model supplies it. The option
+    /// remains for the one-component compatibility seam, which still accepts a
+    /// nought basis as the historical ordinary-Tobit path did.
     pub mean_diagonal_contributions: Option<Vec<f64>>,
     /// The contributions summed. Equal to `total_variance` where every
     /// component carries a unit diagonal, and not otherwise. Absent on the same
@@ -198,22 +199,83 @@ pub struct TobitTest {
     pub null_loglik: f64,
     pub alternative_loglik: f64,
     /// Whether some **other** coefficient, or the residual, rested on nought in
-    /// the null fit.
+    /// either the null or free fit.
     ///
     /// **This is the condition under which `rule` does not apply.** The
-    /// fifty-fifty mixture is the reference for one parameter resting on one
-    /// bound while the rest sit in the interior. Where a nuisance component is
-    /// on its bound too, that is a different null and the p-value above is read
-    /// against the wrong distribution. It is reported rather than refused
-    /// because it is a property of the data, not of the request, and because a
-    /// coverage check has to be able to run the test in order to score it --
-    /// issue 38.
+    /// fifty-fifty mixture is the asymptotic reference for one parameter on one
+    /// bound while the rest sit in the interior. Public several-component
+    /// analytic tests therefore refuse an observed nuisance boundary, as does
+    /// the constrained-null bootstrap.
     ///
     /// **The residual counts as a nuisance and is checked.** At one component
-    /// this is nonetheless always false, for a reason worth stating rather than
-    /// asserting: holding the only coefficient at nought leaves the residual
-    /// taking everything, so it cannot rest on its own bound at the same time.
+    /// the null residual takes everything and is interior. The free fit can
+    /// still put that residual on nought, in which case this conservative flag
+    /// is true even though the public one-component p-value remains available.
     pub nuisance_at_bound: bool,
+}
+
+/// One constrained-null parametric-bootstrap result for a censored component.
+#[derive(Clone, Debug)]
+pub struct TobitBootstrap {
+    /// The likelihood-ratio statistic in the observed data.
+    pub observed: f64,
+    /// Null statistics at least as large as the observed one.
+    pub exceedances: usize,
+    /// Replicates that completed both constrained and unconstrained refits.
+    pub replicates: usize,
+    /// Replicates requested before any random number was drawn.
+    pub requested: usize,
+    /// The add-one Monte Carlo p-value.
+    pub p_value: f64,
+    /// The seed that determines the complete bootstrap stream.
+    pub seed: u64,
+    /// The reference distribution used for the p-value.
+    pub rule: &'static str,
+    /// The observed constrained log likelihood.
+    pub null_loglik: f64,
+    /// The observed unconstrained log likelihood.
+    pub alternative_loglik: f64,
+    /// Whether an untested variance rested on a bound in the observed fits.
+    pub nuisance_at_bound: bool,
+}
+
+/// A small deterministic stream for reproducible parametric bootstrap draws.
+struct BootstrapStream(u64);
+
+impl BootstrapStream {
+    /// Start the independent, reproducible stream for one bootstrap replicate.
+    ///
+    /// Hashing the pair rather than advancing one shared stream makes the
+    /// result independent of Rayon scheduling and of the number of threads.
+    /// Each replicate still owns a sequential stream because the order of
+    /// latent rows within that replicate is part of the simulation design.
+    fn for_replicate(seed: u64, replicate: usize) -> Self {
+        let replicate = u64::try_from(replicate)
+            .expect("a bootstrap replicate index must fit in the public u64 seed space");
+        let mut seeder = Self(seed ^ replicate.wrapping_mul(0xD1B5_4A32_D192_ED03));
+        Self(seeder.next_u64())
+    }
+
+    /// Advance splitmix64 once.
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Draw strictly inside the unit interval.
+    fn uniform(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+    }
+
+    /// Draw one standard normal by Box--Muller.
+    fn normal(&mut self) -> f64 {
+        let u1 = self.uniform();
+        let u2 = self.uniform();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
 }
 
 /// Compatibility name for the one shared interval record.
@@ -222,7 +284,10 @@ pub type TobitInterval = Interval;
 /// One trait, any number of components, per-observation censoring.
 #[derive(Clone)]
 pub struct TobitModel {
-    components: Vec<DMatrix<f64>>,
+    // Dense covariance bases dominate this model's memory. Arc makes a model
+    // clone for one parallel bootstrap replicate share those immutable bases
+    // rather than copying O(rows^2) values per task.
+    components: Vec<Arc<DMatrix<f64>>>,
     design: DMatrix<f64>,
     value: Vec<f64>,
     censoring: Vec<Censoring>,
@@ -342,9 +407,21 @@ impl TobitModel {
                 }
             }
         }
+        // Several-component coefficients exist only when their covariance
+        // bases are distinct from one another and from the residual identity.
+        // Use the ordinary component model's scale-free algebraic check: the
+        // question is the same and must not acquire a Tobit-specific numerical
+        // cutoff. The one-component identity is retained solely as the released
+        // ordinary-Tobit compatibility case used by the censReg likelihood
+        // reference; its component split is documented as unidentified.
+        if components.len() > 1
+            && !crate::components::covariance_bases_are_identified(components, rows)
+        {
+            return Err("TOBIT_COVARIANCE_BASES_RANK_DEFICIENT");
+        }
 
         Ok(Self {
-            components: components.to_vec(),
+            components: components.iter().cloned().map(Arc::new).collect(),
             design: design.clone(),
             value: value.to_vec(),
             censoring: censoring.to_vec(),
@@ -365,11 +442,19 @@ impl TobitModel {
     /// the conservative reading, and the flag exists to raise doubt rather than
     /// to settle it.
     fn any_nuisance_at_bound(fit: &TobitFit) -> bool {
-        fit.coefficients
+        let Some(proportions) = fit.mean_diagonal_proportions.as_ref() else {
+            // A boundary verdict on an undefined reporting scale would be a
+            // guess. Refuse the ordinary bootstrap conservatively instead.
+            return true;
+        };
+        // The tested component is first after reordering. Every following
+        // entry is a nuisance, including the residual in the final position.
+        // These proportions, unlike raw coefficients, do not change when a
+        // caller changes only a covariance matrix's units.
+        proportions
             .iter()
             .skip(1)
-            .any(|coefficient| crate::components::resting_on_zero(*coefficient))
-            || crate::components::resting_on_zero(1.0 - fit.coefficients.iter().sum::<f64>())
+            .any(|proportion| crate::components::resting_on_zero(*proportion))
     }
 
     /// The same model with every component rescaled to a unit mean diagonal.
@@ -397,7 +482,7 @@ impl TobitModel {
             if !mean_diagonal.is_finite() || mean_diagonal <= 0.0 {
                 return Err("TOBIT_MEAN_DIAGONAL_PROPORTION_UNDEFINED");
             }
-            *component /= mean_diagonal;
+            *Arc::make_mut(component) /= mean_diagonal;
         }
         Ok(rescaled)
     }
@@ -633,27 +718,26 @@ impl TobitModel {
     /// narrower than the data support while saying nothing about it. They are
     /// counted instead, and reported, and the interval widens over them.
     ///
-    /// Read `censored_share` beside the result. The calibration in
-    /// `checks/tobit_calibration.py` recovers the truth to three quarters
-    /// censored on simulated data, but on real extended high-frequency
-    /// thresholds the model degrades past about half.
+    /// Read `censored_share` beside the result. The released numerical path is
+    /// unchanged, but recovery and coverage under a fixed-instrument generator
+    /// await corrected simulation runs.
     ///
     /// # Errors
     ///
     /// Returns a stable code where the free fit fails.
     /// The heritability against nought.
     ///
-    /// The null sits on the parameter's bound, so the reference is the
-    /// Self-Liang 50:50 mixture of chi-square on nought and one degrees of
-    /// freedom and not a plain chi-square. That is the same null ADR 0004
-    /// calibrates the interval's boundary point against, and the same rule the
-    /// liability model reports for the same reason.
+    /// The null sits on the parameter's bound, so the retained analytic
+    /// reference is the Self-Liang 50:50 mixture of chi-square on nought and
+    /// one degrees of freedom rather than a plain chi-square. The public route
+    /// returns it only for the released one-component compatibility case; its
+    /// corrected fixed-instrument finite-sample campaign is pending.
     ///
     /// The statistic and the p-value both come from `deviance`, which honours
     /// the point mass at nought: two searches that land on the same likelihood
     /// give a deviance that is rounding rather than evidence, and that reads as
     /// a p-value of one rather than of a half.
-    pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
+    fn analytic_heritability_test(&self) -> Result<TobitTest, &'static str> {
         let free = self.fit()?;
         let null = self.fit_holding(Some(0.0))?;
         crate::convergence::require(free.converged, "TOBIT_FIT_NOT_CONVERGED")?;
@@ -668,13 +752,30 @@ impl TobitModel {
             // The fifty-fifty mixture answers for the first coefficient resting
             // on its bound. If a nuisance coefficient, or the residual, rests
             // there too, the null is a different one and the reference is
-            // wrong. Saying so is the honest report; a coverage check scores it
-            // in issue 38.
+            // wrong. Saying so is the honest internal diagnostic; the public
+            // several-component route turns it into a stable refusal.
             nuisance_at_bound: Self::any_nuisance_at_bound(&null)
                 || Self::any_nuisance_at_bound(&free),
             null_loglik: null.loglik,
             alternative_loglik: free.loglik,
         })
+    }
+
+    /// Test one-component heritability against nought with the asymptotic
+    /// fifty-fifty boundary reference.
+    ///
+    /// Several-component models require [`Self::bootstrap_component_test`]
+    /// because their finite-sample reference depends on the fitted null design.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code for a several-component request or where either
+    /// required fit cannot be returned as converged.
+    pub fn heritability_test(&self) -> Result<TobitTest, &'static str> {
+        if self.components.len() != 1 {
+            return Err("TOBIT_COMPONENT_TEST_REQUIRES_BOOTSTRAP");
+        }
+        self.analytic_heritability_test()
     }
 
     /// A profile-likelihood interval for one component's coefficient.
@@ -689,11 +790,9 @@ impl TobitModel {
     /// use [`Self::mean_diagonal_interval`], which is what to report when
     /// components are set beside each other.
     ///
-    /// **The boundary verdict is filled only at one component.** The coverage
-    /// simulation that scored the mixture rule ran there. With several, more
-    /// than one coefficient can rest on nought at once, which is not the case
-    /// it scored, so the verdict is left absent rather than borrowed from a
-    /// measurement of a different model. Scoring it is issue 38.
+    /// **The boundary verdict is filled only at one component** for released
+    /// API compatibility; its corrected fixed-instrument coverage run is
+    /// pending. With several components the verdict remains absent.
     ///
     /// # Errors
     ///
@@ -714,8 +813,10 @@ impl TobitModel {
     /// [`Self::coefficient_interval`], because there the two quantities are the
     /// same one.
     ///
-    /// **There is no separate test.** A proportion is nought exactly when its
-    /// coefficient is, so [`Self::coefficient_test`] answers both questions.
+    /// A proportion is nought exactly when its coefficient is.
+    /// [`Self::coefficient_test`] supplies the explicitly asymptotic analytic
+    /// reference and [`Self::bootstrap_component_test`] the simulated
+    /// constrained-null reference.
     ///
     /// # Errors
     ///
@@ -731,13 +832,198 @@ impl TobitModel {
 
     /// A test that one component's coefficient is nought.
     ///
-    /// `index` counts the components in the order they were given.
+    /// `index` counts the components in the order they were given. At several
+    /// components the requested one is moved to the first search coordinate,
+    /// tested against nought, and returned against the explicitly asymptotic
+    /// fifty-fifty boundary reference. The one-component route remains the
+    /// released `mixture_50_50` calculation without reordering.
     ///
     /// # Errors
     ///
-    /// Returns a stable code where either fit failed to converge.
+    /// Returns a stable code where the component is absent, where a nuisance
+    /// component or the residual rests on a bound, or either fit failed to
+    /// converge.
     pub fn coefficient_test(&self, index: usize) -> Result<TobitTest, &'static str> {
-        self.with_component_first(index)?.heritability_test()
+        if index >= self.components.len() {
+            return Err("TOBIT_NO_SUCH_COMPONENT");
+        }
+        if self.components.len() == 1 {
+            return self.heritability_test();
+        }
+        let mut result = self
+            .with_component_first(index)?
+            .analytic_heritability_test()?;
+        if result.nuisance_at_bound {
+            return Err("TOBIT_COMPONENT_TEST_NUISANCE_AT_BOUND");
+        }
+        result.rule = "asymptotic_mixture_50_50";
+        Ok(result)
+    }
+
+    /// Construct a Monte Carlo reference for one component's likelihood-ratio statistic.
+    ///
+    /// The fifty-fifty boundary mixture is an asymptotic reference. With
+    /// several covariance components its finite-sample atom and positive tail
+    /// depend on the design, so this method simulates the complete fitted null
+    /// and refits both sides of the same test for every replicate.
+    ///
+    /// `directions` declares how every latent row would be censored: [`Censoring::Above`]
+    /// or [`Censoring::Below`]. It includes rows that happened to be measured in
+    /// the observed data, because a new latent draw may cross their instrument
+    /// limit. For the same reason every entry of the model's `limit` must be
+    /// finite here even though an ordinary fit ignores limits on measured rows.
+    ///
+    /// The tested component is imposed at exactly nought in the generator. If
+    /// another component or the residual rests on a bound in the observed null
+    /// problem, this ordinary bootstrap is refused: that is a multiple-boundary
+    /// problem and needs a separately validated shrinkage rule.
+    ///
+    /// The p-value adds one to both counts and every requested replicate must
+    /// complete. A failed refit is unknown, not a non-exceedance.
+    /// Replicates run in parallel, with a deterministic random substream for
+    /// each replicate index; the same seed therefore returns the same bits
+    /// regardless of Rayon scheduling or thread count.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable code where the censoring design is incomplete, an
+    /// observed fit is irregular, or any predeclared bootstrap refit fails.
+    pub fn bootstrap_component_test(
+        mut self,
+        index: usize,
+        directions: &[Censoring],
+        replicates: usize,
+        seed: u64,
+    ) -> Result<TobitBootstrap, &'static str> {
+        if replicates == 0 {
+            return Err("TOBIT_BOOTSTRAP_NO_REPLICATES");
+        }
+        if directions.len() != self.rows {
+            return Err("TOBIT_BOOTSTRAP_DIRECTION_LENGTH_MISMATCH");
+        }
+        if directions.contains(&Censoring::Measured) {
+            return Err("TOBIT_BOOTSTRAP_DIRECTION_REQUIRED");
+        }
+        if self.limit.iter().any(|limit| !limit.is_finite()) {
+            return Err("TOBIT_BOOTSTRAP_LIMIT_NOT_FINITE");
+        }
+        if index >= self.components.len() {
+            return Err("TOBIT_NO_SUCH_COMPONENT");
+        }
+        for (row, direction) in directions.iter().enumerate() {
+            match self.censoring[row] {
+                Censoring::Measured => {
+                    let crosses_limit = match direction {
+                        Censoring::Above => self.value[row] > self.limit[row],
+                        Censoring::Below => self.value[row] < self.limit[row],
+                        Censoring::Measured => unreachable!("validated above"),
+                    };
+                    if crosses_limit {
+                        return Err("TOBIT_BOOTSTRAP_DIRECTION_MISMATCH");
+                    }
+                }
+                observed if observed != *direction => {
+                    return Err("TOBIT_BOOTSTRAP_DIRECTION_MISMATCH");
+                }
+                Censoring::Above | Censoring::Below => {}
+            }
+        }
+
+        self.components.swap(0, index);
+        let model = self;
+        // This new bootstrap API consumes its freshly built model so the
+        // target's dense component matrices are reordered in place instead of
+        // cloned wholesale for every call.
+        let observed = model.analytic_heritability_test()?;
+        if observed.nuisance_at_bound {
+            return Err("TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND");
+        }
+        // Use the same operational point mass as the analytic test record.
+        let observed_statistic = crate::deviance::settled(observed.statistic);
+
+        let null = model.fit_holding(Some(0.0))?;
+        crate::convergence::require(null.converged, "TOBIT_NULL_FIT_NOT_CONVERGED")?;
+
+        let residual = 1.0 - null.coefficients.iter().sum::<f64>();
+        let mut factors = Vec::with_capacity(model.blocks.len());
+        for block in &model.blocks {
+            let size = block.len();
+            let covariance = DMatrix::from_fn(size, size, |row, column| {
+                let i = block[row];
+                let j = block[column];
+                let structured = model
+                    .components
+                    .iter()
+                    .zip(&null.coefficients)
+                    .map(|(component, coefficient)| coefficient * component[(i, j)])
+                    .sum::<f64>();
+                let independent = if i == j { residual } else { 0.0 };
+                null.total_variance * (structured + independent)
+            });
+            let factor = covariance
+                .cholesky()
+                .ok_or("TOBIT_BOOTSTRAP_NULL_COVARIANCE_NOT_POSITIVE_DEFINITE")?
+                .l();
+            factors.push(factor);
+        }
+
+        let fixed =
+            DVector::from_iterator(model.design.ncols(), null.fixed_effects.iter().copied());
+        let mean = &model.design * fixed;
+        let outcomes = (0..replicates)
+            .into_par_iter()
+            .map(|replicate_index| -> Result<bool, &'static str> {
+                let mut stream = BootstrapStream::for_replicate(seed, replicate_index);
+                // Only the response and censoring state are private to this task.
+                // TobitModel's Arc-backed dense components remain shared.
+                let mut simulated = model.clone();
+                let mut measured = 0usize;
+                for (block, factor) in simulated.blocks.iter().zip(&factors) {
+                    let draw = DVector::from_iterator(
+                        block.len(),
+                        (0..block.len()).map(|_| stream.normal()),
+                    );
+                    let deviation = factor * draw;
+                    for (within, &row) in block.iter().enumerate() {
+                        let complete = mean[row] + deviation[within];
+                        let censored = match directions[row] {
+                            Censoring::Above => complete >= simulated.limit[row],
+                            Censoring::Below => complete <= simulated.limit[row],
+                            Censoring::Measured => unreachable!("validated above"),
+                        };
+                        if censored {
+                            simulated.value[row] = f64::NAN;
+                            simulated.censoring[row] = directions[row];
+                        } else {
+                            simulated.value[row] = complete;
+                            simulated.censoring[row] = Censoring::Measured;
+                            measured += 1;
+                        }
+                    }
+                }
+                if measured < FEWEST_MEASURED {
+                    return Err("TOBIT_BOOTSTRAP_REPLICATE_FAILED");
+                }
+                let replicate = simulated
+                    .analytic_heritability_test()
+                    .map_err(|_| "TOBIT_BOOTSTRAP_REPLICATE_FAILED")?;
+                Ok(crate::deviance::settled(replicate.statistic) >= observed_statistic)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let exceedances = outcomes.into_iter().filter(|exceeded| *exceeded).count();
+
+        Ok(TobitBootstrap {
+            observed: observed_statistic,
+            exceedances,
+            replicates,
+            requested: replicates,
+            p_value: (1 + exceedances) as f64 / (1 + replicates) as f64,
+            seed,
+            rule: "parametric_bootstrap_add_one",
+            null_loglik: observed.null_loglik,
+            alternative_loglik: observed.alternative_loglik,
+            nuisance_at_bound: false,
+        })
     }
 
     /// A profile-likelihood interval for the first component's coefficient.
@@ -761,14 +1047,10 @@ impl TobitModel {
         if got.estimate.is_none() {
             return Err("TOBIT_PROFILE_NOT_EVALUABLE");
         }
-        // This family's coverage check scored the boundary rule through three
-        // quarters censoring, **at one component**, so it may fill the mixture
-        // verdict there and only there. With several components more than one
-        // share can rest on nought at once, which is not the case that check
-        // scored, so the interval is returned with its boundary verdict absent
-        // rather than filled in from a measurement of a different model. An
-        // absent verdict says nobody has measured it; a filled one says
-        // somebody has.
+        // Retain the released one-component mixture verdict while its corrected
+        // fixed-instrument coverage campaign is pending. With several
+        // components more than one share can rest on nought at once, so the
+        // interval is returned with its boundary verdict absent.
         if self.components.len() == 1 {
             return Ok(got.scored_by_mixture());
         }
@@ -857,14 +1139,13 @@ impl TobitModel {
         // been three copies of one deterministic search, which the interval
         // would have paid for at each end of every bisection step.
         //
-        // Above one component it pins only the first, and one start against the
-        // free fit's three does not cost precision -- it buys a bias. A
-        // statistic is the difference of the two searches, so searching one
-        // side harder makes that side win more often, every statistic comes out
-        // a little too large, and the boundary test rejected a true null 0.100
-        // of the time against a nominal 0.05. The one-component and bivariate
-        // models never showed it because neither leaves a share space to
-        // search once the tested coefficient is held.
+        // Above one component, holding the first coefficient still leaves a
+        // nuisance-share space. Three starts are retained as search hygiene,
+        // not as the explanation for the boundary reference: an exact
+        // old-versus-new differential on forty affected target seeds changed
+        // the null log likelihood by at most 1.85e-9 and changed no rejection
+        // or operational point-mass membership. One component remains on one
+        // start because holding its only coefficient leaves no share space.
         let single = parts == 1;
         let firsts: &[f64] = match held {
             Some(value) if single => &[value],
@@ -918,11 +1199,9 @@ impl TobitModel {
         // is the projected gradient, not the raw one. At an optimum resting on
         // a bound the raw gradient points out of the feasible region and does
         // not go to nought, so testing it reports a correct fit as a failure.
-        // A heritability of nought is the lower bound and a true nought leaves
-        // about half of all samples resting there, which is why about half of
-        // every null fit refused -- at three quarters censored, at half, and
-        // at none at all, where this model is the one-trait model and that one
-        // fits every time.
+        // A heritability of nought is the lower bound, so a valid optimum may
+        // rest there with a nonzero raw outward gradient. The finite-sample
+        // frequency of that event is design-dependent and is not assumed here.
         //
         // This is the reading `components.rs` takes, in this family's
         // parameterisation: only the heritability has bounds to rest on, while
@@ -1086,6 +1365,100 @@ mod tests {
         }
     }
 
+    /// Several-component coefficients need distinct covariance bases.
+    ///
+    /// The residual identity is implicit, so supplying it as another component
+    /// is just as unidentified as supplying the same structured basis twice.
+    /// The historical one-component identity remains an explicit compatibility
+    /// seam for the ordinary-Tobit likelihood reference; it does not license
+    /// an unidentified several-component test or bootstrap.
+    #[test]
+    fn several_component_covariance_bases_must_be_identified() {
+        let rows = 6;
+        let mut relationship = DMatrix::<f64>::identity(rows, rows);
+        relationship[(0, 1)] = 0.5;
+        relationship[(1, 0)] = 0.5;
+        let identity = DMatrix::<f64>::identity(rows, rows);
+        let value = vec![-1.0, -0.4, 0.1, 0.5, 0.9, 1.4];
+        let censoring = vec![Censoring::Measured; rows];
+        let limit = vec![0.0; rows];
+        let design = DMatrix::from_element(rows, 1, 1.0);
+
+        assert_eq!(
+            TobitModel::build(
+                &[relationship.clone(), relationship.clone()],
+                &value,
+                &censoring,
+                &limit,
+                &design,
+            )
+            .err(),
+            Some("TOBIT_COVARIANCE_BASES_RANK_DEFICIENT"),
+            "duplicate structured bases cannot identify two coefficients"
+        );
+        assert_eq!(
+            TobitModel::build(
+                &[relationship.clone(), identity.clone()],
+                &value,
+                &censoring,
+                &limit,
+                &design,
+            )
+            .err(),
+            Some("TOBIT_COVARIANCE_BASES_RANK_DEFICIENT"),
+            "a supplied identity duplicates the implicit residual"
+        );
+        assert!(
+            TobitModel::build(
+                std::slice::from_ref(&identity),
+                &value,
+                &censoring,
+                &limit,
+                &design,
+            )
+            .is_ok(),
+            "the released one-component ordinary-Tobit compatibility seam changed"
+        );
+    }
+
+    /// Nuisance-boundary classification is invariant to covariance units.
+    ///
+    /// A matrix rescaling can make its raw coefficient arbitrarily small while
+    /// leaving its marginal variance contribution unchanged. The bootstrap's
+    /// refusal therefore has to read the mean-diagonal proportions rather than
+    /// the raw search coordinates.
+    #[test]
+    fn nuisance_boundary_detection_uses_scale_invariant_proportions() {
+        let fit = |raw_nuisance: f64| TobitFit {
+            heritability: 0.0,
+            total_variance: 1.0,
+            fixed_effects: vec![0.0],
+            loglik: -10.0,
+            converged: true,
+            scaled_gradient: 0.0,
+            censored_share: 0.5,
+            estimator: "ml",
+            coefficients: vec![0.0, raw_nuisance],
+            mean_diagonal_contributions: Some(vec![0.0, 0.2, 0.8]),
+            mean_diagonal_total: Some(1.0),
+            mean_diagonal_proportions: Some(vec![0.0, 0.2, 0.8]),
+            largest_family: 2,
+        };
+        let ordinary_units = fit(0.2);
+        let rescaled_units = fit(5e-10);
+
+        assert!(
+            crate::components::resting_on_zero(rescaled_units.coefficients[1]),
+            "the regression no longer reaches the old scale-dependent refusal"
+        );
+        assert!(!TobitModel::any_nuisance_at_bound(&ordinary_units));
+        assert_eq!(
+            TobitModel::any_nuisance_at_bound(&ordinary_units),
+            TobitModel::any_nuisance_at_bound(&rescaled_units),
+            "changing matrix units changed the nuisance-boundary verdict"
+        );
+    }
+
     /// Holding the heritability changes the cost of a fit and not its answer.
     ///
     /// A held fit used to build the same start three times and run the same
@@ -1243,6 +1616,21 @@ mod tests {
             censoring,
             limit,
             DMatrix::from_element(n, 1, 1.0),
+        )
+    }
+
+    /// A unit-diagonal grouping basis that joins adjacent groups of four.
+    ///
+    /// The sibling-pair relationship returned by `simulate` joins only pairs,
+    /// so this basis carries cross-pair resemblance and is algebraically
+    /// distinct from both that relationship and the residual identity.
+    fn groups_of_four(rows: usize) -> DMatrix<f64> {
+        DMatrix::from_fn(
+            rows,
+            rows,
+            |row, column| {
+                if row / 4 == column / 4 { 1.0 } else { 0.0 }
+            },
         )
     }
 
@@ -1530,21 +1918,12 @@ mod tests {
             "the shares must leave the residual something: {:?}",
             fit.coefficients
         );
-        // **On the sum, because at this size that is what a single fit
-        // pins down.** The two components are identified, and separately:
-        // measured over eight replicates at a true 0.40 and 0.30, the estimates
-        // are unbiased at every size tried and their spread falls as the square
-        // root of the sample -- standard deviation 0.21 at 80 people, 0.11 at
-        // 400, 0.036 at 2400. What separates them is the correlation between
-        // relatives, since a person's own two records tell you only their sum,
-        // so the information scales with related pairs rather than with records.
-        //
-        // At the 120 people here that leaves each estimate carrying a standard
-        // deviation near 0.15, so a single draw of the split is a poor thing to
-        // assert on. Their sum comes from the within-person correlation, which
-        // every person contributes to, and is far better determined. An earlier
-        // version of this test asserted on the person-level coefficient alone
-        // and passed on the luck of its seed.
+        // **On the sum, because at this size that is what a single fit pins
+        // down.** The correlation between relatives separates the additive and
+        // person-level terms; a person's own two records mainly identify their
+        // sum. A single small generated draw is therefore a poor regression
+        // oracle for the split. The corrected fixed-instrument recovery
+        // campaign, not this unit test, must quantify separation and bias.
         let together: f64 = fit.coefficients.iter().sum();
         assert!(
             (together - (genetic_share + person_share)).abs() < 0.2,
@@ -1651,10 +2030,10 @@ mod tests {
 
     /// A component that is singular at its full share says so in the record.
     ///
-    /// A person-level matrix is ones within a person, so with two records each
-    /// it has half the rank of its size. At a coefficient of one the covariance
-    /// is that matrix alone and there is nothing left to make it invertible, so
-    /// the profile cannot be evaluated at the very top of the range.
+    /// A grouping matrix is ones within a group and therefore rank deficient.
+    /// At a coefficient of one the covariance is that matrix alone and there is
+    /// nothing left to make it invertible, so the profile cannot be evaluated
+    /// at the very top of the range.
     ///
     /// **The interval widens to the bound rather than narrowing**, which is the
     /// safe direction, and the record says which kind of bound it is:
@@ -1668,16 +2047,15 @@ mod tests {
         let (relationship, value, censoring, limit, design) =
             simulate(60, 0.5, 1.0, 0.0, Some(0.4), 515);
         let rows = relationship.nrows();
-        let mut person = DMatrix::<f64>::zeros(rows, rows);
-        for i in 0..rows {
-            for j in 0..rows {
-                if i / 2 == j / 2 {
-                    person[(i, j)] = 1.0;
-                }
-            }
-        }
-        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
-            .expect("a person-level matrix is a covariance, singular or not");
+        let grouped = groups_of_four(rows);
+        let model = TobitModel::build(
+            &[relationship, grouped],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("the grouped component is distinct and positive semi-definite");
 
         // Holding it at everything leaves a covariance with no residual to make
         // it invertible, so the fit refuses rather than returning a number.
@@ -1709,7 +2087,7 @@ mod tests {
         );
     }
 
-    /// Every component gets an interval and a test, not only the first.
+    /// Every component gets an interval and an honestly labelled analytic test.
     ///
     /// A shared-environment term has to be reportable, not merely adjusted for,
     /// or the model can say a household effect was allowed for but not what it
@@ -1717,12 +2095,18 @@ mod tests {
     /// front, because the search holds a coefficient by a box bound and only
     /// the first one is a box bound in stick-breaking coordinates.
     #[test]
-    fn each_component_can_be_intervalled_and_tested() {
+    fn each_component_can_be_intervalled_and_tested_when_nuisances_are_interior() {
         let (relationship, value, censoring, limit, design) =
             simulate(60, 0.5, 1.0, 0.0, Some(0.4), 515);
-        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
-        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
-            .expect("two components build");
+        let grouped = groups_of_four(relationship.nrows());
+        let model = TobitModel::build(
+            &[relationship, grouped],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("two identified components build");
 
         let fit = model.fit().expect("a fit");
         for index in 0..model.components() {
@@ -1742,13 +2126,19 @@ mod tests {
                 "component {index}: a coefficient's interval must stay inside [0, 1]"
             );
 
-            let test = model
-                .coefficient_test(index)
-                .unwrap_or_else(|error| panic!("component {index} has no test: {error}"));
-            assert!(
-                (0.0..=1.0).contains(&test.p_value),
-                "component {index}: a p-value is a probability"
-            );
+            if index == 0 {
+                assert_eq!(
+                    model.coefficient_test(index).err(),
+                    Some("TOBIT_COMPONENT_TEST_NUISANCE_AT_BOUND"),
+                    "component {index}: the grouped nuisance is on its bound"
+                );
+            } else {
+                let result = model
+                    .coefficient_test(index)
+                    .unwrap_or_else(|error| panic!("component {index} has no test: {error}"));
+                assert_eq!(result.rule, "asymptotic_mixture_50_50");
+                assert!(!result.nuisance_at_bound);
+            }
         }
 
         // Moving the first component to the front changes nothing, so this is
@@ -1877,22 +2267,24 @@ mod tests {
     /// rescaling that quietly disagrees in the ordinary case.
     #[test]
     fn the_proportion_interval_is_unmoved_by_rescaling_a_component() {
-        let (relationship, value, censoring, limit, design) =
-            simulate(60, 0.5, 1.0, 0.0, Some(0.4), 4711);
-        let rows = relationship.nrows();
-        let person = DMatrix::<f64>::identity(rows, rows);
+        let (relationship, mut value, censoring, limit, design) =
+            simulate(60, 0.3, 1.0, 0.0, None, 4711);
+        for (row, observed) in value.iter_mut().enumerate() {
+            *observed += if (row / 4) % 2 == 0 { 1.5 } else { -1.5 };
+        }
+        let grouped = groups_of_four(relationship.nrows());
 
         let plain = TobitModel::build(
-            &[relationship.clone(), person.clone()],
+            &[relationship.clone(), grouped.clone()],
             &value,
             &censoring,
             &limit,
             &design,
         )
-        .expect("two components build");
+        .expect("two identified components build");
         // The same model, with the second component written four times larger.
         let scaled = TobitModel::build(
-            &[relationship, person * 4.0],
+            &[relationship, grouped * 4.0],
             &value,
             &censoring,
             &limit,
@@ -1915,7 +2307,11 @@ mod tests {
         let plain_coefficient = plain.coefficient_interval(1).expect("an interval");
         let scaled_coefficient = scaled.coefficient_interval(1).expect("an interval");
         assert!(
-            (plain_coefficient.upper - scaled_coefficient.upper).abs() > 1e-6
+            (plain_coefficient.estimate.expect("an estimate")
+                - scaled_coefficient.estimate.expect("an estimate"))
+            .abs()
+                > 1e-6
+                || (plain_coefficient.upper - scaled_coefficient.upper).abs() > 1e-6
                 || (plain_coefficient.lower - scaled_coefficient.lower).abs() > 1e-6,
             "the coefficient interval was expected to move under rescaling, and \
              did not -- if that has changed, the two quantities are no longer \
@@ -1931,23 +2327,17 @@ mod tests {
         );
     }
 
-    /// An undefined proportion is refused rather than returned.
+    /// A component with no covariance contribution is not an estimand.
     #[test]
-    fn a_component_with_no_mean_diagonal_has_no_proportion_interval() {
+    fn a_zero_component_is_refused_as_non_identifiable() {
         let (relationship, value, censoring, limit, design) =
             simulate(40, 0.5, 1.0, 0.0, Some(0.4), 99);
         let rows = relationship.nrows();
         let empty = DMatrix::<f64>::zeros(rows, rows);
-        let model = TobitModel::build(&[relationship, empty], &value, &censoring, &limit, &design)
-            .expect("a nought matrix is a covariance, if a dull one");
         assert_eq!(
-            model.mean_diagonal_interval(1).err(),
-            Some("TOBIT_MEAN_DIAGONAL_PROPORTION_UNDEFINED"),
-            "a component contributing nothing to any diagonal has no share of it"
-        );
-        assert_eq!(
-            model.mean_diagonal_interval(7).err(),
-            Some("TOBIT_NO_SUCH_COMPONENT")
+            TobitModel::build(&[relationship, empty], &value, &censoring, &limit, &design,).err(),
+            Some("TOBIT_COVARIANCE_BASES_RANK_DEFICIENT"),
+            "a coefficient multiplying a nought basis cannot be identified"
         );
     }
 
@@ -1963,9 +2353,15 @@ mod tests {
     fn the_mean_diagonal_proportions_follow_the_shared_recipe() {
         let (relationship, value, censoring, limit, design) =
             simulate(50, 0.5, 1.0, 0.0, Some(0.4), 8080);
-        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
-        let model = TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
-            .expect("two components build");
+        let grouped = groups_of_four(relationship.nrows());
+        let model = TobitModel::build(
+            &[relationship, grouped],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("two identified components build");
         let fit = model.fit().expect("a fit");
 
         let proportions = fit
@@ -2009,8 +2405,8 @@ mod tests {
     /// The flag exists to say when the fifty-fifty mixture does not answer for
     /// the null being tested. With a single component and a residual, the only
     /// parameter on a bound under the null is the one being tested, which is
-    /// exactly the case the mixture is for -- so the flag must be false, or it
-    /// would be reporting doubt about the one configuration that was scored.
+    /// exactly the single-bound asymptotic case -- so the nuisance flag must be
+    /// false. Its fixed-instrument finite-sample requalification is separate.
     #[test]
     fn one_component_has_no_nuisance_on_a_bound() {
         let (relationship, value, censoring, limit, design) =
@@ -2031,6 +2427,226 @@ mod tests {
         assert_eq!(test.rule, "mixture_50_50");
     }
 
+    /// A stable several-component fixture for the bootstrap contract tests.
+    fn bootstrap_fixture() -> (TobitModel, Vec<Censoring>) {
+        let people = 120;
+        let mut additive = DMatrix::<f64>::identity(people, people);
+        for pair in 0..people / 2 {
+            additive[(2 * pair, 2 * pair + 1)] = 0.5;
+            additive[(2 * pair + 1, 2 * pair)] = 0.5;
+        }
+        let mut household = DMatrix::<f64>::zeros(people, people);
+        for start in (0..people).step_by(4) {
+            for row in start..start + 4 {
+                for column in start..start + 4 {
+                    household[(row, column)] = 1.0;
+                }
+            }
+        }
+        let generating =
+            0.55 * &additive + 0.25 * &household + 0.20 * DMatrix::<f64>::identity(people, people);
+        let factor = generating
+            .cholesky()
+            .expect("the declared observed covariance is positive definite")
+            .l();
+        let mut observed_stream = BootstrapStream(8_300);
+        let observed_draw =
+            DVector::from_iterator(people, (0..people).map(|_| observed_stream.normal()));
+        let complete = factor * observed_draw;
+        let cut = 0.7;
+        let mut value = Vec::with_capacity(people);
+        let mut censoring = Vec::with_capacity(people);
+        for &latent in complete.iter() {
+            if latent >= cut {
+                value.push(f64::NAN);
+                censoring.push(Censoring::Above);
+            } else {
+                value.push(latent);
+                censoring.push(Censoring::Measured);
+            }
+        }
+        let limit = vec![cut; people];
+        let direction = vec![Censoring::Above; people];
+        let design = DMatrix::from_element(people, 1, 1.0);
+        let model = TobitModel::build(&[additive, household], &value, &censoring, &limit, &design)
+            .expect("the observed several-component problem builds");
+        (model, direction)
+    }
+
+    /// Replicate indices select distinct deterministic random substreams.
+    #[test]
+    fn bootstrap_replicate_substreams_have_distinct_starts() {
+        let first = BootstrapStream::for_replicate(91_177, 17).0;
+        let repeated = BootstrapStream::for_replicate(91_177, 17).0;
+        assert_eq!(first, repeated, "the same seed and index must reproduce");
+
+        let starts: std::collections::HashSet<u64> = (0..1_024)
+            .map(|index| BootstrapStream::for_replicate(91_177, index).0)
+            .collect();
+        assert_eq!(
+            starts.len(),
+            1_024,
+            "different replicate indices must not start the same substream"
+        );
+    }
+
+    /// Parallel scheduling does not enter the statistical result.
+    ///
+    /// Each replicate derives its own stream from `(seed, replicate index)`,
+    /// and the immutable dense bases are shared between the model clones. Run
+    /// the same request in one- and four-thread pools and require every public
+    /// field, including each floating-point bit pattern, to agree.
+    #[test]
+    fn bootstrap_is_bit_identical_across_rayon_thread_counts() {
+        let (model, direction) = bootstrap_fixture();
+        let cloned = model.clone();
+        assert!(
+            model
+                .components
+                .iter()
+                .zip(&cloned.components)
+                .all(|(left, right)| Arc::ptr_eq(left, right)),
+            "a bootstrap task must share dense component matrices with its source model"
+        );
+
+        let one_thread = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("one-thread Rayon pool builds")
+            .install(|| {
+                model
+                    .clone()
+                    .bootstrap_component_test(1, &direction, 4, 91_177)
+            })
+            .expect("the one-thread bootstrap completes");
+        let four_threads = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .expect("four-thread Rayon pool builds")
+            .install(|| model.bootstrap_component_test(1, &direction, 4, 91_177))
+            .expect("the four-thread bootstrap completes");
+
+        assert_eq!(
+            one_thread.observed.to_bits(),
+            four_threads.observed.to_bits()
+        );
+        assert_eq!(one_thread.exceedances, four_threads.exceedances);
+        assert_eq!(one_thread.replicates, four_threads.replicates);
+        assert_eq!(one_thread.requested, four_threads.requested);
+        assert_eq!(one_thread.p_value.to_bits(), four_threads.p_value.to_bits());
+        assert_eq!(one_thread.seed, four_threads.seed);
+        assert_eq!(one_thread.rule, four_threads.rule);
+        assert_eq!(
+            one_thread.null_loglik.to_bits(),
+            four_threads.null_loglik.to_bits()
+        );
+        assert_eq!(
+            one_thread.alternative_loglik.to_bits(),
+            four_threads.alternative_loglik.to_bits()
+        );
+        assert_eq!(one_thread.nuisance_at_bound, four_threads.nuisance_at_bound);
+    }
+
+    /// The bootstrap draw is the fitted constrained null, including reordering.
+    ///
+    /// This is a separate known-answer construction rather than a second call
+    /// to the bootstrap. It tests the second supplied component, derives the
+    /// constrained mean and covariance directly, consumes the documented
+    /// replicate-zero random substream once, applies the fixed censoring
+    /// instrument and refits that response. The production exceedance must
+    /// equal this independently assembled replicate.
+    #[test]
+    fn bootstrap_generation_matches_a_nonfirst_constrained_null() {
+        let (model, direction) = bootstrap_fixture();
+        let people = model.rows;
+        let cut = model.limit[0];
+
+        let got = model
+            .clone()
+            .bootstrap_component_test(1, &direction, 1, 6_119)
+            .expect("the second component has a complete bootstrap replicate");
+
+        let reordered = model
+            .with_component_first(1)
+            .expect("the second component can be tested first");
+        let observed = reordered
+            .analytic_heritability_test()
+            .expect("the observed likelihood ratio fits");
+        assert!(
+            !observed.nuisance_at_bound,
+            "the known-answer problem must have an interior nuisance fit"
+        );
+        let public = model
+            .coefficient_test(1)
+            .expect("the nonfirst component has an asymptotic public test");
+        assert_eq!(public.rule, "asymptotic_mixture_50_50");
+        assert_eq!(public.statistic, observed.statistic);
+        assert_eq!(public.p_value, observed.p_value);
+        assert_eq!(public.null_loglik, observed.null_loglik);
+        assert_eq!(public.alternative_loglik, observed.alternative_loglik);
+        let null = reordered
+            .fit_holding(Some(0.0))
+            .expect("the independently assembled constrained null fits");
+        let residual = 1.0 - null.coefficients.iter().sum::<f64>();
+        let fixed = DVector::from_row_slice(&null.fixed_effects);
+        let null_mean = &reordered.design * fixed;
+        let mut stream = BootstrapStream::for_replicate(6_119, 0);
+        let mut generated_value = vec![f64::NAN; people];
+        let mut generated_censoring = vec![Censoring::Above; people];
+        for block in &reordered.blocks {
+            let covariance = DMatrix::from_fn(block.len(), block.len(), |row, column| {
+                let i = block[row];
+                let j = block[column];
+                let structured = reordered
+                    .components
+                    .iter()
+                    .zip(&null.coefficients)
+                    .map(|(component, coefficient)| coefficient * component[(i, j)])
+                    .sum::<f64>();
+                null.total_variance * (structured + if i == j { residual } else { 0.0 })
+            });
+            let factor = covariance
+                .cholesky()
+                .expect("the fitted constrained covariance is positive definite")
+                .l();
+            let draw =
+                DVector::from_iterator(block.len(), (0..block.len()).map(|_| stream.normal()));
+            let deviation = factor * draw;
+            for (within, &row) in block.iter().enumerate() {
+                let latent = null_mean[row] + deviation[within];
+                if latent < cut {
+                    generated_value[row] = latent;
+                    generated_censoring[row] = Censoring::Measured;
+                }
+            }
+        }
+        let generated_components: Vec<DMatrix<f64>> = reordered
+            .components
+            .iter()
+            .map(|component| component.as_ref().clone())
+            .collect();
+        let generated = TobitModel::build(
+            &generated_components,
+            &generated_value,
+            &generated_censoring,
+            &reordered.limit,
+            &reordered.design,
+        )
+        .expect("the independently generated response builds");
+        let replicate = generated
+            .analytic_heritability_test()
+            .expect("the independently generated likelihood ratio fits");
+        let expected_exceedances = usize::from(
+            crate::deviance::settled(replicate.statistic)
+                >= crate::deviance::settled(observed.statistic),
+        );
+
+        assert_eq!(got.exceedances, expected_exceedances);
+        assert_eq!(got.p_value, (1 + expected_exceedances) as f64 / 2.0);
+        assert_eq!(got.null_loglik, observed.null_loglik);
+        assert_eq!(got.alternative_loglik, observed.alternative_loglik);
+    }
+
     /// An unscored verdict is withheld, not filled in from another model.
     ///
     /// The boundary rule was scored by a coverage simulation that ran at one
@@ -2039,15 +2655,11 @@ mod tests {
     /// boundary verdict **absent**. An absent verdict says nobody has measured
     /// it; a filled one would say somebody had.
     ///
-    /// The test is a different matter and is not refused. Refusing it would
-    /// stop the coverage check that scores it from ever running -- issue 38
-    /// has to call this to measure it -- so it runs and carries
-    /// `nuisance_at_bound`, which says when its reference does not apply.
     #[test]
-    fn the_scored_verdicts_are_withheld_at_several_components() {
+    fn the_interval_boundary_verdict_is_withheld_at_several_components() {
         let (relationship, value, censoring, limit, design) =
             simulate(40, 0.5, 1.0, 0.0, Some(0.5), 77);
-        let person = DMatrix::<f64>::identity(relationship.nrows(), relationship.nrows());
+        let grouped = groups_of_four(relationship.nrows());
 
         let one = TobitModel::build(
             std::slice::from_ref(&relationship),
@@ -2069,20 +2681,14 @@ mod tests {
             "at one component the boundary verdict is filled in"
         );
 
-        let several =
-            TobitModel::build(&[relationship, person], &value, &censoring, &limit, &design)
-                .expect("two components build");
-        // The test runs at several components and says on the record whether
-        // its reference applies -- it is not refused, because a coverage check
-        // has to be able to run it in order to score it.
-        let test = several
-            .heritability_test()
-            .expect("the test is offered at several components");
-        assert_eq!(test.rule, "mixture_50_50");
-        assert!(
-            test.p_value.is_finite() && (0.0..=1.0).contains(&test.p_value),
-            "a p-value is still a probability"
-        );
+        let several = TobitModel::build(
+            &[relationship, grouped],
+            &value,
+            &censoring,
+            &limit,
+            &design,
+        )
+        .expect("two identified components build");
         assert!(
             several
                 .heritability_interval()
@@ -2127,7 +2733,11 @@ mod tests {
     #[test]
     fn the_largest_block_is_the_one_the_components_make_together() {
         let rows = 4;
-        let first = DMatrix::<f64>::identity(rows, rows);
+        let mut first = DMatrix::<f64>::identity(rows, rows);
+        first[(0, 1)] = 0.25;
+        first[(1, 0)] = 0.25;
+        first[(2, 3)] = 0.25;
+        first[(3, 2)] = 0.25;
         let mut second = DMatrix::<f64>::identity(rows, rows);
         for i in 0..rows {
             for j in 0..rows {
@@ -2146,9 +2756,9 @@ mod tests {
             &limits,
             &design,
         )
-        .expect("an identity is a covariance");
+        .expect("the pairwise basis is a covariance");
         let fit = alone.fit().expect("converges");
-        assert_eq!(fit.largest_family, 1, "an identity leaves every row alone");
+        assert_eq!(fit.largest_family, 2, "the first basis joins only pairs");
 
         let together = TobitModel::build(&[first, second], &value, &censoring, &limits, &design)
             .expect("both are covariances");

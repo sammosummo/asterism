@@ -6,8 +6,12 @@ censoring combined with relatedness, and nothing about how much censoring is
 too much. Neither can be learned by reading the code, which is why this exists.
 
 So: sibling pairs with a known heritability and a known total variance, swept
-across censoring rates from nothing to three quarters, many replicates each.
-Three things are reported per rate.
+across expected censoring rates from nothing to three quarters, many replicates
+each. The instrument limit is fixed from the population design before any
+outcome is drawn. Earlier retained outputs forced exact censoring counts by
+choosing the limit from each realised response; they are diagnostic history and
+must not be used as fixed-instrument qualification. Three things are reported
+per rate.
 
 - **Recovery.** The mean estimate against the truth. A model that is right at
   10 per cent censored and biased at 60 is a model with a stated range, not a
@@ -26,15 +30,23 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
 
 import asterism
 import numpy as np
+
+try:
+    from checks.censoring_design import right_censoring_limit
+except ModuleNotFoundError:
+    from censoring_design import right_censoring_limit
+"""Imported the fixed-instrument solver in module and direct-command modes."""
 
 PAIRS: int = 400
 """Fixed the number of sibling pairs in every simulated data set."""
@@ -66,7 +78,7 @@ STANDARD_ERRORS_ALLOWED: float = 3.0
 def draw(
     rate: float, replicate: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Draw one sibling-pair trait and censor it at the requested quantile.
+    """Draw one sibling-pair trait and apply its predeclared instrument limit.
 
     Args:
         rate: Share of observations to censor from above.
@@ -104,14 +116,14 @@ def draw(
         """Set the symmetric within-pair relationship coefficient."""
 
     if rate <= 0.0:
-        limit: float = np.inf
-        """Represented the uncensored cell with an infinite latent limit."""
+        limit: float = 0.0
+        """Used a finite placeholder because this cell has no censoring."""
 
         censored: np.ndarray = np.zeros(n, dtype=bool)
         """Marked no observations censored in the zero-rate cell."""
     else:
-        limit = float(np.quantile(complete, 1.0 - rate))
-        """Located the upper limit producing the requested censoring share."""
+        limit = right_censoring_limit(TRUE_MEAN, TRUE_VARIANCE, rate)
+        """Solved the expected marginal share without reading this outcome."""
 
         censored = complete >= limit
         """Marked complete values at or above the instrument limit."""
@@ -142,7 +154,12 @@ def one(job: tuple[float, int]) -> dict[str, object]:
     limits: np.ndarray = np.full(n, limit if np.isfinite(limit) else 0.0)
     """Expanded the scalar instrument limit to the public per-row input."""
 
-    out: dict[str, object] = {"rate": rate, "replicate": replicate}
+    out: dict[str, object] = {
+        "rate": rate,
+        "replicate": replicate,
+        "instrument_limit": limit,
+        "achieved_censoring_share": float(censored.mean()),
+    }
     """Initialised the per-replicate record with its deterministic identity."""
 
     try:
@@ -201,23 +218,65 @@ def summarise(values: list[float]) -> tuple[float, float]:
     return float(array.mean()), float(array.std(ddof=1) / np.sqrt(array.size))
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Read the campaign size and process allocation.
+
+    Args:
+        argv: Optional argument vector excluding the executable name.
+
+    Returns:
+        Positive replicate and worker counts, defaulting to the historical
+        environment-selected values when omitted.
+    """
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
+    """Built an explicit interface while preserving no-argument behaviour."""
+
+    parser.add_argument("--replicates", type=int, default=REPLICATES)
+    parser.add_argument("--workers", type=int, default=WORKERS)
+    parser.add_argument("--no-write", action="store_true")
+    arguments: argparse.Namespace = parser.parse_args(argv)
+    """Read explicit release values or the existing exploratory defaults."""
+
+    if arguments.replicates < 1 or arguments.workers < 1:
+        parser.error("--replicates and --workers must be positive")
+    return arguments
+
+
+def run_jobs(jobs: list[tuple[float, int]], workers: int) -> list[dict[str, object]]:
+    """Run one deterministic job grid with the requested process count.
+
+    Args:
+        jobs: Exact censoring-rate and replicate coordinates.
+        workers: Process count selected by the command line.
+
+    Returns:
+        One retained result for every requested coordinate.
+    """
+    rows: list[dict[str, object]] = []
+    """Collected results without changing deterministic job ordering."""
+
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for got in pool.map(one, jobs, chunksize=4):
+            rows.append(got)
+    return rows
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Run all censoring-rate cells and write their dated evidence receipt."""
+    arguments: argparse.Namespace = parse_arguments(argv)
+    """Selected the exact simulation count and process allocation."""
+
     print(
-        f"{PAIRS} sibling pairs, {REPLICATES} replicates per rate. "
+        f"{PAIRS} sibling pairs, {arguments.replicates} replicates per rate. "
         f"True heritability {TRUE_HERITABILITY}, variance {TRUE_VARIANCE}.\n"
     )
     jobs: list[tuple[float, int]] = [
-        (rate, replicate) for rate in RATES for replicate in range(REPLICATES)
+        (rate, replicate) for rate in RATES for replicate in range(arguments.replicates)
     ]
     """Enumerated every censoring rate and replicate exactly once."""
 
-    rows: list[dict[str, object]] = []
-    """Initialised the collection of per-replicate fit records."""
-
-    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
-        for got in pool.map(one, jobs, chunksize=4):
-            rows.append(got)
+    rows: list[dict[str, object]] = run_jobs(jobs, arguments.workers)
+    """Ran every requested replicate under the explicit process allocation."""
 
     print(
         f"{'censored':>9} | {'available':>9} | {'h2 (se)':>16} | "
@@ -261,6 +320,11 @@ def main() -> int:
             "variance_mean": var_mean,
             "variance_standard_error": var_error,
             "naive_heritability_mean": naive_mean,
+            "instrument_limit": float(here[0]["instrument_limit"]),
+            "achieved_censoring_share_range": [
+                min(float(row["achieved_censoring_share"]) for row in here),
+                max(float(row["achieved_censoring_share"]) for row in here),
+            ],
         }
         """Recorded availability and Monte Carlo summaries for this rate."""
 
@@ -281,7 +345,7 @@ def main() -> int:
         "what": "recovery of the censored model across censoring rates",
         "date": date.today().isoformat(),
         "pairs": PAIRS,
-        "replicates": REPLICATES,
+        "replicates": arguments.replicates,
         "truth": {
             "heritability": TRUE_HERITABILITY,
             "variance": TRUE_VARIANCE,
@@ -301,8 +365,9 @@ def main() -> int:
     )
     """Selected the repository evidence path using the receipt date."""
 
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
+    if not arguments.no_write:
+        out.write_text(json.dumps(receipt, indent=2) + "\n")
+        print(f"\nwritten to {out}")
     if failures:
         print("\nFAILED:")
         for failure in failures:

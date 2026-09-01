@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -27,6 +28,30 @@ R_RULES: tuple[tuple[str, str], ...] = (
     ("spatial_against_spamm", "spatial_against_spamm.py"),
 )
 """Named every R-backed rule and its public comparison adapter."""
+
+
+def ready_r_rules() -> tuple[tuple[str, str], ...]:
+    """Return only adapters whose current manifest rule claims ready evidence."""
+    root: Path = Path(__file__).resolve().parents[1]
+    """Located the manifest that owns each external rule's status."""
+
+    manifest: dict[str, Any] = tomllib.loads(
+        (root / "release.toml").read_text(encoding="utf-8")
+    )
+    """Parsed the current development release contract."""
+
+    statuses: dict[str, str] = {
+        rule["id"]: rule["status"]
+        for analysis in manifest["analyses"]
+        for rule in analysis.get("pass_rules", [])
+    }
+    """Indexed every declared pass rule by its readiness state."""
+
+    return tuple(pair for pair in R_RULES if statuses.get(pair[0]) == "ready")
+
+
+PORTABLE_R_RULES: tuple[tuple[str, str], ...] = ready_r_rules()
+"""Excluded blocked fixtures until a genuine external refresh updates them."""
 
 QUALIFIED_TOOLS: dict[str, tuple[str, dict[str, str]]] = {
     "against_r": ("4.5.2", {"regress": "1.3.22"}),
@@ -49,7 +74,7 @@ def repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize(("check_id", "adapter_name"), R_RULES)
+@pytest.mark.parametrize(("check_id", "adapter_name"), PORTABLE_R_RULES)
 def test_portable_r_verification_does_not_need_r_on_path(
     check_id: str,
     adapter_name: str,

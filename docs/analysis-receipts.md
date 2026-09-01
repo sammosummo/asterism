@@ -33,13 +33,13 @@ analysis through the same `run_analysis` seam:
 ```console
 python tools/synthetic_analysis_receipts.py \
   --output release-evidence/synthetic-analysis-receipts \
-  --wheel dist/asterism-0.1.0-*.whl
+  --wheel dist/asterism-0.2.0-*.whl
 ```
 
 The command uses only the public Python interface. It refuses a development or
 dirty build, binds every receipt to the saved wheel, embedded dependency lock,
 source commit, complete synthetic-input commitment and fitted row-order
-commitment, and requires all eight fits to meet every fact. It keeps all
+commitment, and requires all nine fits to meet every fact. It keeps all
 receipts in memory until the entire set passes, then writes one strict JSON file
 per analysis and a checksummed `index.json`. A partial set is never release
 evidence. The independent release verifier reads every indexed file and

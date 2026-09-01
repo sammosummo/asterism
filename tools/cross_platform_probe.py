@@ -101,11 +101,14 @@ NUMERIC_FIELDS_BY_ANALYSIS: dict[str, tuple[str, ...]] = {
         "fit.mean_diagonal_proportions[0]",
         "fit.total_variance",
         "fit.loglik",
-        "interval.estimate",
-        "interval.lower",
-        "interval.upper",
-        "test.statistic",
-        "test.p_value",
+        "coefficient_interval.estimate",
+        "coefficient_interval.lower",
+        "coefficient_interval.upper",
+        "mean_diagonal_proportion_interval.estimate",
+        "mean_diagonal_proportion_interval.lower",
+        "mean_diagonal_proportion_interval.upper",
+        "asymptotic_test.statistic",
+        "asymptotic_test.p_value",
     ),
     "mixed_binary_censored_genetic_correlation": (
         "fit.genetic_correlation",
@@ -493,7 +496,7 @@ def probe_bivariate(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
         problem: Deterministic participant-free fixture.
 
     Returns:
-        Public fit, interval and test records with selected numeric fields.
+        Public fit and interval records plus the required analytic-test refusal.
     """
     people: int = 2 * PAIRS
     """Read the fixed synthetic roster size."""
@@ -733,32 +736,63 @@ def probe_censored_components(
     )
     """Fitted both coefficients under right censoring."""
 
-    interval: dict[str, Any] = model.interval(
+    coefficient_interval: dict[str, Any] = model.interval(
         problem["censored_values"],
         problem["censoring"],
         problem["limits"],
         component=0,
+        quantity="coefficient",
     )
-    """Profiled the first component's mean-diagonal proportion."""
+    """Profiled the first component's raw coefficient."""
 
-    test: dict[str, Any] = model.test(
+    mean_diagonal_proportion_interval: dict[str, Any] = model.interval(
+        problem["censored_values"],
+        problem["censoring"],
+        problem["limits"],
+        component=0,
+        quantity="mean_diagonal_proportion",
+    )
+    """Profiled the first component's scale-invariant proportion."""
+
+    asymptotic_test: dict[str, Any] = model.test(
         problem["censored_values"],
         problem["censoring"],
         problem["limits"],
         component=1,
     )
-    """Tested the grouping component against its boundary null."""
+    """Exercised the explicitly asymptotic non-first component test."""
 
-    return {"fit": fit, "interval": interval, "test": test}, {
+    if (
+        asymptotic_test["rule"] != "asymptotic_mixture_50_50"
+        or asymptotic_test["nuisance_at_bound"]
+    ):
+        raise RuntimeError("CENSORED_COMPONENT_ASYMPTOTIC_TEST_CONTRACT_MISMATCH")
+    """Required the portable result to state its approximation and regularity."""
+
+    return {
+        "fit": fit,
+        "coefficient_interval": coefficient_interval,
+        "mean_diagonal_proportion_interval": mean_diagonal_proportion_interval,
+        "asymptotic_test": asymptotic_test,
+    }, {
         "fit.coefficients[0]": fit["coefficients"][0],
         "fit.mean_diagonal_proportions[0]": fit["mean_diagonal_proportions"][0],
         "fit.total_variance": fit["total_variance"],
         "fit.loglik": fit["loglik"],
-        "interval.estimate": interval["estimate"],
-        "interval.lower": interval["lower"],
-        "interval.upper": interval["upper"],
-        "test.statistic": test["statistic"],
-        "test.p_value": test["p_value"],
+        "coefficient_interval.estimate": coefficient_interval["estimate"],
+        "coefficient_interval.lower": coefficient_interval["lower"],
+        "coefficient_interval.upper": coefficient_interval["upper"],
+        "mean_diagonal_proportion_interval.estimate": (
+            mean_diagonal_proportion_interval["estimate"]
+        ),
+        "mean_diagonal_proportion_interval.lower": (
+            mean_diagonal_proportion_interval["lower"]
+        ),
+        "mean_diagonal_proportion_interval.upper": (
+            mean_diagonal_proportion_interval["upper"]
+        ),
+        "asymptotic_test.statistic": asymptotic_test["statistic"],
+        "asymptotic_test.p_value": asymptotic_test["p_value"],
     }
 
 
@@ -874,7 +908,7 @@ def probe_spatial(problem: dict[str, Any]) -> tuple[dict[str, Any], dict[str, fl
 
 
 def run_all_probes() -> list[dict[str, Any]]:
-    """Run every supported 0.1 analysis and normalize its public result.
+    """Run every supported analysis and normalize its public result.
 
     Returns:
         Nine normalized analysis results in release-manifest order.
@@ -1058,7 +1092,7 @@ def run_probe(wheel_path: Path) -> dict[str, Any]:
 def main() -> int:
     """Run the installed-wheel probe and write strict normalized JSON."""
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Run all Asterism 0.1 public analysis probes."
+        description="Run all supported Asterism public analysis probes."
     )
     """Defined the installed-wheel workflow interface."""
 

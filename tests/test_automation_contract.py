@@ -1,6 +1,10 @@
 """Repository-level contracts for ordinary and release automation."""
 
 import ast
+import hashlib
+import json
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -118,17 +122,66 @@ def test_release_workflow_fails_closed_and_publishes_checksums() -> None:
     workflow: str = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     """Read the private-release workflow as its public configuration."""
 
+    release_environment: str = "$RUNNER_TEMP/asterism-release-venv"
+    """Selected the runner-owned environment that cannot shadow the saved wheel."""
+
     assert "tools/check_release.py --requested" in workflow
     assert "tools/check_release.py --release" in workflow
-    assert ".release-venv/bin/python tools/run_scientific_release.py" in workflow
+    assert f'uv venv --python 3.13 "{release_environment}"' in workflow
+    assert (
+        f'"{release_environment}/bin/python" tools/run_scientific_release.py'
+        in workflow
+    )
+    assert f'"{release_environment}/bin/python" tools/check_release.py' in workflow
     assert "uv export --frozen --all-groups --no-emit-project" in workflow
     assert "--evidence release-evidence/evidence.json" in workflow
     assert (
         "--cross-platform-agreement cross-platform-agreement/agreement.json" in workflow
     )
+    assert "medusa_smoke_base64:" in workflow
+    assert "wheels_run_id:" in workflow
+    assert "MEDUSA_SMOKE_BASE64: ${{ inputs.medusa_smoke_base64 }}" in workflow
+    assert "WHEELS_RUN_ID: ${{ inputs.wheels_run_id }}" in workflow
+    assert "run-id: ${{ inputs.wheels_run_id }}" in workflow
+    assert "actions: read" in workflow
+    assert 'jq -r ".conclusion"' in workflow
+    assert 'jq -r ".head_sha"' in workflow
+    assert 'jq -r ".head_branch"' in workflow
+    assert 'jq -r ".path"' in workflow
+    assert "uses: ./.github/workflows/wheels.yml" not in workflow
+    assert '--medusa-smoke "$RUNNER_TEMP/asterism-medusa-smoke.json"' in workflow
     assert "--wheel dist/*.whl" in workflow
     assert "sha256sum" in workflow
     assert "gh release create" in workflow
+
+
+def test_medusa_smoke_command_binds_the_saved_wheel_bytes(tmp_path: Path) -> None:
+    """The external host result identifies the exact portable artifact it loaded."""
+    wheel: Path = tmp_path / "asterism-final-manylinux.whl"
+    """Named the stand-in saved wheel passed to the public smoke command."""
+
+    wheel.write_bytes(b"final portable wheel fixture")
+    """Created immutable stand-in bytes for the command's artifact commitment."""
+
+    completed: subprocess.CompletedProcess[str] = subprocess.run(
+        [
+            sys.executable,
+            "tools/medusa_wheel_smoke.py",
+            "--wheel",
+            str(wheel),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    """Ran the public participant-free command exactly as the external host will."""
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    record: dict[str, object] = json.loads(completed.stdout)
+    """Parsed the public JSON result for its exact artifact commitment."""
+
+    assert record["wheel_sha256"] == hashlib.sha256(wheel.read_bytes()).hexdigest()
 
 
 def test_the_release_detect_step_needs_nothing_it_is_not_given() -> None:

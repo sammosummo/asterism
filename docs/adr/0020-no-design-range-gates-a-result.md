@@ -48,3 +48,11 @@ Every scientific gate stands. Supported analyses still need their checks to
 pass, and their results still agree across platforms within pre-written
 tolerances. Removing a bound on sample size removes nothing that bears on
 whether a number is right.
+
+A known failure of one inferential reference on one exact target is different
+from a design range. It is evidence about that p-value for that analysis, not a
+portable censoring threshold. The generally available method can still return
+an explicitly labelled asymptotic result, while the analysis with the known
+failure withholds that p-value until it has a design-specific simulated null.
+That does not gate its fit or interval, and it says nothing about a different
+design merely because the two have a similar censored share.

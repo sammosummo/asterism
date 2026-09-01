@@ -225,6 +225,93 @@ def conditional_quantity_errors(analysis: dict[str, Any]) -> list[str]:
     return errors
 
 
+def known_limitation_errors(analysis: dict[str, Any], root: Path) -> list[str]:
+    """Return malformed or unbound known-limitation errors for one analysis."""
+    raw_limitations: object = analysis.get("known_limitations", [])
+    """Read optional negative evidence kept outside the release pass rules."""
+
+    if not isinstance(raw_limitations, list):
+        return [
+            f"release.toml: {analysis.get('id', '<missing>')} "
+            "known_limitations must be tables"
+        ]
+    errors: list[str] = []
+    """Collected independent schema and evidence-binding failures."""
+
+    quantities: object = analysis.get("supported_quantities", [])
+    """Read the quantity inventory a limitation is allowed to narrow."""
+
+    supported: set[str] = (
+        {str(quantity) for quantity in quantities}
+        if isinstance(quantities, list)
+        else set()
+    )
+    """Normalised the declared quantity inventory for membership checks."""
+
+    codes: list[str] = []
+    """Retained codes so duplicate limitations cannot look independent."""
+
+    for index, limitation in enumerate(raw_limitations):
+        label: str = (
+            f"release.toml: {analysis.get('id', '<missing>')} limitation {index}"
+        )
+        """Named one retained limitation in every actionable error."""
+
+        if not isinstance(limitation, dict):
+            errors.append(f"{label} must be a table")
+            continue
+        code: object = limitation.get("code")
+        """Read the stable identifier carried into receipts and documentation."""
+
+        if not isinstance(code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]*", code) is None:
+            errors.append(f"{label} needs a stable uppercase code")
+        else:
+            codes.append(code)
+        quantity: object = limitation.get("quantity")
+        """Read the one supported quantity narrowed by this evidence."""
+
+        if quantity not in supported:
+            errors.append(f"{label} names an unsupported quantity")
+        for field in ("scope", "consequence"):
+            value: object = limitation.get(field)
+            """Read one required explanatory field from the limitation."""
+
+            if not isinstance(value, str) or not value:
+                errors.append(f"{label} has no {field}")
+        evidence: object = limitation.get("evidence")
+        """Read the participant-free record supporting the negative finding."""
+
+        if not isinstance(evidence, str) or not evidence:
+            errors.append(f"{label} has no evidence")
+            continue
+        evidence_path: Path = root / evidence
+        """Resolved only repository-relative JSON evidence."""
+
+        if (
+            Path(evidence).is_absolute()
+            or ".." in Path(evidence).parts
+            or evidence_path.suffix != ".json"
+            or not evidence_path.is_file()
+        ):
+            errors.append(f"{label} evidence does not exist as local JSON")
+            continue
+        expected_sha256: object = limitation.get("evidence_sha256")
+        """Read the immutable commitment to the retained negative evidence."""
+
+        if (
+            not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+            or sha256(evidence_path) != expected_sha256
+        ):
+            errors.append(f"{label} evidence SHA-256 does not match")
+    if len(codes) != len(set(codes)):
+        errors.append(
+            f"release.toml: {analysis.get('id', '<missing>')} "
+            "known limitation codes must be unique"
+        )
+    return errors
+
+
 def cross_platform_configuration_errors(
     configuration: object,
     root: Path,
@@ -372,6 +459,32 @@ def cross_platform_configuration_errors(
             "release.toml: cross-platform numeric tolerances are unmeasured for: "
             + ", ".join(sorted(unmeasured))
         )
+    return errors
+
+
+def medusa_smoke_configuration_errors(configuration: object) -> list[str]:
+    """Return failures in the manifest's external Medusa-smoke requirement."""
+    if not isinstance(configuration, dict):
+        return ["release.toml: Medusa smoke configuration is missing"]
+    errors: list[str] = []
+    """Collected release opt-in, host and command failures without evidence paths."""
+
+    if configuration.get("required") is not True:
+        errors.append("release.toml: Medusa wheel smoke is not required")
+    if configuration.get("configured") is not True:
+        errors.append("release.toml: Medusa wheel smoke is unverified")
+    for field in ("architecture", "glibc_version"):
+        if not isinstance(configuration.get(field), str) or not configuration[field]:
+            errors.append(f"release.toml: Medusa {field} is unmeasured")
+    command: object = configuration.get("command")
+    """Read the participant-free runner used to produce the external JSON."""
+
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(argument, str) and argument for argument in command)
+    ):
+        errors.append("release.toml: Medusa smoke command is not configured")
     return errors
 
 
@@ -1022,6 +1135,83 @@ def release_evidence_errors(
             )
     """Required actual per-field decisions rather than a passing placeholder."""
 
+    medusa_evidence: object = evidence.get("medusa_smoke")
+    """Read the preserved external target-host result and its byte identity."""
+
+    if not isinstance(medusa_evidence, dict):
+        errors.append("release evidence has no Medusa smoke artifact")
+    else:
+        relative_record = medusa_evidence.get("path")
+        """Read the evidence-relative copy retained beside scientific logs."""
+
+        medusa_path: Path | None = None
+        """Reserved the validated smoke path inside the evidence directory."""
+
+        if not isinstance(relative_record, str):
+            errors.append("release evidence Medusa smoke has no path")
+        else:
+            medusa_path = (evidence_path.parent / relative_record).resolve()
+            """Resolved the preserved record without trusting its path boundary."""
+
+            try:
+                medusa_path.relative_to(evidence_path.parent.resolve())
+            except ValueError:
+                errors.append("release evidence Medusa smoke escapes evidence")
+                medusa_path = None
+                """Withheld an out-of-tree path from subsequent reads."""
+
+        copied_medusa_record: object = None
+        """Reserved independently parsed target-host details."""
+
+        if medusa_path is not None:
+            if not medusa_path.is_file():
+                errors.append("release evidence Medusa smoke does not exist")
+            elif medusa_evidence.get("sha256") != sha256(medusa_path):
+                errors.append("release evidence Medusa smoke SHA-256 does not match")
+            else:
+                try:
+                    copied_medusa_record = json.loads(
+                        medusa_path.read_text(encoding="utf-8")
+                    )
+                    """Parsed the exact hashed smoke bytes independently."""
+                except (OSError, json.JSONDecodeError) as error:
+                    errors.append(
+                        f"release evidence Medusa smoke is unreadable: {error}"
+                    )
+
+        embedded_medusa_record: object = medusa_evidence.get("record")
+        """Read target-host details embedded for single-file evidence inspection."""
+
+        if copied_medusa_record != embedded_medusa_record:
+            errors.append(
+                "release evidence Medusa smoke record does not match its file"
+            )
+
+        linux_wheel_hashes: list[str] = [
+            digest
+            for path, digest in expected_wheels.items()
+            if "manylinux" in Path(path).name
+        ]
+        """Selected the sole portable artifact from the saved release wheel set."""
+
+        if len(linux_wheel_hashes) != 1:
+            errors.append(
+                "release evidence needs exactly one manylinux wheel for Medusa smoke"
+            )
+        elif release_manifest:
+            errors.extend(
+                sibling("run_scientific_release").medusa_smoke_record_errors(
+                    record=embedded_medusa_record,
+                    manifest=release_manifest,
+                    manifest_text=(root / "release.toml").read_text(encoding="utf-8"),
+                    cargo_lock_text=(root / "Cargo.lock").read_text(encoding="utf-8"),
+                    uv_lock_text=(root / "uv.lock").read_text(encoding="utf-8"),
+                    source_commit=str(getattr(core, "__source_commit__", "")),
+                    linux_wheel_sha256=linux_wheel_hashes[0],
+                )
+            )
+    """Revalidated host, fit, build and exact-wheel claims from retained bytes."""
+
     return errors
 
 
@@ -1275,6 +1465,7 @@ def main() -> int:
         if not analysis.get("required_checks"):
             errors.append(f"release.toml: {identifier} has no required_checks")
         errors.extend(conditional_quantity_errors(analysis))
+        errors.extend(known_limitation_errors(analysis, root))
     """Required every supported claim to name its public and evidentiary seams."""
 
     if arguments.release:
@@ -1300,31 +1491,7 @@ def main() -> int:
         )
         """Kept installed-wheel testing distinct from actual result agreement."""
 
-        medusa_smoke: object = manifest.get("medusa_smoke")
-        """Read the conditional target-host portable-wheel qualification record."""
-
-        if not isinstance(medusa_smoke, dict):
-            errors.append("release.toml: Medusa smoke configuration is missing")
-        elif medusa_smoke.get("required") is True:
-            if medusa_smoke.get("configured") is not True:
-                errors.append("release.toml: Medusa wheel smoke is unverified")
-            for field in ("architecture", "glibc_version", "evidence"):
-                if (
-                    not isinstance(medusa_smoke.get(field), str)
-                    or not medusa_smoke[field]
-                ):
-                    errors.append(f"release.toml: Medusa {field} is unmeasured")
-            command: object = medusa_smoke.get("command")
-            """Read the exact participant-free installed-wheel smoke argument vector."""
-
-            if (
-                not isinstance(command, list)
-                or not command
-                or not all(
-                    isinstance(argument, str) and argument for argument in command
-                )
-            ):
-                errors.append("release.toml: Medusa smoke command is not configured")
+        errors.extend(medusa_smoke_configuration_errors(manifest.get("medusa_smoke")))
         """Required host facts and an actual saved-wheel fit, never a source install."""
 
         synthetic_receipts: object = manifest.get("synthetic_analysis_receipts")

@@ -36,10 +36,9 @@ as misses, while an interval whose end is on nought is left undecided rather
 than decided by the end having landed there -- the obvious rule, which
 `checks/tobit_coverage.py` records as the wrong one. The range is the most and
 the least coverage the cell could have, and it fails if even the most is short
-of nominal. What has been measured about that same mixture reference at several
-components is the null half of
-`checks/censored_components_target_design.py`: it held at 0.52 censored and
-failed at 0.75.
+of nominal. The earlier several-component target rates used an outcome-adaptive
+censoring limit and an analytic boundary reference. They are investigation
+history, not qualification for this interval campaign.
 
 A truth of exactly one is not attainable at this component set at all, for the
 same reason the upper bound is not: it is a singular covariance, so there is
@@ -48,6 +47,9 @@ nothing to simulate from.
 Run with:
 
     uv run --no-project python checks/censored_components_coverage.py
+
+The command now fixes each instrument limit from the population design before
+drawing outcomes. Its corrected full run is pending.
 """
 
 from __future__ import annotations
@@ -67,12 +69,19 @@ from scipy.stats import beta
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asterism
+from censoring_design import right_censoring_limit
 
 VILLAGES: int = 400
 """Villages of three sibling pairs, which is 2,400 people."""
 
+VILLAGE_PEOPLE: int = 6
+"""People in each independent village block."""
+
 RECORDS: int = 2
 """Records each person contributes, which is what wants a person-level component."""
+
+VILLAGE_ROWS: int = VILLAGE_PEOPLE * RECORDS
+"""Rows in each exact independent generating-covariance block."""
 
 CENSORING: float = 0.52
 """Censoring share, the lighter of the two observed audiogram levels.
@@ -87,6 +96,13 @@ TOTAL_VARIANCE: float = 4.0
 
 TRUE_MEAN: float = 10.0
 """Generating complete-trait mean before censoring."""
+
+CENSORING_LIMIT: float = right_censoring_limit(
+    TRUE_MEAN,
+    TOTAL_VARIANCE,
+    CENSORING,
+)
+"""Fixed the instrument from generating facts before any outcome draw."""
 
 TRUTHS: tuple[tuple[float, float, float, float], ...] = (
     (0.00, 0.35, 0.25, 0.40),
@@ -167,7 +183,7 @@ def components() -> dict[str, Any]:
     Returns:
         The components, the fixed-effect design and the village size.
     """
-    people: int = VILLAGES * 6
+    people: int = VILLAGES * VILLAGE_PEOPLE
     """Counted the people, six to a village."""
 
     additive: npt.NDArray[np.float64] = np.eye(people)
@@ -210,28 +226,97 @@ def components() -> dict[str, Any]:
     }
 
 
+def village_component_blocks(
+    model_components: list[npt.NDArray[np.float64]],
+) -> list[npt.NDArray[np.float64]]:
+    """Extract each structured component's exact 12-row diagonal blocks."""
+    if len(model_components) != len(NAMES):
+        raise ValueError("CENSORED_COMPONENT_COVERAGE_COMPONENT_COUNT_INVALID")
+    rows: int = model_components[0].shape[0]
+    """Read the common whole-design row count from the first component."""
+
+    if rows % VILLAGE_ROWS != 0 or any(
+        component.shape != (rows, rows) for component in model_components
+    ):
+        raise ValueError("CENSORED_COMPONENT_COVERAGE_COMPONENT_SHAPE_INVALID")
+    return [
+        np.stack(
+            [
+                component[start : start + VILLAGE_ROWS, start : start + VILLAGE_ROWS]
+                for start in range(0, rows, VILLAGE_ROWS)
+            ]
+        )
+        for component in model_components
+    ]
+
+
+def generating_factors(
+    component_blocks: list[npt.NDArray[np.float64]],
+    shares: tuple[float, float, float, float],
+) -> npt.NDArray[np.float64]:
+    """Factor one truth as independent 12-row village covariances."""
+    blocks: int = component_blocks[0].shape[0]
+    """Counted the independent villages represented by the block stack."""
+
+    expected_shape: tuple[int, int, int] = (blocks, VILLAGE_ROWS, VILLAGE_ROWS)
+    """Declared the exact common block-stack shape required for arithmetic."""
+
+    if any(component.shape != expected_shape for component in component_blocks):
+        raise ValueError("CENSORED_COMPONENT_COVERAGE_BLOCK_SHAPE_INVALID")
+    covariance: npt.NDArray[np.float64] = TOTAL_VARIANCE * (
+        shares[0] * component_blocks[0]
+        + shares[1] * component_blocks[1]
+        + shares[2] * component_blocks[2]
+        + shares[3] * np.eye(VILLAGE_ROWS)
+    )
+    """Assembled only the exact diagonal blocks implied by this cell's truth."""
+
+    return np.linalg.cholesky(covariance + 1e-9 * np.eye(VILLAGE_ROWS))
+
+
+def apply_generating_factors(
+    factors: npt.NDArray[np.float64],
+    standard_normals: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+    """Apply village factors to one globally ordered standard-normal draw."""
+    if (
+        factors.ndim != 3
+        or factors.shape[1:] != (VILLAGE_ROWS, VILLAGE_ROWS)
+        or standard_normals.shape != (factors.shape[0] * VILLAGE_ROWS,)
+    ):
+        raise ValueError("CENSORED_COMPONENT_COVERAGE_FACTOR_SHAPE_INVALID")
+    generated: npt.NDArray[np.float64] = np.empty_like(standard_normals)
+    """Allocated one output in the original global participant-record order."""
+
+    for village, factor in enumerate(factors):
+        start: int = village * VILLAGE_ROWS
+        """Located this village in the one global normal vector."""
+
+        stop: int = start + VILLAGE_ROWS
+        """Located the first row belonging to the next village."""
+
+        generated[start:stop] = factor @ standard_normals[start:stop]
+        """Applied only this village's exact lower-triangular factor."""
+    return generated
+
+
 def start_worker() -> None:
     """Build this worker's copy of the components and every generating factor."""
+    STATE.clear()
+    """Removed state left by any earlier in-process validation call."""
+
     STATE.update(components())
     """Built the components once for every replicate this worker runs."""
 
-    rows: int = STATE["design"].shape[0]
-    """Counted the rows the design carries."""
+    component_blocks: list[npt.NDArray[np.float64]] = village_component_blocks(
+        STATE["components"]
+    )
+    """Extracted small generating blocks while retaining dense model components."""
 
-    for shares in TRUTHS:
-        covariance: npt.NDArray[np.float64] = TOTAL_VARIANCE * (
-            shares[0] * STATE["components"][0]
-            + shares[1] * STATE["components"][1]
-            + shares[2] * STATE["components"][2]
-            + shares[3] * np.eye(rows)
-        )
-        """Assembled the covariance this cell's truths imply."""
-
-        STATE[f"factor_{shares[0]}"] = np.linalg.cholesky(
-            covariance + 1e-9 * np.eye(rows)
-        )
-        """Factored it once; it is the same for every replicate of the cell."""
-    """Built every generating factor once rather than per replicate."""
+    STATE["factors"] = [
+        generating_factors(component_blocks, shares) for shares in TRUTHS
+    ]
+    """Built four stacks of 12-row factors rather than four dense factors."""
 
 
 def one(job: tuple[int, int]) -> dict[str, Any]:
@@ -264,13 +349,17 @@ def one(job: tuple[int, int]) -> dict[str, Any]:
     so two of them agreeing is one observation rather than two.
     """
 
-    complete: npt.NDArray[np.float64] = TRUE_MEAN + STATE[
-        f"factor_{shares[0]}"
-    ] @ generator.standard_normal(rows)
+    standard_normals: npt.NDArray[np.float64] = generator.standard_normal(rows)
+    """Drew once in the original global row order, preserving every RNG stream."""
+
+    complete: npt.NDArray[np.float64] = TRUE_MEAN + apply_generating_factors(
+        STATE["factors"][cell],
+        standard_normals,
+    )
     """Drew the complete latent trait, before any instrument stopped."""
 
-    ceiling: float = float(np.quantile(complete, 1.0 - CENSORING))
-    """Put the limit where it censors the declared share."""
+    ceiling: float = CENSORING_LIMIT
+    """Applied the fixed instrument shared by every replicate."""
 
     censoring: npt.NDArray[np.int64] = (complete >= ceiling).astype(np.int64)
     """Marked 1 at or above the limit, 0 where measured."""
@@ -524,7 +613,8 @@ def main() -> int:
                     "rows": VILLAGES * 6 * RECORDS,
                     "largest_family": 2,
                     "largest_block_people": 6,
-                    "censoring_share": CENSORING,
+                    "expected_censoring_share": CENSORING,
+                    "instrument_limit": CENSORING_LIMIT,
                     "components": [
                         "additive_relationship",
                         "person_level",

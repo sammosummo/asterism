@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "asterism"
-version = "0.1.1"
+version = "0.2.0.dev0"
 description = "Variance-component models for quantitative genetics"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -3,6 +3,7 @@ dist/
 .release-venv/
 .release-requirements.txt
 release-evidence/
+.scientific-checkpoints/
 cross-platform-probe/
 cross-platform-agreement/
 __pycache__/

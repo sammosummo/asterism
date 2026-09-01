@@ -1,0 +1,195 @@
+{
+  "participant_free": true,
+  "what": "whether an additive component and a person-level one can be told apart, swept over records per person and related pairs",
+  "date": "2026-08-31",
+  "truths": {
+    "additive": 0.4,
+    "person": 0.3,
+    "residual": 0.3
+  },
+  "censoring_share": 0.4,
+  "instrument_limit": 0.2533471031357998,
+  "replicates_per_cell": 200,
+  "split_cost_threshold": 3.0,
+  "cells": {
+    "records=2/families=30": {
+      "records_per_person": 2,
+      "families": 30,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.3563123676397397,
+        "sd": 0.2554781708330216,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.33133871566998124,
+        "sd": 0.2526548098957006,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9392631548649909,
+      "sd_of_their_sum": 0.08859361973209977,
+      "split_costs_this_many_times_the_precision": 2.883708461236461,
+      "additive_bias": -0.0436876323602603,
+      "additive_bias_resolvable_beyond": 0.06613006940823296,
+      "person_bias": 0.031338715669981254,
+      "person_bias_resolvable_beyond": 0.06573078587532959
+    },
+    "records=2/families=60": {
+      "records_per_person": 2,
+      "families": 60,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.367584287818501,
+        "sd": 0.21955352300483896,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.323947910807623,
+        "sd": 0.2131749560508786,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9686100038977383,
+      "sd_of_their_sum": 0.05458019528776552,
+      "split_costs_this_many_times_the_precision": 4.022585882063584,
+      "additive_bias": -0.03241571218149902,
+      "additive_bias_resolvable_beyond": 0.06104955699002365,
+      "person_bias": 0.023947910807622985,
+      "person_bias_resolvable_beyond": 0.060147491400544095
+    },
+    "records=2/families=120": {
+      "records_per_person": 2,
+      "families": 120,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.3953300605416547,
+        "sd": 0.1675491258787422,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.3037238758157625,
+        "sd": 0.16699082161440995,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9728835586861546,
+      "sd_of_their_sum": 0.03895770193072519,
+      "split_costs_this_many_times_the_precision": 4.300795929305045,
+      "additive_bias": -0.004669939458345318,
+      "additive_bias_resolvable_beyond": 0.053695024618147416,
+      "person_bias": 0.0037238758157625007,
+      "person_bias_resolvable_beyond": 0.05361606847189247
+    },
+    "records=2/families=240": {
+      "records_per_person": 2,
+      "families": 240,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.39844646693869556,
+        "sd": 0.11305488468915166,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.30283833851224934,
+        "sd": 0.11317439363845774,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9787466363919559,
+      "sd_of_their_sum": 0.023321328704132428,
+      "split_costs_this_many_times_the_precision": 4.852827858749051,
+      "additive_bias": -0.0015535330613044573,
+      "additive_bias_resolvable_beyond": 0.04598837512199246,
+      "person_bias": 0.00283833851224935,
+      "person_bias_resolvable_beyond": 0.046005276239685824
+    },
+    "records=3/families=30": {
+      "records_per_person": 3,
+      "families": 30,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.35456797465112055,
+        "sd": 0.25828883691916255,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.33402871629425607,
+        "sd": 0.24164043065451413,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9651057981755362,
+      "sd_of_their_sum": 0.06806522509832098,
+      "split_costs_this_many_times_the_precision": 3.794725376226427,
+      "additive_bias": -0.04543202534887947,
+      "additive_bias_resolvable_beyond": 0.06652755761806523,
+      "person_bias": 0.03402871629425608,
+      "person_bias_resolvable_beyond": 0.06417311742492893
+    },
+    "records=3/families=60": {
+      "records_per_person": 3,
+      "families": 60,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.37428290100588396,
+        "sd": 0.19987484263209238,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.32386167013220474,
+        "sd": 0.1930793232731175,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9778060979909368,
+      "sd_of_their_sum": 0.04194257825935569,
+      "split_costs_this_many_times_the_precision": 4.765440059410473,
+      "additive_bias": -0.02571709899411606,
+      "additive_bias_resolvable_beyond": 0.05826657132274931,
+      "person_bias": 0.02386167013220475,
+      "person_bias_resolvable_beyond": 0.05730553975866619
+    },
+    "records=3/families=120": {
+      "records_per_person": 3,
+      "families": 120,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.40024926518981624,
+        "sd": 0.13891219651421288,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.295179624871725,
+        "sd": 0.13765691738080837,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9755594878850985,
+      "sd_of_their_sum": 0.03059885059054744,
+      "split_costs_this_many_times_the_precision": 4.539784790384429,
+      "additive_bias": 0.0002492651898162168,
+      "additive_bias_resolvable_beyond": 0.04964515122894364,
+      "person_bias": -0.00482037512827499,
+      "person_bias_resolvable_beyond": 0.04946762795144118
+    },
+    "records=3/families=240": {
+      "records_per_person": 3,
+      "families": 240,
+      "replicates_fitted": 200,
+      "additive": {
+        "mean": 0.38580807043995846,
+        "sd": 0.1085474971840593,
+        "truth": 0.4
+      },
+      "person": {
+        "mean": 0.3132162465871179,
+        "sd": 0.10466166734292184,
+        "truth": 0.3
+      },
+      "correlation_between_estimates": -0.9799777027496276,
+      "sd_of_their_sum": 0.02168033170209756,
+      "split_costs_this_many_times_the_precision": 5.006726773168207,
+      "additive_bias": -0.01419192956004156,
+      "additive_bias_resolvable_beyond": 0.0453509342679352,
+      "person_bias": 0.013216246587117897,
+      "person_bias_resolvable_beyond": 0.044801394941694134
+    }
+  },
+  "passed": true,
+  "failures": [],
+  "note": "A design that does not separate the two is reported and not failed. The pass rule is that the estimator is correct where the components are identified; where they are not, that is a fact about the design."
+}

@@ -6,10 +6,12 @@ import hashlib
 import inspect
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
 import asterism
+import asterism.analysis as analysis_implementation
 import asterism.models as model_implementation
 import numpy as np
 import pytest
@@ -33,6 +35,36 @@ def test_public_build_identity_binds_release_and_dependency_manifests() -> None:
 
         assert identity[field] == expected
     """Required every embedded commitment to match the authoritative checkout bytes."""
+
+
+def test_installed_extension_digest_follows_the_loaded_module_not_a_decoy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Hash the binary the import system selected, not a sibling lookalike."""
+    loaded: Path = tmp_path / "_core.loaded.so"
+    """Represented the exact native module already imported by this process."""
+
+    loaded.write_bytes(b"loaded numerical extension")
+    decoy: Path = tmp_path / "_core.decoy.so"
+    """Placed another extension-shaped file beside the loaded module."""
+
+    decoy.write_bytes(b"different bytes that must not be hashed")
+    monkeypatch.setattr(
+        analysis_implementation._core,
+        "__spec__",
+        SimpleNamespace(origin=str(loaded)),
+    )
+    """Made the import specification identify the selected test binary exactly."""
+
+    expected: str = hashlib.sha256(loaded.read_bytes()).hexdigest()
+    """Calculated the selected binary's digest independently of the helper."""
+
+    assert asterism.installed_extension_sha256() == expected
+    assert (
+        asterism.installed_extension_sha256()
+        != hashlib.sha256(decoy.read_bytes()).hexdigest()
+    )
 
 
 def test_prepared_fit_echoes_build_and_subject_order_identity() -> None:

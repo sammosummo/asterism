@@ -319,6 +319,14 @@ without the estimator changing at all.
 
 ### 12. Three tiers of p-value, and the fallback says so
 
+**Notation clarified on 31 August 2026.** The original text below used
+`B = 1000` for the reported Monte Carlo denominator. The implemented add-one
+convention uses **999 simulated null draws**, so
+$p=(1+\#\{T_b\geq T_{obs}\})/(999+1)$. That is 1,998 simulated reduced/full
+fits, plus the observed reduced/full pair. References elsewhere to a
+1,000-replicate bootstrap in this decision mean this denominator, not 1,000
+simulated draws.
+
 - **One trait, one component: keep the 50:50 rule.** Already implemented in
   eleven places, and ADR 0003 in Astrarium verified it on 2,000 REML replicates
   at n = 1909 — the mixture was the only candidate inside the binomial band in
@@ -586,6 +594,18 @@ deterministically from the model specification.
 precision is quoted than it supports. B = 1000 gives roughly 0.007 on a p-value
 near 0.03 — enough for "below 0.05", not enough for three decimal places.
 
+**The notation clarification in decision 12 applies here too:** the recorded
+result requests 999 simulated null draws and uses an add-one denominator of
+1,000. This preserves the intended resolution without describing the observed
+data as an extra simulated replicate.
+
+**Qualification uses the reported-analysis denominator.** The outer
+target-design campaign asks whether this same randomised test holds level at
+alpha 0.05. It therefore uses 999 simulated draws and an add-one denominator of
+1,000: exactly 50 ranks reject. A 199-draw test would be a different,
+coarser randomised procedure and cannot qualify the 999-draw test used for
+reported inference.
+
 ## The second session, 11 August 2026
 
 A further round of grilling, on what Asterism is and is not. Decision 4 above was
@@ -661,13 +681,14 @@ running correctly.
 
 ### 27. The port crate is a resource, not a route in
 
-`staging/projects/variance-components-rust-ports`, written by Codex on 11 August,
-is disposable work to be cannibalised freely. Nothing enters Asterism because it
-was ported there; entry is by amendment under decision 20. Its `edge_gaussian`
-module is worth reading first: `profile_and_differentiate` is a profiled ML and
-REML objective returning an analytic gradient with the fixed effects profiled
-out, which is decisions 6, 10 and 14 written fresh and small, and Astrarium has
-no REML at all outside `prepared.rs`.
+The retired variance-components Rust port, written by Codex on 11 August, was
+disposable work to be cannibalised freely. Nothing enters Asterism merely
+because it appeared there; entry is by amendment under decision 20. Its
+`edge_gaussian` module was worth reading first:
+`profile_and_differentiate` is a profiled ML and REML objective returning an
+analytic gradient with the fixed effects profiled out, which is decisions 6,
+10 and 14 written fresh and small, and Astrarium has no REML at all outside
+`prepared.rs`.
 
 ### 28. Where it lives
 

@@ -20,8 +20,9 @@ ANALYSIS_IDS: list[str] = [
     "binary_liability_heritability",
     "one_trait_censored",
     "mixed_binary_censored_genetic_correlation",
+    "one_trait_censored_components",
 ]
-"""Fixed the complete 0.1 supported-analysis inventory independently of the tool."""
+"""Fixed the complete supported-analysis inventory independently of the tool."""
 
 
 def test_direct_command_exposes_its_release_interface() -> None:
@@ -140,6 +141,13 @@ def test_all_nine_lazy_jobs_return_converged_supported_fields() -> None:
             "interval",
             "test",
         },
+        "one_trait_censored_components": {
+            "coefficients",
+            "mean_diagonal_proportions",
+            "coefficient_interval",
+            "mean_diagonal_proportion_interval",
+            "asymptotic_test",
+        },
     }
     """Copied the supported-field contract from accepted ADR 0012 explicitly."""
 
@@ -150,3 +158,11 @@ def test_all_nine_lazy_jobs_return_converged_supported_fields() -> None:
 
         assert record["converged"] is True
         assert required[job.analysis_id].issubset(record)
+        if job.analysis_id == "one_trait_censored_components":
+            assert record["coefficient_interval"]["quantity"] == "coefficient"
+            assert (
+                record["mean_diagonal_proportion_interval"]["quantity"]
+                == "mean_diagonal_proportion"
+            )
+            assert record["asymptotic_test"]["rule"] == "asymptotic_mixture_50_50"
+            assert record["asymptotic_test"]["nuisance_at_bound"] is False

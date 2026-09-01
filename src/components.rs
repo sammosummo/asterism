@@ -121,7 +121,7 @@ const RESTING_TOLERANCE: f64 = 1e-9;
 /// combination of the others, including a submitted identity that duplicates
 /// the residual. Its dimension is the number of coefficients rather than
 /// `n²`, so this check does not materialise another roster-sized matrix.
-fn covariance_bases_are_identified(matrices: &[DMatrix<f64>], rows: usize) -> bool {
+pub(crate) fn covariance_bases_are_identified(matrices: &[DMatrix<f64>], rows: usize) -> bool {
     let structured = matrices.len();
     let count = structured + 1;
     let mut norms: Vec<f64> = matrices.iter().map(DMatrix::norm).collect();

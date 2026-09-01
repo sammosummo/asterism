@@ -18,8 +18,10 @@ import numpy.typing as npt
 from scipy.stats import beta
 
 try:
+    from checks.censoring_design import right_censoring_limit
     from checks.one_trait_coverage import target_envelope
 except ModuleNotFoundError:
+    from censoring_design import right_censoring_limit
     from one_trait_coverage import target_envelope
 """Imported the reviewed structural generator in module and direct-command modes."""
 
@@ -121,6 +123,12 @@ class ReplicateResult:
     outcome: str
     """Classified complete inference or one exact failure bucket."""
 
+    censored_count: int | None = None
+    """Recorded the realised count from the fixed instrument limit."""
+
+    achieved_censoring_share: float | None = None
+    """Recorded the realised share without forcing it to equal its expectation."""
+
     p_value: float | None = None
     """Recorded a valid public p-value for a complete null attempt."""
 
@@ -184,6 +192,9 @@ class WorkerState:
 
     mean_coefficients: npt.NDArray[np.float64]
     """Stored the six predeclared latent-mean coefficients."""
+
+    censoring_limits_by_share: Mapping[float, float]
+    """Stored instrument limits solved from design facts before any outcome draw."""
 
     true_heritability: float
     """Stored the interior truth used by heritable cells."""
@@ -380,10 +391,10 @@ def simulate_observation(
     factors: tuple[npt.NDArray[np.float64], ...],
     *,
     mean_coefficients: npt.NDArray[np.float64],
-    censoring_share: float,
+    censoring_limit: float,
     seed: int,
 ) -> ObservedTobit:
-    """Generate one exact-count right-censored participant-free response."""
+    """Generate one right-censored response using a predeclared fixed limit."""
     people: int = target.relationship.shape[0]
     """Read the target roster size from its generated relationship matrix."""
 
@@ -391,7 +402,7 @@ def simulate_observation(
         target.design.shape[0] != people
         or mean_coefficients.shape != (target.design.shape[1],)
         or len(factors) != len(target.component_sizes)
-        or not 0.0 < censoring_share < 1.0
+        or not np.isfinite(censoring_limit)
     ):
         raise ValueError("TOBIT_TARGET_SIMULATION_COORDINATES_INVALID")
 
@@ -415,29 +426,11 @@ def simulate_observation(
         """Advanced the response cursor to the next relationship component."""
     """Generated the complete latent trait without a dense whole-roster factor."""
 
-    censored_count: int = round(censoring_share * people)
-    """Selected the nearest attainable finite-roster censoring count."""
+    censored: npt.NDArray[np.bool_] = complete >= censoring_limit
+    """Applied the instrument fixed from the latent design distribution."""
 
-    if not 0 < censored_count < people:
-        raise ValueError("TOBIT_TARGET_CENSORING_COUNT_INVALID")
-
-    ordered: npt.NDArray[np.int64] = np.argsort(complete, kind="stable")
-    """Ordered continuous latent values deterministically for exact censoring."""
-
-    last_measured: float = float(complete[ordered[-censored_count - 1]])
-    """Read the largest value retained as measured."""
-
-    first_censored: float = float(complete[ordered[-censored_count]])
-    """Read the smallest value assigned to the censored upper tail."""
-
-    threshold: float = last_measured + (first_censored - last_measured) / 2.0
-    """Placed the common limit strictly between measured and censored values."""
-
-    censored: npt.NDArray[np.bool_] = complete >= threshold
-    """Applied the common participant-free instrument limit."""
-
-    if int(censored.sum()) != censored_count:
-        raise ValueError("TOBIT_TARGET_CENSORING_COUNT_INVALID")
+    censored_count: int = int(censored.sum())
+    """Counted the random finite-sample censoring produced by that instrument."""
 
     censoring: npt.NDArray[np.int64] = censored.astype(np.int64)
     """Encoded right censoring with the documented public status code."""
@@ -445,7 +438,7 @@ def simulate_observation(
     return ObservedTobit(
         value=np.where(censored, np.nan, complete),
         censoring=censoring,
-        limit=np.full(people, threshold),
+        limit=np.full(people, censoring_limit),
         censored_count=censored_count,
         achieved_censoring_share=censored_count / people,
     )
@@ -510,40 +503,57 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
     if factors is None:
         raise ValueError("TOBIT_TARGET_SCENARIO_FACTORS_MISSING")
 
+    censoring_limit: float | None = state.censoring_limits_by_share.get(
+        job.censoring_share
+    )
+    """Selected the design-derived instrument fixed for this expected share."""
+
+    if censoring_limit is None or not np.isfinite(censoring_limit):
+        raise ValueError("TOBIT_TARGET_CENSORING_LIMIT_MISSING")
+
     observed: ObservedTobit = simulate_observation(
         state.target,
         factors,
         mean_coefficients=state.mean_coefficients,
-        censoring_share=job.censoring_share,
+        censoring_limit=censoring_limit,
         seed=job.seed,
     )
-    """Generated the exact-count censored response for this attempt."""
+    """Generated the censored response without conditioning the instrument."""
 
     people: int = state.target.relationship.shape[0]
-    """Read the roster size governing the intended finite-count censoring."""
-
-    expected_censored: int = round(job.censoring_share * people)
-    """Recomputed the count independently of the simulation record."""
+    """Read the roster size governing the realised finite-sample share."""
 
     observed_count: int = int(np.count_nonzero(observed.censoring == 1))
     """Counted public right-censoring codes submitted to the estimator."""
 
-    if (
-        observed.censored_count != expected_censored
-        or observed_count != expected_censored
-        or not np.isclose(
+    observed_record_valid: bool = (
+        observed.censored_count == observed_count
+        and observed.limit.shape == (people,)
+        and np.all(observed.limit == censoring_limit)
+        and observed.value.shape == (people,)
+        and observed.censoring.shape == (people,)
+        and np.isin(observed.censoring, (0, 1)).all()
+        and np.isnan(observed.value[observed.censoring == 1]).all()
+        and np.isfinite(observed.value[observed.censoring == 0]).all()
+        and np.all(observed.value[observed.censoring == 0] <= censoring_limit)
+        and np.isclose(
             observed.achieved_censoring_share,
-            expected_censored / people,
+            observed_count / people,
             rtol=0.0,
             atol=1e-15,
         )
-    ):
+    )
+    """Checked record integrity without requiring an outcome-dependent count."""
+
+    if not observed_record_valid:
         return ReplicateResult(
             scenario=job.scenario,
             censoring_share=job.censoring_share,
             replicate=job.replicate,
             seed=job.seed,
             outcome="invalid_censoring_count",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             error_code="TOBIT_TARGET_CENSORING_COUNT_INVALID",
         )
 
@@ -566,6 +576,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="refused",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             error_code=str(refusal),
         )
 
@@ -613,6 +625,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="nonconverged",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             error_code="TOBIT_TARGET_FIT_RECORD_INCOMPLETE",
@@ -628,6 +642,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="interval_failed",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             error_code=str(refusal),
@@ -687,6 +703,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="interval_failed",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             interval_lower=interval_lower,
@@ -701,6 +719,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="profile_failed",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             interval_lower=interval_lower,
@@ -719,6 +739,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="test_failed",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             interval_lower=interval_lower,
@@ -759,6 +781,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
             replicate=job.replicate,
             seed=job.seed,
             outcome="test_failed",
+            censored_count=observed.censored_count,
+            achieved_censoring_share=observed.achieved_censoring_share,
             fit_heritability=fit_heritability,
             fit_total_variance=fit_variance,
             interval_lower=interval_lower,
@@ -777,6 +801,8 @@ def run_replicate(job: ReplicateJob) -> ReplicateResult:
         replicate=job.replicate,
         seed=job.seed,
         outcome=COMPLETE_OUTCOME,
+        censored_count=observed.censored_count,
+        achieved_censoring_share=observed.achieved_censoring_share,
         p_value=p_value,
         test_rule=str(test_rule_value),
         covered=interval_contains(interval, truth),
@@ -823,6 +849,23 @@ def campaign_jobs(
     return jobs
 
 
+def target_censoring_limits(
+    target: TargetDesign,
+    *,
+    mean_coefficients: npt.NDArray[np.float64],
+    total_variance: float,
+    expected_shares: tuple[float, ...],
+) -> dict[float, float]:
+    """Solve every instrument limit from design facts before simulation."""
+    latent_mean: npt.NDArray[np.float64] = target.design @ mean_coefficients
+    """Computed each row's pre-outcome latent mean."""
+
+    return {
+        share: right_censoring_limit(latent_mean, total_variance, share)
+        for share in expected_shares
+    }
+
+
 def run_campaign(
     target: TargetDesign,
     configuration: CampaignConfiguration,
@@ -842,10 +885,19 @@ def run_campaign(
     }
     """Factored each generating covariance once before scheduling attempts."""
 
+    censoring_limits: dict[float, float] = target_censoring_limits(
+        target,
+        mean_coefficients=MEAN_COEFFICIENTS,
+        total_variance=configuration.true_variance,
+        expected_shares=configuration.censoring_shares,
+    )
+    """Fixed every instrument threshold before any worker draws an outcome."""
+
     state: WorkerState = WorkerState(
         target=target,
         covariance_factors_by_scenario=factors,
         mean_coefficients=MEAN_COEFFICIENTS,
+        censoring_limits_by_share=censoring_limits,
         true_heritability=configuration.true_heritability,
         required_test_rule=REQUIRED_TEST_RULE,
         required_interval_level=REQUIRED_INTERVAL_LEVEL,
@@ -1210,18 +1262,22 @@ def main(arguments: Sequence[str] | None = None) -> int:
     """Separated bounded development execution from eventual release evidence."""
 
     people: int = target.relationship.shape[0]
-    """Read the target roster size governing attainable censoring fractions."""
+    """Read the target roster size used by each fixed-limit attempt."""
 
-    censoring_counts: list[int] = [
-        round(censoring_share * people)
-        for censoring_share in configuration.censoring_shares
-    ]
-    """Recorded the exact finite-roster censoring counts submitted to inference."""
+    fixed_limits: dict[float, float] = target_censoring_limits(
+        target,
+        mean_coefficients=MEAN_COEFFICIENTS,
+        total_variance=configuration.true_variance,
+        expected_shares=configuration.censoring_shares,
+    )
+    """Reconstructed the pre-outcome instrument facts for the evidence record."""
 
-    achieved_censoring_shares: list[float] = [
-        count / people for count in censoring_counts
+    achieved_shares: list[float] = [
+        attempt.achieved_censoring_share
+        for attempt in attempts
+        if attempt.achieved_censoring_share is not None
     ]
-    """Distinguished exact attained fractions from their named target levels."""
+    """Retained the random realised shares across every available attempt."""
 
     evidence: dict[str, object] = {
         "check": "tobit_target_design",
@@ -1239,9 +1295,15 @@ def main(arguments: Sequence[str] | None = None) -> int:
             "relationship_components": len(target.component_sizes),
             "largest_family": max(target.component_sizes),
             "fixed_effect_columns": target.design.shape[1],
-            "censoring_shares": list(configuration.censoring_shares),
-            "censoring_counts": censoring_counts,
-            "achieved_censoring_shares": achieved_censoring_shares,
+            "expected_censoring_shares": list(configuration.censoring_shares),
+            "fixed_censoring_limits": [
+                fixed_limits[share] for share in configuration.censoring_shares
+            ],
+            "achieved_censoring_share_range": (
+                {"min": min(achieved_shares), "max": max(achieved_shares)}
+                if achieved_shares
+                else None
+            ),
             "participant_structure_reconstructed": False,
         },
         "configuration": asdict(configuration),

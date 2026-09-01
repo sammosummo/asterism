@@ -47,8 +47,8 @@ that value sits on the boundary of a correlation's range, so the reference is
 the Self–Liang mixture instead.
 
 ```python
-model.test(values, "rho_g", null=0.0)   # any shared genes?
-model.test(values, "rho_g", null=1.0)   # the same genes?
+model.test(values, "rho_g", null=0.0)  # any shared genes?
+model.test(values, "rho_g", null=1.0)  # the same genes?
 ```
 
 ## The model

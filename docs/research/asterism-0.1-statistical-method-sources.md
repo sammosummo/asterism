@@ -6,6 +6,36 @@ qualification evidence, and does not change the support boundary in
 [ADR 0012](../adr/0012-small-analysis-ready-releases.md). It contains no
 participant data.
 
+## Addendum: fixed-instrument censoring and boundary tests
+
+**Added on 31 August 2026.** The censored-model simulations that informed the
+original 0.1 qualification selected a censoring limit from each realised
+response to obtain an exact censoring share. That outcome-adaptive generator
+does not represent an instrument whose limit is fixed before the response is
+observed. Its estimates, coverage, levels, and boundary atoms cannot therefore
+establish inference for the intended fixed-limit design. The affected checks
+must be rerun with the limit calculated from design facts alone.
+
+Self and Liang's half mass is an asymptotic tangent-cone result, not a statement
+that exactly half of finite-sample fits must rest on the bound. Crainiceanu and
+Ruppert show directly that the finite-sample atom depends on the design. Asterism
+therefore retains measured boundary mass as a diagnostic but does not gate a
+test on its proximity to one half.
+
+For a test of one component in the several-component censored model, the
+development API labels the analytic rule `asymptotic_mixture_50_50` and refuses
+a fit with another component on the bound. The fixed-instrument target campaign
+assesses that approximation by rejection level at the intended design. The
+constrained-null parametric bootstrap remains an experimental alternative: it
+refits both hypotheses for caller-selected null draws and reports the add-one
+p-value. Its independent inner draws use deterministic coordinate-derived
+streams and may run in parallel without making its existence qualification
+evidence.
+
+The released one-component numerical fit path is unchanged. That fact does not
+repair the evidence design: its affected interval and test checks also need the
+fixed-limit rerun.
+
 ## How to read the evidence
 
 Three kinds of statement must remain separate in the eventual methods
@@ -523,6 +553,12 @@ are in the [validation record](../validation.md).
    verified references below were transferred into `docs/references.bib` with
    DOI plus PMID/PMCID or a stable archive where available, and automated
    citation-key validation was added.
+9. Fixed-instrument censored qualification. Rerun the affected one-component,
+   several-component, and mixed simulations with censoring limits fixed before
+   outcomes are drawn. Treat the bound atom as a diagnostic, and qualify the
+   explicitly asymptotic several-component test by rejection level. A separate
+   outer campaign would be needed before describing the optional bootstrap as
+   finite-sample qualified.
 
 ## Verified source list transferred to the canonical bibliography
 

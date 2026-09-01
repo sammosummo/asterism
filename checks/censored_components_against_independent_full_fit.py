@@ -23,7 +23,9 @@ to a constant in a script.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -38,6 +40,7 @@ from censored_full_fit_reference import (
     fit_censored,
     negative_loglik,
 )
+from censoring_design import right_censoring_limit
 
 ROOT: Path = Path(__file__).resolve().parents[1]
 """Located the checkout carrying the release manifest."""
@@ -88,6 +91,66 @@ only on a reference optimum that lands somewhere materially worse.
 
 SEED: int = 20_260_829
 """Fixed the integration so the reference surface does not move under SciPy."""
+
+
+def file_sha256(path: Path) -> str:
+    """Return the lowercase SHA-256 of one exact checkout input.
+
+    Args:
+        path: Existing file to identify.
+
+    Returns:
+        Lowercase hexadecimal SHA-256.
+    """
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def evidence_producer() -> dict[str, Any]:
+    """Identify the exact clean checkout and loaded binary producing evidence.
+
+    Returns:
+        Public build identity and loaded-extension digest.
+
+    Raises:
+        ValueError: If the checkout is dirty or the loaded extension does not
+            carry this checkout's exact commit, release manifest and locks.
+    """
+    status: subprocess.CompletedProcess[str] = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=normal"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    """Checked cleanliness independently of the extension's build-time flag."""
+
+    if status.stdout.strip():
+        raise ValueError("CENSORED_COMPONENT_FULL_FIT_CHECKOUT_NOT_CLEAN")
+    commit: str = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    """Read the immutable commit named by this clean checkout."""
+
+    build: dict[str, Any] = asterism.build_identity()
+    """Read and internally verify the loaded extension's embedded identity."""
+
+    expected: dict[str, Any] = {
+        "source_commit": commit,
+        "source_dirty": False,
+        "release_manifest_sha256": file_sha256(ROOT / "release.toml"),
+        "cargo_lock_sha256": file_sha256(ROOT / "Cargo.lock"),
+        "uv_lock_sha256": file_sha256(ROOT / "uv.lock"),
+    }
+    """Recomputed every source and dependency commitment from the checkout."""
+
+    if any(build.get(field) != value for field, value in expected.items()):
+        raise ValueError("CENSORED_COMPONENT_FULL_FIT_EXTENSION_CHECKOUT_MISMATCH")
+    return {
+        "build_identity": build,
+        "extension_sha256": asterism.installed_extension_sha256(),
+    }
 
 
 def declared_tolerances() -> tuple[float, float]:
@@ -196,8 +259,12 @@ def one_replicate(
     ) @ generator.standard_normal(rows)
     """Drew the complete trait, before any instrument stopped."""
 
-    ceiling: float = float(np.quantile(complete, 1.0 - share))
-    """Put the limit where it censors the declared share."""
+    ceiling: float = right_censoring_limit(
+        0.0,
+        ADDITIVE + PERSON + RESIDUAL,
+        share,
+    )
+    """Fixed the instrument from generating facts before drawing outcomes."""
 
     censoring: np.ndarray = (complete >= ceiling).astype(np.int64)
     """Marked 1 at or above the limit, 0 where measured."""
@@ -294,8 +361,20 @@ def main() -> int:
     parser.add_argument("--records", type=int, default=RECORDS)
     parser.add_argument("--replicates", type=int, default=REPLICATES)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--evidence", type=Path)
     arguments: argparse.Namespace = parser.parse_args()
     """Read the design and whether this run records evidence."""
+
+    if arguments.no_write and arguments.evidence is not None:
+        parser.error("--no-write and --evidence cannot be used together")
+    if arguments.evidence is not None and arguments.evidence.exists():
+        parser.error("--evidence refuses to overwrite an existing record")
+    """Made every retained evidence file an explicit, immutable destination."""
+
+    producer: dict[str, Any] | None = (
+        evidence_producer() if arguments.evidence is not None else None
+    )
+    """Fixed source and binary provenance before any retained run began."""
 
     proportion_tolerance, loglik_tolerance = declared_tolerances()
     """Read both tolerances from the release manifest, not from this script."""
@@ -389,14 +468,17 @@ def main() -> int:
         "a surface with no ordering left at that scale. The flatness is what the\n"
         "separation check measures from the other side."
     )
-    if not arguments.no_write:
-        record: Path = ROOT / "evidence" / "components-full-fit-2026-08-29.json"
-        """Named this run's evidence."""
+    if arguments.evidence is not None:
+        record: Path = arguments.evidence
+        """Used the caller's new path without replacing historical evidence."""
 
         record.write_text(
             json.dumps(
                 {
                     "participant_free": True,
+                    "censoring_limits_fixed_before_outcomes": True,
+                    "base_seed": SEED,
+                    "producer": producer,
                     "families": arguments.families,
                     "records_per_person": arguments.records,
                     "truths": {

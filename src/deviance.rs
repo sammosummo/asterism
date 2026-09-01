@@ -37,6 +37,11 @@
 /// deviance is rounding rather than evidence.
 const SETTLED: f64 = 1e-6;
 
+/// Collapse likelihood-search rounding into the statistic's point mass.
+pub(crate) fn settled(statistic: f64) -> f64 {
+    if statistic < SETTLED { 0.0 } else { statistic }
+}
+
 /// Twice the log-likelihood gap, floored at nought.
 pub(crate) fn deviance(alternative: f64, null: f64) -> f64 {
     (2.0 * (alternative - null)).max(0.0)
@@ -70,7 +75,7 @@ pub(crate) fn chi2_two_df_upper_tail(statistic: f64) -> f64 {
 /// `tail` is the reference distribution's upper tail: a plain chi-square for an
 /// interior null, or a weighted sum of them where a constraint sits on a bound.
 pub(crate) fn p_value(statistic: f64, tail: impl Fn(f64) -> f64) -> f64 {
-    if statistic < SETTLED {
+    if settled(statistic) == 0.0 {
         1.0
     } else {
         tail(statistic).clamp(0.0, 1.0)
@@ -79,7 +84,7 @@ pub(crate) fn p_value(statistic: f64, tail: impl Fn(f64) -> f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{chi2_upper_tail, deviance, p_value};
+    use super::{chi2_upper_tail, deviance, p_value, settled};
 
     /// Two degrees of freedom is the one closed form kept, so it must agree
     /// with the general route it bypasses.
@@ -131,6 +136,8 @@ mod tests {
     fn a_fit_on_its_bound_is_not_reported_at_a_half() {
         let on_the_bound = p_value(0.0, |t| 0.5 * chi2_upper_tail(t, 1.0));
         assert!((on_the_bound - 1.0).abs() < 1e-15);
+        assert_eq!(settled(1e-7), 0.0);
+        assert_eq!(settled(1e-6), 1e-6);
         // Just past the settling tolerance the mixture takes over as usual.
         let just_off = p_value(1.0, |t| 0.5 * chi2_upper_tail(t, 1.0));
         assert!(just_off < 0.2 && just_off > 0.1, "{just_off}");

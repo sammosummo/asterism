@@ -10,6 +10,8 @@ seen, which is what makes a mixed pair worth fitting at all.
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import asterism
 import numpy as np
 
@@ -29,8 +31,8 @@ high, conventional = correlated_traits(
 )
 """Drew two thresholds sharing genetic variance at a correlation of 0.6."""
 
-ceiling: float = float(np.quantile(high, 0.6))
-"""Put the ceiling where forty per cent of the high-frequency trait exceeds it."""
+ceiling: float = NormalDist().inv_cdf(0.6)
+"""Fixed the ceiling at the generating population's sixtieth percentile."""
 
 censoring: np.ndarray = (high >= ceiling).astype(np.int64)
 """Marked 1 at or above the limit, 0 where the threshold was measured."""

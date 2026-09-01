@@ -9,11 +9,27 @@ seed inside this file.
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import platform
+from pathlib import Path
 
 import asterism
 import numpy as np
+
+parser: argparse.ArgumentParser = argparse.ArgumentParser(
+    description="Run the participant-free smoke for one installed manylinux wheel."
+)
+"""Configured the public target-host smoke command interface."""
+
+parser.add_argument("--wheel", type=Path, required=True)
+arguments: argparse.Namespace = parser.parse_args()
+"""Required the saved artifact whose exact bytes the external result attests."""
+
+if not arguments.wheel.is_file() or arguments.wheel.suffix != ".whl":
+    parser.error("--wheel must name the installed saved wheel")
+"""Refused a missing or non-wheel artifact before fitting anything."""
 
 rng: np.random.Generator = np.random.default_rng(20260824)
 """Fixed the generator so the smoke is reproducible from its seed alone."""
@@ -70,6 +86,7 @@ record: dict[str, object] = {
     "python_version": platform.python_version(),
     "asterism_version": asterism.__version__,
     "build_identity": asterism.build_identity(),
+    "wheel_sha256": hashlib.sha256(arguments.wheel.read_bytes()).hexdigest(),
     "people": int(people),
     "largest_family": int(per_family),
     "converged": bool(fit["converged"]),

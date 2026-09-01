@@ -289,8 +289,8 @@ def test_command_requires_every_scientific_coordinate() -> None:
     assert arguments.no_write is True
 
 
-def test_latent_response_is_deterministic_blockwise_and_exactly_censored() -> None:
-    """Generate target observations without a participant-backed outcome."""
+def test_latent_response_uses_a_fixed_instrument_limit_before_the_draw() -> None:
+    """Generate target observations without conditioning the limit on outcomes."""
     module: ModuleType = target_module()
     """Loaded the target covariance and response generator."""
 
@@ -319,11 +319,18 @@ def test_latent_response_is_deterministic_blockwise_and_exactly_censored() -> No
     )
     """Factored each independent relationship component separately."""
 
+    censoring_limit: float = module.right_censoring_limit(
+        target.design @ np.asarray([10.0]),
+        4.0,
+        0.5,
+    )
+    """Solved the intended marginal censoring share before drawing a response."""
+
     first: object = module.simulate_observation(
         target,
         factors,
         mean_coefficients=np.asarray([10.0]),
-        censoring_share=0.5,
+        censoring_limit=censoring_limit,
         seed=44,
     )
     """Generated one participant-free right-censored response."""
@@ -332,16 +339,27 @@ def test_latent_response_is_deterministic_blockwise_and_exactly_censored() -> No
         target,
         factors,
         mean_coefficients=np.asarray([10.0]),
-        censoring_share=0.5,
+        censoring_limit=censoring_limit,
         seed=44,
     )
     """Repeated the identical stream and scientific coordinates."""
 
-    assert first.censored_count == 2
-    assert first.achieved_censoring_share == 0.5
+    third: object = module.simulate_observation(
+        target,
+        factors,
+        mean_coefficients=np.asarray([10.0]),
+        censoring_limit=censoring_limit,
+        seed=45,
+    )
+    """Changed the outcome stream without recalibrating the instrument."""
+
+    assert first.censored_count == np.count_nonzero(first.censoring == 1)
+    assert first.achieved_censoring_share == first.censored_count / 4
     assert np.array_equal(first.censoring, second.censoring)
     assert np.array_equal(first.value, second.value, equal_nan=True)
     assert np.array_equal(first.limit, second.limit)
+    assert np.all(first.limit == censoring_limit)
+    assert np.all(third.limit == censoring_limit)
     assert np.isnan(first.value[first.censoring == 1]).all()
     assert np.isfinite(first.value[first.censoring == 0]).all()
 
@@ -378,14 +396,14 @@ def test_replicate_uses_only_the_three_public_tobit_routes(
         factors: tuple[npt.NDArray[np.float64], ...],
         *,
         mean_coefficients: npt.NDArray[np.float64],
-        censoring_share: float,
+        censoring_limit: float,
         seed: int,
     ) -> object:
         """Return the fixed observation while retaining the production signature."""
         assert selected_target is target
         assert len(factors) == 1
         assert mean_coefficients.shape == (1,)
-        assert censoring_share == 0.5
+        assert censoring_limit == 1.0
         assert seed == 8
         return observed
 
@@ -462,6 +480,7 @@ def test_replicate_uses_only_the_three_public_tobit_routes(
             "heritable": (np.eye(4),),
         },
         mean_coefficients=np.asarray([10.0]),
+        censoring_limits_by_share={0.5: 1.0},
         true_heritability=0.5,
         required_test_rule="mixture_50_50",
         required_interval_level=0.95,
@@ -594,6 +613,7 @@ def test_replicate_assigns_one_exact_failure_bucket(
                 "heritable": (np.eye(4),),
             },
             mean_coefficients=np.asarray([10.0]),
+            censoring_limits_by_share={0.5: 1.0},
             true_heritability=0.5,
             required_test_rule="mixture_50_50",
             required_interval_level=0.95,
@@ -663,6 +683,9 @@ def test_main_emits_complete_values_free_development_evidence(
     monkeypatch.setattr(module, "load_target_design", lambda *args, **kwargs: target)
     """Avoided rebuilding the reviewed dense target in a command-shape test."""
 
+    monkeypatch.setattr(module, "MEAN_COEFFICIENTS", np.asarray([10.0]))
+    """Matched the compact one-column target used by this orchestration test."""
+
     def campaign(selected_target: object, configuration: object) -> list[object]:
         """Return one complete attempt in each requested scientific cell."""
         assert selected_target is target
@@ -675,6 +698,8 @@ def test_main_emits_complete_values_free_development_evidence(
                 replicate=0,
                 seed=index,
                 outcome="complete",
+                censored_count=2 if rate == 0.52 else 3,
+                achieved_censoring_share=0.5 if rate == 0.52 else 0.75,
                 p_value=0.5,
                 test_rule="mixture_50_50",
                 covered=True,
@@ -745,8 +770,14 @@ def test_main_emits_complete_values_free_development_evidence(
     assert evidence["exact_release_campaign"] is False
     assert evidence["passed"] is True
     assert len(evidence["attempts"]) == 4
-    assert evidence["design_facts"]["censoring_counts"] == [2, 3]
-    assert evidence["design_facts"]["achieved_censoring_shares"] == [0.5, 0.75]
+    assert evidence["design_facts"]["expected_censoring_shares"] == [0.52, 0.75]
+    assert evidence["design_facts"]["fixed_censoring_limits"] == pytest.approx(
+        [9.899692833070535, 8.651020499607835]
+    )
+    assert evidence["design_facts"]["achieved_censoring_share_range"] == {
+        "min": 0.5,
+        "max": 0.75,
+    }
 
 
 def test_command_source_uses_only_the_public_asterism_interface() -> None:
@@ -786,8 +817,8 @@ def test_command_source_uses_only_the_public_asterism_interface() -> None:
     )
 
 
-def test_manifest_binds_one_exact_unmeasured_target_design_rule() -> None:
-    """Inventory the fixed release campaign without claiming it has run."""
+def test_manifest_binds_one_exact_measured_target_design_rule() -> None:
+    """Keep the completed fixed-instrument campaign as the release rule."""
     manifest: dict[str, object] = tomllib.loads(
         (ROOT / "release.toml").read_text(encoding="utf-8")
     )
@@ -846,16 +877,18 @@ def test_manifest_binds_one_exact_unmeasured_target_design_rule() -> None:
     ]
     assert rule["expected_exit_code"] == 0
     assert rule["status"] == "ready"
+    assert "blocker" not in rule
     assert rule["design_facts"] == {
         "participant_free": True,
-        "measured": False,
+        "measured": True,
         "sample_size": {"min": 1_909, "max": 1_909},
         "largest_family": {"max": 180},
         "trait_type": ["right_censored_continuous"],
         "components": ["additive_relationship", "residual"],
         "relationship_components": 202,
         "fixed_effect_columns": 6,
-        "censoring_share": {"min": 0.52, "max": 0.75},
+        "expected_censoring_share": {"min": 0.52, "max": 0.75},
+        "censoring_limits_fixed_before_outcomes": True,
         "scenarios": ["null", "heritable"],
         "true_heritabilities": [0.0, 0.5],
         "true_variance": 4.0,

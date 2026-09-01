@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "check_id": "censored_components_target_design",
+  "outcome": "known_limitation",
+  "claim": "finite_sample_level_of_asymptotic_mixture_50_50",
+  "design": {
+    "participant_free": true,
+    "people": 1909,
+    "records_per_person": 2,
+    "sample_size": 3818,
+    "largest_family": 180,
+    "fixed_effect_columns": 6,
+    "components": [
+      "additive_relationship",
+      "person_level",
+      "household",
+      "residual"
+    ],
+    "household_size": 3,
+    "censoring_limits_fixed_before_outcomes": true
+  },
+  "producer": {
+    "source_commit": "bd3e09ed0b4985533574f5621489915d3ba2f156",
+    "release_manifest_sha256": "774daf3eea000da314125b75c7f8d569b1ed519798aab1e136b23803ed63258e",
+    "wheel_sha256": "243f9d9e714db62e6d88a1137027ccb940619fd90c5230304c44866c8b75f199",
+    "extension_sha256": "b31dfe19d7f4d65bfd97d7ddcab684ad8b50de427a3947180b5a4a8e261b1bc0",
+    "slurm_array": 7346901,
+    "shards": 10
+  },
+  "cells": [
+    {
+      "scenario": "null",
+      "expected_censoring_share": 0.52,
+      "attempts": 200,
+      "rejections": 11,
+      "rejection_rate": 0.055,
+      "nominal_level": 0.05,
+      "one_sided_lower_95": 0.031146858789654504,
+      "two_sided_exact_interval": [0.0278, 0.0963],
+      "operational_lrt_atom_share": 0.465,
+      "achieved_censoring_share": {
+        "minimum": 0.47721320062860134,
+        "mean": 0.5193347302252487,
+        "maximum": 0.5560502881089576
+      },
+      "passed": true
+    },
+    {
+      "scenario": "null",
+      "expected_censoring_share": 0.75,
+      "attempts": 200,
+      "rejections": 19,
+      "rejection_rate": 0.095,
+      "nominal_level": 0.05,
+      "one_sided_lower_95": 0.06310551496161299,
+      "two_sided_exact_interval": [0.0582, 0.1444],
+      "operational_lrt_atom_share": 0.39,
+      "achieved_censoring_share": {
+        "minimum": 0.7289156626506024,
+        "mean": 0.7506443163960193,
+        "maximum": 0.7818229439497119
+      },
+      "passed": false
+    },
+    {
+      "scenario": "heritable_interval",
+      "expected_censoring_share": 0.52,
+      "attempts": 200,
+      "covered": 196,
+      "coverage": 0.98,
+      "nominal_coverage": 0.975,
+      "passed": true
+    },
+    {
+      "scenario": "heritable_interval",
+      "expected_censoring_share": 0.75,
+      "attempts": 200,
+      "covered": 192,
+      "coverage": 0.96,
+      "nominal_coverage": 0.975,
+      "passed": true
+    }
+  ],
+  "decision": {
+    "asymptotic_test_available": true,
+    "fixed_target_75_p_value_reportable": false,
+    "required_replacement": "design_specific_simulated_null",
+    "fit_and_intervals_affected": false,
+    "one_component_test_affected": false,
+    "universal_censoring_threshold": null
+  },
+  "artifacts": {
+    "compute_merge_log_sha256": "994471cf780125485e3b33bbbb684cb5f5e573343bd582c73f789a8d209974f1",
+    "checkpoint_hash_manifest_sha256": "630840b9dfa729bee2c21a19bf1bf5efb8bf1f639c5ad0346da88459d3b8e6e4",
+    "reporting_erratum": "The preserved merge table printed exact-zero atom shares of 0.205 and 0.200. The operational test atom uses the public 1e-6 settlement tolerance; recomputation from the retained in_lrt_atom fields gives 0.465 and 0.390."
+  }
+}

@@ -39,6 +39,7 @@ from ._core import relationship as _relationship
 from ._core import weighted_chi2_upper_tail as _weighted_chi2_upper_tail
 from .analysis import (
     build_identity,
+    installed_extension_sha256,
     release_manifest,
     run_analysis,
     subject_order_commitment,
@@ -82,6 +83,7 @@ __all__: list[str] = [
     "align",
     "build_identity",
     "grouping_matrix",
+    "installed_extension_sha256",
     "kinship_classes",
     "mixed_bivariate_fit",
     "mixed_bivariate_interval",

@@ -662,11 +662,9 @@ impl MixedBivariateModel {
         // fit, so it is those that fall short, and a discarded profile
         // evaluation is scored as a miss however well the interval covered.
         //
-        // Measured on four hundred replicates of the binary-with-censored pair,
-        // four per cent of them had at least one such evaluation, and that four
-        // per cent is the whole of the gap between the coverage this model
-        // achieves -- 0.965 by plain containment -- and the 0.925 its check
-        // reported.
+        // The historical outcome-adaptive campaign exposed this convergence
+        // failure mode, but its coverage numbers do not qualify a fixed-
+        // threshold generator and are not repeated here as evidence.
         if scaled_gradient >= 1e-5
             && let Some(better) = crate::convergence::polish(
                 &theta,

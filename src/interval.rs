@@ -30,9 +30,9 @@
 //! **The mixture verdict exists in two families out of nine.** Whether an
 //! endpoint sitting on its bound belongs to the interval is not answerable by
 //! reading the code; `CONTEXT.md` is blunt about it -- the coverage check is
-//! what chooses an interval recipe. Only `prepared` and `tobit` have had a
-//! coverage simulation score their bounds, so only those two can fill the
-//! field, and the other seven had nowhere to put it if they ever did.
+//! what chooses an interval recipe. `prepared` has current qualification.
+//! `tobit` historically populated the verdict, but its fixed-instrument
+//! coverage remeasurement is pending; the other families leave it absent.
 //!
 //! # What a family hands over
 //!
@@ -77,10 +77,9 @@ const CHI2_ONE_DF_95: f64 = 3.841_458_820_694_124;
 /// threshold, so a bound can belong to the interval on this rule and not on the
 /// other.
 ///
-/// Unused outside the tests until `prepared` or `tobit` moves across -- they
-/// are the two families whose coverage check has scored a bound. `allow` rather
-/// than `expect`, because the tests here do use it, so the lint fires only in a
-/// build without them and an expectation would go unfulfilled half the time.
+/// Unused outside the tests until a family with valid current qualification
+/// moves across. `allow` rather than `expect`, because the tests here do use it,
+/// so the lint fires only in a build without them.
 #[allow(dead_code, reason = "no family has moved its scored bounds across yet")]
 const MIXTURE_CRIT: f64 = 2.705_543_454_095_404;
 
@@ -169,13 +168,11 @@ impl Interval {
         }
     }
 
-    /// Score each limited end against the Self-Liang mixture.
+    /// Retain the published Self-Liang boundary verdict for a limited end.
     ///
-    /// **Only for a family whose coverage check has scored it there.** The
-    /// verdict is a measurement, and calling this is the claim that the
-    /// measurement was made; `0011` part 5 is the rule and `CONTEXT.md` is
-    /// where it is written down. A family that has not run the simulation
-    /// leaves the fields absent by not calling this.
+    /// This remains the one-component censored compatibility record while its
+    /// corrected fixed-instrument finite-sample coverage campaign is pending.
+    /// Families without that compatibility surface leave these fields absent.
     ///
     /// An end that is not limited is interior, so the question does not arise
     /// and the field stays absent. An end limited because the bound could not

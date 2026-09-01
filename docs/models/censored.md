@@ -15,7 +15,7 @@ python examples/censored.py
 
 ```
 people:             800
-censored:           400 of 800
+censored:           406 of 800
 h2 (true 0.5):      0.450
 converged:          True
 95% interval:       [0.282, 0.615]
@@ -119,18 +119,23 @@ ML likelihood using the shared region-probability routine. The EM approach of
 [Vaida and Liu (2009)](../references.bib#vaidaLiu2009) is relevant published
 precedent but is not the implemented algorithm.
 
-Testing $H_0:h^2=0$ and deciding whether an interval contains that boundary use
-the 50:50 mixture. At least two measured values are required to identify scale.
+Testing $H_0:h^2=0$ uses the asymptotic Self–Liang 50:50 mixture. The
+one-component numerical path is unchanged from the released API, but its
+fixed-instrument recovery, coverage and target checks now pass. At least two
+measured values are required to identify scale.
 
-**The interval's boundary verdict is filled at one component only.** The
-coverage simulation that scored the boundary rule ran there; with several
-components more than one coefficient can rest on nought at once, which is not
-the case it scored, so the verdict is left absent rather than borrowed from a
-measurement of a different model.
+**The interval's boundary verdict is filled at one component only.** At several
+components it remains absent rather than borrowing a one-boundary conclusion
+for a model whose finite-sample null law is design-dependent.
 
-The test is offered at every component and carries `nuisance_at_bound` instead
-of refusing. Refusing would stop the coverage check that scores it from ever
-running. Scoring both at several components is issue 38.
+At several components `test` instead labels the reference
+`asymptotic_mixture_50_50` and refuses if a nuisance variance rests on its
+bound. This explicitly asymptotic test remains generally available. Its p-value
+must not be reported for the exact failed 1,909-person, four-component target at
+75% expected censoring without a design-specific simulated null. That is not a
+universal censoring threshold. The constrained-null `bootstrap` route remains
+experimental after its target failed the zero-refusal rule. Fit, interval and
+the released one-component test are unaffected.
 
 ### Public record mapping
 
@@ -155,38 +160,51 @@ python examples/censored_components.py
 
 ```
 records:              1200 (600 people, two each)
-censored:             480 of 1200
+censored:             501 of 1200
 additive (true 0.4):  0.458
-person   (true 0.3):  0.282
-residual (true 0.3):  0.260
+person   (true 0.3):  0.284
+residual (true 0.3):  0.258
 converged:            True
-person 95% interval:  [0.157, 1.000]
-upper on its bound:   True
-profile failures:     1
+person 95% interval:  [0.158, 0.424]
+upper on its bound:   False
+profile failures:     0
+additive test rule:   asymptotic_mixture_50_50
+additive p-value:     5.199e-11
 ```
 
-**That upper end is not a result.** It rests on its bound because the profile
-could not be evaluated there, not because the likelihood never fell away: at a
-proportion of one the person-level matrix is the whole covariance and is
-singular, so there is no residual left to make it invertible. `upper_limited`
-alone does not tell that apart from a genuine bound, which is why the failure
-count is printed beside it.
+An upper end can rest on its bound because the profile could not be evaluated
+there rather than because the likelihood never fell away: at a proportion of
+one the person-level matrix is the whole covariance and is singular, so there
+is no residual left to make it invertible. `upper_limited` alone does not tell
+that apart from a genuine bound, which is why the failure count is printed
+beside it.
 
 ```python
 listener = asterism.grouping_matrix([f"listener-{row // 2}" for row in range(rows)])
 model = asterism.CensoredComponentModel([expanded, listener], design)
 
 fit = model.fit(value, censoring, limit)
-fit["mean_diagonal_proportions"]        # the residual's share last
+fit["mean_diagonal_proportions"]  # the residual's share last
 
-model.interval(value, censoring, limit, component=1)   # on the proportion
-model.test(value, censoring, limit, component=1)       # against nought
+model.interval(value, censoring, limit, component=1)  # on the proportion
+model.test(value, censoring, limit, component=1)  # labelled asymptotic
+model.bootstrap(
+    value,
+    censoring,
+    complete_limit,
+    censoring_direction,
+    component=1,
+    replicates=999,
+    seed=4117,
+)
 ```
 
 `interval` gives the mean-diagonal proportion by default, which is the
-comparable quantity; pass `quantity="coefficient"` for the raw one. `test`
-carries `nuisance_at_bound`, and `interval` leaves its boundary verdict absent
-at several components -- see below.
+comparable quantity; pass `quantity="coefficient"` for the raw one. At several
+components `test` reports `asymptotic_mixture_50_50` and refuses an observed
+nuisance boundary. `bootstrap` needs the instrument limit and direction for
+every row, including measured rows, and is an experimental alternative. The
+interval leaves its boundary verdict absent at several components.
 
 ### What separates one component from another
 
@@ -194,16 +212,17 @@ A component is identified by resemblance the other components do not already
 explain, and which pairs of rows carry that information differs by component.
 It is worth knowing which, because it decides what a given sample can support.
 
-**Additive against person-level: a matter of precision, and measured.** Two
+**Additive against person-level: a matter of precision.** Two
 records of one person resemble each other through both, so a person's own rows
 say nothing about the split; only the correlation between relatives carries the
 additive term alone. The information therefore scales with **related pairs**,
 not with records, and giving everybody a second record sharpens their sum while
 doing nothing for the split.
 
-Measured on simulated sibling pairs at a true 0.40 and 0.30, over **eight
-replicates per size** -- so the spreads below carry something like a quarter of
-their own value in uncertainty and should be read as an order, not a figure:
+An early exploratory simulation used sibling pairs at a true 0.40 and 0.30,
+over **eight replicates per size**. It selected censoring limits from realised
+outcomes, so the figures are investigation history rather than fixed-instrument
+qualification evidence:
 
 | people | additive (sd) | person-level (sd) |
 | ---: | ---: | ---: |
@@ -211,8 +230,9 @@ their own value in uncertainty and should be read as an order, not a figure:
 | 400 | 0.404 (0.11) | 0.296 (0.11) |
 | 2400 | 0.370 (0.036) | 0.330 (0.036) |
 
-Unbiased at every size, with the spread falling as one over the square root of
-the sample. Issue 35 is the check that would measure this properly.
+The corrected fixed-instrument recovery campaign now passes its predeclared
+consistency rule; it supports the measured recovery and precision trend, not an
+unbiasedness claim.
 
 **Household against additive: this one can fail outright, and not measured.**
 Where a home holds exactly one relationship class, the household matrix is a
@@ -250,7 +270,8 @@ it was.
 | The comparable quantity | `mean_diagonal_proportions`, the residual's last, summing to one |
 | An interval for a component's coefficient | `coefficient_interval(index)` |
 | An interval for its proportion, which is the one to report | `mean_diagonal_interval(index)` |
-| A test that any component is nought | `coefficient_test(index)` |
+| The asymptotic component test | `test(..., component=index)`; rule `asymptotic_mixture_50_50` |
+| An experimental finite-sample candidate | `bootstrap(..., component=index, replicates=B, seed=...)` |
 
 **Compare components by the mean-diagonal proportions, not by the
 coefficients.** A coefficient is comparable across matrices only where their
@@ -280,12 +301,10 @@ never left. Read the two together; `upper_limited` alone does not tell them
 apart.
 
 **Two things the record says about itself.** An interval's boundary verdict is
-filled only at one component, because that is where the coverage simulation
-scored the mixture rule; with several it is absent, and an absent verdict means
-nobody has measured it. And a test carries `nuisance_at_bound`, which is true
-where some other coefficient or the residual also rested on nought in the null
-fit -- the case in which the 50:50 mixture is not the reference the p-value
-should be read against. Scoring both at several components is issue 38.
+absent at several components because it has not been qualified there. Analytic
+`test` declares its asymptotic rule and refuses when another coefficient or the
+residual rests on nought in the observed fit. `bootstrap` makes the same
+nuisance-boundary refusal and remains experimental.
 
 ### Assumptions and limits
 
@@ -294,17 +313,22 @@ direction and each limit are correct; censoring is represented by the stated
 regions; the relationship basis has the qualified normalisation; and the
 measured portion identifies scale.
 
-Coverage has been measured on sibling pairs, which do not exercise the
-sequential approximation above two censored family members. Censoring beyond
-three quarters has not been measured.
+The corrected one-component fixed-instrument recovery, coverage and target
+campaigns pass. For several components, recovery and interval coverage pass,
+and the analytic test remains available with its explicit asymptotic label. Its
+p-value is a known failure on the exact 1,909-person, four-component target at
+75% expected censoring and requires a design-specific simulated null there. The
+bootstrap remains experimental after its target failed its declared rule.
 
 ## Validation
 
 The log-likelihood and all four reported quantities agree with R `censReg` to
-`9.6e-9`. On 300 replicates of 300 sibling pairs per cell, all nine cells of a
-heritability-by-censoring grid contain 0.95. Substituting the limit returns
-0.31 where the truth is 0.5 and three quarters are censored; the censored
-model recovers 0.5.
+`9.6e-9` on their retained conditional comparison. Earlier recovery and
+coverage campaigns selected each censoring limit from the response they then
+analysed. Those runs are retained as diagnostic history. The corrected
+one-component campaigns now pass. For several components, the exact target
+limitation above is kept separate from the generally available asymptotic test;
+it is not a censoring threshold or a limitation on fitting and intervals.
 
 The designs behind those figures, which of them can be reproduced from this
 repository, and what has still to run, are in the
@@ -354,17 +378,18 @@ converge. Each one widened the interval rather than narrowing it, which is
 the safe direction, but a large count means the interval rests on fewer
 points than its width suggests.
 
-Read ``censored_share`` beside the answer. On simulated data the model
-recovers the truth to three quarters censored; on real extended
-high-frequency thresholds it degrades past about half, where too little of
-the upper tail is left to estimate a variance from.
+Read ``censored_share`` beside the answer. The released numerical path is
+unchanged, and the corrected fixed-instrument coverage campaign passes at
+the intended 52% and 75% expected censoring shares.
 
 ### `tobit_test(relationship: 'Any', value: 'Any', censoring: 'Any', limit: 'Any', design: 'Any') -> 'dict[str, Any]'`
 
 Test the censored heritability against nought.
 
 The null holds the heritability at nought, which is its own bound, so the
-reference is the Self-Liang 50:50 mixture of chi-square on nought and one
-degrees of freedom rather than a plain chi-square. ``rule`` says which was
-used, as data rather than as a promise.
+analytic reference is the Self-Liang 50:50 mixture of chi-square on nought
+and one degrees of freedom rather than a plain chi-square. ``rule`` says
+which was used, as data rather than as a promise. Its corrected
+fixed-instrument target check passes at the intended 52% and 75% expected
+censoring shares.
 

@@ -13,10 +13,10 @@ python examples/liability.py
 
 ```
 people:                 1000
-cases:                  200 of 1000
-h2 liability (true 0.5): 0.641
+cases:                  194 of 1000
+h2 liability (true 0.5): 0.627
 converged:              True
-95% interval:           [0.402, 0.861]
+95% interval:           [0.380, 0.855]
 ```
 
 ```python

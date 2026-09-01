@@ -2,9 +2,14 @@
 
 Analysis id `one_trait_censored_components`. Runnable example in [`examples/`](../../examples/).
 
-**Not qualified.** The entry in `release.toml` is marked `planned_for_0_2`, and
-`run_analysis` refuses it. The checks behind that qualification are being
-written; what is measured so far is below.
+**Current 0.2 scope, not a released artefact.** Fitting, intervals and the
+explicitly asymptotic test are in scope; the constrained-null bootstrap remains
+experimental. The analytic p-value must not be reported for the exact failed
+1,909-person, four-component fixed-instrument target at 75% expected censoring
+without a design-specific simulated null. This is not a universal censoring
+threshold, and fit, interval and the released one-component test are unaffected.
+Conditional implementation comparisons and superseded investigation results
+are separated below.
 
 ## Using it
 
@@ -16,21 +21,34 @@ python examples/censored_components.py
 ```
 
 ```python
-model = asterism.CensoredComponentModel([relationship, listener], design, limit)
-fit = model.fit(y)
-interval = model.interval(y, component=0)
-test = model.test(y, component=1)
+model = asterism.CensoredComponentModel([relationship, listener], design)
+fit = model.fit(value, censoring, limit)
+interval = model.interval(value, censoring, limit, component=0)
+test = model.test(value, censoring, limit, component=1)
+
+# Optional experimental finite-sample reference:
+censoring_direction = np.ones_like(censoring)  # right censoring for every row
+bootstrap = model.bootstrap(
+    value,
+    censoring,
+    limit,
+    censoring_direction,
+    component=1,
+    replicates=999,
+    seed=4117,
+)
 ```
 
 The components are an ordinary list, so the one-component case is this model
 with a list of length one, not a separate model. Each frequency is fitted on its
 own; nothing here combines them.
 
-`test` is a supported quantity, and its measured level is recorded beside it in
-`release.toml` rather than left to be assumed: 0.055 against a nominal 0.05 at
-half the rows censored, and 0.100 at three quarters. See [At the design it will
-be used on](#at-the-design-it-will-be-used-on) for what that second number is
-and is not.
+`test` labels its reference `asymptotic_mixture_50_50` and refuses if another
+variance rests on its bound. `bootstrap` needs a finite instrument limit and
+censoring direction for every row, including rows measured in this sample,
+because a null draw may cross any of them. The analytic route is explicitly
+asymptotic rather than a finite-sample guarantee, and the bootstrap remains
+experimental; see [At the design it will be used on](#at-the-design-it-will-be-used-on).
 
 ## The model
 
@@ -49,8 +67,11 @@ censored one contributes the probability that the latent value lies at or
 beyond its limit. The likelihood factorises over blocks of $\mathbf V$, not of
 any single component, because it is the sum that must be block diagonal.
 
-The residual is added for you and is never passed, so the coefficients are
-shares of the total and the residual takes what they leave.
+The residual is added for you and is never passed. The raw coefficients are
+shares of the total only when every component has unit mean diagonal; otherwise
+use the reported mean-diagonal proportions to compare variance contributions.
+The residual is the last proportion and takes what the structured components
+leave.
 
 **Maximum likelihood, never REML.** A censored record has no residual to
 project onto the null space of the design, so the REML correction is not
@@ -74,30 +95,26 @@ Identification is a property of the submitted components on the fitted roster,
 not of their names. Two components that are linearly dependent there cannot be
 told apart however they are labelled: a household that is exactly a sibling pair
 is $2\mathbf A-\mathbf I$, which is the pedigree, and no amount of data
-separates it from the additive component.
+separates it from the additive component. The several-component builder refuses
+such a rank-deficient basis set, including an explicit identity matrix that
+duplicates the residual already added by the model.
 
 ## Validation
 
 An additive genetic component and a person-level component are both 1 within a
 person and differ only through relatives, so whether they can be told apart is a
-property of the design rather than of the code. Sweeping families and records
-per person, with truths of 0.4 additive and 0.3 person-level:
+property of the design rather than of the code. The fixed-instrument campaign
+completed 200 replicates in each of eight cells: two or three records per person
+and 30, 60, 120 or 240 sibling pairs. Every cell fitted. At 240 pairs:
 
-| families | records | additive | person-level | correlation | split costs |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 30 | 2 | 0.358 (0.251) | 0.327 (0.248) | −0.935 | 2.8x |
-| 240 | 2 | 0.398 (0.115) | 0.303 (0.115) | −0.979 | 4.8x |
-| 240 | 3 | 0.385 (0.107) | 0.313 (0.104) | −0.980 | 5.0x |
+| records | mean additive | mean person-level | truths |
+| ---: | ---: | ---: | :--- |
+| 2 | 0.3984 | 0.3028 | 0.4, 0.3 |
+| 3 | 0.3858 | 0.3132 | 0.4, 0.3 |
 
-They do separate: each is recovered, and its spread falls as the design grows.
-The cost is that splitting the two is about five times less precise than their
-sum, so a design sized on the total variance is not sized on the split. The
-estimates correlate near −1 at the larger designs, which is the sum becoming
-certain while the split stays open, not the fit degrading.
-
-At 30 and 60 families the estimates are still biased towards each other. That is
-what a maximum-likelihood variance component does in a small sample, not a
-fault; the bias is gone by the largest design swept.
+Both largest-design cells passed the predeclared 0.03 bias rule. The two
+estimates remain strongly negatively correlated, but their precision and
+separation improve as the design grows.
 
 The check is [`checks/component_separation.py`](../../checks/component_separation.py).
 
@@ -112,9 +129,10 @@ replicates at each censoring share:
 | censored | proportions agree to | log likelihoods agree to |
 | ---: | ---: | ---: |
 | 0.25 | 1.4e-03 | 7.0e-02 |
-| 0.50 | 6.3e-03 | 5.8e-02 |
+| 0.50 | 2.9e-03 | 5.5e-02 |
 
-The proportions are what the science reads. The log likelihoods agree less
+The instrument limits in this comparison were fixed before outcomes were
+drawn. The proportions are what the science reads. The log likelihoods agree less
 closely and are not expected to: **the gap between them is the
 sequential-truncation approximation**, measured rather than assumed. The check
 also scores this model's own answer through the independent likelihood, and
@@ -128,11 +146,15 @@ The check is
 
 ### Interval coverage
 
-2,400 people in villages of six, two records each, 0.52 censored, 300
-replicates per cell, with an interval taken for **every** structured component
-rather than only the first. Every scoreable cell covered its truth within a band
-drawn simultaneously across the twelve, from 0.9567 to 0.9933 against a nominal
-0.975.
+The historical campaign used 2,400 people in villages of six, two records each,
+and forced 0.52 censoring by selecting the limit from each realised outcome.
+Its recorded coverage band of 0.9567 to 0.9933 against a nominal 0.975 is
+superseded. The corrected fixed-instrument campaign completed 300 replicates in
+each of twelve component-by-truth cells with no refusal. Coverage in the eleven
+interior cells ranged from 0.9533 to 0.9933, and every simultaneous exact
+interval contained 0.975. The lower-bound cell retained the deliberately absent
+boundary verdict in 289 cases and excluded nought in eleven; its predeclared
+rule did not establish undercoverage.
 
 **The nominal is 0.975 and not 0.95.** A component proportion of one puts every
 other component and the residual at nought, leaving a covariance in which a
@@ -155,8 +177,10 @@ The check is
 
 1,909 people, 202 relationship components with the largest at 180, six
 fixed-effect columns, two records each and families cut into households of
-three. Eight hundred attempts, eight hundred measured, no refusal and no failed
-fit.
+three. The original 800-attempt campaign completed without a refused fit, but
+it selected each limit from the outcome it then analysed. The table is retained
+as investigation history and does not qualify point estimates, intervals or
+analytic p-values for a fixed instrument:
 
 | scenario | censored | rate | exact interval | nominal | |
 | --- | ---: | ---: | :---: | ---: | :--- |
@@ -165,100 +189,49 @@ fit.
 | heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
 | heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
 
-**The boundary test's level is 0.100 at three quarters censored, against a
-nominal 0.05.** It holds at 0.052 censored. Point estimates and intervals held
-at both shares.
+The reproducible point mass in the null likelihood-ratio statistic is useful
+diagnostically, but **one half is not a finite-sample acceptance target**.
+Self–Liang's 50:50 law is an asymptotic tangent-cone result; exact results for
+Gaussian mixed models show design-dependent finite-sample atoms, and the
+positive part of the distribution can move as well. One retained cell made the
+distinction concrete: 0.325 of its statistics were in the operational atom while
+its rejection rate was exactly 0.050. Gating on the atom would reject a
+calibrated test.
 
-**Three explanations were tested. Two are refuted and the third is measured.**
+The investigation also ruled out the code change in `e4bd51f`: on the exact 40
+affected target seeds, the old and new held-fit searches selected the same 12
+point-mass statistics and the same 7 rejections. Their log likelihoods differed
+by at most 1.85e-09. Choosing each simulation limit from its realised outcome
+was a separate harness error; replacing it with a limit fixed before the draw
+left the family-four rejection rate and atom essentially unchanged, so it was
+not the source of the p-value failure.
 
-*Not a small sample.* Two copies of the pedigree side by side — 3,818 people,
-7,636 rows — give 0.105 with an exact interval of [0.066, 0.156]. Doubling the
-data moved nothing, where a finite-sample failure of an asymptotic reference
-would have shrunk.
+The public several-component `test` reports
+`asymptotic_mixture_50_50`, distinguishing the asymptotic Self–Liang
+approximation from the released one-component compatibility label. It refuses
+if another component or the residual rests on its bound. The fixed-instrument
+target completed all 800 attempts. Null rejection was 0.055 at 52% censoring
+and 0.095 at 75%; the latter cell failed because its one-sided exact lower bound
+was 0.0631, above 0.05. The descriptive two-sided interval began at 0.0582.
+Coverage was 0.980 and 0.960, and the operational LRT atoms were 0.465 and
+0.390. The failed cell is the exact 1,909-person, four-component target at 75%
+expected censoring. Its analytic p-value must not be reported without a
+design-specific simulated null tied to the model, design, source and seed. It
+does not define a censoring threshold for another design.
 
-*Not the approximated region.* At a design whose censored blocks are small
-enough to integrate exactly — 100 families of four, blocks of eight rows, three
-components, the same three quarters censored — the level is 0.075 from
-Asterism's own test, 0.065 from its statistic, and 0.060 from the same statistic
-recomputed with the region **integrated** rather than approximated. All three
-contain the nominal. The approximation error does fail to cancel between the two
-fits, by 0.069 log units, but it makes the statistic *smaller*: 0.338 against
-0.475. It is conservative here, so it cannot be what inflates the level.
-
-*Not the size of the censored block.* Holding the roster at 1,920 people and
-sweeping family size from 4 to 128 — censored blocks from 8 rows to 227 — the
-level does not trend: 0.085, 0.090, 0.100, 0.050, 0.050, 0.060.
-
-*What is measured.* The share of null fits whose estimate lands exactly on the
-bound. The 50:50 mixture is the right reference only if that share is a half. It
-is 0.565 in the released one-component configuration, which is calibrated. It is
-0.24 to 0.40 across every several-component cell above, and 0.310 at the target
-design. Self–Liang's half-and-half holds for one variance component at a bound
-with interior, uncorrelated nuisance components; the additive and person-level
-components here are correlated at about −0.98, which is what
-[`checks/component_separation.py`](../../checks/component_separation.py)
-measures from the other side. A boundary mass that is not a half makes a p-value
-computed as though it were a half too small.
-
-*Not the optimiser stopping short.* The three-component model nests the
-two-component one, so a free fit can never score worse than the null fit unless
-the search failed. Across 200 null replicates at the target design that happened
-once, by 0.009 log units. Of the 126 replicates whose estimate came back
-positive, every one bought real likelihood; none was a positive number sitting
-at no gain. So the boundary mass is a property of the surface being fitted and
-not a numerical fault.
-
-*It follows the person-level component.* Component count is not what decides
-it: two components and three, at the same design with fresh seeds, gave 0.110
-and 0.065. Records per person are not what decides it either — the released
-one-component model, given a relationship spread over two records, holds at
-0.045 with 0.530 on the bound. What every failing configuration has and every
-passing one lacks is a **person-level component beside the additive one**:
-
-| model | records | on the bound | level |
-| --- | ---: | ---: | ---: |
-| additive | 1 | 0.555 | 0.050 |
-| additive | 2 | 0.530 | 0.045 |
-| additive, household | 1 | above a half | 0.078 |
-| additive, person-level | 2 | 0.315 | 0.110 |
-| additive, person-level, household | 2 | 0.370, 0.415 | 0.100, 0.065 |
-
-The person-level matrix is one within a person and nought between. The additive
-matrix spread over records is one within a person and a half between siblings.
-**They differ only between relatives.** At three quarters censored few pairs of
-relatives are both measured, so the component being tested is nearly a copy of a
-component that is not, and the information for the tested direction goes nearly
-singular. A household kernel does not do this, because it is nought between
-homes and so keeps its own shape; that is why the additive-and-household model
-holds.
-
-**What remains is the reference, and it is not settled.** A 50:50 mixture is
-right when one variance component sits at a bound and the rest are interior,
-which is the situation here — so a measured mass of 0.37 says one of the
-conditions behind that result does not hold at this design. The likeliest
-candidate is the information for the tested component going nearly singular
-under heavy censoring, since the additive matrix differs from the person-level
-one only between relatives, and at three quarters censored few pairs of
-relatives are both measured. That is a hypothesis. It has not been tested, and
-the previous three hypotheses in this section were each refuted by the
-measurement that followed them.
-
-What would settle the level regardless of which reading is right is a reference
-that assumes nothing about the mass — fit under the null, simulate from that
-fit, and read the p-value from the statistic's own distribution. At this design
-that costs hours for a single test, which is why it is a decision about the
-software and not a patch.
-
-Read a p-value here knowing its level at your censoring, which is what
-`measured_levels` in `release.toml` records. [ADR
-0020](../adr/0020-no-design-range-gates-a-result.md) settled that no design
-range gates a result; a measured level is a fact to report beside the number,
-not a gate in front of it.
+The optional 999-draw constrained-null bootstrap target also completed all 800
+requested coordinates, but eleven attempts in the 75% null cell refused after
+an inner bootstrap fit failed. The other cell rates passed their statistical
+rules, but the campaign permits no failed attempt, so its no-write merge failed
+and no evidence was published. The bootstrap therefore remains experimental;
+it has not qualified a replacement p-value. Fit and interval evidence, the
+generally available labelled asymptotic test, and the released one-component
+numerical and analytic routes are unchanged.
 
 The check is
 [`checks/censored_components_target_design.py`](../../checks/censored_components_target_design.py).
 
-### The largest censored region that has been qualified
+### The largest censored region that has been measured
 
 The likelihood factorises over blocks of the covariance, and within a block the
 probability that the censored rows lie beyond their limits is reached by
@@ -272,12 +245,12 @@ limit that was found**: the ladder ran out before the approximation did. At 600
 the error is 0.053 of what a heritability step of 0.1 does to the same
 quantity, against an allowance of 0.25.
 
-**Fits whose largest censored block exceeds 600 are not supported.** Nothing
-says they are wrong; nothing has measured them. The target-design campaign above
-produced 310 at its heaviest, so the design this model was built for sits inside
-the evidence with room to spare. A roster's block is its pedigree component, not
-its size: 1,909 people made blocks of at most 360 rows because the largest
-family has 180 people.
+Blocks above 600 have not been measured by this comparison. That is a warning
+about the available evidence, not a support boundary or a runtime refusal. The
+corrected fixed-instrument target campaigns produced a largest censored block of
+313, inside the measured ladder. A roster's block is its pedigree component,
+not its size: 1,909 people make structural blocks of at most 360 rows because
+the largest family has 180 people.
 
 <!-- API: generated by tools/build_model_pages.py -->
 
@@ -320,8 +293,9 @@ describes the same model and leaves it alone. ``"coefficient"`` gives
 the interval on the raw coefficient, which that rescaling moves.
 
 ``contains_lower_bound`` and ``contains_upper_bound`` are absent at
-several components. The coverage simulation that scored the boundary
-rule ran at one, and an absent verdict means nobody has measured it.
+several components. No valid fixed-instrument campaign has qualified a
+boundary-containment rule there, so an absent verdict means nobody has
+measured it.
 
 ### `CensoredComponentModel.test(self, value: 'Any', censoring: 'Any', limit: 'Any', component: 'int') -> 'dict[str, Any]'`
 
@@ -330,8 +304,19 @@ Test that one component's coefficient is nought.
 A proportion is nought exactly when its coefficient is, so this answers
 both questions.
 
-``nuisance_at_bound`` says whether another component or the residual
-also rested on nought. Where it is true, ``rule`` is not the reference
-the p-value should be read against: the fifty-fifty mixture answers for
-one parameter on one bound with the rest inside.
+With one component this is the released ``mixture_50_50`` calculation,
+on its unchanged numerical path. With several components the requested
+component is tested after moving it to the held search coordinate, and
+``rule`` is ``"asymptotic_mixture_50_50"``. That reference assumes
+every nuisance component and the residual are interior; the method
+refuses as ``TOBIT_COMPONENT_TEST_NUISANCE_AT_BOUND`` otherwise.
+
+The several-component reference is explicitly asymptotic rather than a
+finite-sample guarantee. Its p-value must not be reported for the exact
+failed 1,909-person, four-component target at 75% expected censoring
+without a design-specific simulated null. This does not create a
+universal censoring threshold. :meth:`bootstrap` supplies a simulated
+constrained-null reference, but its target calibration failed the
+zero-refusal rule and it remains experimental. Fit, interval and the
+released one-component test are unaffected.
 

@@ -10,22 +10,22 @@
   },
   "adapter": {
     "path": "checks/tobit_against_mcmcglmm.py",
-    "sha256": "e11aaaab19854d925eda2cdb0b93bd53398da2e69a9d34e70a2e150979c259a9"
+    "sha256": "b3a85e78fd3d506de004ef2c05f0333a1b632c838b4308a2aa282138dce1f358"
   },
   "adapter_contract_version": 1,
   "check_id": "tobit_against_mcmcglmm",
   "external_outputs": {
     "posterior": {
-      "effective_h2": 1603.5,
-      "h2_high": 0.624117706,
-      "h2_low": 0.346080337,
-      "h2_mean": 0.481558506,
-      "intercept_high": 10.147533698,
-      "intercept_low": 9.93259092,
-      "intercept_mean": 10.042783194,
-      "total_high": 4.163353012,
-      "total_low": 3.521510805,
-      "total_mean": 3.826639031
+      "effective_h2": 1746.2,
+      "h2_high": 0.617762851,
+      "h2_low": 0.348684081,
+      "h2_mean": 0.48927582,
+      "intercept_high": 10.158839775,
+      "intercept_low": 9.937497342,
+      "intercept_mean": 10.050688138,
+      "total_high": 4.186258037,
+      "total_low": 3.527262594,
+      "total_mean": 3.845490755
     },
     "sampling": {
       "burnin": 20000,
@@ -57,15 +57,15 @@
     },
     {
       "name": "MCMCglmm censoring mask",
-      "sha256": "d1559059efcc26c4cff857db158ebb5a92004b13ae940f0cacce308aead16028"
+      "sha256": "4132e75979e46ac283074650f70da9d6c8854d0813fbd49da4b593ad31d1720d"
     },
     {
       "name": "MCMCglmm status",
-      "sha256": "f2926e5b99347bb5e4477d7e11dcc34a88e75f452fa24bd48beb66b5ae28152a"
+      "sha256": "b96e78bfc5d234a532ec278660f449c849dd0319f4f1f3db16000bc469277375"
     },
     {
       "name": "MCMCglmm limits",
-      "sha256": "89d92d8444819dd5e02f034c02b225425eb3f98c93c80280e15a9df7c844559f"
+      "sha256": "c73ade766f2a84d9daaa5781aa5916973fe525a9643cf0f8ff2ebd688b5bada5"
     },
     {
       "name": "MCMCglmm fixed-effect design",

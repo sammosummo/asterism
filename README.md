@@ -44,10 +44,12 @@ covariance = 0.5 * relationship + 0.5 * np.eye(people)
 trait = np.linalg.cholesky(covariance) @ np.random.default_rng(0).normal(size=people)
 
 model = asterism.prepare(np.ones((people, 1)), relationship)
-fit = model.fit(trait)          # REML by default
+fit = model.fit(trait)  # REML by default
 
 print(f"h2 (true 0.5): {fit['h2']:.3f}")
-print(f"95% interval:  [{fit['interval']['lower']:.3f}, {fit['interval']['upper']:.3f}]")
+print(
+    f"95% interval:  [{fit['interval']['lower']:.3f}, {fit['interval']['upper']:.3f}]"
+)
 print(f"p (h2 = 0):    {fit['test']['p_value']:.2e}")
 ```
 
@@ -61,7 +63,19 @@ Every capability has a complete runnable program behind it in [`examples/`](exam
 
 ## Capabilities
 
-Eight models are currently supported. Each one has checks that measure it against a known truth or an independent implementation. They are listed in [api-support.md](docs/api-support.md), which also names the public objects that fall outside current support (models whose numbers have not been established to the same standard yet; see [outside-support.md](docs/outside-support.md)).
+The published 0.1.1 wheel declared eight supported models. The current
+development checkout preserves those interfaces, but it is not a replacement
+qualified release. The corrected fixed-instrument one-component censored and
+mixed-pair checks now pass. The current 0.2 scope for the several-component
+censored model includes fitting, intervals and an explicitly labelled asymptotic
+test; the bootstrap remains experimental. The analytic p-value failed on the
+exact 1,909-person, four-component target at 75% expected censoring and must not
+be reported for that analysis without a design-specific simulated null. That is
+not a universal censoring threshold, and it does not affect fitting, intervals
+or the released one-component test. The exact published and development statuses
+are listed in [api-support.md](docs/api-support.md), alongside public objects
+outside the 0.1 scientific support set (see
+[outside-support.md](docs/outside-support.md)).
 
 | Capability                    | Runnable example                              |
 | ----------------------------- | --------------------------------------------- |

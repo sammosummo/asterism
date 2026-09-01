@@ -1,7 +1,8 @@
 # Statistical methods
 
-This document is the canonical statistical specification for analyses marked
-`supported_in_0_1` by [ADR 0012](adr/0012-small-analysis-ready-releases.md).
+This document is the canonical statistical specification for analyses whose
+versioned `supported_in_*` declaration is active in `release.toml`, following
+[ADR 0012](adr/0012-small-analysis-ready-releases.md).
 It describes the estimand, likelihood, estimator, inference, public record, and
 qualification boundary for each supported analysis. The implementation remains
 authoritative for computation; this document is authoritative for scientific
@@ -15,23 +16,27 @@ are also different claims.
 
 ## What a release requires
 
-A public method can exist without being one of the eight supported analyses.
+A public method can exist without being one of the nine 0.2 supported analyses.
 Before a release is made, each supported analysis must meet three conditions:
 
-1. it is marked `supported_in_0_1` in `release.toml`;
+1. its versioned `supported_in_*` declaration is active in `release.toml`;
 2. every check named for it has a configured pass rule, and that rule passes
    for the released source and artifact;
 3. its standard synthetic receipt records a fit with every fact true — finite
    values, a converged free fit, converged constrained fits for inference, and
    no failed profile evaluation.
 
-The current `release.toml` enables the 0.1.1 release and configures the pass
-rules for its supported analyses. The figures in the [validation
-record](validation.md) provide broader scientific context; the release
-manifest and its recorded evidence remain the authority for the released
-artifact.
+The current `release.toml` identifies the checkout as the unreleased
+`0.2.0.dev0` development line. The corrected one-component censored and
+mixed-pair checks pass. The several-component censored fit, intervals and
+explicitly asymptotic test are in 0.2 scope; the exact failed 75%-expected-
+censoring target is retained as a narrow known limitation rather than a global
+release gate, and the optional bootstrap remains experimental.
+The figures in the [validation record](validation.md) provide broader
+scientific context; the release manifest and its recorded evidence remain the
+authority for a particular artefact.
 
-The eight 0.1 analysis families are:
+The nine 0.2 analysis families are:
 
 | Analysis ID | Public entry points | Supported quantities |
 | --- | --- | --- |
@@ -43,6 +48,7 @@ The eight 0.1 analysis families are:
 | `binary_liability_heritability` | `LiabilityModel.fit`, `.interval`, `.test` | Liability-scale $h^2$, interval, and test |
 | `one_trait_censored` | `tobit_fit`, `tobit_interval`, `tobit_test` | Complete-trait $h^2$, interval, and test |
 | `mixed_binary_censored_genetic_correlation` | `mixed_bivariate_fit`, `mixed_bivariate_interval`, `mixed_bivariate_test` | Genetic correlation for a mixed pair including a continuous trait, interval, and test |
+| `one_trait_censored_components` | `CensoredComponentModel.fit`, `.interval`, `.test` | Coefficients, mean-diagonal proportions, `coefficient_interval`, `mean_diagonal_proportion_interval`, and `asymptotic_test` |
 
 Quantities marked *descriptive* have no check standing behind them; they are
 returned because the fit computes them. Quantities marked *diagnostic* exist to
@@ -138,9 +144,11 @@ add `quantity`; spatial intervals add `quantity` and `estimator`;
 continuous-G×E intervals add `surface`, `quantity`, `environment`, and
 `estimator`; discrete-G×E intervals add `rule` and `estimator`; liability adds
 `estimator`; Tobit adds `censored_share` and `estimator`; and mixed bivariate
-adds `what` and `estimator`. Boundary containment is currently populated only
-for the coverage-scored prepared one-trait and Tobit families; it is `None` in
-the other families.
+adds `what` and `estimator`. The implementation populates boundary containment
+only for the prepared one-trait and Tobit families; it is `None` in the other
+families. The existing Tobit fields do not by themselves qualify the interval
+recipe; the separate fixed-instrument coverage and boundary-truth checks now
+pass and are retained in the validation record.
 
 A failed or nonconverged profile evaluation is unknown likelihood, not evidence
 that the likelihood crossed its threshold. Asterism widens over that point and
@@ -180,6 +188,63 @@ not a derivation of an Asterism test; it is cited as a warning. Model-specific
 mixtures below are Asterism parameter-space derivations that still require the
 manifest's simulation gates.
 
+The one-half weight is an asymptotic tangent-cone probability, not a
+finite-sample requirement that half of fitted null datasets have
+$T=0$. [Crainiceanu and Ruppert
+(2004)](references.bib#crainiceanuRuppert2004) derive finite-sample null laws
+for Gaussian mixed models whose atom and positive part depend on the design.
+The share of null fits in Asterism's settled LRT atom is therefore reported as
+a diagnostic only. Neither agreement with one half nor departure from it is a
+stand-alone test of calibration.
+
+### Several-component censored tests
+
+For a censored model with several identifiable covariance components, `.test`
+uses the same one-boundary Self–Liang approximation but labels it
+`asymptotic_mixture_50_50`. It refuses if any untested variance or the residual
+rests on its bound: the resulting tangent cone is no longer the one-boundary
+problem. A fixed-instrument target campaign records the approximation's
+rejection level for that exact design, without treating the realised LRT atom
+as a requirement or calling the reference finite-sample exact. Such a
+measurement does not define a censoring threshold for another design.
+
+The exact 1,909-person, four-component fixed-instrument target failed at 75%
+expected censoring. Its analytic p-value must not be reported without a
+design-specific simulated null tied to the model, design, source and seed. This
+named limitation does not withdraw the generally available asymptotic test or
+affect fitting, intervals or the released one-component test.
+
+The experimental `.bootstrap` route instead fits the tested coefficient at exactly zero,
+generates latent responses from that fitted constrained null while preserving
+the supplied design and fixed censoring limits, and refits both the null and
+alternative for every bootstrap dataset. If $T_{\mathrm{obs}}$ is the observed
+settled LRT and $T_b^\ast$ is bootstrap statistic $b$, it reports
+
+$$
+\widehat p
+=\frac{1+\sum_{b=1}^{B}\mathbb{1}(T_b^\ast\geq T_{\mathrm{obs}})}{B+1}.
+$$
+
+The returned rule is `parametric_bootstrap_add_one`. The caller chooses $B$;
+the add-one count follows [Phipson and Smyth
+(2010)](references.bib#phipsonSmyth2010), and every requested bootstrap fit
+must complete for a p-value to be returned. Inner datasets use deterministic
+coordinate-derived random streams and are refitted in parallel, so thread
+schedule and thread count do not change the result.
+
+This route is deliberately narrower than a general boundary bootstrap. It
+refuses when an untested nuisance variance is fitted on its bound. Ordinary
+plug-in bootstrap can be inconsistent at nuisance boundaries, as [Andrews
+(2000)](https://doi.org/10.1111/1468-0262.00114) demonstrates; the shrunk
+boundary-aware procedure of [Guédon, Baey and Kuhn
+(2024)](https://doi.org/10.1093/biomet/asae025) would require a separate
+implementation and qualification. Nuisance boundaries are assessed on
+mean-diagonal proportions rather than raw coefficients, so rescaling a
+covariance matrix cannot by itself change this refusal. Asterism's
+constrained-null bootstrap is implemented but not scientifically qualified as a
+finite-sample release procedure. Its optional outer calibration is separate
+from the 0.2 gate for the fit, interval and labelled asymptotic test.
+
 ## Numerical implementation
 
 Asterism does not use one optimizer for every model:
@@ -211,11 +276,11 @@ and a sequential approximation above dimension two.
 
 ## What is still outstanding
 
-Every supported analysis has now been measured against the current build, and
-the cross-platform agreement and the Medusa installed-wheel smoke with it. What
-remains before a release is the standard synthetic receipts, which refuse to
-run on anything but a clean released build and are therefore produced during
-the release itself.
+The one-component censored numerical code is unchanged. Its earlier
+outcome-adaptive records are historical, and its corrected fixed-instrument
+MCMCglmm comparison, recovery, interval coverage and target-design level now
+pass. Corrected mixed-pair recovery and coverage checks also pass for the
+continuous, binary, censored and censored-pair cells.
 
 Two things that were on this list are gone rather than done: the target-sized
 time and memory budgets, withdrawn by
@@ -223,12 +288,23 @@ time and memory budgets, withdrawn by
 design range, withdrawn by
 [ADR 0020](adr/0020-no-design-range-gates-a-result.md).
 
-Two remain open as science rather than process. Several-component support is
-bounded by demonstrated matrix properties: exact basis dependence refuses, and
-a qualified near-dependence precision rule is still wanted before the tested
-bases are broadened. The Mendell–Elston approximation is also still to be
-bounded at the intended family sizes, prevalence and censoring pattern for the
-liability and mixed models.
+Several-component censored support remains part of the development checkout,
+with its 0.2 scope now fixed. Its independent dense-likelihood comparison
+measures the sequential region approximation, and its fixed-instrument
+component-recovery and interval-coverage checks pass. The analytic test remains
+available with the explicit `asymptotic_mixture_50_50` label when nuisance
+variances are interior. The exact 1,909-person, four-component target at 75%
+expected censoring is a known exception whose p-value requires a design-specific
+simulated null. The optional bootstrap target failed its zero-refusal rule after
+eleven inner-fit failures and remains experimental. None of this creates a
+universal censoring threshold.
+
+Two further matters remain open as science rather than process. General
+several-component support is bounded by demonstrated matrix properties: exact
+basis dependence refuses, and a qualified near-dependence precision rule is
+still wanted before the tested bases are broadened. The Mendell–Elston
+approximation is also still to be bounded at the intended family sizes,
+prevalence and censoring pattern for the liability and mixed models.
 
 The primary-source audit behind this specification is retained in
 [`research/asterism-0.1-statistical-method-sources.md`](research/asterism-0.1-statistical-method-sources.md).

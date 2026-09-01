@@ -305,10 +305,10 @@ pub fn censored_component_interval(
 
 /// A test that one component's coefficient is nought.
 ///
-/// Returns the statistic, the p-value, the reference rule, the two log
-/// likelihoods, and whether another component or the residual also rested on
-/// nought -- which is when that rule is not the one to read the p-value
-/// against.
+/// Returns the statistic, the p-value, the reference rule and the two log
+/// likelihoods. The released one-component route retains `mixture_50_50`;
+/// several-component results say `asymptotic_mixture_50_50` and refuse where a
+/// nuisance component or the residual rests on a bound.
 #[pyfunction]
 #[allow(clippy::type_complexity)]
 pub fn censored_component_test(
@@ -332,6 +332,69 @@ pub fn censored_component_test(
     .map_err(PyValueError::new_err)?;
     Ok((
         got.statistic,
+        got.p_value,
+        got.rule.to_owned(),
+        got.null_loglik,
+        got.alternative_loglik,
+        got.nuisance_at_bound,
+    ))
+}
+
+/// A constrained-null parametric bootstrap for one component's statistic.
+///
+/// `direction` declares right or left censoring for every row, including rows
+/// measured in the observed response. Returns the observed statistic, the
+/// exceedance count, the complete requested denominator, the add-one p-value,
+/// the reference rule, and the observed nuisance-boundary diagnostic.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
+pub fn censored_component_bootstrap(
+    py: Python<'_>,
+    components: Vec<PyReadonlyArray2<'_, f64>>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    direction: PyReadonlyArray1<'_, i64>,
+    index: usize,
+    replicates: usize,
+    seed: u64,
+) -> PyResult<(f64, usize, usize, usize, f64, String, f64, f64, bool)> {
+    let (owned_value, owned_censoring, owned_limit, x) =
+        inputs(&value, &censoring, &limit, &design)?;
+    let directions: Vec<Censoring> = direction
+        .as_array()
+        .iter()
+        .map(|code| censoring_from(*code))
+        .collect::<PyResult<_>>()?;
+    let component_matrices = components_from(&components);
+    let model = TobitModel::build(
+        &component_matrices,
+        &owned_value,
+        &owned_censoring,
+        &owned_limit,
+        &x,
+    )
+    .map_err(PyValueError::new_err)?;
+    // `build` owns its copies. Release every NumPy borrow and the temporary
+    // matrices while the GIL is still held, then detach the hours-long Rust
+    // calculation so unrelated Python threads remain usable.
+    drop(component_matrices);
+    drop(components);
+    drop(value);
+    drop(censoring);
+    drop(limit);
+    drop(design);
+    drop(direction);
+    let got = py
+        .detach(move || model.bootstrap_component_test(index, &directions, replicates, seed))
+        .map_err(PyValueError::new_err)?;
+    Ok((
+        got.observed,
+        got.exceedances,
+        got.replicates,
+        got.requested,
         got.p_value,
         got.rule.to_owned(),
         got.null_loglik,

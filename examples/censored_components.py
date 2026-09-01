@@ -20,6 +20,8 @@ while leaving the first alone.
 
 from __future__ import annotations
 
+from statistics import NormalDist
+
 import asterism
 import numpy as np
 
@@ -62,8 +64,8 @@ complete: np.ndarray = (
 )
 """Composed the complete trait: 0.4 genetic, 0.3 person-level, 0.3 left over."""
 
-ceiling: float = float(np.quantile(complete, 0.6))
-"""Put the instrument's ceiling where it censors two records in five."""
+ceiling: float = NormalDist().inv_cdf(0.6)
+"""Fixed the instrument at the generating population's sixtieth percentile."""
 
 censoring: np.ndarray = (complete >= ceiling).astype(np.int64)
 """Marked 1 where the value is at or above the limit, 0 where measured."""
@@ -101,6 +103,12 @@ interval: dict[str, object] = model.interval(value, censoring, limit, component=
 print(f"person 95% interval:  [{interval['lower']:.3f}, {interval['upper']:.3f}]")
 print(f"upper on its bound:   {interval['upper_limited']}")
 print(f"profile failures:     {interval['profile_failures']}")
+
+test: dict[str, object] = model.test(value, censoring, limit, component=0)
+"""Tested the additive component with the explicitly asymptotic reference."""
+
+print(f"additive test rule:   {test['rule']}")
+print(f"additive p-value:     {test['p_value']:.4g}")
 
 # **Read those two together.** An end resting on its bound is reported the same
 # way whether the likelihood never fell away before it or the profile could not

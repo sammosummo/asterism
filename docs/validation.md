@@ -3,13 +3,14 @@
 What each model has been compared against, and what simulation has measured
 about it.
 
-Three labels distinguish where a figure came from.
+Four labels distinguish where a figure came from.
 
 | Label | Meaning |
 | --- | --- |
 | Reproducible | A check in `checks/` regenerates the figure from this repository. |
 | Recorded | The figure came from a run that read participant data. It is kept as a record; nothing here regenerates it. |
 | Pending | `release.toml` fixes the command, but it has not yet run. |
+| Superseded | The run happened, but a later correction means that it no longer qualifies the stated analysis. It remains as history only. |
 
 Coverage and rejection rates carry exact binomial
 [Clopper–Pearson](https://doi.org/10.1093/biomet/26.4.404) limits. Every
@@ -123,7 +124,9 @@ implementations then differ by 0.28 and 0.35 in a variance.
 *Evolution* 66:2411, fitted animal models to four traits of wild red deer and
 then added a matrix of home range overlap, depositing that matrix with its
 pedigree and phenotypes (Dryad `doi:10.5061/dryad.jf04r362`).
-`checks/against_red_deer.py` refits all four and reproduces its Table 2.
+With `RED_DEER_DATA` set to that unpacked deposit,
+`checks/against_red_deer.py` refits all four and reproduces its Table 2. The
+checker has no implicit workspace-data fallback.
 
 | Quantity | Asterism | Published |
 | --- | ---: | ---: |
@@ -226,16 +229,13 @@ logarithm is about that tolerance divided by the probability, and at 1e-10 that
 is 1.6e-05. The log-scale routine is accurate relative to the answer wherever it
 is asked.
 
-**The released censored analysis was re-measured after that change**, on
-29 August 2026, and all six of its pass rules hold. The two that matter most are
-the comparisons with engines that know nothing about what changed: `censReg`
-agrees to a worst relative difference of 9.6e-09, and all three Asterism points
-sit inside `MCMCglmm`'s 95% posterior intervals. Interval coverage is 0.946,
-0.952 and 0.948 at 52 per cent censoring and 0.962, 0.959 and 0.949 at 75, and
-the target-design campaign ran its full 800 replicates at 1,909 people with
-**zero failed fits of a permitted zero** -- no refusal, no non-convergence, no
-failed profile, no failed test. Recorded in
-`evidence/censored-pass-rules-rerun-2026-08-29.json`.
+A 29 August 2026 censored rerun measured the changed numerical route and was
+then recorded as passing six rules. A later audit found that its MCMCglmm,
+coverage and target simulations chose censoring limits from each realised
+response. Those results, including the reported coverages and 800-attempt
+target campaign, are now superseded as qualification evidence. The direct
+`censReg` agreement of 9.6e-09 remains current. The immutable historical record
+is `evidence/censored-pass-rules-rerun-2026-08-29.json`.
 
 It was not always. Until 29 August 2026 a sixteen-point quadrature stood here,
 whose error was 1.3e-9 for a correlation below 0.5 but 2.3e-4 at 0.99 -- and
@@ -289,17 +289,35 @@ campaign has not run.
 | Compared against | Estimator | Design | Worst difference | Label |
 | --- | --- | --- | --- | --- |
 | R `censReg` | ML | 4,000 people, 1,131 censored, no relatedness | 9.6e-9 on the log-likelihood and all four reported quantities | Reproducible |
-| MCMCglmm | — | with relatedness | estimates sit inside the posterior | Reproducible |
+| MCMCglmm 2.36 | Bayesian animal model | 800 sibling pairs, fixed limit, an expected quarter censored (414/1,600 realised) | all three Asterism estimates inside the independent 95% posterior intervals | Reproducible |
 
-Substituting the limit, the usual practice, returns 0.46 at a quarter censored
-and 0.31 at three quarters where the truth is 0.5. The censored model recovers
-0.5 at every rate up to three quarters.
+The `censReg` row is a direct numerical comparison and remains current. The
+MCMCglmm fixture was refreshed with its instrument limit fixed from the
+generating mean and variance before the outcome was drawn. Asterism estimated
+h² = 0.4846, total variance 3.8299 and intercept 10.0493; all three sit inside
+the independent posterior intervals. The h² interval was 0.3487 to 0.6178,
+with effective sample size 1,746.2.
 
-### Interval coverage
+### Fixed-instrument recovery and coverage
+
+The corrected recovery campaign fitted 200 replicates at each expected
+censoring share 0, 0.10, 0.25, 0.50 and 0.75. Mean h² estimates were 0.4961,
+0.4959, 0.4996, 0.4935 and 0.4983 against truth 0.5. At three quarters
+censored, replacing the censored values by the limit instead gave 0.3106.
+Every cell passed its predeclared recovery rule with no failed fit; see
+`evidence/tobit-calibration-2026-08-31.json`.
+
+The fixed-instrument coverage campaign then fitted 1,000 replicates at each of
+h² = 0, 0.3 and 0.5, at both 52% and 75% expected censoring. Coverage ranged
+from 0.945 to 0.959 across the six cells, every exact interval contained the
+nominal 0.95, and there were no refusals. The complete measurement is
+`evidence/tobit-coverage-2026-08-31.json`.
+
+### Historical interval coverage — superseded
 
 Three hundred replicates of 300 sibling pairs per cell, scored unconditionally
-with no cell dropped and no refusals. All nine cells contain 0.95 in their
-two-sided Clopper–Pearson intervals, including the cells at nought.
+with no cell dropped and no refusals, produced the following figures under the
+outcome-adaptive generator. They do not establish fixed-instrument coverage.
 
 | true h² | 0% censored | 25% | 50% |
 | --- | ---: | ---: | ---: |
@@ -307,41 +325,42 @@ two-sided Clopper–Pearson intervals, including the cells at nought.
 | 0.3 | 0.943 | 0.943 | 0.957 |
 | 0.5 | 0.953 | 0.950 | 0.933 |
 
-These figures replace a receipt of 18 August 2026 that reported 0.980, 0.977
+These figures had replaced a receipt of 18 August 2026 that reported 0.980, 0.977
 and 0.983 in the first three cells and passed them under a one-sided rule. That
 interval was missing the Self–Liang mixture that [ADR
 0004](adr/0004-interval-recipe.md) requires, so a lower end of nought read as
 containment whatever the likelihood there said, at a cost ADR 0004 had already
 measured as 0.977 against 0.953. The mixture is now on the record as
 `contains_lower_bound` and `contains_upper_bound`, the check reads it, and the
-boundary allowance is gone. `evidence/tobit-coverage-2026-08-18.json` predates
-the mixture and describes a recipe the code no longer implements.
+boundary allowance was removed. `evidence/tobit-coverage-2026-08-18.json`
+predates the mixture and describes a recipe the code no longer implements.
+Neither generation of this evidence answers the corrected fixed-instrument
+question.
 
-### Target design
+### Target design — fixed-instrument result
 
 `checks/tobit_target_design.py` runs the pedigree-scale route on the
 values-free structural fixture: 1,909 synthetic rows in 202 relationship
 components, largest component 180, and the six-column participant-free design.
-At the nearest attainable fractions to 52% and 75% right censoring — 993/1,909
-= 0.52017 and 1,432/1,909 = 0.75013 — it calls `asterism.tobit_fit`,
-`asterism.tobit_interval` and `asterism.tobit_test` under a boundary truth of
-h² = 0 and an interior truth of h² = 0.5.
+The corrected command fixes a limit from the generating mean, variance and
+intended censoring share before simulating outcomes, then records the achieved
+share. It calls `asterism.tobit_fit`, `asterism.tobit_interval` and
+`asterism.tobit_test` under a boundary truth of h² = 0 and an interior truth of
+h² = 0.5.
 
-A bounded development smoke on 21 August 2026 ran one replicate per scenario at
-each censoring level: four attempted in 62.87 seconds, three complete, one
-nonconverged, and the command exited 1.
+The corrected release campaign completed all 800 requested attempts with no
+refusal, nonconvergence, failed test, failed interval or failed profile point.
 
-| Censoring | Truth | Estimate | Interval | p |
-| --- | ---: | ---: | :--- | ---: |
-| 52% | 0.0 | 0.0142 | [0, 0.0949] | 0.3403 |
-| 52% | 0.5 | 0.4973 | [0.3943, 0.5989] | — |
-| 75% | 0.5 | 0.4762 | [0.3390, 0.6163] | — |
-| 75% | 0.0 | 0.0 | — | — |
+| Expected censoring | Null rejection rate | h² = 0.5 coverage | Verdict |
+| --- | ---: | ---: | --- |
+| 52% | 0.040 | 0.940 | passed |
+| 75% | 0.045 | 0.930 | passed |
 
-The 75% null fit returned a finite boundary candidate — h² = 0, total variance
-3.9412 — with `converged` false, so the check recorded `nonconverged` and
-computed neither interval nor test. This is route and failure-accounting
-evidence, not a calibration.
+The coverage figures are read with the predeclared one-sided exact rule: their
+upper limits are 0.9650 and 0.9572, so neither is distinguishable from nominal
+0.95 in 200 replicates. The null lower limits are 0.0201 and 0.0237, below the
+nominal 0.05. The complete result is
+`evidence/tobit-target-design-2026-08-31.json`.
 
 ### How replicates are scored
 
@@ -352,40 +371,49 @@ is allowed. The null rule fails when the one-sided 95% lower limit for the
 rejection rate exceeds 0.05; the interval rule fails when the corresponding
 upper limit for coverage falls below 0.95.
 
-### Pending
-
-The release campaign requests 200 replicates in each of four cells. Those 800
-attempts have not run.
+The fixed-instrument external comparison, recovery, interval coverage and
+target-design campaigns now all pass. Their retained evidence replaces, rather
+than alters, the superseded outcome-adaptive records above.
 
 ## Censored traits, several components
 
-**Not qualified.** `release.toml` marks `one_trait_censored_components`
-`planned_for_0_2` and `run_analysis` refuses it. What follows is what has been
-measured, not a release claim. The model, its equations and its interface are in
-[the model page](models/censored-components.md); the decision to generalise the
-censored model in place rather than duplicate it is
+**Current 0.2 scope, not a released artefact.** Fitting, intervals and the
+explicitly asymptotic test are in scope. What follows records what has been
+measured rather than claiming that the development checkout is a release. The
+model, its equations and its interface are in [the model
+page](models/censored-components.md); the decision to generalise the censored
+model in place rather than duplicate it is
 [ADR 0022](adr/0022-the-censored-model-generalises-in-place.md).
+
+The development API permits fitting and intervals. Its analytic `.test` route
+uses the explicitly labelled `asymptotic_mixture_50_50` reference and refuses
+when an untested nuisance variance is on its bound. A constrained-null
+parametric bootstrap is implemented as `.bootstrap`, but remains experimental
+and is not a 0.2 release claim.
 
 ### Agreement
 
 | Compared against | Estimator | Design | Worst difference | Label |
 | --- | --- | --- | --- | --- |
 | An independent dense censored likelihood optimised by SciPy | ML | 20 sibling pairs, 2 records each, a quarter censored | 1.4e-3 on the mean-diagonal proportions, 7.0e-2 on the log-likelihood | Reproducible |
-| The same, half censored | ML | as above | 6.3e-3 on the proportions, 5.8e-2 on the log-likelihood | Reproducible |
+| The same, expected half censored | ML | as above | 2.9e-3 on the proportions, 5.5e-2 on the log-likelihood | Reproducible |
 
-The reference shares no likelihood, parameterisation, starting values or
+The instrument limits were fixed from the generating mean and variance before
+outcomes were drawn. The reference shares no likelihood, parameterisation, starting values or
 optimiser, and reaches the censored region probability by integrating it where
 Asterism reaches it by sequential truncation. **The log-likelihood difference is
 that approximation** and not a disagreement about the answer: scoring Asterism's
 own fit through the independent likelihood shows the independent optimum is the
 better point wherever the two differ, by about 1e-3, which is what a difference
-of 6e-3 in a proportion costs on a surface this flat.
+of 3e-3 in a proportion costs on a surface this flat.
 
-### Interval coverage
+### Historical interval coverage — superseded
 
 2,400 people in villages of six, two records each, 0.52 censored, 300
-replicates per cell, an interval on **every** structured component. Twelve cells,
-all covering their truth within a band drawn simultaneously across them.
+replicates per cell, and an interval on **every** structured component produced
+the following figures with a censoring limit selected from each realised
+response. Twelve cells covered their truth within a band drawn simultaneously
+across them, but that run does not establish fixed-instrument coverage.
 
 | additive / person / household / residual | additive | person | household |
 | --- | ---: | ---: | ---: |
@@ -414,12 +442,15 @@ because containment splits in two at a bound: an end above nought excludes the
 truth whatever rule applies, while an end on nought is the Self–Liang question,
 and that verdict is deliberately withheld at several components.
 
-### Target design
+### Historical target design — superseded
 
 1,909 people, 202 relationship components with the largest at 180, six
 fixed-effect columns, two records each, families cut into households of three.
-800 attempts, 800 measured, no refusal and no failed fit. Largest censored block
-310, against the 600 the region ladder has climbed.
+The retired outcome-adaptive campaign made 800 attempts, measured all 800, and
+had no refusal or failed fit. Its largest censored block was 310, against the
+600 the sequential region-probability ladder has climbed. This remains useful
+evidence that the numerical route executed at that dimension, not evidence for
+coverage or test level under a fixed instrument.
 
 | scenario | censored | rate | exact interval | nominal | |
 | --- | ---: | ---: | :---: | ---: | :--- |
@@ -428,65 +459,99 @@ fixed-effect columns, two records each, families cut into households of three.
 | heritable | 0.52 | 0.985 | [0.957, 0.997] | 0.975 | held |
 | heritable | 0.75 | 0.960 | [0.923, 0.983] | 0.975 | held |
 
-**The test's level is 0.100 at three quarters censored and 0.055 at half.**
-Estimates and intervals held at both. A follow-up of 64 null replicates
-reproduced the rate with no second component at nought in any of them, so the
-50:50 mixture was the right reference and was applied.
+The recorded rates, 0.055 at the lower censoring setting and 0.100 at the
+higher one, were computed with the asymptotic 50:50 reference. They are
+historical defect signals only: the generator selected its limit from each
+realised response, and the analytic reference has not been shown to describe
+this finite design.
 
-**It is the person-level component, and the released model is not affected.**
-The released one-trait censored model given a relationship spread over two
-records holds at 0.045 with 0.530 of null fits on the bound, so repeated records
-are not the cause. Component count is not either: two components gave 0.110 and
-three gave 0.065 at the same design. Every failing configuration carries a
-person-level component beside the additive one, and every passing one does not.
-The two matrices differ only between relatives, so at three quarters censored,
-where few relative pairs are both measured, the tested component is nearly a
-copy of a nuisance one and the information for the tested direction goes nearly
-singular. A household kernel keeps its own shape and does not do this.
+The one-half weight in Self–Liang is an asymptotic tangent-cone result. It is
+not a finite-sample requirement that half of fitted null datasets land on the
+bound. The observed LRT atom — including shares from about 0.24 to 0.565 in the
+retired investigations — is therefore a diagnostic, not a release gate. It
+does not identify whether a departure comes from ordinary finite-sample
+behaviour, weak identification, the region approximation or numerical fitting.
+Earlier causal claims about sample size, block size, the person-level matrix or
+matrix collinearity are withdrawn.
 
-**Three further explanations tested; all refuted.** Doubling the roster to 3,818 people
-gives 0.105, so it is not a small sample. At a design whose blocks are small
-enough to integrate exactly, the level is 0.060 with the region integrated and
-0.065 with it approximated, both containing nominal — and the approximation is
-conservative there, making the statistic 0.338 against 0.475. Sweeping family
-size from 4 to 128 at a fixed roster moves the level not at all.
+The released one-component numerical route is unchanged, but its historical
+0.045 rejection rate and 0.530 atom were also obtained with the retired
+generator and do not complete the fixed-instrument requalification.
 
-What is measured is the boundary mass. The 50:50 mixture is right only if half
-the null fits land on the bound. That share is 0.565 in the calibrated
-one-component configuration, 0.310 at this target design, and 0.24 to 0.40
-across the family-size sweep. Self–Liang's half-and-half assumes interior,
-uncorrelated nuisance components; here the additive and person-level components
-correlate at about −0.98.
+The corrected target check fixes the censoring limits before outcomes and
+measures the explicitly labelled asymptotic 50:50-mixture test at the intended
+design. The other component variances are positive under the generating null,
+and a realised nuisance-boundary fit is refused rather than scored against the
+one-boundary reference. The LRT atom is reported beside the rejection level
+only as a diagnostic.
 
-The harness is not the cause. Running the released one-component configuration
-through it, 200 replicates at the same censoring, gives 0.035 with an exact
-interval of [0.014, 0.071] containing the nominal, and puts 56.5 per cent of
-estimates on the boundary where the mixture says half; here that mass is
-0.310. Both levels
-are recorded in `release.toml` under `measured_levels`, beside the quantity
-rather than in place of it.
+The fixed-instrument campaign completed all 800 attempts without a failed fit.
+At 52% expected censoring, null rejection was 0.055, its exact interval was
+[0.0278, 0.0963], and the operational LRT atom was 0.465. At 75%, rejection was
+0.095, its exact interval was [0.0582, 0.1444], and the atom was 0.390. The latter
+cell fails because its predeclared one-sided lower bound exceeds 0.05.
+Heritable-cell coverage was 0.980 and 0.960, both compatible with nominal
+0.975. The largest censored block was 313, inside the ladder measured to 600.
+The dry merge therefore wrote no qualifying evidence. The analytic p-value is
+anti-conservative for this exact 1,909-person, four-component target at 75%
+expected censoring and must not be reported for that analysis without a
+design-specific simulated null. This does not establish a universal censoring
+threshold or block fitting, intervals or the generally available labelled
+asymptotic test.
 
 ### Component separation
 
-Sweeping sibling pairs against records per person, with truths of 0.4 additive
-and 0.3 person-level, the two are recovered separately and each spread falls as
-the design grows. The cost is that splitting them is four to five times less
-precise than their sum, so a design sized on the total variance is not sized on
-the split.
+The fixed-instrument sweep completed 200 replicates in each of eight cells:
+two or three records per person and 30, 60, 120 or 240 sibling pairs. Every
+cell fitted all 200 replicates and passed. At 240 pairs, the mean additive and
+person-level shares were 0.3984 and 0.3028 with two records, and 0.3858 and
+0.3132 with three, against truths 0.4 and 0.3. The estimates remain strongly
+negatively correlated, but their precision and separation improve as the
+design grows. The complete sweep is
+`evidence/component-separation-2026-08-31.json`.
+
+### Several-component interval coverage
+
+The fixed-instrument coverage campaign completed 300 replicates in each of
+twelve component-by-truth cells at 52% expected censoring, with no refusal.
+Coverage in the eleven interior cells ranged from 0.9533 to 0.9933; every
+simultaneous exact interval contained the predeclared nominal 0.975. In the
+unscoreable lower-bound cell, eleven intervals excluded nought and 289 retained
+the deliberately absent boundary verdict. That range did not establish
+undercoverage under its predeclared exact rule. The complete measurement is
+`evidence/censored-components-coverage-2026-08-31.json`.
 
 ### How replicates are scored
 
-Every requested replicate stays in its cell's denominator. The target-design
-campaign permits no failed fit of any kind. The coverage campaign permits no
-refusal, and a cell fails when its simultaneous exact interval excludes the
-nominal in either direction.
+Every requested replicate stays in its cell's denominator. The corrected
+target-design campaign permits no failed fit, requires the
+`asymptotic_mixture_50_50` rule, and scores the resulting rejection rate
+rather than on the LRT atom. A p-value equal to 0.05 is a rejection. The
+level cell fails only when its one-sided exact lower confidence bound is above
+0.05; a conservative result is valid. Coverage analogously fails only when its
+one-sided exact upper bound is below nominal. The coverage campaign permits no
+refusal.
 
-### Pending
+### Known test limitation and remaining release work
 
-Whether the test's level at three quarters censored can be brought to nominal,
-by a better reference than the asymptotic mixture or by more information. It has
-not been attempted. Cross-platform agreement for this analysis has a
-probe and declared tolerances but no comparison has been run.
+The fixed-instrument component-separation and interval-coverage campaigns pass.
+The target-design campaign completed and identified one exact limitation: the
+analytic p-value for the 1,909-person, four-component target at 75% expected
+censoring is not reportable without a design-specific simulated null tied to
+the model, design, source and seed. Its resumable checkpoint preserved that
+result without publishing qualifying evidence.
+
+The optional 999-draw constrained-null bootstrap campaign also completed all
+800 requested coordinates. At 52% censoring all 200 null p-values were
+available; at 75%, eleven attempts reported
+`TOBIT_BOOTSTRAP_REPLICATE_FAILED`, leaving 189. The checker reported rejection
+of 0.055 at both shares, and coverage of 0.980 and 0.960, but the no-write merge
+failed because the predeclared rule permits no failed attempt. It published no
+qualifying evidence, so the bootstrap remains experimental. This finding does
+not create a censoring cutoff for another design. Cross-platform fit and
+interval agreement remains to be measured. The independent dense-likelihood
+comparison above remains the numerical reference for the sequential region
+approximation.
 
 ## Mixed pairs
 
@@ -496,11 +561,24 @@ probe and declared tolerances but no comparison has been run.
 | --- | --- | --- | --- | --- |
 | SOLAR | ML | binary with continuous | 0.014 | Reproducible |
 
-Recovery of a genetic correlation of 0.4 is mildly conservative in every
-pairing. The all-continuous control shows the same attenuation, so it belongs
-to maximum likelihood rather than to the censoring.
+The corrected fixed-threshold recovery campaign fitted 100 replicates in each
+of the continuous, binary, censored and censored-pair designs. Mean genetic
+correlations were 0.3790, 0.3833, 0.3753 and 0.3803 against truth 0.4, and all
+four cells passed the predeclared recovery rule with no failed fit. The result
+is `evidence/mixed-bivariate-calibration-2026-08-31.json`. The direct SOLAR
+comparison remains current.
 
-### Interval coverage, level and power
+### Fixed-threshold interval coverage, level and power
+
+The corrected coverage campaign completed 300 replicates in each of twelve
+cells: continuous, binary, censored and censored-pair designs at true genetic
+correlations 0, 0.4 and 0.7. Every fit was scored. Coverage ranged from 0.930
+to 0.957, and every exact interval contained the nominal 0.95. At zero genetic
+correlation, rejection rates were 0.050, 0.070, 0.053 and 0.053 respectively.
+The retained result is
+`evidence/mixed-bivariate-coverage-2026-08-31.json`.
+
+### Historical interval coverage, level and power — superseded
 
 Three hundred replicates of 400 sibling pairs per cell, each cell on its own
 stream, scored unconditionally with no refusals.
@@ -511,10 +589,11 @@ stream, scored unconditionally with no refusals.
 | Binary | 0.930 | 0.943 | 0.943 |
 | Censored | 0.940 | 0.940 | 0.943 |
 
-The test against nought held its level in the same run — 0.050, 0.070 and 0.060
-against a nominal 0.05 — with power at correlation 0.7 of 0.997, 0.950 and
-0.993. Nought is an interior point of a correlation's range, so the reference
-is a plain chi-square on one degree of freedom and no boundary mixture applies.
+The same historical run reported rejection rates of 0.050, 0.070 and 0.060
+against a nominal 0.05, with power at correlation 0.7 of 0.997, 0.950 and
+0.993. Nought is an interior point of a correlation's range, so the intended
+reference is a plain chi-square on one degree of freedom and no boundary
+mixture applies.
 
 Testing the genetic correlation against plus or minus one uses the 50:50
 mixture instead. Two hundred replicates at a true correlation of 1 rejected

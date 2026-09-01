@@ -1993,8 +1993,9 @@ class CensoredComponentModel:
 
     Shaped like :class:`ComponentModel`, and the same relation between the two
     holds as between an ordinary and a censored heritability: the residual is
-    added for you and is never passed, so the coefficients are shares of the
-    total and the residual takes what they leave.
+    added for you and is never passed. Raw coefficients are shares of the total
+    only when every component has a unit mean diagonal; use
+    ``mean_diagonal_proportions`` for the scale-invariant comparison otherwise.
 
     **One component is the case this began as.** With a single kinship matrix
     the first coefficient is the heritability and the fit is what
@@ -2135,8 +2136,9 @@ class CensoredComponentModel:
         the interval on the raw coefficient, which that rescaling moves.
 
         ``contains_lower_bound`` and ``contains_upper_bound`` are absent at
-        several components. The coverage simulation that scored the boundary
-        rule ran at one, and an absent verdict means nobody has measured it.
+        several components. No valid fixed-instrument campaign has qualified a
+        boundary-containment rule there, so an absent verdict means nobody has
+        measured it.
         """
         if quantity not in ("mean_diagonal_proportion", "coefficient"):
             raise ValueError("TOBIT_INTERVAL_QUANTITY_UNKNOWN")
@@ -2188,10 +2190,21 @@ class CensoredComponentModel:
         A proportion is nought exactly when its coefficient is, so this answers
         both questions.
 
-        ``nuisance_at_bound`` says whether another component or the residual
-        also rested on nought. Where it is true, ``rule`` is not the reference
-        the p-value should be read against: the fifty-fifty mixture answers for
-        one parameter on one bound with the rest inside.
+        With one component this is the released ``mixture_50_50`` calculation,
+        on its unchanged numerical path. With several components the requested
+        component is tested after moving it to the held search coordinate, and
+        ``rule`` is ``"asymptotic_mixture_50_50"``. That reference assumes
+        every nuisance component and the residual are interior; the method
+        refuses as ``TOBIT_COMPONENT_TEST_NUISANCE_AT_BOUND`` otherwise.
+
+        The several-component reference is explicitly asymptotic rather than a
+        finite-sample guarantee. Its p-value must not be reported for the exact
+        failed 1,909-person, four-component target at 75% expected censoring
+        without a design-specific simulated null. This does not create a
+        universal censoring threshold. :meth:`bootstrap` supplies a simulated
+        constrained-null reference, but its target calibration failed the
+        zero-refusal rule and it remains experimental. Fit, interval and the
+        released one-component test are unaffected.
         """
         matrices, y, codes, limits, design = self._data(value, censoring, limit)
         """Put the components and the censored data into the order the core reads."""
@@ -2211,6 +2224,94 @@ class CensoredComponentModel:
             "rule": rule,
             "null_loglik": null_loglik,
             "alternative_loglik": alternative_loglik,
+            "nuisance_at_bound": nuisance_at_bound,
+            "component": component,
+            "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
+        }
+
+    def bootstrap(
+        self,
+        value: Any,
+        censoring: Any,
+        limit: Any,
+        direction: Any,
+        component: int,
+        replicates: int,
+        seed: int,
+    ) -> dict[str, Any]:
+        """Parametrically bootstrap the null for one component.
+
+        The tested coefficient is held at nought, the remaining covariance and
+        fixed effects are fitted under that null, and each simulated response
+        is refitted on both sides of the same likelihood-ratio test.
+
+        ``limit`` and ``direction`` describe the instrument for **every** row,
+        including rows measured in the observed response. ``direction`` is 1
+        for right censoring and 2 for left censoring. A new latent draw can cross
+        any row's limit, so a missing measured-row limit or a zero direction is
+        refused rather than inferred from the observed censoring pattern.
+
+        The p-value adds one to the exceedance count and the denominator. Every
+        requested replicate must complete. Each replicate has a deterministic
+        substream derived from ``seed`` and its coordinate, so the inner fits
+        can run in parallel without thread scheduling changing the answer. The
+        seed and Monte Carlo standard error are returned with the result.
+        Availability is not scientific qualification: the completed outer
+        target-design campaign failed its zero-refusal rule after eleven inner
+        fits failed in the 75% null cell, so it did not qualify a finite-sample
+        bootstrap p-value. An observed nuisance component or residual on its
+        bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``.
+        """
+        matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        """Put the observed response through the same input seam as a fit."""
+
+        directions: npt.NDArray[np.int64] = np.ascontiguousarray(
+            direction, dtype=np.int64
+        )
+        """Retained the complete row-wise censoring mechanism for null draws."""
+
+        (
+            statistic,
+            exceedances,
+            used,
+            requested,
+            p_value,
+            rule,
+            null_loglik,
+            alternative_loglik,
+            nuisance_at_bound,
+        ) = _core.censored_component_bootstrap(
+            matrices,
+            y,
+            codes,
+            limits,
+            design,
+            directions,
+            component,
+            replicates,
+            seed,
+        )
+        """Generated and refitted the complete constrained-null reference."""
+
+        monte_carlo_standard_error: float = float(
+            np.sqrt(p_value * (1.0 - p_value) / used)
+        )
+        """Put simulation uncertainty beside the finite Monte Carlo p-value."""
+
+        return {
+            "statistic": statistic,
+            "exceedances": exceedances,
+            "replicates": used,
+            "requested": requested,
+            "p_value": p_value,
+            "rule": rule,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
+            "seed": seed,
+            "smallest_p_value": 1.0 / (used + 1),
+            "monte_carlo_standard_error": monte_carlo_standard_error,
             "nuisance_at_bound": nuisance_at_bound,
             "component": component,
             "estimator": "ml",
@@ -2400,10 +2501,9 @@ def tobit_interval(
     the safe direction, but a large count means the interval rests on fewer
     points than its width suggests.
 
-    Read ``censored_share`` beside the answer. On simulated data the model
-    recovers the truth to three quarters censored; on real extended
-    high-frequency thresholds it degrades past about half, where too little of
-    the upper tail is left to estimate a variance from.
+    Read ``censored_share`` beside the answer. The released numerical path is
+    unchanged, and the corrected fixed-instrument coverage campaign passes at
+    the intended 52% and 75% expected censoring shares.
     """
     (
         estimate,
@@ -2454,9 +2554,11 @@ def tobit_test(
     """Test the censored heritability against nought.
 
     The null holds the heritability at nought, which is its own bound, so the
-    reference is the Self-Liang 50:50 mixture of chi-square on nought and one
-    degrees of freedom rather than a plain chi-square. ``rule`` says which was
-    used, as data rather than as a promise.
+    analytic reference is the Self-Liang 50:50 mixture of chi-square on nought
+    and one degrees of freedom rather than a plain chi-square. ``rule`` says
+    which was used, as data rather than as a promise. Its corrected
+    fixed-instrument target check passes at the intended 52% and 75% expected
+    censoring shares.
     """
     statistic, p_value, rule, null_loglik, alternative_loglik = _core.tobit_test(
         np.ascontiguousarray(relationship, dtype=float),

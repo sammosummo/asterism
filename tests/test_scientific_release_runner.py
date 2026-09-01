@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import sys
 import tomllib
 from copy import deepcopy
 from pathlib import Path
@@ -12,6 +15,7 @@ from typing import Any
 
 import pytest
 
+import tools.run_scientific_release as scientific_release_runner
 from tools.check_release import (
     fit_record_failures,
     release_evidence_errors,
@@ -21,6 +25,8 @@ from tools.run_scientific_release import (
     ReleaseConfigurationError,
     agreement_record_errors,
     fixed_input_errors,
+    medusa_smoke_record_errors,
+    run_bounded_command,
     run_scientific_release,
 )
 
@@ -57,6 +63,13 @@ release = true
 requires_python = ">=3.13,<3.15"
 scientific_pass_rules_configured = true
 scientific_runner = "tools/run_scientific_release.py"
+
+[medusa_smoke]
+required = true
+configured = true
+architecture = "x86_64"
+glibc_version = "2.28"
+command = ["tools/medusa_wheel_smoke.py"]
 
 [synthetic_analysis_receipts]
 configured = true
@@ -182,6 +195,205 @@ def passing_agreement(manifest_text: str) -> dict[str, Any]:
         "comparisons": comparisons,
         "failures": [],
     }
+
+
+def passing_medusa_smoke(
+    manifest_text: str,
+    cargo_lock_text: str,
+    uv_lock_text: str,
+    wheel_sha256: str,
+) -> dict[str, Any]:
+    """Return a clean Medusa result bound to one final manylinux wheel."""
+    manifest: dict[str, Any] = tomllib.loads(manifest_text)
+    """Parsed the exact final release identity exercised by the smoke."""
+
+    return {
+        "asterism_version": manifest["version"],
+        "build_identity": {
+            "version": manifest["version"],
+            "cargo_version": manifest["cargo_version"],
+            "source_commit": "a" * 40,
+            "source_dirty": False,
+            "release": manifest["release"],
+            "release_manifest_sha256": hashlib.sha256(
+                manifest_text.encode("utf-8")
+            ).hexdigest(),
+            "cargo_lock_sha256": hashlib.sha256(
+                cargo_lock_text.encode("utf-8")
+            ).hexdigest(),
+            "uv_lock_sha256": hashlib.sha256(uv_lock_text.encode("utf-8")).hexdigest(),
+        },
+        "machine": "x86_64",
+        "glibc_version": "2.28",
+        "python_version": "3.13.14",
+        "wheel_sha256": wheel_sha256,
+        "converged": True,
+        "people": 360,
+        "largest_family": 6,
+        "loglik": -533.0,
+        "mean_diagonal_proportions": [0.0, 1.0],
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        (("asterism_version",), "version does not match"),
+        (("machine",), "architecture does not match"),
+        (("glibc_version",), "glibc does not match"),
+        (("converged",), "did not converge"),
+        (("wheel_sha256",), "wheel SHA-256 does not match"),
+        (("build_identity", "version"), "build identity does not match"),
+        (("build_identity", "release"), "build identity does not match"),
+        (("build_identity", "source_commit"), "build identity does not match"),
+        (("build_identity", "source_dirty"), "build identity does not match"),
+        (
+            ("build_identity", "release_manifest_sha256"),
+            "build identity does not match",
+        ),
+        (("build_identity", "cargo_lock_sha256"), "build identity does not match"),
+        (("build_identity", "uv_lock_sha256"), "build identity does not match"),
+    ],
+)
+def test_medusa_smoke_rejects_stale_runtime_fit_and_build_identity(
+    change: tuple[str, ...], expected: str
+) -> None:
+    """Accept only a converged smoke from the selected final Linux wheel."""
+    manifest_text: str = configured_manifest()
+    """Rendered one release-ready manifest without a repository evidence pointer."""
+
+    cargo_lock_text: str = "Cargo.lock fixture\n"
+    """Represented the exact Rust lock text embedded in the selected wheel."""
+
+    uv_lock_text: str = "uv.lock fixture\n"
+    """Represented the exact Python lock text embedded in the selected wheel."""
+
+    wheel_sha256: str = "b" * 64
+    """Named the exact portable artifact digest accepted by the validator."""
+
+    record: dict[str, Any] = passing_medusa_smoke(
+        manifest_text, cargo_lock_text, uv_lock_text, wheel_sha256
+    )
+    """Built one valid external result before changing exactly one claim."""
+
+    target: dict[str, Any] = record
+    """Started at the complete external record before locating the changed claim."""
+
+    for field in change[:-1]:
+        target = target[field]
+        """Descended through the selected nested build-identity path."""
+
+    target[change[-1]] = (
+        not target[change[-1]]
+        if change[-1]
+        in {
+            "converged",
+            "release",
+            "source_dirty",
+        }
+        else "stale"
+    )
+    """Made the selected categorical, boolean or digest identity stale."""
+
+    errors: list[str] = medusa_smoke_record_errors(
+        record=record,
+        manifest=tomllib.loads(manifest_text),
+        manifest_text=manifest_text,
+        cargo_lock_text=cargo_lock_text,
+        uv_lock_text=uv_lock_text,
+        source_commit="a" * 40,
+        linux_wheel_sha256=wheel_sha256,
+    )
+    """Validated the external result against independently selected inputs."""
+
+    assert expected in "\n".join(errors)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [(None, "Medusa smoke does not exist"), ("{", "Medusa smoke is unreadable")],
+)
+def test_runner_refuses_missing_or_malformed_external_medusa_smoke(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: str | None,
+    expected: str,
+) -> None:
+    """Refuse before creating evidence when the external JSON cannot be inspected."""
+    root: Path = tmp_path / "checkout"
+    """Located a minimal checkout fixture for release preflight."""
+
+    root.mkdir()
+    manifest_text: str = configured_manifest()
+    """Rendered the fixed release contract used by the fixture and extension."""
+
+    (root / "release.toml").write_text(manifest_text, encoding="utf-8")
+    lock_texts: dict[str, str] = {
+        "Cargo.lock": "Cargo.lock fixture\n",
+        "uv.lock": "uv.lock fixture\n",
+    }
+    """Defined the exact dependency locks embedded in the selected wheel."""
+
+    for name, text in lock_texts.items():
+        (root / name).write_text(text, encoding="utf-8")
+    """Created the exact fixed inputs needed before external-evidence validation."""
+
+    monkeypatch.setattr(
+        scientific_release_runner, "configured_rules", lambda _manifest, _root: []
+    )
+    """Kept this test at preflight without manufacturing scientific commands."""
+
+    wheel_path: Path = tmp_path / "asterism-0.1.0-cp313-abi3-manylinux.whl"
+    """Named the sole portable artifact selected for external qualification."""
+
+    wheel_path.write_bytes(b"fixed wheel bytes")
+    agreement: dict[str, Any] = passing_agreement(manifest_text)
+    """Built a valid cross-platform record before binding its artifact digest."""
+
+    for artifact in agreement["artifacts"]:
+        artifact["wheel_sha256"] = sha256(wheel_path)
+        """Bound each platform result to the selected saved-wheel fixture."""
+
+    agreement_path: Path = tmp_path / "agreement.json"
+    """Located the external cross-platform input supplied to preflight."""
+
+    agreement_path.write_text(json.dumps(agreement), encoding="utf-8")
+    """Bound every other external input to the sole selected artifact."""
+
+    medusa_path: Path = tmp_path / "medusa-smoke.json"
+    """Located the deliberately missing or malformed Medusa input."""
+
+    if payload is not None:
+        medusa_path.write_text(payload, encoding="utf-8")
+    core_path: Path = tmp_path / "site-packages" / "asterism" / "_core.so"
+    """Located a stand-in installed extension outside the checkout fixture."""
+
+    core_path.parent.mkdir(parents=True)
+    core_path.write_bytes(b"fixed extension bytes")
+    core: Any = SimpleNamespace(
+        __file__=str(core_path),
+        __release_manifest__=manifest_text,
+        __cargo_lock__=lock_texts["Cargo.lock"],
+        __uv_lock__=lock_texts["uv.lock"],
+        __source_commit__="a" * 40,
+        __source_dirty__=False,
+        __version__="0.1.0",
+    )
+    """Represented the matching installed wheel without importing the checkout."""
+
+    output_directory: Path = tmp_path / "release-evidence"
+    """Named the directory preflight must leave absent after rejection."""
+
+    with pytest.raises(ReleaseConfigurationError, match=expected):
+        run_scientific_release(
+            manifest_path=root / "release.toml",
+            output_directory=output_directory,
+            wheel_paths=[wheel_path],
+            cross_platform_agreement_path=agreement_path,
+            medusa_smoke_path=medusa_path,
+            core=core,
+        )
+    assert not output_directory.exists()
 
 
 def test_receipt_verifier_recomputes_its_conditions_from_the_fit_record() -> None:
@@ -361,6 +573,22 @@ index = {
     agreement_path.write_text(json.dumps(agreement, indent=2) + "\n", encoding="utf-8")
     """Persisted the actual comparison details before scientific evidence began."""
 
+    medusa_smoke: dict[str, Any] = passing_medusa_smoke(
+        manifest_text,
+        lock_texts["Cargo.lock"],
+        lock_texts["uv.lock"],
+        sha256(wheel_path),
+    )
+    """Created a converged target-host result from the same final Linux wheel."""
+
+    medusa_smoke_path: Path = tmp_path / "medusa-smoke.json"
+    """Selected the external result passed into the release runner."""
+
+    medusa_smoke_path.write_text(
+        json.dumps(medusa_smoke, indent=2) + "\n", encoding="utf-8"
+    )
+    """Persisted exact external bytes without placing them in the checkout."""
+
     core_path: Path = tmp_path / "site-packages" / "asterism" / "_core.so"
     """Selected an installed extension path outside the mutable checkout."""
 
@@ -387,6 +615,7 @@ index = {
         output_directory=output_directory,
         wheel_paths=[wheel_path],
         cross_platform_agreement_path=agreement_path,
+        medusa_smoke_path=medusa_smoke_path,
         core=core,
     )
     """Ran the configured rule through the same public seam as automation."""
@@ -425,6 +654,11 @@ index = {
     """Located the exact comparison record copied into durable release evidence."""
 
     assert saved["cross_platform_agreement"]["sha256"] == sha256(copied_agreement)
+    assert saved["medusa_smoke"]["record"] == medusa_smoke
+    copied_medusa_smoke: Path = output_directory / saved["medusa_smoke"]["path"]
+    """Located the exact target-host record copied into release evidence."""
+
+    assert saved["medusa_smoke"]["sha256"] == sha256(copied_medusa_smoke)
 
     tampered: dict[str, Any] = deepcopy(agreement)
     """Copied a complete record before changing one claimed numerical threshold."""
@@ -556,6 +790,70 @@ index = {
         synthetic_placeholder_errors
     )
 
+    wrong_medusa_digest: dict[str, Any] = deepcopy(saved)
+    """Copied valid evidence before breaking only the retained smoke digest."""
+
+    wrong_medusa_digest["medusa_smoke"]["sha256"] = "0" * 64
+    """Detached the aggregate evidence from its exact copied target-host bytes."""
+
+    wrong_medusa_digest_path: Path = output_directory / "wrong-medusa-digest.json"
+    """Selected an independent evidence record for the stale digest claim."""
+
+    wrong_medusa_digest_path.write_text(
+        json.dumps(wrong_medusa_digest, indent=2) + "\n", encoding="utf-8"
+    )
+
+    assert "Medusa smoke SHA-256 does not match" in "\n".join(
+        release_evidence_errors(
+            evidence_path=wrong_medusa_digest_path,
+            wheel_paths=[wheel_path],
+            root=root,
+            core=core,
+        )
+    )
+    """Required the final release validator to hash the retained smoke itself."""
+
+    failed_medusa: dict[str, Any] = deepcopy(medusa_smoke)
+    """Copied the target-host record before changing its convergence result."""
+
+    failed_medusa["converged"] = False
+    """Changed only the scientific convergence result in the retained record."""
+
+    failed_medusa_path: Path = output_directory / "failed-medusa-smoke.json"
+    """Located the self-consistent but scientifically failed retained input."""
+
+    failed_medusa_path.write_text(
+        json.dumps(failed_medusa, indent=2) + "\n", encoding="utf-8"
+    )
+    """Created self-consistently hashed but scientifically failed smoke bytes."""
+
+    failed_medusa_evidence: dict[str, Any] = deepcopy(saved)
+    """Copied the passing evidence before replacing its Medusa commitment."""
+
+    failed_medusa_evidence["medusa_smoke"] = {
+        "path": failed_medusa_path.name,
+        "sha256": sha256(failed_medusa_path),
+        "record": failed_medusa,
+    }
+    """Rebound path, digest and embedded record to the failed smoke bytes."""
+
+    failed_medusa_evidence_path: Path = output_directory / "failed-medusa-evidence.json"
+    """Located the self-consistently hashed failed evidence fixture."""
+
+    failed_medusa_evidence_path.write_text(
+        json.dumps(failed_medusa_evidence, indent=2) + "\n", encoding="utf-8"
+    )
+
+    assert "Medusa smoke fit did not converge" in "\n".join(
+        release_evidence_errors(
+            evidence_path=failed_medusa_evidence_path,
+            wheel_paths=[wheel_path],
+            root=root,
+            core=core,
+        )
+    )
+    """Revalidated copied contents rather than trusting their embedded aggregate."""
+
     wheel_path.write_bytes(b"different wheel bytes")
     """Changed the saved artifact after evidence production to model a stale wheel."""
 
@@ -626,6 +924,7 @@ def test_runner_refuses_a_required_check_without_one_machine_rule(
             output_directory=tmp_path / "release-evidence",
             wheel_paths=[],
             cross_platform_agreement_path=tmp_path / "agreement.json",
+            medusa_smoke_path=tmp_path / "medusa-smoke.json",
             core=core,
         )
     """Required configuration failure before any scientific command could run."""
@@ -649,3 +948,88 @@ def test_fixed_input_check_refuses_stale_embedded_dependency_locks() -> None:
     """Compared embedded bytes to the exact checkout inputs independently of hashes."""
 
     assert errors == ["installed wheel does not embed the selected Cargo.lock"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="release targets are POSIX systems")
+def test_bounded_command_terminates_its_spawned_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminate a descendant worker as well as the timed-out command."""
+    worker_path: Path = tmp_path / "worker.py"
+    """Selected a descendant process with an observable termination handler."""
+
+    worker_path.write_text(
+        """from __future__ import annotations
+import signal
+import sys
+import time
+from pathlib import Path
+
+ready_path = Path(sys.argv[1])
+terminated_path = Path(sys.argv[2])
+
+def terminate(_signal: int, _frame: object) -> None:
+    terminated_path.write_text("terminated\\n", encoding="utf-8")
+
+signal.signal(signal.SIGTERM, terminate)
+ready_path.write_text("ready\\n", encoding="utf-8")
+while True:
+    time.sleep(1)
+""",
+        encoding="utf-8",
+    )
+    """Created a worker which records receipt of the process-group signal."""
+
+    controller_path: Path = tmp_path / "controller.py"
+    """Selected the direct child which owns the descendant worker."""
+
+    controller_path.write_text(
+        """from __future__ import annotations
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ready_path = Path(sys.argv[2])
+subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2], sys.argv[3]])
+while not ready_path.is_file():
+    time.sleep(0.01)
+print("descendant ready", flush=True)
+while True:
+    time.sleep(1)
+""",
+        encoding="utf-8",
+    )
+    """Created a controller which would leave its worker behind if killed alone."""
+
+    ready_path: Path = tmp_path / "ready.txt"
+    """Selected the descendant-startup handshake used to avoid a timing guess."""
+
+    terminated_path: Path = tmp_path / "terminated.txt"
+    """Selected the descendant's durable process-group termination marker."""
+
+    monkeypatch.setattr(
+        scientific_release_runner,
+        "TERMINATION_GRACE_SECONDS",
+        0.1,
+    )
+    """Kept the test fast while requiring escalation past ignored SIGTERM."""
+
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        run_bounded_command(
+            argv=[
+                sys.executable,
+                str(controller_path),
+                str(worker_path),
+                str(ready_path),
+                str(terminated_path),
+            ],
+            cwd=tmp_path,
+            timeout_seconds=2,
+            env=dict(os.environ),
+        )
+    """Required timeout reporting only after the whole group was terminated."""
+
+    assert "descendant ready" in str(caught.value.stdout)
+    assert terminated_path.read_text(encoding="utf-8") == "terminated\n"

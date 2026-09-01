@@ -41,6 +41,7 @@ import asterism
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from censoring_design import right_censoring_limit
 from external_reference_adapter import (
     CONTRACT_VERSION,
     ReferenceAdapterError,
@@ -67,7 +68,7 @@ TRUE_MEAN: float = 10.0
 """Latent intercept used for every simulated sibling."""
 
 CENSORED_SHARE: float = 0.25
-"""Target upper-tail share hidden behind the empirical censoring limit."""
+"""Expected upper-tail share hidden behind the fixed censoring limit."""
 
 # Long enough that the posterior is not the limiting uncertainty. Reported with
 # the result, because a chain too short is how two engines come to "disagree".
@@ -210,8 +211,12 @@ def reference_problem() -> dict[str, np.ndarray | float]:
         relationship[second, first] = 0.5
         """Mirrored the additive half-covariance to preserve symmetry."""
 
-    censoring_limit: float = float(np.quantile(complete, 1.0 - CENSORED_SHARE))
-    """Selected the empirical limit yielding the prewritten censoring share."""
+    censoring_limit: float = right_censoring_limit(
+        TRUE_MEAN,
+        TRUE_VARIANCE,
+        CENSORED_SHARE,
+    )
+    """Fixed the prewritten instrument before drawing the outcome."""
 
     censored: np.ndarray = complete >= censoring_limit
     """Applied the fixed right-censoring rule to the latent response."""
@@ -220,7 +225,7 @@ def reference_problem() -> dict[str, np.ndarray | float]:
     """Encoded censoring explicitly for Asterism's public API."""
 
     limits: np.ndarray = np.full(people, censoring_limit)
-    """Supplied the empirical limit for every complete or censored observation."""
+    """Supplied the fixed limit for every complete or censored observation."""
 
     design_matrix: np.ndarray = np.ones((people, 1))
     """Used the intercept-only mean model shared by both inferential frameworks."""
@@ -339,7 +344,7 @@ def fit_mcmcglmm_reference(
     """Read the sibling-pair relationship matrix supplied through ginverse."""
 
     censoring_limit: float = float(problem["limit"])
-    """Read the empirical limit applied to every censored observation."""
+    """Read the fixed limit applied to every censored observation."""
 
     lower: np.ndarray = np.where(censored, censoring_limit, complete)
     """Encoded the lower endpoint of MCMCglmm's cengaussian intervals."""
@@ -642,11 +647,15 @@ def main() -> int:
         relationship[2 * pair + 1, 2 * pair] = 0.5
         """Mirrored the additive relationship to preserve matrix symmetry."""
 
-    limit: float = float(np.quantile(complete, 1.0 - CENSORED_SHARE))
-    """Selected the empirical limit yielding the fixed censored share."""
+    limit: float = right_censoring_limit(
+        TRUE_MEAN,
+        TRUE_VARIANCE,
+        CENSORED_SHARE,
+    )
+    """Fixed the instrument from generating facts before the historical draw."""
 
     censored: np.ndarray = complete >= limit
-    """Applied right-censoring at the shared empirical limit."""
+    """Applied right-censoring at the shared fixed limit."""
 
     print(
         f"{n} people in {PAIRS} sibling pairs, {censored.sum()} censored "

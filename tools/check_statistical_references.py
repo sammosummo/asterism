@@ -56,6 +56,33 @@ model", and takes the list from the manifest rather than repeating it here,
 so a new model cannot ship without one.
 """
 
+SUPPORT_PATTERN: re.Pattern[str] = re.compile(r"^supported_in_(\d+)_(\d+)$")
+"""Parsed the release line in which an analysis became supported."""
+
+VERSION_PATTERN: re.Pattern[str] = re.compile(r"^(\d+)\.(\d+)(?:\.|$)")
+"""Read the active major-minor line from release and development versions."""
+
+
+def support_is_active(support: object, version: object) -> bool:
+    """Return whether a versioned support declaration applies to this release."""
+    if not isinstance(support, str) or not isinstance(version, str):
+        return False
+    declared: re.Match[str] | None = SUPPORT_PATTERN.fullmatch(support)
+    """Read the analysis introduction line without accepting planned states."""
+
+    current: re.Match[str] | None = VERSION_PATTERN.match(version)
+    """Read the manifest's current release line, including development versions."""
+
+    if declared is None or current is None:
+        return False
+    introduced_major, introduced_minor = map(int, declared.groups())
+    """Converted the support declaration into an ordered release pair."""
+
+    current_major, current_minor = map(int, current.groups())
+    """Converted the manifest version into the same comparison pair."""
+
+    return introduced_major == current_major and introduced_minor <= current_minor
+
 
 def validate_references(
     methods_path: Path,
@@ -236,10 +263,13 @@ def validate_references(
     )
     """Selected analysis records from the authoritative release manifest."""
 
+    version: object = manifest.get("version")
+    """Read the release line whose active support declarations are documented."""
+
     supported_ids: list[str] = [
         cast(str, analysis["id"])
         for analysis in analyses
-        if analysis.get("support") == "supported_in_0_1"
+        if support_is_active(analysis.get("support"), version)
     ]
     """Collected every analysis ID whose method must be documented."""
 
@@ -249,7 +279,7 @@ def validate_references(
     """Tied the documented support table directly to the release manifest."""
 
     for analysis in analyses:
-        if analysis.get("support") != "supported_in_0_1":
+        if not support_is_active(analysis.get("support"), version):
             continue
 
         analysis_id: str = cast(str, analysis["id"])

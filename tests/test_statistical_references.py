@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.check_statistical_references import validate_references
+
 ROOT: Path = Path(__file__).resolve().parents[1]
 """Located the repository root containing the public documentation checker."""
 
@@ -87,6 +89,48 @@ def test_canonical_statistical_references_pass() -> None:
     """Ran the public integrity command against the canonical documents."""
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_checker_includes_analyses_introduced_in_the_current_release(
+    tmp_path: Path,
+) -> None:
+    """Do not omit a 0.2 analysis from a 0.2 methods-coverage check."""
+    methods_path: Path = tmp_path / "statistical-methods.md"
+    """Selected the minimal canonical-document fixture."""
+
+    bibliography_path: Path = tmp_path / "references.bib"
+    """Selected an empty bibliography because the fixture has no citations."""
+
+    manifest_path: Path = tmp_path / "release.toml"
+    """Selected the versioned support fixture."""
+    methods_path.write_text(
+        "# Statistical methods\n\n"
+        "## What a release requires\n\n"
+        "## Numerical implementation\n",
+        encoding="utf-8",
+    )
+    bibliography_path.write_text("", encoding="utf-8")
+    manifest_path.write_text(
+        'version = "0.2.0.dev0"\n'
+        "[[analyses]]\n"
+        'id = "new_0_2_analysis"\n'
+        'support = "supported_in_0_2"\n'
+        'supported_quantities = ["new_quantity"]\n',
+        encoding="utf-8",
+    )
+
+    problems: list[str] = validate_references(
+        methods_path,
+        bibliography_path,
+        manifest_path,
+    )
+    """Validated coverage against an analysis introduced in 0.2."""
+
+    assert "supported analysis is absent from methods: new_0_2_analysis" in problems
+    assert (
+        "supported quantity is absent from methods: new_0_2_analysis.new_quantity"
+        in problems
+    )
 
 
 def test_checker_rejects_a_missing_local_markdown_target(tmp_path: Path) -> None:

@@ -37,7 +37,7 @@ blocks of that sum rather than of any one term. That is one function,
 
 ## Decision 16 stands
 
-[ADR 0001](0001-asterism-is-a-fresh-start.md) decision 16 says the general
+[ADR 0001](0001-variance-components-estimator-parameterisation.md) decision 16 says the general
 estimator assumes a Gaussian likelihood, and that the threshold, ordered,
 ascertained and Student-t objectives stay as separate special cases rather than
 being folded into the general design. **Nothing here changes that.** The
@@ -64,12 +64,69 @@ alternative was two copies of the region routine, and it is paid for by re-runni
 the six censored pass rules whenever that path changes; they were re-run for this
 work and did not move.
 
-**The boundary test's level has to be measured per design rather than inherited.**
-The target-design campaign found it holding at 0.055 with half the rows censored
-and rejecting 0.100 of the time with three quarters censored, against a nominal
-0.05; estimates and intervals held at both. The one-component model's evidence
-does not cover this, because at one component the whole of the information goes
-to the component being tested. That is recorded as a measured level beside the
-quantity, not as grounds for withholding it: [ADR
-0020](0020-no-design-range-gates-a-result.md) settled that no design range gates
-a result.
+**The boundary test is explicitly asymptotic.** Its finite-sample level can vary
+with the design, so a target campaign records how the approximation behaved on
+that target. It does not create a portable censoring limit or gate the method on
+other data. A direct failure does, however, apply to the p-value for the exact
+analysis that failed. [ADR 0020](0020-no-design-range-gates-a-result.md) keeps
+that named limitation separate from a general design range.
+
+## Amendment: the historical censoring campaigns did not test a fixed instrument
+
+**Added on 31 August 2026.** The design decision above still stands, but its
+qualification claims do not. The simulation generators chose each censoring
+limit from the realised response in order to force an exact censoring count.
+That makes the measurement rule depend on the outcome. It therefore does not
+establish estimation, interval coverage, or test level for a design in which
+the instrument's limit is fixed before the response is observed. The recorded
+campaigns remain historical measurements, but the affected pass rules must be
+rerun with limits derived from design facts alone.
+
+The share of likelihood-ratio statistics resting on the bound is useful as a
+diagnostic. It is not itself a finite-sample pass rule: the 50:50 mass is an
+asymptotic reference, and the realised atom can differ substantially while the
+rejection level remains calibrated. The earlier target-design gate on a half
+atom, and the level conclusions quoted above, are therefore retired.
+
+For several censored covariance components, the analytic 50:50 test is exposed
+with the explicit rule `asymptotic_mixture_50_50`. It refuses when a nuisance
+component or the residual rests on its bound, because then the one-boundary
+reference is not the stated null problem. At the time of this amendment its
+fixed-instrument target campaign remained outstanding; that campaign was to
+measure the rejection level directly, with the LRT atom only diagnostic.
+
+The development tree also exposes a constrained-null parametric bootstrap with
+an add-one p-value. It is an experimental, design-specific alternative rather
+than a 0.2 release claim. Its inner draws are independent and parallelised from
+coordinate-derived streams, so an optional large calibration need not inherit
+the former serial 999-draw floor.
+
+The one-component numerical fit path used by the released model is unchanged.
+That is a statement about the implementation, not a replacement qualification
+claim: its affected simulation evidence also needs the fixed-limit rerun.
+
+## Amendment: the fixed-instrument target identified one exact p-value limitation
+
+**Added on 1 September 2026.** The analytic fixed-instrument target completed all
+800 attempts. It rejected 0.055 of null datasets at 52% expected censoring and
+0.095 at 75%. The higher-censoring cell failed its predeclared rule because the
+one-sided exact lower confidence bound was 0.0631, above nominal 0.05. The
+descriptive two-sided interval began at 0.0582. The LRT atoms were 0.465 and
+0.390 and remain descriptive only. Interval coverage was 0.980 and 0.960, and
+the largest censored block was 313.
+
+The optional constrained-null bootstrap then completed all 800 requested outer
+coordinates with 999 inner draws requested for each null fit. Eleven attempts,
+all in the 75% null cell, returned `TOBIT_BOOTSTRAP_REPLICATE_FAILED`; the other
+189 supplied p-values. Its no-write merge therefore failed the predeclared rule
+that permits no failed attempt and published no qualifying evidence. This does
+not change the decision to expose the bootstrap experimentally.
+
+The analytic test remains available for several components under the explicit
+rule `asymptotic_mixture_50_50` when every nuisance variance is interior. The
+failed cell was the exact 1,909-person, four-component fixed-instrument target at
+75% expected censoring. Its analytic p-value must not be reported without a
+design-specific simulated null tied to the model, design, source and seed. This
+is not a universal censoring threshold. Fits and intervals at that target, the
+test on other designs, and the released one-component route are unaffected; the
+bootstrap remains experimental.

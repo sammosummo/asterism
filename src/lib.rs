@@ -51,7 +51,7 @@ pub use mixture_tail::{MixtureTail, weighted_chi2_upper_tail};
 pub use prepared::{Boundary, Fit, LikelihoodRatioTest, PreparedModel};
 pub use relationship::{PedigreeError, Person, grouping_matrix, relationship_matrix};
 pub use spatial::{SpatialFit, SpatialModel};
-pub use tobit::{Censoring, TobitFit, TobitInterval, TobitModel};
+pub use tobit::{Censoring, TobitBootstrap, TobitFit, TobitInterval, TobitModel};
 pub use variant_set::{VariantSetFamily, VariantSetModel, VariantSetTest};
 
 #[cfg(feature = "python")]
@@ -171,6 +171,10 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(
         tobit::python::censored_component_test,
+        module
+    )?)?;
+    module.add_function(pyo3::wrap_pyfunction!(
+        tobit::python::censored_component_bootstrap,
         module
     )?)?;
     module.add_function(pyo3::wrap_pyfunction!(

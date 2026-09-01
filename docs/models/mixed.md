@@ -2,6 +2,12 @@
 
 Analysis id `mixed_binary_censored_genetic_correlation`. Runnable example in [`examples/`](../../examples/).
 
+The published 0.1.1 wheel declared the mixed pairings below supported. In the
+current development checkout, the corrected fixed-threshold recovery and
+coverage checks pass for continuous, binary, censored and censored-pair cells.
+The retained SOLAR comparison for binary with continuous remains a numerical
+comparison of the shared estimand, not evidence for a censored pairing.
+
 ## Using it
 
 One trait censored, one not. This is the pairing the extended high-frequency
@@ -14,10 +20,10 @@ python examples/mixed.py
 
 ```
 people:                800
-censored:              320 of 800
-rho_g     (true 0.6):  0.538
+censored:              359 of 800
+rho_g     (true 0.6):  0.548
 converged:             True
-95% interval:          [0.342, 0.722]
+95% interval:          [0.350, 0.733]
 ```
 
 ```python
@@ -51,14 +57,21 @@ asterism.mixed_bivariate_test(relationship, first, second, design, null=0.0)
 asterism.mixed_bivariate_test(relationship, first, second, design, null=1.0)
 ```
 
-Simulated at a true correlation of one, the boundary test rejects at 0.010,
-0.040 and 0.085 against nominal levels of 0.01, 0.05 and 0.10 over two hundred
-replicates, none refused — correctly sized or mildly conservative.
+An earlier simulation at a true correlation of one reported rejection rates of
+0.010, 0.040 and 0.085 against nominal levels of 0.01, 0.05 and 0.10. Its
+thresholds were selected from the realised outcomes, so those values remain a
+historical record but no longer qualify the boundary rule. No fixed-threshold
+replacement has been run specifically for that correlation-one calibration;
+the completed corrected campaigns instead measure recovery, interval coverage
+and the interior test against nought.
 
-0.1 supports the pairings that include a continuous trait: continuous with
-continuous, binary with continuous, and censored with continuous, along with
-censored with censored. The binary-with-censored pair is deferred — it stays
-public and its checks are kept, but 0.1 makes no scientific claim about it.
+The published 0.1.1 support set includes the pairings that contain a continuous
+trait — continuous with continuous, binary with continuous, and censored with
+continuous — along with censored with censored. The binary-with-censored pair
+is deferred: it stays public, but 0.1 makes no scientific claim about it. In the
+development checkout, corrected fixed-threshold recovery and coverage are
+measured passes for every thresholded or censored simulation cell. The separate
+correlation-one boundary measurement above remains historical.
 
 ## The model
 
@@ -144,16 +157,28 @@ Both latent traits follow the joint Gaussian covariance above; the binary scale
 and relationship-matrix normalisation are fixed correctly; censoring records
 and limits are correct; and family blocks are independent.
 
-Coverage and level have been measured on sibling pairs, which do not exercise
-the sequential integration used for larger families.
+The historical coverage and level runs used sibling pairs, which do not
+exercise the sequential integration used for larger families, and selected
+observation thresholds from their realised outcomes. The corrected
+fixed-threshold recovery and coverage campaigns now pass, still on sibling
+pairs. The separate correlation-one boundary measurement above remains
+historical.
 
 ## Validation
 
 The worst difference from SOLAR on the binary-with-continuous pair is 0.014.
-Genetic-correlation interval coverage on 300 replicates of 400 sibling pairs
-per cell ran from 0.930 to 0.957 across three pairings and three true
-correlations, and the tests against nought and against one both held their
-level.
+That retained comparison is conditional on the two implementations fitting the
+same supplied observations and estimand; it does not estimate recovery,
+coverage or level.
+
+The corrected recovery campaign fitted 100 replicates in each of the
+continuous, binary, censored and censored-pair designs. Mean genetic
+correlations were 0.3790, 0.3833, 0.3753 and 0.3803 against truth 0.4. The
+corrected coverage campaign completed 300 replicates in each of twelve cells;
+coverage ranged from 0.930 to 0.957 and every exact interval contained the
+nominal 0.95. At zero genetic correlation, rejection rates were 0.050, 0.070,
+0.053 and 0.053. Every fit was scored. The earlier outcome-adaptive records are
+preserved as history rather than qualification evidence.
 
 The designs behind those figures, which of them can be reproduced from this
 repository, and what has still to run, are in the

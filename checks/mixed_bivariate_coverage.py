@@ -7,8 +7,10 @@ coverage check is what chooses an interval recipe and that nothing about
 reading the code can tell you the same thing, so the interval this model
 reported had never been measured at all.
 
-This measures it, and measures the test beside it, because the two answer the
-same question and one run gives both.
+This command measures it, and measures the test beside it, because the two
+answer the same question and one run gives both. Censored and binary cut-points
+are now fixed from population design facts before outcomes. Earlier retained
+rates from outcome-adaptive cut-points are superseded pending a fresh run.
 
 The rules are the coverage check's rules elsewhere in this package:
 
@@ -36,9 +38,11 @@ Run with:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -46,6 +50,12 @@ from pathlib import Path
 import asterism
 import numpy as np
 from scipy.stats import beta
+
+try:
+    from checks.censoring_design import right_censoring_limit
+except ModuleNotFoundError:
+    from censoring_design import right_censoring_limit
+"""Imported the fixed-threshold solver in module and direct-command modes."""
 
 PAIRS: int = 400
 """Fixed the number of sibling pairs in every simulated data set."""
@@ -187,8 +197,12 @@ def encode(
         Public mixed-bivariate trait mappings for the first and second traits.
     """
     if pairing == "censored_pair":
-        second_cut: float = float(np.quantile(latent[1], 1.0 - CENSORED_SHARE))
-        """Located the second trait's own upper-censoring limit."""
+        second_cut: float = right_censoring_limit(
+            0.0,
+            SECOND_VARIANCE,
+            CENSORED_SHARE,
+        )
+        """Fixed the second trait's instrument before drawing outcomes."""
 
         second_censored: np.ndarray = latent[1] >= second_cut
         """Marked the second trait's observations at or above its limit."""
@@ -218,8 +232,8 @@ def encode(
         }
         """Represented the uncensored continuous first trait."""
     elif pairing == "binary":
-        cut: float = float(np.quantile(latent[0], 1.0 - PREVALENCE))
-        """Located the latent threshold giving the fixed binary prevalence."""
+        cut: float = right_censoring_limit(0.0, 1.0, PREVALENCE)
+        """Fixed the latent threshold from the generating prevalence."""
 
         first = {
             "kind": "binary",
@@ -229,8 +243,8 @@ def encode(
         }
         """Encoded the first trait as binary threshold outcomes."""
     else:
-        cut = float(np.quantile(latent[0], 1.0 - CENSORED_SHARE))
-        """Located the upper-censoring limit giving the fixed censored share."""
+        cut = right_censoring_limit(0.0, 1.0, CENSORED_SHARE)
+        """Fixed the upper-censoring limit before drawing outcomes."""
 
         censored: np.ndarray = latent[0] >= cut
         """Marked latent observations at or above the censoring limit."""
@@ -336,9 +350,62 @@ def clopper_pearson(hits: int, n: int) -> tuple[float, float]:
     return float(low), float(high)
 
 
-def main() -> int:
+def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Read the campaign size and process allocation.
+
+    Args:
+        argv: Optional argument vector excluding the executable name.
+
+    Returns:
+        Positive replicate and worker counts, defaulting to the historical
+        environment-selected values when omitted.
+    """
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=__doc__)
+    """Built an explicit interface while preserving no-argument behaviour."""
+
+    parser.add_argument("--replicates", type=int, default=REPLICATES)
+    parser.add_argument("--workers", type=int, default=WORKERS)
+    parser.add_argument("--no-write", action="store_true")
+    arguments: argparse.Namespace = parser.parse_args(argv)
+    """Read explicit release values or the existing exploratory defaults."""
+
+    if arguments.replicates < 1 or arguments.workers < 1:
+        parser.error("--replicates and --workers must be positive")
+    return arguments
+
+
+def run_jobs(
+    jobs: list[tuple[str, float, int]], workers: int
+) -> list[dict[str, object]]:
+    """Run one deterministic job grid with the requested process count.
+
+    Args:
+        jobs: Exact pairing, truth and replicate coordinates.
+        workers: Process count selected by the command line.
+
+    Returns:
+        One retained result for every requested coordinate.
+    """
+    rows: list[dict[str, object]] = []
+    """Collected results without changing deterministic job ordering."""
+
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for got in pool.map(one, jobs, chunksize=2):
+            rows.append(got)
+            if len(rows) % 200 == 0:
+                print(f"  {len(rows)}/{len(jobs)}", flush=True)
+    return rows
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """Run every coverage cell and write its dated evidence receipt."""
-    print(f"{PAIRS} sibling pairs, {REPLICATES} replicates per cell, nominal {NOMINAL}")
+    arguments: argparse.Namespace = parse_arguments(argv)
+    """Selected the exact simulation count and process allocation."""
+
+    print(
+        f"{PAIRS} sibling pairs, {arguments.replicates} replicates per cell, "
+        f"nominal {NOMINAL}"
+    )
     print(
         f"true genetic correlations {TRUTHS}, pairings {PAIRINGS}, "
         f"heritabilities {HERITABILITY}\n",
@@ -346,18 +413,12 @@ def main() -> int:
     )
 
     jobs: list[tuple[str, float, int]] = [
-        (p, t, k) for p in PAIRINGS for t in TRUTHS for k in range(REPLICATES)
+        (p, t, k) for p in PAIRINGS for t in TRUTHS for k in range(arguments.replicates)
     ]
     """Enumerated every pairing, truth and replicate exactly once."""
 
-    rows: list[dict[str, object]] = []
-    """Initialised the collection of per-replicate fit records."""
-
-    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
-        for got in pool.map(one, jobs, chunksize=2):
-            rows.append(got)
-            if len(rows) % 200 == 0:
-                print(f"  {len(rows)}/{len(jobs)}", flush=True)
+    rows: list[dict[str, object]] = run_jobs(jobs, arguments.workers)
+    """Ran every requested replicate under the explicit process allocation."""
 
     print(
         f"\n{'pairing':>11} | {'rho_g':>5} | {'refused':>9} | "
@@ -441,7 +502,7 @@ def main() -> int:
         "what": "coverage of the mixed bivariate genetic-correlation interval",
         "date": date.today().isoformat(),
         "pairs": PAIRS,
-        "replicates": REPLICATES,
+        "replicates": arguments.replicates,
         "nominal": NOMINAL,
         "alpha": ALPHA,
         "heritability": HERITABILITY,
@@ -462,8 +523,9 @@ def main() -> int:
     )
     """Selected the repository evidence path using the current date."""
 
-    out.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"\nwritten to {out}")
+    if not arguments.no_write:
+        out.write_text(json.dumps(receipt, indent=2) + "\n")
+        print(f"\nwritten to {out}")
 
     if failures:
         print("\nFAILED:")

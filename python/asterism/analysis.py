@@ -12,12 +12,14 @@ import math
 import re
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from . import _core
 
 __all__: list[str] = [
     "build_identity",
+    "installed_extension_sha256",
     "release_manifest",
     "run_analysis",
     "subject_order_commitment",
@@ -37,6 +39,38 @@ STABLE_ESTIMATOR_CODE_PREFIXES: tuple[str, ...] = (
     "TOBIT_",
 )
 """Named the documented refusal vocabularies of supported 0.1 estimators."""
+
+SUPPORT_PATTERN: re.Pattern[str] = re.compile(r"^supported_in_(\d+)_(\d+)$")
+"""Parsed the release line in which an analysis first became supported."""
+
+VERSION_PATTERN: re.Pattern[str] = re.compile(r"^(\d+)\.(\d+)(?:\.|$)")
+"""Read the major and minor release line from PEP 440 development versions."""
+
+
+# asterism-style: allow private-helper -- only receipt preflight interprets embedded versioned support states
+def _analysis_support_is_active(support: Any, version: Any) -> bool:
+    """Return whether a versioned support declaration applies to this release.
+
+    Private because only receipt preflight interprets embedded support states;
+    callers consume the resulting public release-state record.
+    """
+    if not isinstance(support, str) or not isinstance(version, str):
+        return False
+    declared: re.Match[str] | None = SUPPORT_PATTERN.fullmatch(support)
+    """Read the analysis's introduction line without accepting planned states."""
+
+    current: re.Match[str] | None = VERSION_PATTERN.match(version)
+    """Read the build's current release line, including development versions."""
+
+    if declared is None or current is None:
+        return False
+    introduced_major, introduced_minor = map(int, declared.groups())
+    """Converted the support declaration into an ordered release pair."""
+
+    current_major, current_minor = map(int, current.groups())
+    """Converted the current package version into the same comparison pair."""
+
+    return introduced_major == current_major and introduced_minor <= current_minor
 
 
 def release_manifest() -> dict[str, Any]:
@@ -136,6 +170,44 @@ def build_identity() -> dict[str, Any]:
     }
 
 
+def installed_extension_sha256() -> str:
+    """Return the SHA-256 of the native module loaded by this process.
+
+    This is a provenance helper rather than part of a fit record. It follows
+    the imported module's own specification, so another extension-shaped file
+    beside it cannot be mistaken for the binary that actually ran.
+
+    Returns:
+        Lowercase hexadecimal SHA-256 of the loaded native module.
+
+    Raises:
+        RuntimeError: If the loaded module has no readable filesystem origin.
+    """
+    specification: Any = getattr(_core, "__spec__", None)
+    """Read the import system's identity for the module already in memory."""
+
+    origin: Any = getattr(specification, "origin", None)
+    """Selected the exact file from which that module was loaded."""
+
+    if not isinstance(origin, str) or not origin:
+        raise RuntimeError("ASTERISM_EXTENSION_ORIGIN_MISSING")
+    path: Path = Path(origin).resolve()
+    """Normalised the loaded binary path without searching its directory."""
+
+    if not path.is_file():
+        raise RuntimeError("ASTERISM_EXTENSION_ORIGIN_UNREADABLE")
+    digest: Any = hashlib.sha256()
+    """Started the binary digest without retaining its bytes in memory."""
+
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as error:
+        raise RuntimeError("ASTERISM_EXTENSION_ORIGIN_UNREADABLE") from error
+    return digest.hexdigest()
+
+
 def subject_order_commitment(subject_order: Sequence[str]) -> str:
     """Commit to exact subject order without retaining identifiers.
 
@@ -171,7 +243,7 @@ def _release_state(
     analysis: str,
     design: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Report whether this build is a release with its checks configured.
+    """Report whether this build is a release with every required check ready.
 
     Private because nobody outside `run_analysis` needs it. A caller who wants
     a fit calls the model and gets one; a caller who wants a receipt calls
@@ -184,8 +256,8 @@ def _release_state(
 
     Returns:
         A serialisable release-state record. ``release_ready`` is true only
-        when the pass rules are configured and the build is a release;
-        ``missing_checks`` names whichever of those is absent.
+        when the pass rules are configured, every required rule is ready and
+        the build is a release; ``missing_checks`` names every absence.
 
     Raises:
         ValueError: If the analysis is absent from the manifest or its contract
@@ -207,7 +279,7 @@ def _release_state(
 
     entry: dict[str, Any] = matched[0]
     """Selected the one unambiguous support record for this analysis."""
-    if entry.get("support") != "supported_in_0_1":
+    if not _analysis_support_is_active(entry.get("support"), manifest.get("version")):
         raise ValueError(f"ANALYSIS_OUTSIDE_RELEASE_SUPPORT:{analysis}")
 
     missing_checks: list[dict[str, Any]] = []
@@ -222,6 +294,63 @@ def _release_state(
                 "reason": "machine-readable pass rules are incomplete",
             }
         )
+
+    required_checks: Any = entry.get("required_checks")
+    """Read the exact scientific claims this analysis promises to discharge."""
+
+    raw_pass_rules: Any = entry.get("pass_rules")
+    """Read the machine-readable evidence state for each required claim."""
+
+    if (
+        not isinstance(required_checks, list)
+        or not required_checks
+        or not all(isinstance(check, str) and check for check in required_checks)
+        or len(required_checks) != len(set(required_checks))
+        or not isinstance(raw_pass_rules, list)
+        or not raw_pass_rules
+        or not all(isinstance(rule, Mapping) for rule in raw_pass_rules)
+    ):
+        raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
+    pass_rules: list[Mapping[str, Any]] = list(raw_pass_rules)
+    """Narrowed the validated rule-table list for exact inventory checks."""
+
+    rule_ids: list[Any] = [rule.get("id") for rule in pass_rules]
+    """Retained rule multiplicity so a duplicate cannot hide a missing check."""
+
+    if rule_ids != required_checks:
+        raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
+    for rule in pass_rules:
+        check: str = str(rule["id"])
+        """Named the required check whose current evidence state is examined."""
+
+        status: Any = rule.get("status")
+        """Read whether this exact check is ready or explicitly waiting."""
+
+        if status not in {"ready", "blocked", "external_fixture_pending"}:
+            raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
+        if status != "ready":
+            blocker: Any = rule.get("blocker")
+            """Read the stable reason and evidence needed for this unready rule."""
+
+            if (
+                not isinstance(blocker, Mapping)
+                or not isinstance(blocker.get("code"), str)
+                or not blocker.get("code")
+                or not isinstance(blocker.get("evidence_needed"), str)
+                or not blocker.get("evidence_needed")
+            ):
+                raise ValueError(f"ANALYSIS_PASS_RULES_INVALID:{analysis}")
+            missing_checks.append(
+                {
+                    "code": "SCIENTIFIC_PASS_RULE_NOT_READY",
+                    "check": check,
+                    "status": status,
+                    "blocker": blocker["code"],
+                    "reason": blocker["evidence_needed"],
+                }
+            )
+    """Made a blocked or pending rule part of the public fail-closed receipt."""
+
     if manifest.get("release") is not True:
         missing_checks.append(
             {
@@ -229,7 +358,7 @@ def _release_state(
                 "reason": "this is a development build, not a release",
             }
         )
-    """Recorded an unconfigured or development build as not release ready."""
+    """Recorded an unready rule or development build as not release ready."""
 
     quantities: Any = entry.get("supported_quantities")
     """Read the quantities this analysis is supported to produce."""
@@ -237,6 +366,37 @@ def _release_state(
         isinstance(quantity, str) for quantity in quantities
     ):
         raise ValueError(f"ANALYSIS_REPORTABLE_QUANTITIES_INVALID:{analysis}")
+
+    raw_limitations: Any = entry.get("known_limitations", [])
+    """Read retained negative evidence that narrows interpretation, not execution."""
+
+    limitation_fields: tuple[str, ...] = (
+        "code",
+        "quantity",
+        "scope",
+        "consequence",
+        "evidence",
+        "evidence_sha256",
+    )
+    """Named the stable fields every receipt needs to explain one limitation."""
+
+    if (
+        not isinstance(raw_limitations, list)
+        or not all(isinstance(item, Mapping) for item in raw_limitations)
+        or any(
+            not all(
+                isinstance(item.get(field), str) and item.get(field)
+                for field in limitation_fields
+            )
+            or item.get("quantity") not in quantities
+            or re.fullmatch(r"[0-9a-f]{64}", str(item.get("evidence_sha256", "")))
+            is None
+            for item in raw_limitations
+        )
+    ):
+        raise ValueError(f"ANALYSIS_KNOWN_LIMITATIONS_INVALID:{analysis}")
+    known_limitations: list[dict[str, Any]] = [dict(item) for item in raw_limitations]
+    """Copied limitations so callers cannot mutate the embedded manifest record."""
 
     applicable_quantities: list[str] = list(quantities)
     """Defaulted to the complete inventory for analyses with one report branch."""
@@ -288,6 +448,7 @@ def _release_state(
         "missing_checks": missing_checks,
         "supported_quantities": applicable_quantities,
         "supported_quantity_inventory": list(quantities),
+        "known_limitations": known_limitations,
         "design": dict(design),
     }
 

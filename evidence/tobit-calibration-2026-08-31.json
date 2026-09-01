@@ -1,0 +1,86 @@
+{
+  "what": "recovery of the censored model across censoring rates",
+  "date": "2026-08-31",
+  "pairs": 400,
+  "replicates": 200,
+  "truth": {
+    "heritability": 0.5,
+    "variance": 4.0,
+    "mean": 10.0
+  },
+  "standard_errors_allowed": 3.0,
+  "by_censoring_rate": {
+    "0.00": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49605168864101906,
+      "heritability_standard_error": 0.006734687256848583,
+      "variance_mean": 3.9886259047047186,
+      "variance_standard_error": 0.01395983868689297,
+      "naive_heritability_mean": 0.49605168864101906,
+      "instrument_limit": 0.0,
+      "achieved_censoring_share_range": [
+        0.0,
+        0.0
+      ]
+    },
+    "0.10": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49591727980138556,
+      "heritability_standard_error": 0.006833243966567424,
+      "variance_mean": 3.9851045161832253,
+      "variance_standard_error": 0.014932413680554703,
+      "naive_heritability_mean": 0.48375638260070547,
+      "instrument_limit": 12.563103131089202,
+      "achieved_censoring_share_range": [
+        0.0725,
+        0.13625
+      ]
+    },
+    "0.25": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.4995951188564341,
+      "heritability_standard_error": 0.007215934813157136,
+      "variance_mean": 3.9852322887994025,
+      "variance_standard_error": 0.01710161737985137,
+      "naive_heritability_mean": 0.4579856514788473,
+      "instrument_limit": 11.348979500392163,
+      "achieved_censoring_share_range": [
+        0.20875,
+        0.2975
+      ]
+    },
+    "0.50": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49348955281882695,
+      "heritability_standard_error": 0.008368836760423102,
+      "variance_mean": 3.9833995981106027,
+      "variance_standard_error": 0.02154326081234227,
+      "naive_heritability_mean": 0.3985593006103186,
+      "instrument_limit": 10.0,
+      "achieved_censoring_share_range": [
+        0.45375,
+        0.565
+      ]
+    },
+    "0.75": {
+      "available": 200,
+      "attempted": 200,
+      "heritability_mean": 0.49834581747300205,
+      "heritability_standard_error": 0.010717884954611352,
+      "variance_mean": 3.9338291203064646,
+      "variance_standard_error": 0.03540985220033518,
+      "naive_heritability_mean": 0.3106118713795859,
+      "instrument_limit": 8.651020499607835,
+      "achieved_censoring_share_range": [
+        0.70625,
+        0.79125
+      ]
+    }
+  },
+  "passed": true,
+  "failures": []
+}

@@ -28,6 +28,10 @@ supported_quantities = ["h2", "interval", "test"]
 required_checks = ["coverage"]
 pass_rules_configured = true
 
+[[analyses.pass_rules]]
+id = "coverage"
+status = "ready"
+
 
 [[analyses]]
 id = "several_covariance_components"
@@ -54,6 +58,10 @@ supported_quantity_sets = [
 required_checks = ["coverage"]
 pass_rules_configured = true
 
+[[analyses.pass_rules]]
+id = "coverage"
+status = "ready"
+
 """
 """A complete fixed release contract used only as the build-metadata adapter."""
 
@@ -71,6 +79,15 @@ They used to read whatever the checkout happened to be, which meant the suite
 could only pass while the repository was mid-development: cutting a release
 turned every "a development build refuses" test red.
 """
+
+BLOCKED_RELEASE_MANIFEST: str = RELEASE_MANIFEST.replace(
+    'status = "ready"',
+    'status = "blocked"\n'
+    'blocker = { code = "coverage_unmeasured", '
+    'evidence_needed = "Run and retain the coverage campaign." }',
+    1,
+)
+"""A release-shaped contract whose required evidence is explicitly absent."""
 
 
 def install_development_contract(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,6 +120,132 @@ def install_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_core, "__release_manifest_sha256__", manifest_sha256)
     monkeypatch.setattr(_core, "__source_dirty__", False)
     """Replaced every coupled field instead of creating an impossible mixed build."""
+
+
+def install_blocked_release_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a release-shaped contract carrying one blocked required rule.
+
+    Args:
+        monkeypatch: Pytest adapter used to restore compiled metadata afterwards.
+    """
+    manifest_sha256: str = hashlib.sha256(
+        BLOCKED_RELEASE_MANIFEST.encode("utf-8")
+    ).hexdigest()
+    """Committed to the exact replacement manifest as the build script would."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", BLOCKED_RELEASE_MANIFEST)
+    monkeypatch.setattr(_core, "__release_manifest_sha256__", manifest_sha256)
+    monkeypatch.setattr(_core, "__source_dirty__", False)
+    """Created an internally consistent build that must still fail preflight."""
+
+
+def test_a_blocked_required_rule_prevents_release_ready_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never turn configured-but-unmeasured evidence into release readiness."""
+    install_blocked_release_contract(monkeypatch)
+    """Substituted the release-shaped contract with one absent campaign."""
+
+    state: dict[str, Any] = release_state(
+        "one_trait_gaussian_heritability",
+        {
+            "sample_size": 350,
+            "largest_family": 14,
+            "trait_type": "continuous",
+            "components": "additive_relationship",
+        },
+    )
+    """Asked the receipt preflight to evaluate the blocked analysis."""
+
+    assert state["release_ready"] is False
+    assert state["missing_checks"] == [
+        {
+            "code": "SCIENTIFIC_PASS_RULE_NOT_READY",
+            "check": "coverage",
+            "status": "blocked",
+            "blocker": "coverage_unmeasured",
+            "reason": "Run and retain the coverage campaign.",
+        }
+    ]
+
+
+def test_an_analysis_introduced_in_0_2_is_active_in_a_0_2_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not hard-code the active support contract to Asterism 0.1."""
+    manifest: str = (
+        RELEASE_MANIFEST.replace('version = "0.1.0"', 'version = "0.2.0"')
+        .replace('cargo_version = "0.1.0"', 'cargo_version = "0.2.0"')
+        .replace('support = "supported_in_0_1"', 'support = "supported_in_0_2"')
+    )
+    """Built the same complete release contract at its next minor version."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", manifest)
+    monkeypatch.setattr(
+        _core,
+        "__release_manifest_sha256__",
+        hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+    )
+    """Installed internally consistent immutable build metadata."""
+
+    state: dict[str, Any] = release_state(
+        "one_trait_gaussian_heritability",
+        {"sample_size": 350, "trait_type": "continuous"},
+    )
+    """Evaluated support introduced on the current release line."""
+
+    assert state["release_ready"] is True
+    assert state["missing_checks"] == []
+
+
+def test_known_limitations_are_carried_into_release_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Put retained negative evidence beside every supported-analysis receipt."""
+    limitation: str = (
+        'known_limitations = [{ code = "TARGET_LEVEL_FAILED", '
+        'quantity = "test", scope = "named_target", '
+        'consequence = "withhold_p_value", evidence = "evidence/target.json", '
+        f'evidence_sha256 = "{"0" * 64}" }}]\n'
+    )
+    """Defined one complete synthetic limitation record."""
+    manifest: str = RELEASE_MANIFEST.replace(
+        'supported_quantities = ["h2", "interval", "test"]\n',
+        'supported_quantities = ["h2", "interval", "test"]\n' + limitation,
+        1,
+    )
+    """Added one participant-free limitation to an otherwise ready contract."""
+
+    monkeypatch.setattr(_core, "__release_manifest__", manifest)
+    monkeypatch.setattr(
+        _core,
+        "__release_manifest_sha256__",
+        hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+    )
+    """Installed the limitation-bearing manifest with matching identity."""
+
+    state: dict[str, Any] = release_state(
+        "one_trait_gaussian_heritability",
+        {
+            "sample_size": 350,
+            "trait_type": "continuous",
+            "expected_censoring_share": 0.75,
+        },
+    )
+    """Read the limitation without turning design metadata into a refusal gate."""
+
+    assert state["release_ready"] is True
+    assert state["supported_quantities"] == ["h2", "interval", "test"]
+    assert state["known_limitations"] == [
+        {
+            "code": "TARGET_LEVEL_FAILED",
+            "quantity": "test",
+            "scope": "named_target",
+            "consequence": "withhold_p_value",
+            "evidence": "evidence/target.json",
+            "evidence_sha256": "0" * 64,
+        }
+    ]
 
 
 def test_a_development_build_is_never_release_ready(

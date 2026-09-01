@@ -1,8 +1,15 @@
 # The models
 
-One page per supported model, each carrying everything that model needs: how to
-use it, the equations behind it, a summary of what has been measured about it,
-and its interface.
+One page per model in the public development manifest, each carrying how to use
+it, the equations behind it, a truthful summary of what has been measured, and
+its interface. Inclusion here is not itself a support claim: the
+several-component censored model is in the current 0.2 scope for fitting,
+intervals and an explicitly asymptotic test. Its analytic p-value must not be
+reported for the exact failed 1,909-person, four-component target at 75%
+expected censoring without a design-specific simulated null; this is not a
+universal censoring threshold. The bootstrap remains experimental. Published
+0.1.1 support and current development status are kept separate in
+[api-support.md](../api-support.md).
 
 | Model | Page |
 | --- | --- |
@@ -16,8 +23,9 @@ and its interface.
 | Gene by environment, measured | [gxe-measured.md](gxe-measured.md) |
 | Gene by environment, binary | [gxe-binary.md](gxe-binary.md) |
 
-Every comparison and simulation behind those summaries is in the [validation
-record](../validation.md), in full.
+The [validation record](../validation.md) preserves the comparisons and
+simulations behind those summaries, including historical results that have been
+withdrawn as qualification evidence.
 
 What every model shares — the notation, the Gaussian likelihood and the
 numerical implementation — is in

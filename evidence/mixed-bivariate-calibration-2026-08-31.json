@@ -1,0 +1,53 @@
+{
+  "what": "recovery of the genetic correlation across trait kinds",
+  "date": "2026-08-31",
+  "pairs": 400,
+  "replicates": 100,
+  "truth": {
+    "genetic_correlation": 0.4,
+    "residual_correlation": 0.15,
+    "heritability": [
+      0.5,
+      0.5
+    ]
+  },
+  "prevalence": 0.3,
+  "censored_share": 0.25,
+  "standard_errors_allowed": 3.0,
+  "by_pairing": {
+    "continuous": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.37900566619444154,
+      "genetic_correlation_standard_error": 0.012578368039441293,
+      "heritability_first_mean": 0.48798395867917854,
+      "heritability_second_mean": 0.4929418511523071
+    },
+    "binary": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.3832788416203989,
+      "genetic_correlation_standard_error": 0.0176743486136252,
+      "heritability_first_mean": 0.47804347704442784,
+      "heritability_second_mean": 0.49294186492922754
+    },
+    "censored": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.37528311713756474,
+      "genetic_correlation_standard_error": 0.01293338440278271,
+      "heritability_first_mean": 0.4940149638310833,
+      "heritability_second_mean": 0.49294185561159554
+    },
+    "censored_pair": {
+      "available": 100,
+      "attempted": 100,
+      "genetic_correlation_mean": 0.3802801287739974,
+      "genetic_correlation_standard_error": 0.013510416451345198,
+      "heritability_first_mean": 0.49453651417498173,
+      "heritability_second_mean": 0.49194786639760346
+    }
+  },
+  "passed": true,
+  "failures": []
+}
