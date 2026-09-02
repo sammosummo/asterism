@@ -558,7 +558,11 @@ available; at 75%, eleven attempts reported
 of 0.055 at both shares, and coverage of 0.980 and 0.960, but the no-write merge
 failed because the predeclared rule permits no failed attempt. It published no
 qualifying evidence, so the bootstrap remains experimental. This finding does
-not create a censoring cutoff for another design. The development candidate's
+not create a censoring cutoff for another design. The current API keeps the
+all-or-nothing rule while adding the failed inner coordinate and original fit
+code to future refusals; the matching `bootstrap_replay` call reproduces one
+coordinate for diagnosis and returns no p-value. This diagnostic repair does
+not retrospectively qualify the failed campaign. The development candidate's
 four-platform probe was bit-for-bit identical for every new
 censored-component quantity. Publication reruns that comparison from the exact
 final wheels and retains its per-target decisions. The independent

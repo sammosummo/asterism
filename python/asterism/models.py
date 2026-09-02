@@ -2263,7 +2263,9 @@ class CensoredComponentModel:
         encountered at least one inner-fit failure. The campaign therefore
         failed its zero-refusal rule and did not qualify a finite-sample
         bootstrap p-value. An observed nuisance component or residual on its
-        bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``.
+        bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``. An inner-fit
+        refusal includes its zero-based replicate coordinate and original code;
+        :meth:`bootstrap_replay` reproduces that exact draw for diagnosis.
         """
         matrices, y, codes, limits, design = self._data(value, censoring, limit)
         """Put the observed response through the same input seam as a fit."""
@@ -2313,6 +2315,67 @@ class CensoredComponentModel:
             "seed": seed,
             "smallest_p_value": 1.0 / (used + 1),
             "monte_carlo_standard_error": monte_carlo_standard_error,
+            "nuisance_at_bound": nuisance_at_bound,
+            "component": component,
+            "estimator": "ml",
+            "build": build_identity(),
+            "subject_order_sha256": self._subject_order_sha256,
+        }
+
+    def bootstrap_replay(
+        self,
+        value: Any,
+        censoring: Any,
+        limit: Any,
+        direction: Any,
+        component: int,
+        seed: int,
+        replicate: int,
+    ) -> dict[str, Any]:
+        """Replay one exact deterministic inner bootstrap coordinate.
+
+        This is a diagnostic companion to :meth:`bootstrap`. It fits the same
+        constrained-null generator, selects the same substream from ``seed``
+        and the zero-based ``replicate`` coordinate, and refits that one
+        simulated response. If the refit fails, the exception preserves both
+        the coordinate and its original Asterism failure code.
+
+        The record deliberately contains no p-value. A replayed draw cannot be
+        substituted for a failed draw or used to shrink the complete requested
+        denominator; a full bootstrap remains all-or-nothing.
+        """
+        matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        directions: npt.NDArray[np.int64] = np.ascontiguousarray(
+            direction, dtype=np.int64
+        )
+        (
+            observed_statistic,
+            statistic,
+            exceeded,
+            replayed,
+            replay_seed,
+            null_loglik,
+            alternative_loglik,
+            nuisance_at_bound,
+        ) = _core.censored_component_bootstrap_replay(
+            matrices,
+            y,
+            codes,
+            limits,
+            design,
+            directions,
+            component,
+            seed,
+            replicate,
+        )
+        return {
+            "observed_statistic": observed_statistic,
+            "statistic": statistic,
+            "exceeded": exceeded,
+            "replicate": replayed,
+            "seed": replay_seed,
+            "null_loglik": null_loglik,
+            "alternative_loglik": alternative_loglik,
             "nuisance_at_bound": nuisance_at_bound,
             "component": component,
             "estimator": "ml",

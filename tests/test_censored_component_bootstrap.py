@@ -80,6 +80,35 @@ def problem(
     return model, value, censoring, limit, additive, design
 
 
+def high_censoring_problem() -> tuple[
+    asterism.CensoredComponentModel,
+    npt.NDArray[np.float64],
+    npt.NDArray[np.int64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.int64],
+]:
+    """Build a deterministic bootstrap whose first inner draw is unfit."""
+    people = 30
+    additive: npt.NDArray[np.float64] = np.eye(people)
+    for pair in range(people // 2):
+        first = 2 * pair
+        second = first + 1
+        additive[first, second] = additive[second, first] = 0.5
+
+    design: npt.NDArray[np.float64] = np.ones((people, 1))
+    generator: np.random.Generator = np.random.default_rng(8_300)
+    complete: npt.NDArray[np.float64] = np.linalg.cholesky(
+        0.6 * additive + 0.4 * np.eye(people)
+    ) @ generator.standard_normal(people)
+    ceiling = -1.5
+    censoring: npt.NDArray[np.int64] = (complete >= ceiling).astype(np.int64)
+    value: npt.NDArray[np.float64] = np.where(censoring == 0, complete, np.nan)
+    limit: npt.NDArray[np.float64] = np.full(people, ceiling)
+    direction: npt.NDArray[np.int64] = np.ones(people, dtype=np.int64)
+    model = asterism.CensoredComponentModel([additive], design)
+    return model, value, censoring, limit, direction
+
+
 def test_several_component_test_reports_an_asymptotic_reference() -> None:
     """Label the several-component analytic reference as asymptotic."""
     model, value, censoring, limit, _, _ = problem()
@@ -319,6 +348,86 @@ def test_bootstrap_refits_the_complete_null_reference_reproducibly() -> None:
     assert first["smallest_p_value"] == 1.0 / 6.0
     assert first["p_value"] == (int(first["exceedances"]) + 1) / 6.0
     assert float(first["monte_carlo_standard_error"]) >= 0.0
+
+
+def test_bootstrap_failure_preserves_inner_coordinate_and_cause() -> None:
+    """A failed draw remains unknown, but no longer anonymous."""
+    model, value, censoring, limit, direction = high_censoring_problem()
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^TOBIT_BOOTSTRAP_REPLICATE_FAILED:replicate=0:"
+            r"cause=TOBIT_TOO_FEW_MEASURED_VALUES$"
+        ),
+    ):
+        model.bootstrap(
+            value,
+            censoring,
+            limit,
+            direction,
+            component=0,
+            replicates=8,
+            seed=1,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"^TOBIT_BOOTSTRAP_REPLICATE_FAILED:replicate=0:"
+            r"cause=TOBIT_TOO_FEW_MEASURED_VALUES$"
+        ),
+    ):
+        model.bootstrap_replay(
+            value,
+            censoring,
+            limit,
+            direction,
+            component=0,
+            seed=1,
+            replicate=0,
+        )
+
+
+def test_one_bootstrap_coordinate_can_be_replayed_exactly() -> None:
+    """Expose one deterministic inner draw without turning it into a p-value."""
+    model, value, censoring, limit, _, _ = problem(seed=8_300)
+    direction: npt.NDArray[np.int64] = np.ones(censoring.shape, dtype=np.int64)
+
+    replay: dict[str, object] = model.bootstrap_replay(
+        value,
+        censoring,
+        limit,
+        direction,
+        component=1,
+        seed=6_119,
+        replicate=0,
+    )
+    full: dict[str, object] = model.bootstrap(
+        value,
+        censoring,
+        limit,
+        direction,
+        component=1,
+        replicates=1,
+        seed=6_119,
+    )
+
+    assert replay["replicate"] == 0
+    assert replay["seed"] == 6_119
+    assert replay["component"] == 1
+    assert replay["observed_statistic"] == full["statistic"]
+    assert int(bool(replay["exceeded"])) == full["exceedances"]
+    assert "p_value" not in replay
+    assert replay == model.bootstrap_replay(
+        value,
+        censoring,
+        limit,
+        direction,
+        component=1,
+        seed=6_119,
+        replicate=0,
+    )
 
 
 def test_bootstrap_reorders_and_tests_a_nonfirst_component() -> None:

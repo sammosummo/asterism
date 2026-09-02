@@ -389,7 +389,7 @@ pub fn censored_component_bootstrap(
     drop(direction);
     let got = py
         .detach(move || model.bootstrap_component_test(index, &directions, replicates, seed))
-        .map_err(PyValueError::new_err)?;
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     Ok((
         got.observed,
         got.exceedances,
@@ -397,6 +397,65 @@ pub fn censored_component_bootstrap(
         got.requested,
         got.p_value,
         got.rule.to_owned(),
+        got.null_loglik,
+        got.alternative_loglik,
+        got.nuisance_at_bound,
+    ))
+}
+
+/// Replay one exact deterministic coordinate from a component bootstrap.
+///
+/// This returns the observed and simulated statistics plus the selected
+/// coordinate and simulated-fit diagnostics. It deliberately returns no
+/// p-value: one replay is for diagnosing a failed full bootstrap, never for
+/// replacing its complete requested denominator.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
+pub fn censored_component_bootstrap_replay(
+    py: Python<'_>,
+    components: Vec<PyReadonlyArray2<'_, f64>>,
+    value: PyReadonlyArray1<'_, f64>,
+    censoring: PyReadonlyArray1<'_, i64>,
+    limit: PyReadonlyArray1<'_, f64>,
+    design: PyReadonlyArray2<'_, f64>,
+    direction: PyReadonlyArray1<'_, i64>,
+    index: usize,
+    seed: u64,
+    replicate: usize,
+) -> PyResult<(f64, f64, bool, usize, u64, f64, f64, bool)> {
+    let (owned_value, owned_censoring, owned_limit, x) =
+        inputs(&value, &censoring, &limit, &design)?;
+    let directions: Vec<Censoring> = direction
+        .as_array()
+        .iter()
+        .map(|code| censoring_from(*code))
+        .collect::<PyResult<_>>()?;
+    let component_matrices = components_from(&components);
+    let model = TobitModel::build(
+        &component_matrices,
+        &owned_value,
+        &owned_censoring,
+        &owned_limit,
+        &x,
+    )
+    .map_err(PyValueError::new_err)?;
+    drop(component_matrices);
+    drop(components);
+    drop(value);
+    drop(censoring);
+    drop(limit);
+    drop(design);
+    drop(direction);
+    let got = py
+        .detach(move || model.bootstrap_component_replicate(index, &directions, seed, replicate))
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok((
+        got.observed,
+        got.statistic,
+        got.exceeded,
+        got.replicate,
+        got.seed,
         got.null_loglik,
         got.alternative_loglik,
         got.nuisance_at_bound,

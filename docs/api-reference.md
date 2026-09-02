@@ -193,7 +193,23 @@ requests in the completed target-design campaign's 75% null cell each
 encountered at least one inner-fit failure. The campaign therefore
 failed its zero-refusal rule and did not qualify a finite-sample
 bootstrap p-value. An observed nuisance component or residual on its
-bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``.
+bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``. An inner-fit
+refusal includes its zero-based replicate coordinate and original code;
+:meth:`bootstrap_replay` reproduces that exact draw for diagnosis.
+
+#### `CensoredComponentModel.bootstrap_replay(self, value: 'Any', censoring: 'Any', limit: 'Any', direction: 'Any', component: 'int', seed: 'int', replicate: 'int') -> 'dict[str, Any]'`
+
+Replay one exact deterministic inner bootstrap coordinate.
+
+This is a diagnostic companion to :meth:`bootstrap`. It fits the same
+constrained-null generator, selects the same substream from ``seed``
+and the zero-based ``replicate`` coordinate, and refits that one
+simulated response. If the refit fails, the exception preserves both
+the coordinate and its original Asterism failure code.
+
+The record deliberately contains no p-value. A replayed draw cannot be
+substituted for a failed draw or used to shrink the complete requested
+denominator; a full bootstrap remains all-or-nothing.
 
 #### `CensoredComponentModel.fit(self, value: 'Any', censoring: 'Any', limit: 'Any') -> 'dict[str, Any]'`
 

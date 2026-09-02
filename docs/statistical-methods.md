@@ -229,7 +229,12 @@ the add-one count follows [Phipson and Smyth
 (2010)](references.bib#phipsonSmyth2010), and every requested bootstrap fit
 must complete for a p-value to be returned. Inner datasets use deterministic
 coordinate-derived random streams and are refitted in parallel, so thread
-schedule and thread count do not change the result.
+schedule and thread count do not change the result. If any inner refit fails,
+the full request still refuses rather than shortening its denominator. The
+error now names the lowest failed zero-based coordinate and preserves the
+underlying fit code. `CensoredComponentModel.bootstrap_replay` regenerates that
+exact seed-coordinate pair as a diagnostic record with no p-value; it does not
+discard, replace or reinterpret the failed draw.
 
 This route is deliberately narrower than a general boundary bootstrap. It
 refuses when an untested nuisance variance is fitted on its bound. Ordinary

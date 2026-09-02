@@ -87,7 +87,7 @@
 //! heritability must not be placed beside a REML one as though the two were
 //! the same number.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use nalgebra::{Cholesky, DMatrix, DVector, SymmetricEigen};
 use rayon::prelude::*;
@@ -239,6 +239,73 @@ pub struct TobitBootstrap {
     pub nuisance_at_bound: bool,
 }
 
+/// One exact inner coordinate from a censored-component bootstrap.
+#[derive(Clone, Debug)]
+pub struct TobitBootstrapReplicate {
+    /// The likelihood-ratio statistic in the observed data.
+    pub observed: f64,
+    /// The likelihood-ratio statistic in this simulated null response.
+    pub statistic: f64,
+    /// Whether this statistic is at least as large as the observed one.
+    pub exceeded: bool,
+    /// The zero-based coordinate in the deterministic bootstrap stream.
+    pub replicate: usize,
+    /// The public seed paired with `replicate` to identify the substream.
+    pub seed: u64,
+    /// The simulated response's constrained log likelihood.
+    pub null_loglik: f64,
+    /// The simulated response's unconstrained log likelihood.
+    pub alternative_loglik: f64,
+    /// Whether an untested variance rested on a bound in this simulated fit.
+    pub nuisance_at_bound: bool,
+}
+
+/// A censored-component bootstrap refusal, retaining any failed coordinate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TobitBootstrapError {
+    /// The stable top-level refusal code.
+    pub code: &'static str,
+    /// The zero-based inner coordinate, where an inner fit failed.
+    pub replicate: Option<usize>,
+    /// The original inner failure code, where an inner fit failed.
+    pub cause: Option<&'static str>,
+}
+
+impl TobitBootstrapError {
+    /// Keep an observed-data or design refusal unchanged.
+    fn setup(code: &'static str) -> Self {
+        Self {
+            code,
+            replicate: None,
+            cause: None,
+        }
+    }
+
+    /// Bind an inner failure to the exact deterministic coordinate that failed.
+    fn at_replicate(replicate: usize, cause: &'static str) -> Self {
+        Self {
+            code: "TOBIT_BOOTSTRAP_REPLICATE_FAILED",
+            replicate: Some(replicate),
+            cause: Some(cause),
+        }
+    }
+}
+
+impl fmt::Display for TobitBootstrapError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.replicate, self.cause) {
+            (Some(replicate), Some(cause)) => write!(
+                formatter,
+                "{}:replicate={replicate}:cause={cause}",
+                self.code
+            ),
+            _ => formatter.write_str(self.code),
+        }
+    }
+}
+
+impl std::error::Error for TobitBootstrapError {}
+
 /// A small deterministic stream for reproducible parametric bootstrap draws.
 struct BootstrapStream(u64);
 
@@ -294,6 +361,67 @@ pub struct TobitModel {
     limit: Vec<f64>,
     blocks: Vec<Vec<usize>>,
     rows: usize,
+}
+
+/// The fitted constrained-null generator shared by full and replayed draws.
+struct TobitBootstrapProblem {
+    model: TobitModel,
+    observed: TobitTest,
+    observed_statistic: f64,
+    factors: Vec<DMatrix<f64>>,
+    mean: DVector<f64>,
+}
+
+impl TobitBootstrapProblem {
+    /// Generate and refit one exact deterministic inner coordinate.
+    fn replicate(
+        &self,
+        directions: &[Censoring],
+        seed: u64,
+        replicate: usize,
+    ) -> Result<TobitBootstrapReplicate, &'static str> {
+        let mut stream = BootstrapStream::for_replicate(seed, replicate);
+        // Only the response and censoring state are private to this task.
+        // TobitModel's Arc-backed dense components remain shared.
+        let mut simulated = self.model.clone();
+        let mut measured = 0usize;
+        for (block, factor) in simulated.blocks.iter().zip(&self.factors) {
+            let draw =
+                DVector::from_iterator(block.len(), (0..block.len()).map(|_| stream.normal()));
+            let deviation = factor * draw;
+            for (within, &row) in block.iter().enumerate() {
+                let complete = self.mean[row] + deviation[within];
+                let censored = match directions[row] {
+                    Censoring::Above => complete >= simulated.limit[row],
+                    Censoring::Below => complete <= simulated.limit[row],
+                    Censoring::Measured => unreachable!("validated before generation"),
+                };
+                if censored {
+                    simulated.value[row] = f64::NAN;
+                    simulated.censoring[row] = directions[row];
+                } else {
+                    simulated.value[row] = complete;
+                    simulated.censoring[row] = Censoring::Measured;
+                    measured += 1;
+                }
+            }
+        }
+        if measured < FEWEST_MEASURED {
+            return Err("TOBIT_TOO_FEW_MEASURED_VALUES");
+        }
+        let result = simulated.analytic_heritability_test()?;
+        let statistic = crate::deviance::settled(result.statistic);
+        Ok(TobitBootstrapReplicate {
+            observed: self.observed_statistic,
+            statistic,
+            exceeded: statistic >= self.observed_statistic,
+            replicate,
+            seed,
+            null_loglik: result.null_loglik,
+            alternative_loglik: result.alternative_loglik,
+            nuisance_at_bound: result.nuisance_at_bound,
+        })
+    }
 }
 
 impl TobitModel {
@@ -862,44 +990,12 @@ impl TobitModel {
         Ok(result)
     }
 
-    /// Construct a Monte Carlo reference for one component's likelihood-ratio statistic.
-    ///
-    /// The fifty-fifty boundary mixture is an asymptotic reference. With
-    /// several covariance components its finite-sample atom and positive tail
-    /// depend on the design, so this method simulates the complete fitted null
-    /// and refits both sides of the same test for every replicate.
-    ///
-    /// `directions` declares how every latent row would be censored: [`Censoring::Above`]
-    /// or [`Censoring::Below`]. It includes rows that happened to be measured in
-    /// the observed data, because a new latent draw may cross their instrument
-    /// limit. For the same reason every entry of the model's `limit` must be
-    /// finite here even though an ordinary fit ignores limits on measured rows.
-    ///
-    /// The tested component is imposed at exactly nought in the generator. If
-    /// another component or the residual rests on a bound in the observed null
-    /// problem, this ordinary bootstrap is refused: that is a multiple-boundary
-    /// problem and needs a separately validated shrinkage rule.
-    ///
-    /// The p-value adds one to both counts and every requested replicate must
-    /// complete. A failed refit is unknown, not a non-exceedance.
-    /// Replicates run in parallel, with a deterministic random substream for
-    /// each replicate index; the same seed therefore returns the same bits
-    /// regardless of Rayon scheduling or thread count.
-    ///
-    /// # Errors
-    ///
-    /// Returns a stable code where the censoring design is incomplete, an
-    /// observed fit is irregular, or any predeclared bootstrap refit fails.
-    pub fn bootstrap_component_test(
+    /// Validate the instrument and fit the constrained-null generator once.
+    fn bootstrap_problem(
         mut self,
         index: usize,
         directions: &[Censoring],
-        replicates: usize,
-        seed: u64,
-    ) -> Result<TobitBootstrap, &'static str> {
-        if replicates == 0 {
-            return Err("TOBIT_BOOTSTRAP_NO_REPLICATES");
-        }
+    ) -> Result<TobitBootstrapProblem, &'static str> {
         if directions.len() != self.rows {
             return Err("TOBIT_BOOTSTRAP_DIRECTION_LENGTH_MISMATCH");
         }
@@ -972,58 +1068,115 @@ impl TobitModel {
         let fixed =
             DVector::from_iterator(model.design.ncols(), null.fixed_effects.iter().copied());
         let mean = &model.design * fixed;
+
+        Ok(TobitBootstrapProblem {
+            model,
+            observed,
+            observed_statistic,
+            factors,
+            mean,
+        })
+    }
+
+    /// Replay one exact inner coordinate of a component bootstrap.
+    ///
+    /// This is a diagnostic seam, not a one-draw p-value. It fits the same
+    /// constrained-null generator as [`Self::bootstrap_component_test`], then
+    /// regenerates only the substream selected by the public seed and zero-based
+    /// replicate coordinate. A failed refit retains that coordinate and the
+    /// original fit failure in [`TobitBootstrapError`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured refusal where the censoring design or observed fit
+    /// is irregular, or where the selected inner refit fails.
+    pub fn bootstrap_component_replicate(
+        self,
+        index: usize,
+        directions: &[Censoring],
+        seed: u64,
+        replicate: usize,
+    ) -> Result<TobitBootstrapReplicate, TobitBootstrapError> {
+        let problem = self
+            .bootstrap_problem(index, directions)
+            .map_err(TobitBootstrapError::setup)?;
+        problem
+            .replicate(directions, seed, replicate)
+            .map_err(|cause| TobitBootstrapError::at_replicate(replicate, cause))
+    }
+
+    /// Construct a Monte Carlo reference for one component's likelihood-ratio statistic.
+    ///
+    /// The fifty-fifty boundary mixture is an asymptotic reference. With
+    /// several covariance components its finite-sample atom and positive tail
+    /// depend on the design, so this method simulates the complete fitted null
+    /// and refits both sides of the same test for every replicate.
+    ///
+    /// `directions` declares how every latent row would be censored: [`Censoring::Above`]
+    /// or [`Censoring::Below`]. It includes rows that happened to be measured in
+    /// the observed data, because a new latent draw may cross their instrument
+    /// limit. For the same reason every entry of the model's `limit` must be
+    /// finite here even though an ordinary fit ignores limits on measured rows.
+    ///
+    /// The tested component is imposed at exactly nought in the generator. If
+    /// another component or the residual rests on a bound in the observed null
+    /// problem, this ordinary bootstrap is refused: that is a multiple-boundary
+    /// problem and needs a separately validated shrinkage rule.
+    ///
+    /// The p-value adds one to both counts and every requested replicate must
+    /// complete. A failed refit is unknown, not a non-exceedance. The refusal
+    /// retains the lowest failed deterministic coordinate and its original fit
+    /// code so [`Self::bootstrap_component_replicate`] can replay it exactly.
+    /// Replicates run in parallel, with a deterministic random substream for
+    /// each replicate index; the same seed therefore returns the same bits
+    /// regardless of Rayon scheduling or thread count.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured refusal where the censoring design is incomplete,
+    /// an observed fit is irregular, or any predeclared bootstrap refit fails.
+    pub fn bootstrap_component_test(
+        self,
+        index: usize,
+        directions: &[Censoring],
+        replicates: usize,
+        seed: u64,
+    ) -> Result<TobitBootstrap, TobitBootstrapError> {
+        if replicates == 0 {
+            return Err(TobitBootstrapError::setup("TOBIT_BOOTSTRAP_NO_REPLICATES"));
+        }
+        let problem = self
+            .bootstrap_problem(index, directions)
+            .map_err(TobitBootstrapError::setup)?;
         let outcomes = (0..replicates)
             .into_par_iter()
-            .map(|replicate_index| -> Result<bool, &'static str> {
-                let mut stream = BootstrapStream::for_replicate(seed, replicate_index);
-                // Only the response and censoring state are private to this task.
-                // TobitModel's Arc-backed dense components remain shared.
-                let mut simulated = model.clone();
-                let mut measured = 0usize;
-                for (block, factor) in simulated.blocks.iter().zip(&factors) {
-                    let draw = DVector::from_iterator(
-                        block.len(),
-                        (0..block.len()).map(|_| stream.normal()),
-                    );
-                    let deviation = factor * draw;
-                    for (within, &row) in block.iter().enumerate() {
-                        let complete = mean[row] + deviation[within];
-                        let censored = match directions[row] {
-                            Censoring::Above => complete >= simulated.limit[row],
-                            Censoring::Below => complete <= simulated.limit[row],
-                            Censoring::Measured => unreachable!("validated above"),
-                        };
-                        if censored {
-                            simulated.value[row] = f64::NAN;
-                            simulated.censoring[row] = directions[row];
-                        } else {
-                            simulated.value[row] = complete;
-                            simulated.censoring[row] = Censoring::Measured;
-                            measured += 1;
-                        }
-                    }
-                }
-                if measured < FEWEST_MEASURED {
-                    return Err("TOBIT_BOOTSTRAP_REPLICATE_FAILED");
-                }
-                let replicate = simulated
-                    .analytic_heritability_test()
-                    .map_err(|_| "TOBIT_BOOTSTRAP_REPLICATE_FAILED")?;
-                Ok(crate::deviance::settled(replicate.statistic) >= observed_statistic)
+            .map(|replicate| (replicate, problem.replicate(directions, seed, replicate)))
+            .collect::<Vec<_>>();
+
+        if let Some((replicate, cause)) = outcomes
+            .iter()
+            .filter_map(|(replicate, outcome)| {
+                outcome.as_ref().err().map(|cause| (*replicate, *cause))
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let exceedances = outcomes.into_iter().filter(|exceeded| *exceeded).count();
+            .min_by_key(|(replicate, _)| *replicate)
+        {
+            return Err(TobitBootstrapError::at_replicate(replicate, cause));
+        }
+        let exceedances = outcomes
+            .iter()
+            .filter(|(_, outcome)| matches!(outcome, Ok(replicate) if replicate.exceeded))
+            .count();
 
         Ok(TobitBootstrap {
-            observed: observed_statistic,
+            observed: problem.observed_statistic,
             exceedances,
             replicates,
             requested: replicates,
             p_value: (1 + exceedances) as f64 / (1 + replicates) as f64,
             seed,
             rule: "parametric_bootstrap_add_one",
-            null_loglik: observed.null_loglik,
-            alternative_loglik: observed.alternative_loglik,
+            null_loglik: problem.observed.null_loglik,
+            alternative_loglik: problem.observed.alternative_loglik,
             nuisance_at_bound: false,
         })
     }

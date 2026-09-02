@@ -79,7 +79,10 @@ The several-component analytic p-value failed on the
 exact 1,909-person, four-component target at 75% expected censoring and must not
 be reported for that analysis without a design-specific simulated null. That is
 not a universal censoring threshold, and it does not affect fitting, intervals
-or the released one-component test. The exact published statuses are listed in
+or the released one-component test. Bootstrap refusals retain the exact inner
+coordinate and original fit code; `CensoredComponentModel.bootstrap_replay`
+reproduces that draw for diagnosis without returning a p-value or weakening the
+all-or-nothing denominator. The exact published statuses are listed in
 [api-support.md](docs/api-support.md), alongside public objects outside the 0.2
 scientific support set (see
 [outside-support.md](docs/outside-support.md)).
