@@ -1,5 +1,6 @@
 """Public contract tests for Asterism release metadata."""
 
+import hashlib
 import json
 import re
 import subprocess
@@ -316,6 +317,68 @@ def test_bootstrap_limitation_counts_outer_requests_not_inner_failures() -> None
 
     for path in surfaces:
         assert inaccurate.search(path.read_text(encoding="utf-8")) is None, path
+
+
+def test_bootstrap_experimental_record_is_bound_to_its_passing_campaign() -> None:
+    """Hold the experimental bootstrap claim to the campaign that qualified it."""
+    manifest: dict[str, Any] = tomllib.loads(
+        (ROOT / "release.toml").read_text(encoding="utf-8")
+    )
+    """Read the authoritative release contract."""
+
+    analysis: dict[str, Any] = next(
+        item
+        for item in manifest["analyses"]
+        if item["id"] == "one_trait_censored_components"
+    )
+    """Selected the several-component censored analysis."""
+
+    method: dict[str, Any] = next(
+        item
+        for item in analysis["experimental_methods"]
+        if item["entry_point"] == "asterism.CensoredComponentModel.bootstrap"
+    )
+    """Selected the experimental constrained-null bootstrap record."""
+
+    assert method["qualified"] is False
+    assert "bootstrap_test" not in analysis["supported_quantities"]
+    """Passing one design never promotes the method to a release claim."""
+
+    assert method["target_design_calibration"] == "passed"
+    evidence: Path = ROOT / method["evidence"]
+    """Located the campaign record the manifest names for that claim."""
+
+    assert evidence.is_file()
+    evidence_bytes: bytes = evidence.read_bytes()
+    """Read the record once, so the digest and the content cannot disagree."""
+
+    assert hashlib.sha256(evidence_bytes).hexdigest() == method["evidence_sha256"], (
+        "the bootstrap calibration evidence digest does not match the manifest"
+    )
+
+    record: dict[str, Any] = json.loads(evidence_bytes.decode("utf-8"))
+    """Read the participant-free campaign record the manifest commits to."""
+
+    assert record["check"] == "censored_components_target_design"
+    assert record["participant_free"] is True
+    assert record["test_reference"] == "bootstrap"
+    assert record["passed"] is True
+    assert record["failed"] == 0
+    assert record["attempted"] == 800
+    """A calibration called passing must have measured every requested attempt."""
+
+    commits: set[str] = {
+        entry["producer"]["source_commit"] for entry in record["producer_history"]
+    }
+    """Collected every shard's producing commit from the merged record."""
+
+    assert commits == {method["source_commit"]}
+    """One campaign, one build: a mixed-producer merge cannot qualify anything."""
+
+    for cell in record["cells"]:
+        assert cell["measured"] == cell["attempted"]
+        assert cell["one_sided_decision"]["passed"] is True
+    """Every cell held its own declared rule, not only the campaign in aggregate."""
 
 
 def test_measured_levels_reject_an_undeclared_quantity() -> None:

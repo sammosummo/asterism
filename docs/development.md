@@ -426,13 +426,18 @@ latent outcome at complete per-row limits, refits both hypotheses and reports
 an add-one Monte Carlo p-value. Its independent inner datasets are assigned
 deterministic coordinate-derived streams and refitted with Rayon, so one outer
 replicate no longer has a 999-fit serial floor and thread count does not alter
-the result. The 800-coordinate bootstrap target completed, but eleven attempts
-in the 75% null cell refused after an inner fit failed. The scored rejection
-rate was 0.055 at both censoring shares and coverage was 0.980 and 0.960, but
-the campaign permits no failed attempt, so the no-write merge failed and wrote
-no qualifying evidence. The earlier 24.25-day projection described this nested
-calibration before the inner loop was parallelised; the completed campaign did
-not qualify a replacement p-value, so the bootstrap remains experimental.
+the result. The 800-coordinate bootstrap target first completed with eleven
+attempts in the 75% null cell refusing after an inner fit failed, which the
+campaign's no-failed-attempt rule rejected. That was a tied-fit defect: a
+multi-start search could settle at points whose likelihoods differed only by
+rounding the public deviance rule already collapses, while their recomputed
+gradients fell on opposite sides of the convergence threshold. Resolving the
+tie removed every refusal. The repeated campaign measured all 800 requested
+attempts, scoring 0.055 at 52% and 0.060 at 75% expected censoring with
+coverage 0.980 and 0.960, and passed. The earlier 24.25-day projection
+described this nested calibration before the inner loop was parallelised. The
+bootstrap remains experimental because one qualified design is not general
+qualification, not because the campaign failed.
 
 Coverage of the interval at the full component set, with an interval taken for
 **every** structured component rather than only the first:

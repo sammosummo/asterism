@@ -48,9 +48,10 @@ tag and saved wheels.
   p-value must not be reported for that analysis without a design-specific
   simulated null. This is not a universal censoring threshold and does not
   withdraw the generally available, explicitly asymptotic test. The optional
-  999-draw bootstrap target also completed but failed because eleven outer
-  attempts could not complete every inner fit, so the bootstrap remains
-  experimental. With one component the fit remains bit-identical to
+  999-draw bootstrap target supplies exactly that simulated null, and it now
+  passes at the exact design with no failed attempt. The bootstrap stays
+  experimental all the same, because one qualified design is not general
+  qualification. With one component the fit remains bit-identical to
   `tobit_fit`, and its corrected fixed-instrument
   recovery, coverage and target checks pass. There is deliberately no
   `heritability` key: it would be the first component's coefficient whatever

@@ -2202,9 +2202,9 @@ class CensoredComponentModel:
         failed 1,909-person, four-component target at 75% expected censoring
         without a design-specific simulated null. This does not create a
         universal censoring threshold. :meth:`bootstrap` supplies a simulated
-        constrained-null reference, but its target calibration failed the
-        zero-refusal rule and it remains experimental. Fit, interval and the
-        released one-component test are unaffected.
+        constrained-null reference; its target calibration now passes at that
+        design, but it stays experimental rather than a released quantity.
+        Fit, interval and the released one-component test are unaffected.
         """
         matrices, y, codes, limits, design = self._data(value, censoring, limit)
         """Put the components and the censored data into the order the core reads."""
@@ -2258,11 +2258,13 @@ class CensoredComponentModel:
         substream derived from ``seed`` and its coordinate, so the inner fits
         can run in parallel without thread scheduling changing the answer. The
         seed and Monte Carlo standard error are returned with the result.
-        Availability is not scientific qualification: eleven outer bootstrap
-        requests in the completed target-design campaign's 75% null cell each
-        encountered at least one inner-fit failure. The campaign therefore
-        failed its zero-refusal rule and did not qualify a finite-sample
-        bootstrap p-value. An observed nuisance component or residual on its
+        Availability is not general scientific qualification. The completed
+        target-design campaign passed with no failed attempt: it measured
+        every one of its 800 requested draws and held its level at both 52%
+        and 75% expected censoring. That qualifies the reference at that one
+        design and no further, so a caller must qualify its own design before
+        reporting a bootstrap p-value. An observed nuisance component or
+        residual on its
         bound is refused as ``TOBIT_BOOTSTRAP_NUISANCE_AT_BOUND``. An inner-fit
         refusal includes its zero-based replicate coordinate and original code;
         :meth:`bootstrap_replay` reproduces that exact draw for diagnosis.

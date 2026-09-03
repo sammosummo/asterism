@@ -319,7 +319,7 @@ finite-sample guarantee. Its p-value must not be reported for the exact
 failed 1,909-person, four-component target at 75% expected censoring
 without a design-specific simulated null. This does not create a
 universal censoring threshold. :meth:`bootstrap` supplies a simulated
-constrained-null reference, but its target calibration failed the
-zero-refusal rule and it remains experimental. Fit, interval and the
-released one-component test are unaffected.
+constrained-null reference; its target calibration now passes at that
+design, but it stays experimental rather than a released quantity.
+Fit, interval and the released one-component test are unaffected.
 
