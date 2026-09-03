@@ -116,6 +116,27 @@ const INFEASIBLE: f64 = 1e30;
 /// not a covariance.
 const EIGENVALUE_FLOOR: f64 = -1e-9;
 
+#[derive(Clone, Debug)]
+struct FitCandidate {
+    objective: f64,
+    theta: Vec<f64>,
+    scaled_gradient: f64,
+}
+
+/// Return the best converged start only when its likelihood is a numerical tie.
+fn best_converged_likelihood_tie(
+    candidates: &[FitCandidate],
+    selected_objective: f64,
+) -> Option<&FitCandidate> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.scaled_gradient < crate::convergence::TOLERANCE)
+        .filter(|candidate| {
+            crate::deviance::settled(2.0 * (candidate.objective - selected_objective).abs()) == 0.0
+        })
+        .min_by(|left, right| left.objective.total_cmp(&right.objective))
+}
+
 /// Which way an unmeasured value lies from its limit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Censoring {
@@ -1284,72 +1305,6 @@ impl TobitModel {
                 .collect()
         };
 
-        // **Both sides of a likelihood-ratio test get the same search.** The
-        // free fit spreads its starts over the first coefficient. A held fit
-        // cannot, because that coefficient is pinned, so it spreads them over
-        // the coefficients that are left.
-        //
-        // One start was right while there was one component: holding the first
-        // coefficient pinned the whole share space, and three starts would have
-        // been three copies of one deterministic search, which the interval
-        // would have paid for at each end of every bisection step.
-        //
-        // Above one component, holding the first coefficient still leaves a
-        // nuisance-share space. Three starts are retained as search hygiene,
-        // not as the explanation for the boundary reference: an exact
-        // old-versus-new differential on forty affected target seeds changed
-        // the null log likelihood by at most 1.85e-9 and changed no rejection
-        // or operational point-mass membership. One component remains on one
-        // start because holding its only coefficient leaves no share space.
-        let single = parts == 1;
-        let firsts: &[f64] = match held {
-            Some(value) if single => &[value],
-            Some(value) => &[value, value, value],
-            None => &[0.05, 0.3, 0.6],
-        };
-        // What each start claims of the even split below. A held fit varies
-        // this because it cannot vary the first coefficient; a free fit varies
-        // the first coefficient and leaves the split alone, as it always has.
-        let spreads: &[f64] = if held.is_some() && !single {
-            &[0.6, 1.0, 1.5]
-        } else {
-            &[1.0, 1.0, 1.0]
-        };
-        let mut best: Option<(f64, Vec<f64>)> = None;
-        for (attempt, &heritability) in firsts.iter().enumerate() {
-            let claim = spreads[attempt.min(spreads.len() - 1)];
-            let mut start = vec![0.0; count];
-            start[0] = heritability;
-            // Each later coordinate takes an even split of what is left,
-            // counting the residual as one more claimant, so the start sits
-            // inside the simplex rather than on the face where the residual is
-            // nought. These are stick-breaking coordinates, not coefficients.
-            for (index, coordinate) in start.iter_mut().enumerate().take(parts).skip(1) {
-                *coordinate = (claim / (parts - index + 1) as f64).clamp(1e-6, 1.0 - 1e-6);
-            }
-            start[parts] = spread.ln();
-            start[parts + 1] = centre;
-            let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
-                continue;
-            };
-            let mut control = OptimControl::default_for_dimension(count);
-            control.maxit = 300;
-            control.fnscale = value_of(&start).abs().max(1.0);
-            control.parscale = vec![1.0; count];
-            control.factr = 1.0e3;
-            control.pgtol = 1e-8;
-            control.lmm = count;
-            let Ok(solution) =
-                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
-            else {
-                continue;
-            };
-            let objective = value_of(&solution.par);
-            if objective < INFEASIBLE && best.as_ref().is_none_or(|(seen, _)| objective < *seen) {
-                best = Some((objective, solution.par));
-            }
-        }
-
         // The search is bound constrained, so what says whether it has arrived
         // is the projected gradient, not the raw one. At an optimum resting on
         // a bound the raw gradient points out of the feasible region and does
@@ -1384,8 +1339,85 @@ impl TobitModel {
                 / objective.abs().max(1.0)
         };
 
-        let (mut objective, mut theta) = best.ok_or("TOBIT_NO_START_CONVERGED")?;
-        let mut scaled_gradient = scaled_projected(&theta, objective);
+        // **Both sides of a likelihood-ratio test get the same search.** The
+        // free fit spreads its starts over the first coefficient. A held fit
+        // cannot, because that coefficient is pinned, so it spreads them over
+        // the coefficients that are left.
+        //
+        // One start was right while there was one component: holding the first
+        // coefficient pinned the whole share space, and three starts would have
+        // been three copies of one deterministic search, which the interval
+        // would have paid for at each end of every bisection step.
+        //
+        // Above one component, holding the first coefficient still leaves a
+        // nuisance-share space. Three starts are retained as search hygiene,
+        // not as the explanation for the boundary reference: an exact
+        // old-versus-new differential on forty affected target seeds changed
+        // the null log likelihood by at most 1.85e-9 and changed no rejection
+        // or operational point-mass membership. One component remains on one
+        // start because holding its only coefficient leaves no share space.
+        let single = parts == 1;
+        let firsts: &[f64] = match held {
+            Some(value) if single => &[value],
+            Some(value) => &[value, value, value],
+            None => &[0.05, 0.3, 0.6],
+        };
+        // What each start claims of the even split below. A held fit varies
+        // this because it cannot vary the first coefficient; a free fit varies
+        // the first coefficient and leaves the split alone, as it always has.
+        let spreads: &[f64] = if held.is_some() && !single {
+            &[0.6, 1.0, 1.5]
+        } else {
+            &[1.0, 1.0, 1.0]
+        };
+        let mut candidates: Vec<FitCandidate> = Vec::new();
+        for (attempt, &heritability) in firsts.iter().enumerate() {
+            let claim = spreads[attempt.min(spreads.len() - 1)];
+            let mut start = vec![0.0; count];
+            start[0] = heritability;
+            // Each later coordinate takes an even split of what is left,
+            // counting the residual as one more claimant, so the start sits
+            // inside the simplex rather than on the face where the residual is
+            // nought. These are stick-breaking coordinates, not coefficients.
+            for (index, coordinate) in start.iter_mut().enumerate().take(parts).skip(1) {
+                *coordinate = (claim / (parts - index + 1) as f64).clamp(1e-6, 1.0 - 1e-6);
+            }
+            start[parts] = spread.ln();
+            start[parts + 1] = centre;
+            let Ok(bounds) = Bounds::new(lower.clone(), upper.clone()) else {
+                continue;
+            };
+            let mut control = OptimControl::default_for_dimension(count);
+            control.maxit = 300;
+            control.fnscale = value_of(&start).abs().max(1.0);
+            control.parscale = vec![1.0; count];
+            control.factr = 1.0e3;
+            control.pgtol = 1e-8;
+            control.lmm = count;
+            let Ok(solution) =
+                optim_lbfgsb_with_gradient(start.clone(), bounds, value_of, gradient_of, control)
+            else {
+                continue;
+            };
+            let objective = value_of(&solution.par);
+            if objective < INFEASIBLE {
+                let scaled_gradient = scaled_projected(&solution.par, objective);
+                candidates.push(FitCandidate {
+                    objective,
+                    theta: solution.par,
+                    scaled_gradient,
+                });
+            }
+        }
+
+        let selected = candidates
+            .iter()
+            .min_by(|left, right| left.objective.total_cmp(&right.objective))
+            .cloned()
+            .ok_or("TOBIT_NO_START_CONVERGED")?;
+        let mut objective = selected.objective;
+        let mut theta = selected.theta;
+        let mut scaled_gradient = selected.scaled_gradient;
 
         // Where the gradient test fails, search once more from the point
         // already found with the objective tolerance switched off. This is the
@@ -1414,6 +1446,21 @@ impl TobitModel {
             theta = better.par;
             objective = better.negative_loglik;
             scaled_gradient = better.scaled_gradient;
+        }
+
+        // A multi-start search can finish at points whose likelihoods differ
+        // only by the rounding already collapsed by the public deviance rule,
+        // while their independently recomputed gradients fall on opposite
+        // sides of the strict convergence threshold. In that numerical tie,
+        // use the best converged start. If the unresolved point is materially
+        // better, retain it as an unconverged diagnostic so inference still
+        // refuses rather than promoting a lesser local optimum.
+        if scaled_gradient >= crate::convergence::TOLERANCE
+            && let Some(tied) = best_converged_likelihood_tie(&candidates, objective)
+        {
+            objective = tied.objective;
+            theta.clone_from(&tied.theta);
+            scaled_gradient = tied.scaled_gradient;
         }
 
         let coefficients = Self::coefficients_from(&theta[..parts]);
@@ -1487,6 +1534,61 @@ mod tests {
     // located a little more precisely than the retired quadrature could locate
     // it. The equality below is still an equality, and still says what it says.
     const PINNED_HELD_LOGLIK: f64 = -102.736_491_869_479_9;
+
+    /// A converged start wins when the likelihood difference is only rounding.
+    #[test]
+    fn a_converged_start_wins_a_settled_likelihood_tie() {
+        let candidates = vec![
+            FitCandidate {
+                objective: 2_905.485_766_192_609_4,
+                theta: vec![0.0],
+                scaled_gradient: 1.638_616_662_830_851_8e-6,
+            },
+            FitCandidate {
+                objective: 2_905.485_766_196_700_3,
+                theta: vec![1.0],
+                scaled_gradient: 5.528_208_524_549_122e-7,
+            },
+            FitCandidate {
+                objective: 2_905.485_766_197_024_5,
+                theta: vec![2.0],
+                scaled_gradient: 3.797_194_657_800_84e-7,
+            },
+        ];
+
+        let tied = best_converged_likelihood_tie(&candidates, candidates[0].objective)
+            .expect("a converged likelihood tie is available");
+
+        assert_eq!(tied.theta, vec![1.0]);
+        assert_eq!(tied.objective, candidates[1].objective);
+    }
+
+    /// A lesser local optimum cannot turn a materially better fit into success.
+    #[test]
+    fn a_materially_worse_converged_start_does_not_replace_an_unresolved_fit() {
+        let candidates = vec![
+            FitCandidate {
+                objective: 6.228_106_196_676_902,
+                theta: vec![0.0],
+                scaled_gradient: 1.5e-6,
+            },
+            FitCandidate {
+                objective: 6.228_266_196_676_902,
+                theta: vec![1.0],
+                scaled_gradient: 5.0e-7,
+            },
+            FitCandidate {
+                objective: 6.228_306_196_676_902,
+                theta: vec![2.0],
+                scaled_gradient: 4.0e-7,
+            },
+        ];
+
+        assert!(
+            best_converged_likelihood_tie(&candidates, candidates[0].objective).is_none(),
+            "a converged but materially worse local optimum must not be promoted"
+        );
+    }
 
     /// A relationship matrix that is not a covariance is refused where the
     /// caller can still do something about it.

@@ -2345,9 +2345,13 @@ class CensoredComponentModel:
         denominator; a full bootstrap remains all-or-nothing.
         """
         matrices, y, codes, limits, design = self._data(value, censoring, limit)
+        """Put the components and censored data into the order the core reads."""
+
         directions: npt.NDArray[np.int64] = np.ascontiguousarray(
             direction, dtype=np.int64
         )
+        """Copied the complete instrument direction into the core's integer form."""
+
         (
             observed_statistic,
             statistic,
@@ -2368,6 +2372,8 @@ class CensoredComponentModel:
             seed,
             replicate,
         )
+        """Regenerated and refitted only the requested deterministic coordinate."""
+
         return {
             "observed_statistic": observed_statistic,
             "statistic": statistic,

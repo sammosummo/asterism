@@ -88,24 +88,53 @@ def high_censoring_problem() -> tuple[
     npt.NDArray[np.int64],
 ]:
     """Build a deterministic bootstrap whose first inner draw is unfit."""
-    people = 30
+    people: int = 30
+    """Used a compact set of sibling pairs whose first null draw is too censored."""
+
     additive: npt.NDArray[np.float64] = np.eye(people)
+    """Started the additive relationship at unrelated identity."""
+
     for pair in range(people // 2):
-        first = 2 * pair
-        second = first + 1
+        first: int = 2 * pair
+        """Located the first member of this sibling pair."""
+
+        second: int = first + 1
+        """Located the second member of this sibling pair."""
+
         additive[first, second] = additive[second, first] = 0.5
+        """Gave the pair their symmetric full-sibling relationship."""
 
     design: npt.NDArray[np.float64] = np.ones((people, 1))
+    """Fitted one common intercept."""
+
     generator: np.random.Generator = np.random.default_rng(8_300)
+    """Selected the retained deterministic observed-response stream."""
+
     complete: npt.NDArray[np.float64] = np.linalg.cholesky(
         0.6 * additive + 0.4 * np.eye(people)
     ) @ generator.standard_normal(people)
-    ceiling = -1.5
+    """Drew the complete response before applying the instrument."""
+
+    ceiling: float = -1.5
+    """Fixed a deliberately severe right-censoring limit."""
+
     censoring: npt.NDArray[np.int64] = (complete >= ceiling).astype(np.int64)
+    """Marked the observations beyond the instrument limit."""
+
     value: npt.NDArray[np.float64] = np.where(censoring == 0, complete, np.nan)
+    """Retained numeric values only where measurement completed."""
+
     limit: npt.NDArray[np.float64] = np.full(people, ceiling)
+    """Recorded the fixed instrument limit for every latent row."""
+
     direction: npt.NDArray[np.int64] = np.ones(people, dtype=np.int64)
-    model = asterism.CensoredComponentModel([additive], design)
+    """Declared right censoring for every possible generated value."""
+
+    model: asterism.CensoredComponentModel = asterism.CensoredComponentModel(
+        [additive], design
+    )
+    """Prepared the one-component public model used by the bootstrap."""
+
     return model, value, censoring, limit, direction
 
 
@@ -353,6 +382,7 @@ def test_bootstrap_refits_the_complete_null_reference_reproducibly() -> None:
 def test_bootstrap_failure_preserves_inner_coordinate_and_cause() -> None:
     """A failed draw remains unknown, but no longer anonymous."""
     model, value, censoring, limit, direction = high_censoring_problem()
+    """Built the public case whose first bootstrap draw is too censored."""
 
     with pytest.raises(
         ValueError,
@@ -392,7 +422,10 @@ def test_bootstrap_failure_preserves_inner_coordinate_and_cause() -> None:
 def test_one_bootstrap_coordinate_can_be_replayed_exactly() -> None:
     """Expose one deterministic inner draw without turning it into a p-value."""
     model, value, censoring, limit, _, _ = problem(seed=8_300)
+    """Built the identified public problem used by replay and full bootstrap."""
+
     direction: npt.NDArray[np.int64] = np.ones(censoring.shape, dtype=np.int64)
+    """Declared right censoring for every latent row."""
 
     replay: dict[str, object] = model.bootstrap_replay(
         value,
@@ -403,6 +436,8 @@ def test_one_bootstrap_coordinate_can_be_replayed_exactly() -> None:
         seed=6_119,
         replicate=0,
     )
+    """Replayed only the first deterministic coordinate."""
+
     full: dict[str, object] = model.bootstrap(
         value,
         censoring,
@@ -412,6 +447,7 @@ def test_one_bootstrap_coordinate_can_be_replayed_exactly() -> None:
         replicates=1,
         seed=6_119,
     )
+    """Ran the same one-coordinate request through the complete bootstrap."""
 
     assert replay["replicate"] == 0
     assert replay["seed"] == 6_119
